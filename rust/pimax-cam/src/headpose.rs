@@ -33,6 +33,45 @@ pub const GRAVITY: f64 = 9.80665;
 /// Gravity in the y-up world.
 pub const G_WORLD: Vec3 = [0.0, -GRAVITY, 0.0];
 
+/// Camera image brightness handed from the auto-exposure loop to the head tracker (both live in this library
+/// inside the same Monado process; no driver change needed). A leaf: a stale or missing value means "unknown".
+pub mod scene {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::OnceLock;
+    use std::time::Instant;
+
+    static PACKED: AtomicU64 = AtomicU64::new(0);
+    static BASE: OnceLock<Instant> = OnceLock::new();
+
+    fn now_ms() -> u64 {
+        BASE.get_or_init(Instant::now).elapsed().as_millis() as u64 + 1
+    }
+
+    /// Publish the darker pair's trimmed mean (0..255).
+    pub fn publish(mean: f64) {
+        if !mean.is_finite() {
+            return;
+        }
+        let m = (mean.clamp(0.0, 255.0) * 100.0) as u64;
+        PACKED.store((now_ms() << 32) | (m & 0xffff_ffff), Ordering::Relaxed);
+    }
+
+    /// The newest mean if it is at most `max_age_ms` old.
+    pub fn latest(max_age_ms: u64) -> Option<f64> {
+        let v = PACKED.load(Ordering::Relaxed);
+        let ts = v >> 32;
+        if ts == 0 || now_ms().saturating_sub(ts) > max_age_ms {
+            return None;
+        }
+        Some((v & 0xffff_ffff) as f64 / 100.0)
+    }
+}
+
+/// Auto-exposure mean (0..255, target 64) below which the image counts as getting dark ...
+pub const SCENE_DARK_FROM: f64 = 32.0;
+/// ... and at which as fully dark (session 2026-10-16 18:18 ended at means 9-15 with exposure and gain capped).
+pub const SCENE_DARK_FULL: f64 = 12.0;
+
 /// Relation flag bits (same values as Monado's `xrt_space_relation_flags`).
 pub mod flags {
     /// Orientation valid.
@@ -129,6 +168,19 @@ pub struct PredictorParams {
     /// Speed-adaptive: the tracker velocity weight rises from `fuse_vel_w` at rest to 1 at this head speed (m/s;
     /// 0 = fixed): smoothing where corrections would show, the tracker's own velocity (no lag) in fast motion.
     pub fuse_fast_speed: f64,
+    /// Automatic fusion weights (`PIMAX_FUSE_AUTO`): the tracker's velocity noise is estimated online (running
+    /// RMS of tracker velocity - IMU-propagated velocity) and, with a dark camera image ([`Predictor::scene_dark`]),
+    /// turns a noisy tracker down where its noise shows, at rest and in slow motion: velocity weight
+    /// `fuse_vel_w` -> 0.2 x it (0.5 -> 0.1), alphas and beta -> half. Fast motion keeps following the tracker
+    /// (weights rise to the configured alphas and velocity weight 1 as before: lowering them there only added
+    /// lag, 2026-10-16 replays). A clean tracker keeps the configured values.
+    pub fuse_auto: bool,
+    /// Velocity residual RMS (m/s) at and below which the tracker counts as clean ...
+    pub noise_lo: f64,
+    /// ... and at and above which as fully noisy.
+    pub noise_hi: f64,
+    /// Time constant of the running residual estimate (s).
+    pub noise_tau_s: f64,
 }
 
 impl Default for PredictorParams {
@@ -145,6 +197,10 @@ impl Default for PredictorParams {
             fuse_vel_w: 0.0,
             fuse_reset_m: 0.3,
             fuse_fast_speed: 0.0,
+            fuse_auto: false,
+            noise_lo: 0.05,
+            noise_hi: 0.15,
+            noise_tau_s: 2.0,
         }
     }
 }
@@ -164,6 +220,31 @@ pub struct Predictor {
     pub fuse_hold: bool,
     /// Headset lying still: no accelerometer dead reckoning (its bias would only add drift between poses).
     pub lying: bool,
+    /// Running mean square of (tracker velocity - IMU-propagated velocity), m²/s² ([`PredictorParams::fuse_auto`]).
+    pub vel_noise_ms: f64,
+    /// Residual samples taken.
+    pub vel_noise_n: u64,
+    /// Camera image darkness 0 (fine) .. 1 (too dark to track well), set by the caller (auto-exposure mean).
+    pub scene_dark: f64,
+    /// The tracker's own newest state (before fusion), for the velocity noise estimate.
+    last_raw: Option<BodyState>,
+}
+
+/// Window statistics of the buffered IMU (per-axis means and standard deviations).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ImuWindow {
+    /// Samples.
+    pub n: usize,
+    /// Mean gyro (rad/s, raw).
+    pub gyro_mean: Vec3,
+    /// Gyro standard deviation per axis (rad/s).
+    pub gyro_std: Vec3,
+    /// Mean accelerometer (m/s²).
+    pub accel_mean: Vec3,
+    /// Accelerometer standard deviation per axis (m/s²).
+    pub accel_std: Vec3,
+    /// Largest bias-corrected angular rate in the window (rad/s).
+    pub gyro_max: f64,
 }
 
 impl Predictor {
@@ -177,7 +258,74 @@ impl Predictor {
             bias_samples: 0,
             fuse_hold: false,
             lying: false,
+            vel_noise_ms: 0.0,
+            vel_noise_n: 0,
+            scene_dark: 0.0,
+            last_raw: None,
         }
+    }
+
+    /// Tracker noise level 0 (clean: the configured weights) .. 1 (noisy: lowest weights), from the velocity
+    /// residual and the image darkness; 0 with `fuse_auto` off.
+    pub fn noise_level(&self) -> f64 {
+        if !self.p.fuse_auto {
+            return 0.0;
+        }
+        let vel = if self.vel_noise_n < 5 || self.p.noise_hi <= self.p.noise_lo {
+            0.0
+        } else {
+            ((self.vel_noise_ms.sqrt() - self.p.noise_lo) / (self.p.noise_hi - self.p.noise_lo)).clamp(0.0, 1.0)
+        };
+        vel.max(self.scene_dark.clamp(0.0, 1.0))
+    }
+
+    /// Effective fusion weights `[alpha, alpha_y, beta, vel_w, fast-motion vel_w]` at the current noise level
+    /// and head speed fraction `fast` (0 = at rest .. 1 = at `fuse_fast_speed`): the position pull is lowered
+    /// only where its steps would show (at rest), so fast motion keeps following the tracker without lag.
+    pub fn fuse_weights(&self, fast: f64) -> [f64; 5] {
+        let n = self.noise_level();
+        let k = 1.0 - 0.5 * n * (1.0 - fast.clamp(0.0, 1.0));
+        [
+            self.p.fuse_alpha * k,
+            self.p.fuse_alpha_y * k,
+            self.p.fuse_beta * k,
+            self.p.fuse_vel_w * (1.0 - 0.8 * n),
+            1.0,
+        ]
+    }
+
+    /// Statistics of the newest `window_ns` of IMU samples; `None` until the window is covered.
+    pub fn imu_window(&self, window_ns: i64) -> Option<ImuWindow> {
+        let last = self.imu.back()?;
+        let from = last.ts_ns - window_ns;
+        if self.imu.front().is_none_or(|f| f.ts_ns > from + window_ns / 10) {
+            return None; // window not covered yet
+        }
+        let (mut n, mut sg, mut sg2, mut sa, mut sa2) = (0usize, [0.0; 3], [0.0; 3], [0.0; 3], [0.0; 3]);
+        let mut gmax: f64 = 0.0;
+        for s in self.imu.iter().rev().take_while(|s| s.ts_ns >= from) {
+            n += 1;
+            for k in 0..3 {
+                sg[k] += s.gyro[k];
+                sg2[k] += s.gyro[k] * s.gyro[k];
+                sa[k] += s.accel[k];
+                sa2[k] += s.accel[k] * s.accel[k];
+            }
+            gmax = gmax.max(geom::norm(geom::sub(s.gyro, self.gyro_bias)));
+        }
+        if n == 0 {
+            return None;
+        }
+        let nf = n as f64;
+        let sd = |s: f64, s2: f64| (s2 / nf - (s / nf) * (s / nf)).max(0.0).sqrt();
+        Some(ImuWindow {
+            n,
+            gyro_mean: geom::scale(sg, 1.0 / nf),
+            gyro_std: [sd(sg[0], sg2[0]), sd(sg[1], sg2[1]), sd(sg[2], sg2[2])],
+            accel_mean: geom::scale(sa, 1.0 / nf),
+            accel_std: [sd(sa[0], sa2[0]), sd(sa[1], sa2[1]), sd(sa[2], sa2[2])],
+            gyro_max: gmax,
+        })
     }
 
     /// Add an IMU sample (older-or-equal timestamps are dropped).
@@ -195,30 +343,10 @@ impl Predictor {
     /// deviation below `gyro_std` (rad/s) and `accel_std` (m/s²). A worn headset never gets that quiet; a
     /// headset on a desk or cushion shows ~0.001 rad/s and ~0.01 m/s².
     pub fn imu_still(&self, window_ns: i64, gyro_std: f64, accel_std: f64) -> bool {
-        let Some(last) = self.imu.back() else {
-            return false;
-        };
-        let from = last.ts_ns - window_ns;
-        if self.imu.front().is_none_or(|f| f.ts_ns > from + window_ns / 10) {
-            return false; // window not covered yet
+        match self.imu_window(window_ns) {
+            Some(w) if w.n >= 10 => (0..3).all(|k| w.gyro_std[k] < gyro_std && w.accel_std[k] < accel_std),
+            _ => false,
         }
-        let (mut n, mut sg, mut sg2, mut sa, mut sa2) = (0.0, [0.0; 3], [0.0; 3], [0.0; 3], [0.0; 3]);
-        for s in self.imu.iter().rev().take_while(|s| s.ts_ns >= from) {
-            n += 1.0;
-            for k in 0..3 {
-                sg[k] += s.gyro[k];
-                sg2[k] += s.gyro[k] * s.gyro[k];
-                sa[k] += s.accel[k];
-                sa2[k] += s.accel[k] * s.accel[k];
-            }
-        }
-        if n < 10.0 {
-            return false;
-        }
-        let var = |s: f64, s2: f64| (s2 / n - (s / n) * (s / n)).max(0.0);
-        (0..3).all(|k| {
-            var(sg[k], sg2[k]) < gyro_std * gyro_std && var(sa[k], sa2[k]) < accel_std * accel_std
-        })
     }
 
     /// Newest IMU timestamp.
@@ -229,6 +357,29 @@ impl Predictor {
     /// Drop the tracker poses (tracker reset: new world).
     pub fn clear_vio(&mut self) {
         self.vio.clear();
+        self.last_raw = None;
+    }
+
+    /// Tracker velocity noise: the tracker's own previous state (not the fused one: the estimate must not depend
+    /// on the weights it sets) carried to this pose by the IMU predicts this velocity; over 40 ms the IMU is
+    /// accurate, so the running RMS of the difference is the tracker's velocity noise (x sqrt 2).
+    fn learn_vel_noise(&mut self, raw: &BodyState) {
+        let Some(prev) = self.last_raw else {
+            return;
+        };
+        let dt = (raw.ts_ns - prev.ts_ns) as f64 / 1e9;
+        if !(0.005..0.15).contains(&dt) || self.imu.back().is_none_or(|s| s.ts_ns < raw.ts_ns) {
+            return;
+        }
+        let (pr, _) = self.propagate(&prev, raw.ts_ns);
+        let dv = geom::norm(geom::sub(raw.v, pr.v));
+        let k = (dt / self.p.noise_tau_s.max(1e-3)).min(1.0);
+        if self.vel_noise_n == 0 {
+            self.vel_noise_ms = dv * dv;
+        } else {
+            self.vel_noise_ms += (dv * dv - self.vel_noise_ms) * k;
+        }
+        self.vel_noise_n += 1;
     }
 
     /// Add a tracker pose; `false` if not newer than the last one. Updates the gyro bias estimate from the
@@ -257,20 +408,24 @@ impl Predictor {
             q: qnorm(st.q),
             ..st
         };
+        if self.p.fuse_auto && !self.fuse_hold && !self.lying {
+            self.learn_vel_noise(&st);
+        }
+        self.last_raw = (!self.fuse_hold && !self.lying).then_some(st);
         if self.p.fuse_alpha > 0.0 && !self.fuse_hold {
             if let Some(prev) = self.vio.back().copied() {
                 let dt = (st.ts_ns - prev.ts_ns) as f64 / 1e9;
                 let (pr, _) = self.propagate(&prev, st.ts_ns);
                 let r = geom::sub(st.p, pr.p);
                 if dt > 0.0 && dt < 0.25 && geom::norm(r) < self.p.fuse_reset_m {
-                    let a = self.p.fuse_alpha;
-                    let ay = self.p.fuse_alpha_y;
-                    let b = self.p.fuse_beta / dt;
-                    let mut w = self.p.fuse_vel_w;
-                    if self.p.fuse_fast_speed > 0.0 {
-                        let f = (geom::norm(pr.v) / self.p.fuse_fast_speed).min(1.0);
-                        w += (1.0 - w) * f;
-                    }
+                    let f = if self.p.fuse_fast_speed > 0.0 {
+                        (geom::norm(pr.v) / self.p.fuse_fast_speed).min(1.0)
+                    } else {
+                        0.0
+                    };
+                    let [a, ay, b, mut w, w_fast] = self.fuse_weights(f);
+                    let b = b / dt;
+                    w += (w_fast - w).max(0.0) * f;
                     st.p = geom::add(pr.p, [a * r[0], ay * r[1], a * r[2]]);
                     st.v = geom::add(
                         geom::add(pr.v, geom::scale(r, b)),
@@ -443,9 +598,16 @@ pub struct HeadParams {
     pub learn_bias: bool,
     /// Headset lying still: hold the position, reset a drifting tracker ([`StillParams`]).
     pub still: StillParams,
-    /// Stillness test window (ns) ...
+    /// Window (ns) over which the still state is entered: the headset has to be desk-quiet this long. What tells
+    /// a worn head from a desk is the level (session 2026-10-16 18:18: worn rest >= 0.3 deg/s gyro std in every
+    /// 0.5 s window; on the desk 0.05-0.06 deg/s, the bare sensor noise; settling after a put-down 0.07-0.15),
+    /// not the length: a landmark-free tracker ran away at > 1 m/s within 0.5 s of a put-down (21:30 session),
+    /// so a longer window only lets that drift in (the hold anchors at the start of the window either way).
+    pub still_enter_window_ns: i64,
+    /// Window (ns) the exit test looks at (short: a pickup ends the still state at once) ...
     pub still_window_ns: i64,
-    /// ... per-axis standard deviation limits (rad/s, m/s²) to enter the still state ...
+    /// ... per-axis standard deviation limits (rad/s, m/s²) to enter the still state (over
+    /// `still_enter_window_ns`) ...
     pub still_gyro_std: f64,
     /// See `still_gyro_std`.
     pub still_accel_std: f64,
@@ -455,11 +617,27 @@ pub struct HeadParams {
     pub still_exit_gyro_std: f64,
     /// See `still_exit_gyro_std`.
     pub still_exit_accel_std: f64,
+    /// ... and the mean gyro must be within this (rad/s) of the learned gyro bias (a slow steady head turn is
+    /// flat but not still; LESSONS row 36). Used once the bias has been learned for a while; 0 = off.
+    pub still_bias_tol: f64,
+    /// Gravity tilt correction (`PIMAX_HEAD_TILT`): pitch and roll of the output are pulled slowly towards the
+    /// accelerometer's gravity (yaw and position stay the tracker's), with this time constant (s; 0 = off) ...
+    pub tilt_tau_s: f64,
+    /// ... never faster than this (rad/s) ...
+    pub tilt_rate: f64,
+    /// ... and only while |accel| is within this of g (m/s²) ...
+    pub tilt_g_tol: f64,
+    /// ... and the head turns slower than this (rad/s).
+    pub tilt_gyro_max: f64,
+    /// Largest tilt correction (rad); a larger measured difference is not gravity (skipped).
+    pub tilt_max: f64,
     /// Corrections whose step reaches this (m) are counted and queued for the log ([`HeadTracker::take_big`]).
     pub big_corr_m: f64,
     /// Fused position: `[alpha, alpha vertical, beta, tracker velocity weight, fast speed]`
-    /// ([`PredictorParams::fuse_alpha`]); alpha 0 = off.
+    /// ([`PredictorParams::fuse_alpha`]); alpha 0 = off. These are the values for a clean tracker ...
     pub fuse: [f64; 5],
+    /// ... lowered automatically for a noisy or blind one ([`PredictorParams::fuse_auto`]).
+    pub fuse_auto: bool,
     /// Position corrections decay with this time constant (s) while the head is at rest, going over to
     /// `tau_pos_s` at `rest_speed` (m/s): a correction slides slowly where it would show and is hidden in
     /// motion (0 = always `tau_pos_s`).
@@ -486,13 +664,21 @@ impl Default for HeadParams {
             resnap_min_m: 0.5,
             learn_bias: true,
             still: StillParams::default(),
+            still_enter_window_ns: 500_000_000,
             still_window_ns: 500_000_000,
-            still_gyro_std: 0.006,
-            still_accel_std: 0.06,
+            still_gyro_std: 0.0035,
+            still_accel_std: 0.03,
             still_exit_gyro_std: 0.012,
             still_exit_accel_std: 0.15,
+            still_bias_tol: 0.005,
+            tilt_tau_s: 1.5,
+            tilt_rate: 0.5f64.to_radians(),
+            tilt_g_tol: 0.3,
+            tilt_gyro_max: 0.15,
+            tilt_max: 5f64.to_radians(),
             big_corr_m: 0.02,
             fuse: [0.15, 0.075, 0.06, 0.5, 0.5],
+            fuse_auto: true,
             tau_rest_s: 0.4,
             rest_speed: 0.3,
         }
@@ -508,7 +694,9 @@ impl HeadParams {
     /// `PIMAX_SLAM_RESNAP` (0/1), `PIMAX_SLAM_STILL` (0 = no still hold/reset, else the reset distance in cm),
     /// `PIMAX_SLAM_STILL_REZERO` (0 = the old drop to 3DoF on a still reset, for A/B only),
     /// `PIMAX_SLAM_FUSE` (0 = off, or `alpha,alpha_y,beta,vel_w,fast_speed`), `PIMAX_SLAM_TAU_REST_MS` (0 = off),
-    /// `PIMAX_SLAM_BIG_CORR_MM` (log threshold) overrides.
+    /// `PIMAX_SLAM_BIG_CORR_MM` (log threshold), `PIMAX_FUSE_AUTO` (0 = fixed fusion weights),
+    /// `PIMAX_HEAD_TILT` (0 = no gravity tilt correction, else its time constant in ms) overrides; for A/B only,
+    /// the defaults are automatic.
     pub fn from_env() -> HeadParams {
         let mut p = HeadParams::default();
         if let Some(v) = env_f64("PIMAX_SLAM_SMOOTH") {
@@ -534,6 +722,12 @@ impl HeadParams {
             }
             None => {}
         }
+        if let Some(v) = env_f64("PIMAX_FUSE_AUTO") {
+            p.fuse_auto = v != 0.0;
+        }
+        if let Some(v) = env_f64("PIMAX_HEAD_TILT") {
+            p.tilt_tau_s = if v <= 0.0 { 0.0 } else { v.clamp(100.0, 60_000.0) / 1000.0 };
+        }
         if let Some(v) = env_f64("PIMAX_SLAM_TAU_REST_MS") {
             p.tau_rest_s = v.clamp(0.0, 5000.0) / 1000.0;
         }
@@ -550,6 +744,35 @@ impl HeadParams {
             }
         }
         p
+    }
+
+    /// One log line naming the automatic output stages (the build-marker strings `PIMAX_HEAD_TILT` and
+    /// `PIMAX_FUSE_AUTO` are in it).
+    pub fn describe(&self) -> String {
+        let tilt = if self.tilt_tau_s > 0.0 {
+            format!(
+                "on (tau {:.1} s, <= {:.2} deg/s)",
+                self.tilt_tau_s,
+                self.tilt_rate.to_degrees()
+            )
+        } else {
+            "off".to_string()
+        };
+        let auto = if self.fuse_auto && self.fuse[0] > 0.0 {
+            format!(
+                "on (velocity weight {:.2}..{:.2})",
+                self.fuse[3] * 0.2,
+                self.fuse[3]
+            )
+        } else {
+            "off".to_string()
+        };
+        format!(
+            "6DoF output: PIMAX_HEAD_TILT gravity tilt correction {tilt}; PIMAX_FUSE_AUTO fusion weights {auto}; \
+             still = desk-quiet ({:.2} deg/s, {:.1} s)",
+            self.still_gyro_std.to_degrees(),
+            self.still_enter_window_ns as f64 / 1e9
+        )
     }
 }
 
@@ -633,6 +856,16 @@ pub struct HeadTracker {
     speed: f64,
     ang_speed: f64,
     still: bool,
+    /// Gravity tilt correction (world frame, horizontal axis: pitch/roll only), applied to the tracked output.
+    tilt: Quat,
+    tilt_ns: Option<i64>,
+    tilt_reset: bool,
+    /// Recent raw tracker head positions (pose time, tracker world) for the still anchor.
+    head_hist: VecDeque<(i64, Vec3)>,
+    /// Tilt correction updates applied / skipped by the gates.
+    pub tilt_updates: u64,
+    /// See `tilt_updates`.
+    pub tilt_skipped: u64,
     /// Correction counters.
     pub corr: CorrStats,
     /// Every correction (offline analysis; `None` = off).
@@ -661,6 +894,7 @@ impl HeadTracker {
                 fuse_beta: p.fuse[2],
                 fuse_vel_w: p.fuse[3],
                 fuse_fast_speed: p.fuse[4],
+                fuse_auto: p.fuse_auto,
                 ..PredictorParams::default()
             }),
             p,
@@ -673,6 +907,12 @@ impl HeadTracker {
             speed: 0.0,
             ang_speed: 0.0,
             still: false,
+            tilt: QUAT_ID,
+            tilt_ns: None,
+            tilt_reset: false,
+            head_hist: VecDeque::new(),
+            tilt_updates: 0,
+            tilt_skipped: 0,
             corr: CorrStats::default(),
             corr_log: None,
             big_q: VecDeque::new(),
@@ -697,13 +937,16 @@ impl HeadTracker {
     /// Supervisor update with the tracker's newest pose (or `None`); repeated timestamps are ignored by both.
     pub fn update(&mut self, now_ns: i64, s: Option<VioSample>) -> TrackOutput {
         let tracking_before = self.sup.state() == TrackState::Tracking;
-        let (g, a) = if self.still {
-            (self.p.still_exit_gyro_std, self.p.still_exit_accel_std)
-        } else {
-            (self.p.still_gyro_std, self.p.still_accel_std)
-        };
-        self.still = self.p.still.hold && self.pred.imu_still(self.p.still_window_ns, g, a);
+        let was_still = self.still;
+        self.still = self.p.still.hold && self.still_test();
         let still = self.still;
+        if still && !was_still {
+            // Entered after `still_enter_window_ns` of quiet: hold the head where it was when that began.
+            let from = self.pred.last_imu_ns().unwrap_or(0) - self.p.still_enter_window_ns;
+            if let Some(&(_, hs)) = self.head_hist.iter().rev().find(|(t, _)| *t <= from) {
+                self.sup.set_still_anchor(hs);
+            }
+        }
         self.sup.set_still(still);
         self.pred.lying = still;
         let ts = s.map(|v| TrackSample {
@@ -712,11 +955,29 @@ impl HeadTracker {
             q: v.q,
             q3dof: v.q3dof,
         });
+        self.sup.set_tilt(self.tilt);
         let o = self.sup.update(now_ns.max(0) as u64, ts);
         if o.events & events::RESET_WANTED != 0 {
             self.pred.clear_vio();
+            self.head_hist.clear();
+            // A fresh tracker world starts gravity aligned (Basalt initialises its attitude from the
+            // accelerometer): its correction starts from zero when it takes over. Until then the held attitude
+            // carries the old correction (and the last tracked output is still evaluated with it).
+            self.tilt_reset = true;
+        }
+        if self.tilt_reset && o.state == TrackState::Tracking {
+            self.tilt_reset = false;
+            self.tilt = QUAT_ID;
+            self.tilt_ns = None;
         }
         if let Some(v) = s {
+            if self.head_hist.back().is_none_or(|(t, _)| v.ts_ns > *t) {
+                self.head_hist
+                    .push_back((v.ts_ns, geom::add(v.pos, qrot(qnorm(v.q), self.head_in_imu))));
+                while self.head_hist.len() > 150 {
+                    self.head_hist.pop_front();
+                }
+            }
             let learn = self.p.learn_bias && tracking_before && o.state == TrackState::Tracking;
             self.pred.fuse_hold = still || !tracking_before;
             self.pred.push_vio(
@@ -729,9 +990,110 @@ impl HeadTracker {
                 },
                 learn,
             );
+            if tracking_before && o.state == TrackState::Tracking {
+                self.out = o.clone();
+                self.update_tilt(&v);
+            }
         }
         self.out = o.clone();
         o
+    }
+
+    /// Still state with hysteresis: entering needs `still_enter_window_ns` of desk-level quiet (and a mean gyro
+    /// at the learned bias), leaving takes a short window above the larger exit limits.
+    fn still_test(&self) -> bool {
+        if self.still {
+            return self.pred.imu_still(
+                self.p.still_window_ns,
+                self.p.still_exit_gyro_std,
+                self.p.still_exit_accel_std,
+            );
+        }
+        let Some(w) = self.pred.imu_window(self.p.still_enter_window_ns) else {
+            return false;
+        };
+        if w.n < 10
+            || !(0..3).all(|k| w.gyro_std[k] < self.p.still_gyro_std && w.accel_std[k] < self.p.still_accel_std)
+        {
+            return false;
+        }
+        // 250 tracker poses = 10 s of learning: before that the bias estimate may still be far off.
+        if self.p.still_bias_tol > 0.0 && self.pred.bias_samples >= 250 {
+            let off = geom::norm(geom::sub(w.gyro_mean, self.pred.gyro_bias));
+            if off > self.p.still_bias_tol {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// One step of the gravity tilt correction at a tracker pose: the accelerometer (last 20 ms, when it reads
+    /// about 1 g and the head turns slowly) says where up is in the IMU frame; the output attitude
+    /// (tilt * world_from_slam * tracker q) puts that somewhere near world up. The difference, a rotation about a
+    /// horizontal axis, is taken in with time constant `tilt_tau_s` and at most `tilt_rate`. Yaw and position
+    /// are not touched.
+    fn update_tilt(&mut self, v: &VioSample) {
+        if self.p.tilt_tau_s <= 0.0 {
+            return;
+        }
+        let dt = match self.tilt_ns {
+            Some(t0) if v.ts_ns > t0 => ((v.ts_ns - t0) as f64 / 1e9).min(0.2),
+            Some(_) => return,
+            None => 0.0,
+        };
+        self.tilt_ns = Some(v.ts_ns);
+        let Some(w) = self.pred.imu_window(20_000_000) else {
+            return;
+        };
+        let an = geom::norm(w.accel_mean);
+        if w.n < 5 || (an - GRAVITY).abs() > self.p.tilt_g_tol || w.gyro_max > self.p.tilt_gyro_max {
+            self.tilt_skipped += 1;
+            return;
+        }
+        let o = qmul(self.tilt, qmul(self.out.world_from_slam.1, qnorm(v.q)));
+        let up_w = qrot(o, geom::scale(w.accel_mean, 1.0 / an));
+        let e = geom::cross(up_w, [0.0, 1.0, 0.0]);
+        let s = geom::norm(e);
+        let ang = s.atan2(up_w[1]);
+        if ang > self.p.tilt_max {
+            self.tilt_skipped += 1;
+            return;
+        }
+        if s < 1e-9 {
+            return;
+        }
+        let step = (ang * (1.0 - (-dt / self.p.tilt_tau_s).exp())).min(self.p.tilt_rate * dt);
+        let next = qnorm(qmul(qexp(geom::scale(e, step / s)), self.tilt));
+        // Keep it a pure swing about a horizontal axis (drop any twist about world up: yaw is the tracker's).
+        let twist = qnorm([0.0, next[1], 0.0, next[3]]);
+        let mut t = qnorm(qmul(next, qconj(twist)));
+        let mag = geom::norm(qlog(t));
+        if mag > self.p.tilt_max {
+            t = qexp(geom::scale(qlog(t), self.p.tilt_max / mag));
+        }
+        self.tilt = t;
+        self.tilt_updates += 1;
+    }
+
+    /// The headset counted as lying still at the last update (desk-quiet; never a worn head).
+    pub fn is_still(&self) -> bool {
+        self.still
+    }
+
+    /// Current gravity tilt correction (world-frame rotation applied to the tracked output).
+    pub fn tilt(&self) -> Quat {
+        self.tilt
+    }
+
+    /// Camera image brightness (auto-exposure trimmed mean 0..255 of the darker pair; `None` = unknown): a
+    /// dark image lowers the fusion weights like a noisy tracker velocity does.
+    pub fn set_scene_mean(&mut self, mean: Option<f64>) {
+        self.pred.scene_dark = match mean {
+            Some(m) if m.is_finite() => {
+                ((SCENE_DARK_FROM - m) / (SCENE_DARK_FROM - SCENE_DARK_FULL)).clamp(0.0, 1.0)
+            }
+            _ => 0.0,
+        };
     }
 
     fn config(&self) -> Config {
@@ -761,9 +1123,9 @@ impl HeadTracker {
                 let v_head = geom::add(st.v, geom::cross(w_slam, r));
                 return Rel {
                     pos: geom::add(qrot(c.w_q, head_slam), c.w_t),
-                    q: qnorm(qmul(c.w_q, st.q)),
+                    q: qnorm(qmul(self.tilt, qmul(c.w_q, st.q))),
                     lin_vel: qrot(c.w_q, v_head),
-                    ang_vel: qrot(c.w_q, w_slam),
+                    ang_vel: qrot(self.tilt, qrot(c.w_q, w_slam)),
                     flags: flags::ALL,
                 };
             }
@@ -801,15 +1163,25 @@ impl HeadTracker {
             let step = want.min(limit * dt);
             geom::scale(c, (n - step) / n)
         };
-        let vl = self.p.v_min + self.p.k_v * self.speed;
-        let wl = self.p.w_min + self.p.k_w * self.ang_speed;
+        let mut vl = self.p.v_min + self.p.k_v * self.speed;
+        let mut wl = self.p.w_min + self.p.k_w * self.ang_speed;
         let mut tau = self.p.tau_pos_s;
+        let mut tau_r = self.p.tau_rot_s;
         if self.p.tau_rest_s > tau && self.p.rest_speed > 0.0 {
             let rest = (1.0 - self.speed / self.p.rest_speed).clamp(0.0, 1.0);
             tau += (self.p.tau_rest_s - tau) * rest;
         }
+        if self.still {
+            // Desk-quiet: nobody wears it (a worn head is never this quiet), so a correction (the hold going
+            // back to where the quiet began, a re-zero takeover) is taken in at once instead of sliding on
+            // into the moment it is picked up again.
+            tau = tau.min(0.05);
+            tau_r = tau_r.min(0.05);
+            vl = vl.max(5.0);
+            wl = wl.max(1.0);
+        }
         self.corr_p = shrink(self.corr_p, tau, vl);
-        self.corr_r = shrink(self.corr_r, self.p.tau_rot_s, wl);
+        self.corr_r = shrink(self.corr_r, tau_r, wl);
     }
 
     /// Head pose at `at_ns`. `rel3dof` = the 3DoF relation for the same time (used while not tracking);
@@ -920,10 +1292,378 @@ mod tests {
             h.still
         };
         let mut h = HeadTracker::new(SupervisorParams::default(), HeadParams::default(), [0.0; 3]);
-        assert!(feed(&mut h, 0, 1000, 0.01), "desk-still enters");
+        assert!(!feed(&mut h, 0, 300, 0.01), "0.3 s of desk quiet is not enough yet");
+        assert!(feed(&mut h, 300, 700, 0.01), "desk quiet enters");
         assert!(feed(&mut h, 1000, 600, 0.1), "0.1 m/s^2 vibration keeps it");
         assert!(!feed(&mut h, 1600, 600, 0.3), "real motion ends it");
-        assert!(!feed(&mut h, 2200, 600, 0.1), "0.1 m/s^2 does not enter");
+        assert!(!feed(&mut h, 2200, 2500, 0.1), "0.1 m/s^2 does not enter");
+    }
+
+    /// Deterministic standard normal (Irwin-Hall from an LCG).
+    fn gauss(seed: &mut u64) -> f64 {
+        let mut s = 0.0;
+        for _ in 0..12 {
+            *seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            s += (*seed >> 11) as f64 / (1u64 << 53) as f64;
+        }
+        s - 6.0
+    }
+
+    /// IMU at rest for `secs` from `t0`: bias + white noise (rad/s, m/s² sd per axis) + a breathing / pulse sway
+    /// (rad/s amplitude), the way a worn head sits.
+    fn rest_trace(t0: f64, secs: f64, noise_g: f64, noise_a: f64, sway: f64, seed: &mut u64) -> Vec<ImuSample> {
+        let bias = [-0.0043, 0.0138, -0.0059]; // the Dream Air's ~0.85 deg/s
+        let n = (secs * 1000.0) as i64;
+        (0..n)
+            .map(|i| {
+                let t = t0 + i as f64 * 0.001;
+                let sw = sway
+                    * ((2.0 * std::f64::consts::PI * 0.25 * t).sin()
+                        + 0.4 * (2.0 * std::f64::consts::PI * 1.2 * t).sin());
+                ImuSample {
+                    ts_ns: (t * 1e9).round() as i64,
+                    gyro: [
+                        bias[0] + sw + noise_g * gauss(seed),
+                        bias[1] + 0.5 * sw + noise_g * gauss(seed),
+                        bias[2] + noise_g * gauss(seed),
+                    ],
+                    accel: [
+                        noise_a * gauss(seed),
+                        GRAVITY + noise_a * gauss(seed),
+                        noise_a * gauss(seed),
+                    ],
+                }
+            })
+            .collect()
+    }
+
+    fn still_after(p: HeadParams, trace: &[ImuSample], bias: Option<Vec3>) -> (bool, u64) {
+        let mut h = HeadTracker::new(SupervisorParams::default(), p, [0.0; 3]);
+        if let Some(b) = bias {
+            h.pred.gyro_bias = b;
+            h.pred.bias_samples = 1000;
+        }
+        let mut entered = 0;
+        for (i, s) in trace.iter().enumerate() {
+            h.push_imu(*s);
+            if i % 11 == 0 {
+                h.update(s.ts_ns, None);
+                entered += h.still as u64;
+            }
+        }
+        (h.still, entered)
+    }
+
+    #[test]
+    fn worn_head_at_rest_never_counts_as_still_a_desk_does() {
+        let mut seed = 7;
+        let old = HeadParams {
+            still_enter_window_ns: 500_000_000,
+            still_gyro_std: 0.006,
+            still_accel_std: 0.06,
+            still_bias_tol: 0.0,
+            ..HeadParams::default()
+        };
+        // Worn, sitting still: 0.3 deg/s gyro std (the quietest worn 0.5 s windows of the 18:18 session),
+        // 0.02 m/s^2. (Once in, the exit limit 0.69 deg/s would keep it: the entry has to be right.)
+        let worn = rest_trace(0.0, 8.0, 0.0053, 0.02, 0.0, &mut seed);
+        let (_, n_old) = still_after(old.clone(), &worn, None);
+        let (st, n_new) = still_after(HeadParams::default(), &worn, None);
+        assert!(n_old > 0, "the old 0.34 deg/s gate took a worn head for still ({n_old} {n_new})");
+        let _ = &old;
+        assert!(!st && n_new == 0, "worn rest entered the still state {n_new} times");
+        // On the desk: bare sensor noise (0.057 deg/s, 0.012 m/s^2) -> still after 0.5 s.
+        let desk = rest_trace(0.0, 4.0, 0.001, 0.012, 0.0, &mut seed);
+        let (st, _) = still_after(HeadParams::default(), &desk[..400], None);
+        assert!(!st, "not before 0.5 s");
+        let (st, _) = still_after(HeadParams::default(), &desk, None);
+        assert!(st, "desk enters");
+        // Flat but turning slowly (0.4 deg/s over the bias): not still once the bias is known.
+        let mut turn = desk.clone();
+        for s in turn.iter_mut() {
+            s.gyro[1] += 0.007;
+        }
+        let bias = [-0.0043, 0.0138, -0.0059];
+        assert!(!still_after(HeadParams::default(), &turn, Some(bias)).0, "slow steady turn");
+        assert!(still_after(HeadParams::default(), &desk, Some(bias)).0, "desk with a known bias");
+    }
+
+    /// Head in one place, pitched down 0.2 rad; `moving`: slowly looking around in yaw (0.05 rad/s plus a
+    /// 0.06 rad/s wobble, so it is not still), else lying still. The tracker attitude carries the tilt error and
+    /// world offset `err(t, reset_seen)` gives. Per-query outputs and the tilt after each tracker pose.
+    struct TiltRun {
+        out: Vec<(f64, Rel)>,
+        tilts: Vec<Quat>,
+        h: HeadTracker,
+    }
+
+    fn tilt_true_q(t: f64, moving: bool) -> Quat {
+        let yaw = if moving { 0.05 * t + 0.02 * (3.0 * t).sin() } else { 0.0 };
+        qmul(qyaw(yaw), [(0.1f64).sin(), 0.0, 0.0, (0.1f64).cos()])
+    }
+
+    fn tilt_yaw_rate(t: f64, moving: bool) -> f64 {
+        if moving {
+            0.05 + 0.06 * (3.0 * t).cos()
+        } else {
+            0.0
+        }
+    }
+
+    fn run_tilt(
+        p: HeadParams,
+        secs: f64,
+        moving: bool,
+        err: &mut dyn FnMut(f64, bool) -> (Quat, Vec3),
+    ) -> TiltRun {
+        let sp = SupervisorParams {
+            acquire_poses: 3,
+            ..Default::default()
+        };
+        let mut h = HeadTracker::new(sp, p, [0.0, -0.02, 0.07]);
+        let mut seed = 11u64;
+        let (mut out, mut tilts) = (Vec::new(), Vec::new());
+        let mut reset = false;
+        let mut i = 0i64;
+        while (i as f64) * 0.001 < secs {
+            let t = i as f64 * 0.001;
+            let now = i * 1_000_000;
+            let q = tilt_true_q(t, moving);
+            let wr = [0.0, tilt_yaw_rate(t, moving), 0.0];
+            h.push_imu(ImuSample {
+                ts_ns: now,
+                gyro: geom::add(qrot(qconj(q), wr), [0.0004 * gauss(&mut seed), 0.0, 0.0]),
+                accel: geom::add(qrot(qconj(q), [0.0, GRAVITY, 0.0]), [0.01 * gauss(&mut seed), 0.0, 0.0]),
+            });
+            let mut vio = None;
+            if i % 40 == 0 && i > 0 {
+                let (e, off) = err(t, reset);
+                vio = Some(VioSample {
+                    ts_ns: now,
+                    pos: off,
+                    q: qmul(e, q),
+                    vel: [0.0; 3],
+                    q3dof: q,
+                });
+            }
+            let o = h.update(now, vio);
+            if o.events & events::RESET_WANTED != 0 {
+                reset = true;
+            }
+            if vio.is_some() {
+                tilts.push(h.tilt());
+            }
+            if i % 11 == 0 {
+                let mut r = rel3(q);
+                r.ang_vel = wr;
+                out.push((t, h.head(now, now, &r)));
+            }
+            i += 1;
+        }
+        TiltRun { out, tilts, h }
+    }
+
+    /// Angle (deg) between the output's up and the true up.
+    fn up_err_deg(t: f64, r: &Rel, moving: bool) -> f64 {
+        let up_true = qrot(qconj(tilt_true_q(t, moving)), [0.0, 1.0, 0.0]);
+        let up_out = qrot(qconj(r.q), [0.0, 1.0, 0.0]);
+        geom::dot(up_true, up_out).clamp(-1.0, 1.0).acos().to_degrees()
+    }
+
+    #[test]
+    fn tilted_tracker_attitude_converges_to_gravity_yaw_untouched_rate_limited() {
+        // 1.5 deg pitch + 0.8 deg roll of tracker attitude error (what Basalt showed in dark runs).
+        let err = qmul(
+            qexp([1.5f64.to_radians(), 0.0, 0.0]),
+            qexp([0.0, 0.0, 0.8f64.to_radians()]),
+        );
+        let mut e1 = |_: f64, _: bool| (err, [0.3, 1.6, -0.2]);
+        let on = run_tilt(HeadParams::default(), 12.0, true, &mut e1);
+        let mut e2 = |_: f64, _: bool| (err, [0.3, 1.6, -0.2]);
+        let off = run_tilt(
+            HeadParams {
+                tilt_tau_s: 0.0,
+                ..HeadParams::default()
+            },
+            12.0,
+            true,
+            &mut e2,
+        );
+        let tracked = |r: &Rel| r.flags & flags::POSITION_TRACKED != 0;
+        let t_first = on.out.iter().find(|(_, r)| tracked(r)).unwrap().0;
+        let (t_last, last) = *on.out.last().unwrap();
+        // The acquisition blends from the 3DoF attitude: compare at 1 s, when that has decayed.
+        let (t1, r1) = *off.out.iter().find(|(t, r)| *t > t_first + 1.0 && tracked(r)).unwrap();
+        let e_first = up_err_deg(t1, &r1, true);
+        let e_last = up_err_deg(t_last, &last, true);
+        let e_off = up_err_deg(t_last, &off.out.last().unwrap().1, true);
+        eprintln!(
+            "tilt error: start {e_first:.3} deg, after 12 s {e_last:.3} deg (no correction {e_off:.3} deg), {} updates, {} skipped",
+            on.h.tilt_updates, on.h.tilt_skipped
+        );
+        assert_eq!(on.h.sup.resets, 0);
+        assert!(e_first > 1.4 && e_off > 1.4, "{e_first} {e_off}");
+        assert!(e_last < 0.1, "converged to {e_last}");
+        // Yaw and position are the tracker's.
+        for ((t, a), (_, b)) in on.out.iter().zip(off.out.iter()) {
+            if !tracked(a) {
+                continue;
+            }
+            // The world-frame difference is a rotation about a horizontal axis: no turn about world up.
+            let d = qlog(qmul(a.q, qconj(b.q)));
+            assert!(d[1].abs().to_degrees() < 0.01, "yaw moved {} deg at {t}", d[1].to_degrees());
+            assert!(geom::norm(geom::sub(a.pos, b.pos)) < 1e-9, "position moved at {t}");
+        }
+        // Never faster than 0.5 deg/s: <= 0.02 deg per 40 ms pose.
+        let max_step = on
+            .tilts
+            .windows(2)
+            .map(|w| qangle_deg(qmul(w[1], qconj(w[0]))))
+            .fold(0.0, f64::max);
+        assert!(max_step <= 0.0201, "tilt step {max_step} deg per pose");
+        assert!(on.h.tilt_updates > 200);
+        // Output frame to frame: no jump beyond the true motion.
+        for w in on.out.windows(2) {
+            let ((t0, a), (t1, b)) = (&w[0], &w[1]);
+            if *t0 > t_first + 0.5 && tracked(a) {
+                let truth = qangle_deg(qmul(qconj(tilt_true_q(*t0, true)), tilt_true_q(*t1, true)));
+                let extra = qangle_deg(qmul(qconj(a.q), b.q)) - truth;
+                assert!(extra < 0.03, "jump {extra} deg at {t0}");
+            }
+        }
+    }
+
+    #[test]
+    fn tilt_correction_is_held_through_a_still_rezero() {
+        // Tracker tilted 1.2 deg and drifting (no landmarks) while the headset lies still: it is re-zeroed; the
+        // fresh tracker world starts gravity aligned. The output attitude must not swing at either end.
+        let err = qexp([1.2f64.to_radians(), 0.0, 0.0]);
+        let mut e = |t: f64, reset: bool| {
+            if reset {
+                (QUAT_ID, [5.0, 0.0, 5.0])
+            } else {
+                let d = if t > 8.0 { 0.5 * 0.07 * (t - 8.0) * (t - 8.0) } else { 0.0 };
+                (err, [d, 0.0, 0.0])
+            }
+        };
+        let r = run_tilt(HeadParams::default(), 14.0, false, &mut e);
+        assert_eq!(r.h.sup.still_resets, 1, "one re-zero");
+        assert_eq!(r.h.sup.losses, 0);
+        let (t_last, last) = *r.out.last().unwrap();
+        let e_last = up_err_deg(t_last, &last, false);
+        let mut max_jump: f64 = 0.0;
+        for w in r.out.windows(2) {
+            let ((t0, a), (t1, b)) = (&w[0], &w[1]);
+            if *t0 < 2.0 {
+                continue;
+            }
+            let truth = qangle_deg(qmul(qconj(tilt_true_q(*t0, false)), tilt_true_q(*t1, false)));
+            max_jump = max_jump.max(qangle_deg(qmul(qconj(a.q), b.q)) - truth);
+        }
+        eprintln!("re-zero with tilt: max extra rotation per frame {max_jump:.4} deg, end tilt error {e_last:.3} deg");
+        assert!(max_jump < 0.05, "attitude jump {max_jump} deg");
+        assert!(e_last < 0.15, "end tilt error {e_last}");
+    }
+
+    #[test]
+    fn noisy_tracker_velocity_lowers_the_fusion_weights() {
+        let p = HeadParams::default();
+        let mk = || {
+            Predictor::new(PredictorParams {
+                fuse_alpha: p.fuse[0],
+                fuse_alpha_y: p.fuse[1],
+                fuse_beta: p.fuse[2],
+                fuse_vel_w: p.fuse[3],
+                fuse_fast_speed: p.fuse[4],
+                fuse_auto: true,
+                ..PredictorParams::default()
+            })
+        };
+        let run = |pr: &mut Predictor, vel_noise: f64| {
+            let mut seed = 3u64;
+            let mut next_vio = 0.1;
+            let mut t = 0.0;
+            while t < 10.0 {
+                pr.push_imu(imu_at(t, [0.0; 3]));
+                if t >= next_vio {
+                    let (p, q, v, _, _) = truth(t);
+                    let n = [gauss(&mut seed), gauss(&mut seed), gauss(&mut seed)];
+                    pr.push_vio(
+                        BodyState {
+                            ts_ns: (t * 1e9).round() as i64,
+                            p,
+                            q,
+                            v: geom::add(v, geom::scale(n, vel_noise)),
+                        },
+                        false,
+                    );
+                    next_vio += 0.04;
+                }
+                t += 0.001;
+            }
+        };
+        let mut clean = mk();
+        run(&mut clean, 0.01);
+        let mut noisy = mk();
+        run(&mut noisy, 0.25);
+        let (wc, wn) = (clean.fuse_weights(0.0), noisy.fuse_weights(0.0));
+        eprintln!(
+            "velocity residual rms clean {:.3} noisy {:.3} m/s -> weights {wc:?} / {wn:?}",
+            clean.vel_noise_ms.sqrt(),
+            noisy.vel_noise_ms.sqrt()
+        );
+        assert!(clean.noise_level() < 0.1, "clean level {}", clean.noise_level());
+        assert!((wc[3] - 0.5).abs() < 0.05 && (wc[0] - 0.15).abs() < 0.01);
+        assert!(noisy.noise_level() > 0.9, "noisy level {}", noisy.noise_level());
+        assert!((wn[3] - 0.1).abs() < 0.02 && wn[0] < 0.08 && wn[4] == 1.0);
+        // In fast motion the position pull stays (no lag), only the velocity weight is lowered.
+        assert!((noisy.fuse_weights(1.0)[0] - 0.15).abs() < 1e-9);
+        // A dark image lowers them as well, even with a clean velocity.
+        let mut h = HeadTracker::new(SupervisorParams::default(), HeadParams::default(), [0.0; 3]);
+        h.pred = clean.clone();
+        h.set_scene_mean(Some(40.0));
+        assert!(h.pred.fuse_weights(0.0)[3] > 0.45);
+        h.set_scene_mean(Some(12.0));
+        assert!((h.pred.fuse_weights(0.0)[3] - 0.1).abs() < 0.01);
+        h.set_scene_mean(None);
+        assert!(h.pred.fuse_weights(0.0)[3] > 0.45);
+        // Auto off = the configured weights whatever the noise.
+        noisy.p.fuse_auto = false;
+        assert_eq!(noisy.fuse_weights(0.0)[3], 0.5);
+    }
+
+    #[test]
+    fn noisy_tracker_velocity_jitters_less_with_auto_weights() {
+        // The test walk (0.3 m/s) counted as slow motion (fast speed 2 m/s): where auto lowers the weights.
+        let head = [0.0, -0.02, 0.07];
+        let mut res = Vec::new();
+        for auto in [false, true] {
+            let mut sim = Sim::new(HeadParams {
+                fuse_auto: auto,
+                fuse: [0.15, 0.075, 0.06, 0.5, 2.0],
+                ..Default::default()
+            });
+            let mut seed = 5u64;
+            let mut vio = |t: f64| {
+                let mut s = slam_of(t, 0.4, [0.5, 0.0, -1.0]);
+                for k in 0..3 {
+                    s.2[k] += 0.3 * gauss(&mut seed);
+                }
+                Some(s)
+            };
+            let mut out = Vec::new();
+            sim.run(0.0, 10.0, 0.002, &mut vio, &mut out);
+            res.push(errors(&out, 2.0, head));
+        }
+        eprintln!("vel noise 0.3 m/s: fixed (max err, jitter) {:?}, auto {:?}", res[0], res[1]);
+        assert!(res[1].2 < res[0].2, "jitter fixed {} auto {}", res[0].2, res[1].2);
+    }
+
+    #[test]
+    fn describe_names_the_build_markers() {
+        let d = HeadParams::default().describe();
+        assert!(d.contains("PIMAX_HEAD_TILT") && d.contains("PIMAX_FUSE_AUTO"), "{d}");
+        assert!(d.contains("on (tau 1.5 s") && d.contains("0.20 deg/s, 0.5 s"), "{d}");
     }
 
     #[test]
@@ -1365,5 +2105,255 @@ mod tests {
             assert!(geom::norm(geom::sub(b.pos, a.pos)) < 0.012, "jump at {t0}");
         }
         let _ = head;
+    }
+
+    /// Old output behaviour (before the gravity tilt correction, the automatic fusion weights and the long
+    /// still entry) for A/B replays.
+    fn params_before() -> HeadParams {
+        HeadParams {
+            tilt_tau_s: 0.0,
+            fuse_auto: false,
+            still_enter_window_ns: 500_000_000,
+            still_gyro_std: 0.006,
+            still_accel_std: 0.06,
+            still_bias_tol: 0.0,
+            ..HeadParams::default()
+        }
+    }
+
+    /// Replay a session's `head-imu.csv` (`PIMAX_HEAD_IMU_LOG` format) through the output, before and after:
+    /// `PIMAX_REPLAY_HEAD_IMU=<file> cargo test --lib -p pimax-cam replay_head_imu_log -- --ignored --nocapture`.
+    /// The log has no tracker velocity: a central difference of the tracker positions stands in for it, and a
+    /// re-zero cannot restart the tracker, so the same world carries on. CPU only.
+    #[test]
+    #[ignore]
+    fn replay_head_imu_log() {
+        let Ok(path) = std::env::var("PIMAX_REPLAY_HEAD_IMU") else {
+            eprintln!("PIMAX_REPLAY_HEAD_IMU not set");
+            return;
+        };
+        let text = std::fs::read_to_string(&path).expect("read log");
+        enum L {
+            I(ImuSample),
+            V(i64, Vec3, Quat),
+        }
+        let mut lines = Vec::new();
+        for l in text.lines() {
+            let f: Vec<&str> = l.split(',').collect();
+            let num = |i: usize| f.get(i).and_then(|x| x.trim().parse::<f64>().ok());
+            match f.first() {
+                Some(&"I") if f.len() == 8 => {
+                    let (Some(ts), Some(ax), Some(ay), Some(az), Some(gx), Some(gy), Some(gz)) =
+                        (f[1].parse::<i64>().ok(), num(2), num(3), num(4), num(5), num(6), num(7))
+                    else {
+                        continue;
+                    };
+                    lines.push(L::I(ImuSample {
+                        ts_ns: ts,
+                        accel: [ax, ay, az],
+                        gyro: [gx, gy, gz],
+                    }));
+                }
+                Some(&"V") if f.len() == 9 => {
+                    let v: Vec<f64> = (2..9).filter_map(num).collect();
+                    if let (Ok(ts), 7) = (f[1].parse::<i64>(), v.len()) {
+                        lines.push(L::V(ts, [v[0], v[1], v[2]], [v[3], v[4], v[5], v[6]]));
+                    }
+                }
+                _ => {}
+            }
+        }
+        let vios: Vec<(i64, Vec3)> = lines
+            .iter()
+            .filter_map(|l| match l {
+                L::V(t, p, _) => Some((*t, *p)),
+                _ => None,
+            })
+            .collect();
+        let vel_at = |k: usize| -> Vec3 {
+            if k == 0 || k + 1 >= vios.len() {
+                return [0.0; 3];
+            }
+            let dt = (vios[k + 1].0 - vios[k - 1].0) as f64 / 1e9;
+            if !(0.01..0.15).contains(&dt) {
+                return [0.0; 3];
+            }
+            geom::scale(geom::sub(vios[k + 1].1, vios[k - 1].1), 1.0 / dt)
+        };
+        let pct = |v: &mut Vec<f64>, q: f64| -> f64 {
+            if v.is_empty() {
+                return f64::NAN;
+            }
+            v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            v[((v.len() - 1) as f64 * q).round() as usize]
+        };
+        let head_in_imu = [0.049, -0.015, 0.030];
+        let variants = [
+            ("before", params_before()),
+            ("after", HeadParams::default()),
+            (
+                "after, fixed weights",
+                HeadParams {
+                    fuse_auto: false,
+                    ..HeadParams::default()
+                },
+            ),
+            (
+                "after, no tilt",
+                HeadParams {
+                    tilt_tau_s: 0.0,
+                    ..HeadParams::default()
+                },
+            ),
+            (
+                "after, still entry over 2 s",
+                HeadParams {
+                    still_enter_window_ns: 2_000_000_000,
+                    ..HeadParams::default()
+                },
+            ),
+            (
+                "before + new still gate only",
+                HeadParams {
+                    tilt_tau_s: 0.0,
+                    fuse_auto: false,
+                    ..HeadParams::default()
+                },
+            ),
+        ];
+        for (name, p) in variants {
+            let mut h = HeadTracker::new(SupervisorParams::default(), p, head_in_imu);
+            let (mut now, mut k, mut n_imu) = (0i64, 0usize, 0u64);
+            // The 3DoF attitude: the gyro integrated from the first tracker attitude (the supervisor checks the
+            // tracker's rotation against it, as live with Monado's 3DoF filter).
+            let mut q3: Option<Quat> = None;
+            let mut q3_hist: VecDeque<(i64, Quat)> = VecDeque::new();
+            let mut last_imu: Option<i64> = None;
+            let (mut tilt_err, mut dev_fast, mut dev_all) = (Vec::new(), Vec::new(), Vec::new());
+            let (mut still_on, mut still_entries, mut still_ticks, mut ticks) = (false, 0u64, 0u64, 0u64);
+            let mut w_max = Vec::new();
+            for l in &lines {
+                match l {
+                    L::I(s) => {
+                        h.push_imu(*s);
+                        if let (Some(q), Some(t0)) = (q3, last_imu) {
+                            let dt = ((s.ts_ns - t0) as f64 / 1e9).clamp(0.0, 0.01);
+                            let w = geom::sub(s.gyro, h.pred.gyro_bias);
+                            let qn = qnorm(qmul(q, qexp(geom::scale(w, dt))));
+                            q3 = Some(qn);
+                            q3_hist.push_back((s.ts_ns, qn));
+                            if q3_hist.len() > 500 {
+                                q3_hist.pop_front();
+                            }
+                        }
+                        last_imu = Some(s.ts_ns);
+                        now = now.max(s.ts_ns);
+                        n_imu += 1;
+                        if n_imu % 11 == 0 {
+                            h.update(now, None);
+                            ticks += 1;
+                            if h.still {
+                                still_ticks += 1;
+                                if !still_on {
+                                    still_entries += 1;
+                                }
+                            }
+                            still_on = h.still;
+                            let r = h.head(now, now, &rel3(q3.unwrap_or(QUAT_ID)));
+                            if h.output().state == TrackState::Tracking {
+                                if let Some(w) = h.pred.imu_window(200_000_000) {
+                                    let an = geom::norm(w.accel_mean);
+                                    if w.gyro_max < 0.05 && (an - GRAVITY).abs() < 0.3 {
+                                        let up = qrot(qconj(r.q), [0.0, 1.0, 0.0]);
+                                        let c = geom::dot(up, geom::scale(w.accel_mean, 1.0 / an));
+                                        tilt_err.push(c.clamp(-1.0, 1.0).acos().to_degrees());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    L::V(ts, pos, q) => {
+                        if q3.is_none() {
+                            q3 = Some(qnorm(*q));
+                        }
+                        let q3_at = q3_hist
+                            .iter()
+                            .rev()
+                            .find(|(t, _)| *t <= *ts)
+                            .map(|(_, q)| *q)
+                            .or(q3)
+                            .unwrap();
+                        let v = VioSample {
+                            ts_ns: *ts,
+                            pos: *pos,
+                            q: *q,
+                            vel: vel_at(k),
+                            q3dof: q3_at,
+                        };
+                        k += 1;
+                        h.update(now, Some(v));
+                        if h.output().state == TrackState::Tracking {
+                            let r = h.head(now, *ts, &rel3(q3_at));
+                            let d = geom::norm(geom::sub(r.pos, h.head_world(*pos, *q)));
+                            dev_all.push(d * 1000.0);
+                            if geom::norm(v.vel) > 0.5 {
+                                dev_fast.push(d * 1000.0);
+                            }
+                            w_max.push(h.pred.fuse_weights(0.0)[3]);
+                        }
+                    }
+                }
+            }
+            let t0 = lines
+                .iter()
+                .find_map(|l| match l {
+                    L::I(s) => Some(s.ts_ns),
+                    _ => None,
+                })
+                .unwrap_or(0);
+            while let Some(e) = h.take_big() {
+                eprintln!(
+                    "  {name}: correction step {:.0} mm at {:.2} s (speed {:.2} m/s, {})",
+                    geom::norm(e.step) * 1000.0,
+                    (e.ts_ns - t0) as f64 / 1e9,
+                    e.speed,
+                    if e.pose_only { "tracker pose" } else { "supervisor" }
+                );
+            }
+            let c = h.corr;
+            eprintln!(
+                "{name}: {} IMU, {} tracker poses; tilt err vs gravity (still, deg) p50 {:.2} p90 {:.2} max {:.2} (n {}); \
+                 tilt updates {} skipped {}; still entries {still_entries}, still {:.1} % of the time, still \
+                 re-zeros {}; corrections blended {} snapped {} >=20 mm {} (vertical {}), max {:.0} mm / {:.2} deg; \
+                 |output - tracker| all p50 {:.1} p90 {:.1} mm, at > 0.5 m/s p50 {:.1} p90 {:.1} max {:.1} mm (n {}); \
+                 velocity weight p10 {:.2} p50 {:.2} p90 {:.2}; velocity residual rms {:.3} m/s",
+                n_imu,
+                vios.len(),
+                pct(&mut tilt_err.clone(), 0.5),
+                pct(&mut tilt_err.clone(), 0.9),
+                pct(&mut tilt_err.clone(), 1.0),
+                tilt_err.len(),
+                h.tilt_updates,
+                h.tilt_skipped,
+                100.0 * still_ticks as f64 / ticks.max(1) as f64,
+                h.sup.still_resets,
+                c.blended,
+                c.snapped,
+                c.big,
+                c.big_vertical,
+                c.max_pos * 1000.0,
+                c.max_rot.to_degrees(),
+                pct(&mut dev_all.clone(), 0.5),
+                pct(&mut dev_all.clone(), 0.9),
+                pct(&mut dev_fast.clone(), 0.5),
+                pct(&mut dev_fast.clone(), 0.9),
+                pct(&mut dev_fast.clone(), 1.0),
+                dev_fast.len(),
+                pct(&mut w_max.clone(), 0.1),
+                pct(&mut w_max.clone(), 0.5),
+                pct(&mut w_max.clone(), 0.9),
+                h.pred.vel_noise_ms.sqrt(),
+            );
+        }
     }
 }

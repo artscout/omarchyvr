@@ -356,8 +356,11 @@ pub unsafe extern "C" fn pimax_cam_track_create(
             // SAFETY: 3 readable doubles.
             unsafe { std::ptr::copy_nonoverlapping(head_in_imu, h.as_mut_ptr(), 3) };
         }
+        let hp = HeadParams::from_env();
+        // Once per session, on stderr (Monado's log): names the automatic output stages (build markers).
+        eprintln!("{}", hp.describe());
         Ok(Box::into_raw(Box::new(CTrack {
-            h: HeadTracker::new(p, HeadParams::from_env(), h),
+            h: HeadTracker::new(p, hp, h),
             log: crate::imulog::HeadImuLog::from_env(),
             log_vio_ts: i64::MIN,
         })))
@@ -488,6 +491,7 @@ pub unsafe extern "C" fn pimax_cam_track_update_vio(
             q3dof: s.q3dof,
         });
         t.log_vio(&s);
+        t.h.set_scene_mean(crate::headpose::scene::latest(1000));
         let o = t.h.update(now_ns as i64, s);
         if !out.is_null() {
             // SAFETY: writable per contract.

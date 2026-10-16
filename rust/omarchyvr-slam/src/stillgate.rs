@@ -390,14 +390,8 @@ pub fn run(imu: &[ImuRow], vio: &[PoseRow], p: &GateParams) -> Result<GateResult
         if o.events & events::LOST != 0 {
             res.losses += 1;
         }
-        // Same stillness test and hysteresis as the driver.
-        let hp = &h.p;
-        let (g, a) = if still {
-            (hp.still_exit_gyro_std, hp.still_exit_accel_std)
-        } else {
-            (hp.still_gyro_std, hp.still_accel_std)
-        };
-        let now_still = h.pred.imu_still(hp.still_window_ns, g, a);
+        // The driver's own stillness decision (desk-quiet entry, hysteresis), from the update above.
+        let now_still = h.is_still();
         let rel3 = Rel {
             pos: [0.0; 3],
             q: fus.q,
@@ -700,10 +694,15 @@ mod tests {
     #[test]
     fn lying_still_rezero_holds_the_output_without_dropouts() {
         let (imu, vio) = lying(20.0);
-        let mut old = GateParams::default();
+        // This synthetic tracker comes back from every reset with the same 1.5 deg tilt error (Basalt starts
+        // gravity aligned), so the gravity tilt correction would move the output here: off, to look at the
+        // re-zero alone (headpose tests cover the tilt correction through a re-zero).
+        let mut new = GateParams::default();
+        new.head.tilt_tau_s = 0.0;
+        let mut old = new.clone();
         old.head.still.rezero = false;
         let a = run(&imu, &vio, &old).unwrap();
-        let b = run(&imu, &vio, &GateParams::default()).unwrap();
+        let b = run(&imu, &vio, &new).unwrap();
         eprintln!("{}\n{}", summary("old", &a), summary("rezero", &b));
         // The drifting tracker is still caught and reset in both.
         assert!(
