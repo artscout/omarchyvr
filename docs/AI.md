@@ -681,13 +681,13 @@ agent between two commands (no restart; a toast "AI: This PC, 2 stages" and the 
   component whose rule is "Work and Local models On": Play / SteamVR / games never start them, and a Work session that
   switches to Play stops them (`omarchyvr-ai down`). The switch is `voice_local_models` in ai.toml (omarchyvrd reads it each
   round; it wins over omarchyvrd.toml's `ai_server`). Off and no online choice: voice has no AI agent (offline commands).
-- **App: Local AI** (navigation, next to Ready): the switch **Local models On / Off**; **How much of the PC the AI may
+- **App: AI page, section "Local model on this PC"** (the Local AI page was merged into the AI page 2026-10-16; Max's brain card at the top switches between Claude (CLI), the local model and Online): the switch **Local models On / Off**; **How much of the PC the AI may
   use**: Low / Medium (recommended) / High, each with its download, RAM, video memory, speed and the audit's result;
   **Advanced: choose models**: Lara on / off (two stages or the model alone), the router and action model pickers
   (size, memory, result, licence, the recommended one marked), **Video memory for AI** (Auto / up to 4, 6, 8, 12 GB);
   **State**: Download (and tune), Start / Test (each stage's time, the VRAM in use) / Stop, Lara's and the model's
-  state; **Online (Jev) instead**: a separate switch. Screenshot `local-ai.png`. The AI page's "AI runs on" card
-  shows the current choice and opens this page.
+  state; **Online** is the third choice of Max's brain (Online providers section). Screenshot `ai-local.png`. The Claude (CLI)
+  card (status, Haiku / Sonnet, Test, "Start Claude ahead" = `voice_ai_prewarm`) is in docs/GUI.md (AI).
 - **WayVR, Work desk: the watch** (left wrist): "Local AI: On" (press: On / Off, `omarchyvr-voice ai-mode local-toggle`)
   and, while on, the preset button "Medium" (press: Low -> Medium -> High, `ai-mode preset-next`). Hidden unless Pimax
   voice shows it; `omarchyvr-voice act` sets the texts over `wayvrctl panel-modify watch ...` at start and on every change;
@@ -948,4 +948,96 @@ Parakeet barely touches.
   port and API are unchanged.
 - Not kept: a whisper CPU server on port 8082. It would be slower and less accurate than Parakeet, so no second
   engine is started on the processor.
+
+## 20. Claude through the CLI (default) (2026-10-16)
+
+The default voice AI is **Claude (CLI)**: voice control runs the Claude Code program you already have installed
+(`claude`, logged in with your own account). There is no API key, no URL and nothing to paste. `[providers.claude-cli]`
+(`kind = "claude-cli"`, `model = "haiku"`, optional `command = "/path/to/claude"`) is built in: with no `ai.toml`, or a
+file that chose no voice provider, voice uses it, with `voice_ai = "fallback"` (the offline matcher first; Claude for
+what it does not understand). A file that already chose a provider (`[use] voice` or `default`) keeps that choice.
+Models: `haiku` (default, fast) or `sonnet` (CLI aliases or full ids). Autofix still needs a provider with a key.
+
+**What runs.** One fresh process per command, in the empty folder `~/.cache/omarchyvr/claude-cli`:
+`claude -p --model <m> --tools "" --setting-sources "" --strict-mcp-config --no-session-persistence
+--disable-slash-commands --system-prompt <rules + one-line action list> --json-schema <answer> --effort low` with the
+message on stdin as one stream-json line. Never `--bare` (it would ignore your login), no token is passed or read: the CLI
+logs in by itself. The new context every time means no memory of earlier commands except the three "recent" lines in the
+state; nothing is saved by the CLI (no session file).
+
+**Prewarm.** Starting the CLI takes about 0.9 s (measured). One process is kept started and waiting
+(`--input-format stream-json`: it makes no API call and prints nothing until its message arrives, and it exits by itself
+if the voice program dies). A command writes its one message, closes stdin and reads until the `result` event; the next
+waiting process is started right then. Each process serves exactly one command. Off with `voice_ai_prewarm = false`.
+Measured with `omarchyvr-voice claude-live` (haiku): 2.0 s per command with prewarm, 2.2-3.0 s without (API time 1.2-1.9 s).
+
+**The state loop.** The answer is one compact object, `{"calls":[{"name","args"}], "done", "expect", "say"}` (not one tool
+per intent; the names are an enum). The user message is the request plus the STARTING STATE: the VR screens
+(`1 main=ws1, 2 left=ws2, ...`), the session, `this` (the window looked at, else the focused one), the gaze, and every
+window as `w3 firefox "title (40 chars)" ws2 *` (the model sees `w1..wN`, never addresses), and the last three commands.
+Rust checks every call with the same code as every provider (slots, window ids from the state, safety levels,
+`voice_confirm`, "careful" waits for "yes", "never" is refused). If `done` is false (a goal whose next step depends on
+the first), or a read-only tool (list/get) was called, the state is collected again and a NEW process gets the request,
+the new state and the lines "already done: step -> result", up to 10 rounds and 30 s ("Max, cancel" ends it between
+rounds). A failed step gets one recovery round; the same failed call is never run twice. After `done` the state is
+collected once more and `ai.log` records `expect` next to how many of its words the final state shows (`verify.found`);
+that is a log, not another loop. `say` is spoken as a toast ("Max: ...") for a question or when nothing can be done.
+
+**Failures.** Not installed ("Claude CLI not found"), not logged in ("Claude CLI is not logged in"), offline ("no
+internet"), over the limit, a timeout (8 s per request) or an unreadable answer: the process is killed (by its pid) and,
+before anything ran, the local model answers when its server is up, else the offline matcher (the toast says why: `AI:
+Claude CLI is not logged in`). Claude CLI is a remote provider (needs the internet).
+
+**Privacy.** What leaves this PC is the request words plus the compact state (class, a title cut to 40 characters and the
+workspace of up to 24 windows, screens, the session line, the gaze window, the last 3 commands). Titles are left out with
+`strip_titles = true`. Everything else (files, settings, MCP servers, skills, project folders) is not read by the run.
+
+**For the app** (`omarchyvr_config`): `ai::Kind::ClaudeCli` (`"claude-cli"`, `Kind::ALL` has 4 entries, `needs_key()`
+false, `default_base()` none); `ai::Provider { command: Option<String>, .. }` + `Provider::claude_cli()` (the built-in one)
++ `provider.cli_command()`; `ai::CLAUDE_CLI_MODELS` (haiku, sonnet), `ai::CLAUDE_CLI_NAME`; `AiConfig::provider_for(Voice)`
+is the Claude CLI when nothing is chosen; `AiConfig::claude_cli_provider()`; `online_provider()` always has an answer;
+`runs_on()` is Online for it. `claude_cli::claude_cli_status(cmd) -> ClaudeCliStatus {NotFound, Found{path, version},
+Broken{path, error}}` (`claude --version`, 2 s, `.plain()`), `claude_cli::claude_cli_test(cmd, model, timeout) ->
+Result<ClaudeCliTest, String>` (one real request; the error is plain words; `.plain()` for the OK line), and
+`claude_cli::find_command`.
+
+### Fewer tokens (all providers)
+
+`omarchyvr-voice ai-size` prints what each request kind sends for a typical state (3 screens, 8 windows, the gaze;
+~3.5 characters per token). Before and after this change:
+
+| part | before | after |
+|---|---|---|
+| tool-calling system prompt | 1511 chars (~430 tok) | 1144 chars (~330 tok) |
+| 148 tool specs (JSON, tool-calling styles) | 37515 chars (~10700 tok) | 25704 chars (~7300 tok) |
+| tool-calling context JSON | 1428 chars (~410 tok) | 873 chars (~250 tok) |
+| two-stage act system prompt | 2093 chars (~600 tok) | 1726 chars (~490 tok) |
+| two-stage state JSON | 1403 chars (~400 tok) | 1255 chars (~360 tok) |
+| compact (local) prompt | 15191 + 475 chars | unchanged (llama.cpp caches it; tuned, 458/460) |
+| **Claude CLI** (new) | | 11885 (prompt + 148 one-line signatures) + 3217 (answer schema) + 594 (request + state) chars, ~4500 tok, cached by the CLI between commands |
+
+What changed: tool descriptions are one phrase each (the intent's gloss, else its words and first phrase; "Phrases: ..."
+gone), schemas lose `additionalProperties` and empty `required`, the screen description is shorter, the context JSON is
+compact (windows as `[id, class, ws, title, tabs]`, empty fields left out, titles 40 characters, the last 3 commands),
+two-stage state drops nulls, empty lists and `false` flags. Behaviour is the same; the goldens are unchanged. Five unit tests changed because they
+read the old context shape or assumed a local default (agent: deictic gaze, context budget, settings defaults; main: the
+watch row; config: three default-provider tests).
+
+### Measured live (`omarchyvr-voice claude-live`, simulated desktop, haiku, prewarm on)
+
+| request | calls | wall | API | tokens in/out | cost |
+|---|---|---|---|---|---|
+| move this to screen 3 | win_screen_move_n(3) | 2.1 s | 2.0 s | 7363 / 276 | $0.0016 |
+| close the browser | close_window(w1), asks "yes" | 3.8 s | 3.7 s | 7338 / 452 | $0.0005 |
+| open spotify on screen two | win_screen_put_n(spotify,2) | 2.5 s | 2.4 s | 7342 / 289 | $0.0004 |
+| put the terminals together | win_screen_gather(terminals) | 2.3 s | 2.2 s | 7340 / 267 | $0.0004 |
+| set up for work: terminals on screen 2, spotify on 3, the browser in the middle (3 calls) | 3 win_screen_put | 4.7 s | 3.5 s | 7413 / 531 | $0.0005 |
+| purple monkey dishwasher | none, nothing said | 1.3 s | 1.2 s | 7344 / 118 | $0.0003 |
+| what's on screen 2 | none, `say` answers | 2.4 s | 2.3 s | 7341 / 283 | $0.0004 |
+| turn the volume up | omarchy_volume_up | 2.0 s | 1.9 s | 7340 / 122 | $0.0003 |
+| sonnet: move this to screen 3 | win_screen_move_n(3) | 3.9 s | 3.8 s | 7365 / 130 | $0.031 (first call writes the cache) |
+| sonnet: the work setup | the same 3 calls | 7.5 s | 6.3 s | 7415 / 197 | $0.024 |
+
+"In" tokens are almost all prompt cache (the CLI caches the system prompt and the answer schema). Haiku is the default:
+sonnet gave the same calls here and took about twice as long.
 

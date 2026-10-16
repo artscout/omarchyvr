@@ -1,4 +1,6 @@
-//! AI: the providers voice control and Autofix use (`~/.config/omarchyvr/ai.toml`, shared with omarchyvr-voice): add, edit,
+//! AI (the one AI tab): which AI answers voice commands (Claude CLI by default, a local model, or online with a key),
+//! the Claude CLI card (status, model, Test), the voice settings, the local model section (pages/localai.rs), and the
+//! providers voice control and Autofix use (`~/.config/omarchyvr/ai.toml`, shared with omarchyvr-voice): add, edit,
 //! remove, a masked key with show/hide (saved, or kept for this session only), Test connection (the one network call
 //! here, on click: a fixed one-line prompt, no data from this PC), the default and per-feature provider, and the
 //! local models found on 127.0.0.1.
@@ -6,8 +8,9 @@ use crate::app::PimaxApp;
 use crate::theme::{self, icon};
 use crate::widgets::{self, card, caption, chip, inset, note, pal, spinner, title};
 use eframe::egui::{self, RichText, Ui};
-use omarchyvr_config::ai::{Feature, Kind, Provider, Secret, VoiceAi, VoiceConfirm, CLAUDE_MODELS};
-use omarchyvr_gui_core::ai::{key_status, KeyChoice, RunsOn, TEST_PROMPT};
+use omarchyvr_config::ai::{Feature, Kind, Provider, Secret, VoiceAi, VoiceConfirm, CLAUDE_CLI_MODELS, CLAUDE_CLI_NAME, CLAUDE_MODELS};
+use omarchyvr_config::claude_cli::ClaudeCliStatus;
+use omarchyvr_gui_core::ai::{curl_capable, key_status, KeyChoice, VoiceBrain, TEST_PROMPT};
 
 /// The provider being added or edited (UI state; the key text is wiped when the editor closes).
 #[derive(Debug, Clone, Default)]
@@ -24,6 +27,8 @@ pub struct AiDraft {
     pub action_model: String,
     /// Base URL.
     pub base_url: String,
+    /// The Claude CLI's command path (empty: `claude`).
+    pub command: String,
     /// The key as typed.
     pub key: String,
     /// Show the key.
@@ -44,6 +49,7 @@ impl AiDraft {
             kind: Kind::ALL.iter().position(|k| *k == kind).unwrap_or(0),
             model: p.model,
             base_url: p.base_url.unwrap_or_default(),
+            command: String::new(),
             save_key: true,
             ..Default::default()
         }
@@ -58,6 +64,7 @@ impl AiDraft {
             model: p.model.clone(),
             action_model: p.action_model.clone().unwrap_or_default(),
             base_url: p.base_url.clone().unwrap_or_default(),
+            command: p.command.clone().unwrap_or_default(),
             key: key.map(|k| k.expose().to_string()).unwrap_or_default(),
             show: false,
             save_key: session.is_none() || p.api_key.is_some(),
@@ -89,6 +96,24 @@ fn unique(app: &PimaxApp, base: &str) -> String {
     name
 }
 
+/// A block inside a section (no frame of its own).
+fn plain<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
+    add(ui)
+}
+
+/// A collapsible card: the header always shows, the body opens on a click (`open`: the first state).
+fn fold(ui: &mut Ui, id: &str, title_text: &str, open: bool, chips: impl FnOnce(&mut Ui), add: impl FnOnce(&mut Ui)) {
+    card(ui, |ui| {
+        let p = theme::pal(ui);
+        let head = RichText::new(title_text).size(15.0).strong().color(p.text);
+        egui::CollapsingHeader::new(head).id_salt(("ai-fold", id)).default_open(open).show(ui, |ui| {
+            ui.horizontal_wrapped(chips);
+            add(ui);
+        });
+    });
+    ui.add_space(8.0);
+}
+
 /// Draw the page.
 pub fn show(ui: &mut Ui, app: &mut PimaxApp) {
     app.core.want_ai();
@@ -96,14 +121,14 @@ pub fn show(ui: &mut Ui, app: &mut PimaxApp) {
     card(ui, |ui| {
         ui.horizontal(|ui| {
             title(ui, "AI");
-            widgets::help(ui, "The language models voice control and Autofix use: Claude, OpenAI, any OpenAI-compatible service, or a model running on this PC (ollama, llama-server, LM Studio).");
+            widgets::help(ui, "The language models voice control (\"Max, ...\") and Autofix use: Claude through the Claude Code you are logged into (default, no key), a model running on this PC, or an online provider with a key.");
             if app.core.demo {
                 chip(ui, "demo: nothing is read, written or sent", pal(ui).info);
             }
         });
         ui.horizontal(|ui| {
             caption(ui, "What is sent where");
-            widgets::help(ui, &format!("This page sends nothing by itself. Test connection sends one fixed line (\"{TEST_PROMPT}\") to that provider, nothing from this PC. Autofix sends its redacted bundle (Setup > Autofix shows it) only when you press Send. Voice control sends the words you say to the provider picked for it. A local model keeps everything on this PC.\n\nKeys are saved in ~/.config/omarchyvr/ai.toml, readable only by you (mode 600), or kept for this session only when you untick \"Save the key\" (then voice control, a separate program, cannot use them)."));
+            widgets::help(ui, &format!("This page sends nothing by itself. The Test buttons send one fixed line (\"{TEST_PROMPT}\"), nothing from this PC. Autofix sends its redacted bundle (Setup > Autofix shows it) only when you press Send. Voice control sends the words you say, and the screen state, to the AI picked below. A local model keeps everything on this PC.\n\nKeys are saved in ~/.config/omarchyvr/ai.toml, readable only by you (mode 600), or kept for this session only when you untick \"Save the key\" (then voice control, a separate program, cannot use them). The Claude CLI needs no key."));
         });
         if let Some(e) = &app.core.ai.error {
             ui.label(RichText::new(format!("{e}: fix or remove the file; the app does not overwrite it.")).color(p.fail));
@@ -124,83 +149,147 @@ pub fn show(ui: &mut Ui, app: &mut PimaxApp) {
         });
         return;
     }
-    runs_on(ui, app);
-    if !app.core.state.dev_mode {
-        return;
+    // opened again (the page was not drawn for a moment): look at the Claude CLI again
+    let now = ui.ctx().input(|i| i.time);
+    if now - app.ui.ai_seen > 1.0 {
+        app.core.claude_look();
     }
-    voice(ui, app);
-    local_model(ui, app);
-    providers(ui, app);
-    choices(ui, app);
-    local(ui, app);
-    actions(ui, app);
+    app.ui.ai_seen = now;
+    app.core.want_claude_status();
+    let brain = app.core.ai_voice_brain();
+    let dev = app.core.state.dev_mode;
+    brain_card(ui, app, brain);
+    let ok = app.core.ai.claude_status.as_ref().is_some_and(ClaudeCliStatus::ok);
+    let has_status = app.core.ai.claude_status.is_some();
+    fold(ui, "claude", "Claude (CLI)", brain == VoiceBrain::Claude, |ui| {
+        if brain == VoiceBrain::Claude {
+            chip(ui, "answers voice commands", pal(ui).ok);
+        }
+        if has_status {
+            chip(ui, if ok { "found" } else { "not working" }, if ok { pal(ui).ok } else { pal(ui).warn });
+        }
+    }, |ui| claude_card(ui, app));
+    fold(ui, "voice", "Voice settings", false, |_| {}, |ui| voice(ui, app, brain));
+    fold(ui, "local", "Local model on this PC", brain == VoiceBrain::Local, |ui| {
+        if brain == VoiceBrain::Local {
+            chip(ui, "answers voice commands", pal(ui).ok);
+        }
+    }, |ui| {
+        crate::pages::localai::body(ui, app);
+        if dev {
+            ui.add_space(8.0);
+            local_model(ui, app);
+        }
+    });
+    fold(ui, "online", "Online providers", brain == VoiceBrain::Online, |ui| {
+        if brain == VoiceBrain::Online {
+            chip(ui, "answers voice commands", pal(ui).ok);
+        }
+    }, |ui| {
+        providers(ui, app);
+        ui.add_space(8.0);
+        choices(ui, app);
+        if dev {
+            ui.add_space(8.0);
+            local(ui, app);
+        }
+    });
+    if dev {
+        actions(ui, app);
+    }
 }
 
-/// The one simple switch: where the AI runs (This PC / Online), the online backup, Test and voice on/off.
-fn runs_on(ui: &mut Ui, app: &mut PimaxApp) {
-    let local = app.core.ai_local_provider();
-    let online = app.core.ai_online_provider();
-    let is_online = app.core.ai_voice_online();
+/// "Max's brain": which AI answers voice commands.
+fn brain_card(ui: &mut Ui, app: &mut PimaxApp, brain: VoiceBrain) {
     card(ui, |ui| {
         let p = theme::pal(ui);
         ui.horizontal(|ui| {
-            title(ui, "AI runs on");
-            widgets::help(ui, "The voice control in VR switches by itself; the Work desk's watch has the same switch (AI button).");
+            title(ui, "Max's brain");
+            widgets::help(ui, "Max is the voice assistant (\"Max, move this to screen 2\"). Exact phrases run on this PC without any AI; this choice is who understands the rest. Claude (CLI) uses the Claude Code you are logged into: no key. A local model keeps everything on this PC (Work only). Online uses a provider with your key.");
         });
-        let now = app.core.ai_runs_on();
-        let local_on = app.core.ai.config.local_models_on();
-        ui.label(RichText::new(match (now, local_on) {
-            (RunsOn::Online, _) => "Online: Jev sorts the command, an action model acts (OpenRouter).".to_string(),
-            (_, true) => format!("This PC: local models in Work ({}).", app.core.ai.config.preset().map(|p| p.name()).unwrap_or("chosen by hand")),
-            (_, false) => "Offline commands only (local models off).".to_string(),
-        }).size(13.0).color(p.text));
-        if widgets::ibutton(ui, icon::ROBOT, "Local AI page", true).on_hover_text("Local models On / Off, Low / Medium / High, Online").clicked() {
-            app.core.page = omarchyvr_gui_core::app::Page::LocalAi;
+        let names: Vec<&str> = VoiceBrain::ALL.iter().map(|b| b.label()).collect();
+        let cur = VoiceBrain::ALL.iter().position(|b| *b == brain).unwrap_or(0);
+        if let Some(i) = widgets::seg_row(ui, "Voice commands use", None, &names, cur, !app.core.busy()) {
+            app.core.ai_set_voice_brain(VoiceBrain::ALL[i]);
         }
-        if !is_online && online.is_some() {
-            let mut b = app.core.ai.config.voice_online_backup.unwrap_or(true);
-            if ui.checkbox(&mut b, "Use online if the local model is not running").changed() {
-                app.core.ai_set_online_backup(b);
-            }
+        let line = match brain {
+            VoiceBrain::Claude => "Claude (CLI): each command starts a fresh Claude with only your words and the screen state. No key.".to_string(),
+            VoiceBrain::Local => format!("Local model on this PC ({}): nothing leaves this PC.", app.core.ai.config.preset().map(|p| p.name()).unwrap_or("chosen by hand")),
+            VoiceBrain::Online => match app.core.ai_resolve(Feature::Voice) {
+                Ok(r) => format!("Online: {} ({}). Your words and the screen state are sent.", r.provider, r.model),
+                Err(e) => e,
+            },
+        };
+        ui.add(egui::Label::new(RichText::new(line).size(13.0).color(p.text)).wrap());
+        if brain != VoiceBrain::Online && app.core.ai_keyed_online_provider().is_none() {
+            note(ui, "Online needs a provider with a key: add one under Online providers.");
         }
-        let mode = app.core.ai.config.voice_ai;
-        let mut on = mode != VoiceAi::Off;
-        if widgets::toggle(ui, &mut on, "AI for voice commands", true).changed() {
-            app.core.ai_set_voice_ai(if on { VoiceAi::Fallback } else { VoiceAi::Off });
-        }
-        let target = if is_online { online } else { local };
-        if now == RunsOn::TwoStage {
-            return;
-        }
-        match target {
-            None => note(ui, "No provider of this kind is set up yet."),
-            Some(name) => {
-                ui.horizontal(|ui| {
-                    if app.core.ai.testing.contains(&name) {
-                        spinner(ui);
-                    } else if widgets::ibutton(ui, icon::LIGHTNING, "Test", true).on_hover_text("Asks the AI one fixed question; nothing from this PC is sent").clicked() {
-                        app.core.ai_test(&name);
-                    }
-                });
-                match app.core.ai.tests.get(&name) {
-                    Some(Ok(t)) => {
-                        ui.label(RichText::new(format!("{} {t}", icon::CHECK_CIRCLE)).size(12.0).color(p.ok));
-                    }
-                    Some(Err(e)) => {
-                        let e = omarchyvr_gui_core::app::AppCore::ai_plain_error(e);
-                        ui.add(egui::Label::new(RichText::new(format!("{} {e}", icon::X_CIRCLE)).size(12.0).color(p.fail)).wrap());
-                    }
-                    None => {}
-                }
-            }
+        if brain == VoiceBrain::Claude && app.core.ai.claude_status.as_ref().is_some_and(|s| !s.ok()) {
+            ui.add(egui::Label::new(RichText::new("The Claude CLI is not working: voice commands the offline matcher does not know will not be answered. See the Claude (CLI) card.").size(12.0).color(p.warn)).wrap());
         }
     });
+    ui.add_space(8.0);
+}
+
+/// The Claude CLI: status, model, Test.
+fn claude_card(ui: &mut Ui, app: &mut PimaxApp) {
+    let p = theme::pal(ui);
+    ui.horizontal_wrapped(|ui| {
+        match &app.core.ai.claude_status {
+            None => {
+                spinner(ui);
+                ui.label(RichText::new("Looking for Claude Code...").size(12.5).color(p.dim));
+            }
+            Some(st) => {
+                let (mark, color) = if st.ok() { (icon::CHECK_CIRCLE, p.ok) } else { (icon::X_CIRCLE, p.warn) };
+                ui.add(egui::Label::new(RichText::new(format!("{mark} {}", st.plain())).size(12.5).color(color)).wrap());
+            }
+        }
+        if app.core.ai.claude_checking {
+            spinner(ui);
+        } else if widgets::ismall(ui, icon::ARROWS_CLOCKWISE, "Look again").on_hover_text("Runs claude --version again").clicked() {
+            app.core.claude_look();
+        }
+    });
+    if matches!(app.core.ai.claude_status, Some(ClaudeCliStatus::NotFound)) {
+        note(ui, "Claude Code is not installed on this PC. Install Claude Code and log in once, then press Look again.");
+    }
+    // the model
+    let model = app.core.ai.config.claude_cli_provider().model.clone();
+    let names: Vec<&str> = [("haiku", "Haiku (fast, default)"), ("sonnet", "Sonnet (more capable)")].iter().map(|m| m.1).collect();
+    let cur = CLAUDE_CLI_MODELS.iter().position(|(id, _)| *id == model).unwrap_or(0);
+    if let Some(i) = widgets::seg_row(ui, "Model", Some("Haiku answers fastest and is enough for voice commands. Sonnet is slower and better at long, multi-step requests."), &names, cur, true) {
+        app.core.ai_set_claude_model(CLAUDE_CLI_MODELS[i].0);
+    }
+    // Test
+    let ready = app.core.ai.claude_status.as_ref().is_some_and(ClaudeCliStatus::ok);
+    ui.horizontal_wrapped(|ui| {
+        if app.core.ai.claude_testing {
+            spinner(ui);
+            ui.label(RichText::new("Testing...").size(12.0).color(p.dim));
+        } else if widgets::ibutton(ui, icon::LIGHTNING, "Test", ready).on_hover_text("Asks Claude one fixed question; nothing from this PC is sent").clicked() {
+            app.core.claude_test_run();
+        }
+        let need_login = matches!(&app.core.ai.claude_test, Some(Err(e)) if e.to_ascii_lowercase().contains("log"));
+        if ready && need_login && widgets::ibutton(ui, icon::ARROW_SQUARE_OUT, "Open Claude login", true).on_hover_text("Opens a terminal with Claude Code: log in there once").clicked() {
+            app.core.claude_login();
+        }
+    });
+    match &app.core.ai.claude_test {
+        Some(Ok(t)) => {
+            ui.add(egui::Label::new(RichText::new(format!("{} {t}", icon::CHECK_CIRCLE)).size(12.0).color(p.ok)).wrap());
+        }
+        Some(Err(e)) => {
+            ui.add(egui::Label::new(RichText::new(format!("{} {e}", icon::X_CIRCLE)).size(12.0).color(p.fail)).wrap());
+        }
+        None => {}
+    }
+    note(ui, "Uses the Claude Code you are logged into: no key. Each command starts a fresh Claude with only the request and the screen state.");
 }
 
 /// Voice control's use of a model and the privacy switch.
-fn voice(ui: &mut Ui, app: &mut PimaxApp) {
-    card(ui, |ui| {
-        title(ui, "Voice control with AI");
+fn voice(ui: &mut Ui, app: &mut PimaxApp, brain: VoiceBrain) {
+    {
         let mode = app.core.ai.config.voice_ai;
         let mut on = mode != VoiceAi::Off;
         if widgets::toggle(ui, &mut on, "AI for voice commands", true).changed() {
@@ -213,13 +302,13 @@ fn voice(ui: &mut Ui, app: &mut PimaxApp) {
                 app.core.ai_set_voice_ai(if i == 1 { VoiceAi::Always } else { VoiceAi::Fallback });
             }
         }
-        if mode != VoiceAi::Off {
+        if mode != VoiceAi::Off && brain == VoiceBrain::Online {
             voice_provider(ui, app);
         }
         note(ui, match mode {
             VoiceAi::Off => "Voice commands use the offline matcher only: nothing you say leaves this PC.",
-            VoiceAi::Fallback => "The offline matcher answers first; only a command it does not understand goes to the provider picked for voice control.",
-            VoiceAi::Always => "Every \"Pimax ...\" command goes to the provider picked for voice control.",
+            VoiceAi::Fallback => "The offline matcher answers first; only a command it does not understand goes to the AI picked for voice control.",
+            VoiceAi::Always => "Every \"Max ...\" command goes to the AI picked for voice control.",
         });
         // when a command waits for a spoken "yes" (works with or without the AI)
         let conf = app.core.ai.config.voice_confirm;
@@ -237,7 +326,7 @@ fn voice(ui: &mut Ui, app: &mut PimaxApp) {
         if widgets::switch_row(ui, &mut strip, "No window titles", Some("Privacy: window control sends the names of your apps and, unless this is on, their window titles (which can show a file or page name)."), true).changed() {
             app.core.ai_set_strip_titles(strip);
         }
-        egui::CollapsingHeader::new("Advanced").id_salt("ai-advanced").show(ui, |ui| advanced(ui, app));
+        egui::CollapsingHeader::new("Advanced").id_salt("ai-advanced").show(ui, |ui| advanced(ui, app, brain));
         // the voice command audit (omarchyvr-voice audit, dry run): every command and natural phrasings
         let busy = app.core.busy();
         let report = app.core.voice_audit_report();
@@ -252,14 +341,14 @@ fn voice(ui: &mut Ui, app: &mut PimaxApp) {
                 app.core.open_folder(&report);
             }
         });
-    });
+    }
 }
 
 /// The provider voice control uses (local / OpenRouter / others), its model, Test with latency and cost, and for a
 /// remote one the two stages and what is sent (docs/AI.md 14).
 fn voice_provider(ui: &mut Ui, app: &mut PimaxApp) {
     let p = theme::pal(ui);
-    let names: Vec<String> = app.core.ai.config.providers.iter().map(|p| p.name.clone()).collect();
+    let names: Vec<String> = app.core.ai.config.providers.iter().filter(|p| curl_capable(p)).map(|p| p.name.clone()).collect();
     if names.is_empty() {
         note(ui, "No provider yet: voice uses the local model on this PC (omarchyvr-ai) when it runs. Add one below.");
         return;
@@ -315,7 +404,7 @@ fn voice_provider(ui: &mut Ui, app: &mut PimaxApp) {
 }
 
 /// The optional voice settings (docs/AI.md 2): kept in ai.toml only when changed from the default.
-fn advanced(ui: &mut Ui, app: &mut PimaxApp) {
+fn advanced(ui: &mut Ui, app: &mut PimaxApp, brain: VoiceBrain) {
     let c = &app.core.ai.config;
     let (mut timeout, mut gaze, mut log) = (c.voice_ai_timeout_s, c.voice_ai_gaze, c.voice_ai_log);
     let mut changed = false;
@@ -346,6 +435,12 @@ fn advanced(ui: &mut Ui, app: &mut PimaxApp) {
     if changed {
         app.core.ai_set_advanced(timeout, gaze, log);
     }
+    if brain == VoiceBrain::Claude {
+        let mut warm = app.core.ai.config.voice_ai_prewarm.unwrap_or(true);
+        if widgets::switch_row(ui, &mut warm, "Start Claude ahead (faster)", Some("Keeps one Claude started and waiting, so the next voice command answers sooner. It sends nothing until you speak. Off: Claude starts when you give a command."), true).changed() {
+            app.core.ai_set_prewarm(warm);
+        }
+    }
 }
 
 /// The local model on this PC (omarchyvr-ai: llama.cpp with Qwen3.5).
@@ -355,7 +450,7 @@ fn local_model(ui: &mut Ui, app: &mut PimaxApp) {
     let status = app.core.localai.status.clone();
     let built = app.core.localai.bin.is_some();
     let mut act: Option<&'static str> = None;
-    card(ui, |ui| {
+    plain(ui, |ui| {
         let p = theme::pal(ui);
         ui.horizontal_wrapped(|ui| {
             title(ui, "Local model on this PC");
@@ -469,10 +564,10 @@ fn providers(ui: &mut Ui, app: &mut PimaxApp) {
     let mut edit = None;
     let mut remove = None;
     let mut test = None;
-    card(ui, |ui| {
+    plain(ui, |ui| {
         title(ui, "Providers");
         if list.is_empty() {
-            note(ui, "None yet: add Claude or OpenAI with a key, or a local model (below).");
+            note(ui, "None yet: add Claude or OpenAI with a key, or a local model (below). The Claude CLI needs no entry: see the Claude (CLI) card.");
         }
         for pr in &list {
             let (ks, ok) = key_status(&app.core.ai, pr, &|k| app.core.env_var(k));
@@ -486,9 +581,13 @@ fn providers(ui: &mut Ui, app: &mut PimaxApp) {
                     }
                 });
                 let model = CLAUDE_MODELS.iter().find(|(id, _)| *id == pr.model).map_or(pr.model.as_str(), |(_, n)| n);
-                ui.label(RichText::new(format!("{}  |  {}", if model.is_empty() { "no model" } else { model }, pr.base().unwrap_or("no base URL"))).size(12.5).color(p.dim));
+                let model = CLAUDE_CLI_MODELS.iter().find(|(id, _)| *id == pr.model).map_or(model, |(_, n)| n);
+                let place = if pr.kind == Kind::ClaudeCli { pr.cli_command() } else { pr.base().unwrap_or("no base URL") };
+                ui.label(RichText::new(format!("{}  |  {}", if model.is_empty() { "no model" } else { model }, place)).size(12.5).color(p.dim));
                 ui.label(RichText::new(ks).size(12.0).color(if ok { p.ok } else { p.warn }));
-                match app.core.ai.tests.get(&pr.name) {
+                let cli = pr.kind == Kind::ClaudeCli;
+                let test_now = if cli { app.core.ai.claude_test.clone() } else { app.core.ai.tests.get(&pr.name).cloned() };
+                match test_now.as_ref() {
                     Some(Ok(t)) => {
                         ui.label(RichText::new(format!("{} {t}", icon::CHECK_CIRCLE)).size(12.0).color(p.ok));
                     }
@@ -498,11 +597,11 @@ fn providers(ui: &mut Ui, app: &mut PimaxApp) {
                     None => {}
                 }
                 ui.horizontal_wrapped(|ui| {
-                    if app.core.ai.testing.contains(&pr.name) {
+                    if app.core.ai.testing.contains(&pr.name) || (cli && app.core.ai.claude_testing) {
                         spinner(ui);
                         ui.label(RichText::new("Testing...").size(12.0).color(p.dim));
                     } else if widgets::ibutton(ui, icon::LIGHTNING, "Test connection", true)
-                        .on_hover_text(format!("Sends \"{TEST_PROMPT}\" to {} (nothing else)", pr.base().unwrap_or("?")))
+                        .on_hover_text(format!("Sends \"{TEST_PROMPT}\" to {} (nothing else)", if cli { "Claude" } else { pr.base().unwrap_or("?") }))
                         .clicked()
                     {
                         test = Some(pr.name.clone());
@@ -519,9 +618,13 @@ fn providers(ui: &mut Ui, app: &mut PimaxApp) {
         }
         if app.ui.ai_draft.is_none() {
             ui.horizontal_wrapped(|ui| {
-                for (kind, label, base) in [(Kind::Anthropic, "Add Claude", "claude"), (Kind::OpenAi, "Add OpenAI", "openai"), (Kind::OpenAiCompatible, "Add OpenRouter", "openrouter"), (Kind::OpenAiCompatible, "Add a local or other model", "local")] {
+                let has_cli = list.iter().any(|p| p.kind == Kind::ClaudeCli);
+                for (kind, label, base) in [(Kind::Anthropic, "Add Claude (API key)", "claude"), (Kind::OpenAi, "Add OpenAI", "openai"), (Kind::OpenAiCompatible, "Add OpenRouter", "openrouter"), (Kind::OpenAiCompatible, "Add a local or other model", "local"), (Kind::ClaudeCli, "Add Claude (CLI, no key)", CLAUDE_CLI_NAME)] {
+                    if kind == Kind::ClaudeCli && has_cli {
+                        continue;
+                    }
                     if widgets::ibutton(ui, icon::SPARKLE, label, true).clicked() {
-                        let name = unique(app, base);
+                        let name = if kind == Kind::ClaudeCli { base.to_string() } else { unique(app, base) };
                         let mut d = AiDraft::new(kind, &name);
                         if base == "openrouter" {
                             d.base_url = omarchyvr_config::ai::OPENROUTER_BASE.into();
@@ -564,6 +667,7 @@ fn editor(ui: &mut Ui, app: &mut PimaxApp) {
                 d.kind = i;
                 d.model = fresh.model;
                 d.base_url = fresh.base_url;
+                d.command.clear();
             }
         }
         let kind = Kind::ALL[d.kind];
@@ -573,24 +677,29 @@ fn editor(ui: &mut Ui, app: &mut PimaxApp) {
             ui.end_row();
             ui.label(RichText::new(if d.action_model.trim().is_empty() { "Model" } else { "Intent model" }).color(p.dim))
                 .on_hover_text("Voice control: this model sorts a command into a kind (screens, apps, tabs, ...)");
-            if kind == Kind::Anthropic {
-                let names: Vec<&str> = CLAUDE_MODELS.iter().map(|(_, n)| *n).collect();
-                let cur = CLAUDE_MODELS.iter().position(|(id, _)| *id == d.model).unwrap_or(0);
-                ui.horizontal(|ui| {
-                    for (i, n) in names.iter().enumerate() {
+            if kind == Kind::Anthropic || kind == Kind::ClaudeCli {
+                let models: &[(&str, &str)] = if kind == Kind::ClaudeCli { &CLAUDE_CLI_MODELS } else { &CLAUDE_MODELS };
+                let cur = models.iter().position(|(id, _)| *id == d.model).unwrap_or(0);
+                ui.horizontal_wrapped(|ui| {
+                    for (i, (_, n)) in models.iter().enumerate() {
                         if ui.selectable_label(i == cur, *n).clicked() {
-                            d.model = CLAUDE_MODELS[i].0.to_string();
+                            d.model = models[i].0.to_string();
                         }
                     }
                 });
-                if !CLAUDE_MODELS.iter().any(|(id, _)| *id == d.model) {
-                    d.model = CLAUDE_MODELS[0].0.to_string();
+                if !models.iter().any(|(id, _)| *id == d.model) {
+                    d.model = models[0].0.to_string();
                 }
             } else {
                 ui.add(egui::TextEdit::singleline(&mut d.model).desired_width(260.0).hint_text(if kind == Kind::OpenAi { "the model name, as OpenAI lists it" } else { "e.g. qwen3:8b" }));
             }
             ui.end_row();
-            if kind != Kind::Anthropic {
+            if kind == Kind::ClaudeCli {
+                ui.label(RichText::new("Command").color(p.dim)).on_hover_text("Where the Claude Code program is. Empty: claude, found on your PATH.");
+                ui.add(egui::TextEdit::singleline(&mut d.command).desired_width(320.0).hint_text("optional, e.g. ~/.local/bin/claude"));
+                ui.end_row();
+            }
+            if kind != Kind::Anthropic && kind != Kind::ClaudeCli {
                 ui.label(RichText::new("Action model").color(p.dim))
                     .on_hover_text("Voice control: this model acts on the command with that kind's tools (empty: the model above does both)");
                 ui.vertical(|ui| {
@@ -607,10 +716,16 @@ fn editor(ui: &mut Ui, app: &mut PimaxApp) {
                 });
                 ui.end_row();
             }
-            ui.label(RichText::new("Base URL").color(p.dim));
-            ui.add(egui::TextEdit::singleline(&mut d.base_url).desired_width(320.0).hint_text(kind.default_base().unwrap_or("http://127.0.0.1:11434/v1")));
-            ui.end_row();
-            if kind.needs_key() || !d.key.is_empty() {
+            if kind != Kind::ClaudeCli {
+                ui.label(RichText::new("Base URL").color(p.dim));
+                ui.add(egui::TextEdit::singleline(&mut d.base_url).desired_width(320.0).hint_text(kind.default_base().unwrap_or("http://127.0.0.1:11434/v1")));
+                ui.end_row();
+            }
+            if kind == Kind::ClaudeCli {
+                ui.label("");
+                ui.label(RichText::new("No key: uses the Claude Code you are logged into.").size(12.0).color(p.dim));
+                ui.end_row();
+            } else if kind.needs_key() || !d.key.is_empty() {
                 ui.label(RichText::new("Key").color(p.dim));
                 ui.horizontal(|ui| {
                     ui.add(egui::TextEdit::singleline(&mut d.key).password(!d.show).desired_width(280.0).hint_text(if kind == Kind::Anthropic { "sk-ant-..." } else { "the key or token" }));
@@ -624,9 +739,11 @@ fn editor(ui: &mut Ui, app: &mut PimaxApp) {
                 ui.checkbox(&mut d.save_key, "Save the key in ai.toml (untick: keep it for this session only)");
                 ui.end_row();
             }
-            ui.label(RichText::new("Or from").color(p.dim));
-            ui.add(egui::TextEdit::singleline(&mut d.key_env).desired_width(220.0).hint_text(kind.usual_env().unwrap_or("an environment variable")));
-            ui.end_row();
+            if kind != Kind::ClaudeCli {
+                ui.label(RichText::new("Or from").color(p.dim));
+                ui.add(egui::TextEdit::singleline(&mut d.key_env).desired_width(220.0).hint_text(kind.usual_env().unwrap_or("an environment variable")));
+                ui.end_row();
+            }
         });
         if kind == Kind::OpenAiCompatible && !found.is_empty() {
             ui.horizontal_wrapped(|ui| {
@@ -656,7 +773,8 @@ fn editor(ui: &mut Ui, app: &mut PimaxApp) {
         pr.name = d.name.clone();
         pr.kind = kind;
         pr.model = d.model.clone();
-        pr.action_model = Some(d.action_model.trim().to_string()).filter(|m| !m.is_empty() && kind != Kind::Anthropic);
+        pr.action_model = Some(d.action_model.trim().to_string()).filter(|m| !m.is_empty() && kind != Kind::Anthropic && kind != Kind::ClaudeCli);
+        pr.command = Some(d.command.trim().to_string()).filter(|c| !c.is_empty() && kind == Kind::ClaudeCli);
         pr.base_url = Some(d.base_url.clone());
         pr.api_key_env = Some(d.key_env.clone());
         let key = Secret::new(&d.key);
@@ -683,21 +801,30 @@ fn editor(ui: &mut Ui, app: &mut PimaxApp) {
 }
 
 fn choices(ui: &mut Ui, app: &mut PimaxApp) {
-    let names: Vec<String> = app.core.ai.config.providers.iter().map(|p| p.name.clone()).collect();
-    if names.is_empty() {
-        return;
+    // Autofix and the default go through curl: the Claude CLI is for voice control only
+    let curl: Vec<String> = app.core.ai.config.providers.iter().filter(|p| curl_capable(p)).map(|p| p.name.clone()).collect();
+    // voice: every provider, and the built-in Claude CLI when the file has none
+    let mut voice: Vec<String> = app.core.ai.config.providers.iter().map(|p| p.name.clone()).collect();
+    if !voice.iter().any(|n| n == CLAUDE_CLI_NAME) {
+        voice.push(CLAUDE_CLI_NAME.to_string());
     }
-    card(ui, |ui| {
+    plain(ui, |ui| {
         title(ui, "Which provider for what");
-        let refs: Vec<&str> = names.iter().map(String::as_str).collect();
-        let cur = app.core.ai.config.default.as_deref().and_then(|d| names.iter().position(|n| n == d)).unwrap_or(0);
-        if let Some(i) = widgets::selector(ui, icon::ROBOT, "Default", &refs, cur, true) {
-            let n = names[i].clone();
-            app.core.ai_set_default(&n);
+        if !curl.is_empty() {
+            let refs: Vec<&str> = curl.iter().map(String::as_str).collect();
+            let cur = app.core.ai.config.default.as_deref().and_then(|d| curl.iter().position(|n| n == d)).unwrap_or(0);
+            if let Some(i) = widgets::selector(ui, icon::ROBOT, "Default", &refs, cur, true) {
+                let n = curl[i].clone();
+                app.core.ai_set_default(&n);
+            }
         }
-        let mut opts: Vec<&str> = vec!["the default"];
-        opts.extend(refs.iter().copied());
         for (f, ic) in [(Feature::Voice, icon::MICROPHONE), (Feature::Autofix, icon::WRENCH)] {
+            let names = if f == Feature::Voice { &voice } else { &curl };
+            if names.is_empty() {
+                continue;
+            }
+            let mut opts: Vec<&str> = vec!["the default"];
+            opts.extend(names.iter().map(String::as_str));
             let cur = app.core.ai.config.uses.get(&f).and_then(|u| names.iter().position(|n| n == u)).map_or(0, |i| i + 1);
             if let Some(i) = widgets::selector(ui, ic, f.label(), &opts, cur, true) {
                 let n = (i > 0).then(|| names[i - 1].clone());
@@ -713,15 +840,15 @@ fn choices(ui: &mut Ui, app: &mut PimaxApp) {
                 Err(e) => (format!("{}: {e}", f.label()), false),
             };
             let p = theme::pal(ui);
-            ui.label(RichText::new(line.0).size(12.0).color(if line.1 { p.dim } else { p.warn }));
+            ui.add(egui::Label::new(RichText::new(line.0).size(12.0).color(if line.1 { p.dim } else { p.warn })).wrap());
         }
-        note(ui, "Session-only keys work for Autofix (it runs in this app); voice control reads ai.toml and the environment only.");
+        note(ui, "Autofix cannot use the Claude CLI (it sends its request over the network itself). Session-only keys work for Autofix (it runs in this app); voice control reads ai.toml and the environment only.");
     });
 }
 
 fn local(ui: &mut Ui, app: &mut PimaxApp) {
     let mut add = None;
-    card(ui, |ui| {
+    plain(ui, |ui| {
         let p = theme::pal(ui);
         ui.horizontal(|ui| {
             title(ui, "Local models on this PC");

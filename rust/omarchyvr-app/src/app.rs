@@ -87,6 +87,8 @@ pub struct UiState {
     pub onb_pick: Option<&'static str>,
     /// The AI provider being added or edited.
     pub ai_draft: Option<crate::pages::ai::AiDraft>,
+    /// When the AI page was drawn last (egui time): a gap means it was opened again, so the Claude CLI is looked at again.
+    pub ai_seen: f64,
 }
 
 impl Default for UiState {
@@ -115,6 +117,7 @@ impl Default for UiState {
             setup_tab: SetupTab::Checks,
             onb_pick: None,
             ai_draft: None,
+            ai_seen: f64::NEG_INFINITY,
         }
     }
 }
@@ -137,7 +140,7 @@ struct Nav {
     label: &'static str,
 }
 
-const MAIN: [Nav; 9] = [
+const MAIN: [Nav; 8] = [
     Nav { page: Page::Desk, icon: icon::HOUSE, label: "Home" },
     Nav { page: Page::Display, icon: icon::SUN, label: "Display" },
     Nav { page: Page::Tracking, icon: icon::CROSSHAIR, label: "Tracking" },
@@ -145,8 +148,7 @@ const MAIN: [Nav; 9] = [
     Nav { page: Page::Desktop, icon: icon::DESKTOP, label: "Desktop" },
     Nav { page: Page::Backgrounds, icon: icon::CUBE_FOCUS, label: "Backgrounds" },
     Nav { page: Page::Record, icon: icon::VIDEO_CAMERA, label: "Recording" },
-    Nav { page: Page::LocalAi, icon: icon::BRAIN, label: "Local AI" },
-    Nav { page: Page::Ai, icon: icon::ROBOT, label: "AI" },
+    Nav { page: Page::Ai, icon: icon::BRAIN, label: "AI" },
 ];
 
 /// Developer mode: the advanced pages.
@@ -189,8 +191,8 @@ const HELP: [(&str, &str); 23] = [
     ("Desktop", "Passthrough shows the room behind the screens. Presets: Cinema (curved screens, dimmed room), Work (flat, sharper screens), Assistant (voice captions on). Screen numbers: 1 main, 2 left, 3 right, 4 up, 5 up-left, 6 up-right. docs/SCREENS.md."),
     ("Backgrounds", "Backgrounds page: the VR environment around you (not the desktop wallpaper). Tap a picture to show it, pick a resolution (Auto, 8K, 4K, 2K), Off / passthrough brings the room back, Download more fetches the free pictures. Work starts with your choice. Say \"Max, set background flowers\" (universe, ocean, Hawaii, sunset ...), \"Max, next background\" or \"Max, background off\". docs/BACKGROUNDS.md."),
     ("Voice", "In Work: pause as you like and \"Max\" may come mid-sentence. Screens: \"Max, four screens\", \"a screen up there\", \"open YouTube in a new window\", \"all the terminals on one screen\". Two things at once: \"... and ...\". Apps to screens: \"Max, move Chrome to screen 3\", \"Max, swap screens 1 and 2\", \"Max, save this layout\". Hide screens (apps stay open): \"Max, close screen 2\", \"remove screens 3 and 4\", \"close everything\". Sizes: \"make all screens half the size\". \"Max, stop the VR\" stops Work like Stop and always asks \"yes\" first. docs/VOICE.md."),
-    ("Local AI", "Local models On / Off for Work (Play never loads them), Low / Medium / High (how much of the PC they may use), Advanced to choose the router Lara, the action model and the video memory, or Online (Jev) instead. Speech recognition runs on the processor; the switch Speech on graphics card (default Off) moves it to the card: faster, but it can make VR stutter. One Test button (State) checks Lara, the action model, speech and, when it is on, the agent model, one line each; details behind the \"?\". docs/AI.md sections 16, 17 and 19."),
-    ("Agent mode", "Local AI page: \"Max, let's enter cinema mode, I want to watch Dune\" or \"Max, set up work: terminals left, browser middle, YouTube up-right\" runs step by step (each step shows in the headset); \"Max, cancel\" stops it. docs/VOICE.md."),
+    ("AI", "One AI page. Max's brain picks who answers voice commands the offline matcher does not know: Claude (CLI), the default, which uses the Claude Code you are logged into (no key; each command starts a fresh Claude with only your words and the screen state; Haiku fast or Sonnet; Test shows the time; Start Claude ahead keeps one ready so answers come sooner), a Local model on this PC (Work only: Low / Medium / High, Advanced to choose the router Lara, the action model and the video memory; speech runs on the processor, Speech on graphics card moves it to the card; one Test checks Lara, the action model, speech and the agent model), or Online with a key (Online providers). If Claude Code is not installed or not logged in, the Claude (CLI) card says so in plain words. Autofix cannot use the Claude CLI. docs/AI.md."),
+    ("Agent mode", "AI page, Local model section: \"Max, let's enter cinema mode, I want to watch Dune\" or \"Max, set up work: terminals left, browser middle, YouTube up-right\" runs step by step (each step shows in the headset); \"Max, cancel\" stops it. docs/VOICE.md."),
     ("Recording", "Start recording saves what the headset shows as a video in ~/Videos/pimax. Record tracking saves one folder per take (cameras, controller logs, session log) for comparing with Windows; it never disturbs a running session. docs/RECORD.md."),
 ];
 
@@ -365,7 +367,6 @@ impl PimaxApp {
             Page::Profiles => pages::profiles::show(ui, self),
             Page::Ai => pages::ai::show(ui, self),
             Page::Record => pages::record::show(ui, self),
-            Page::LocalAi => pages::localai::show(ui, self),
             Page::Backgrounds => pages::backgrounds::show(ui, self),
             Page::System => pages::system::show(ui, self),
             Page::Onboarding => pages::onboarding::show(ui, self),

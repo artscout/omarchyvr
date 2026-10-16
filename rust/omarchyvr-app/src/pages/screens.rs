@@ -23,7 +23,7 @@ pub fn body(ui: &mut Ui, app: &mut PimaxApp, editable: bool, supported: bool) {
     ui.horizontal_wrapped(|ui| {
         let can = running && !app.core.busy();
         let r = widgets::ibutton(ui, theme::icon::SQUARES_FOUR, "Put everything in its own window", can)
-            .on_hover_text("Terminals together on one screen, the browser on another, the Pimax app on another, the rest on the next free one (the same as \"Max, put everything in its own window\")");
+            .on_hover_text("Terminals together on one screen, the browser on another, the Max app on another, the rest on the next free one (the same as \"Max, put everything in its own window\")");
         if r.clicked() {
             app.core.screens_arrange(false);
         }

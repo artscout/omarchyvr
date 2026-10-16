@@ -62,7 +62,7 @@ texture cached per size and colour; a greyed headset or controller means "not th
 
 ## Pages
 
-**Sidebar**: Home, Display, Tracking, Room, Desktop, Backgrounds, Recording, Local AI, AI; Ready (with the number of
+**Sidebar**: Home, Display, Tracking, Room, Desktop, Backgrounds, Recording, AI; Ready (with the number of
 checks to look at); in Developer mode also Developer, Tools, Logs, Profiles, System; Onboarding until it is done. At the bottom
 the **Developer** switch (shows the advanced settings and pages; saved in `gui-state.toml`).
 
@@ -147,7 +147,7 @@ edits Hyprland's config). **Autofix**: ask a language model (below).
 
 **Backgrounds**: the VR environment around you, by theme, with the resolution, Off / passthrough and Download more
 ([BACKGROUNDS.md](BACKGROUNDS.md)). **Recording**: the video (eyes, frame rate, quality, Start / Stop recording, the REC
-line, the last file) and the tracking data takes ([RECORD.md](RECORD.md)). **Local AI** and **AI**: below and [AI.md](AI.md). **Developer**: Logs,
+line, the last file) and the tracking data takes ([RECORD.md](RECORD.md)). **AI** (the one AI page, Local AI is a section of it): below and [AI.md](AI.md). **Developer**: Logs,
 Setup checklist, Crash reports, Report a problem, the app version and log file, What Start runs, the session details,
 Auto mode (below) and the VR runtime switch (xrizer + Monado or SteamVR, the Steam launch options, the Proton note).
 **Tools**: each tool with what keeps it from starting and a button that resolves it. **Logs**: the session logs (and
@@ -165,7 +165,7 @@ every page at the window's minimum size):
 | ![Home](gui/desk-idle.png) | ![Home, running](gui/desk-running.png) |
 | ![Display](gui/display.png) | ![Tracking](gui/tracking.png) |
 | ![Room](gui/room.png) | ![Desktop](gui/desktop.png) |
-| ![Recording](gui/record.png) | ![Local AI](gui/local-ai.png) |
+| ![Recording](gui/record.png) | ![AI](gui/ai-local.png) |
 | ![Developer](gui/developer.png) | ![Home, light](gui/desk-idle-light.png) |
 | ![Setup](gui/setup.png) | ![pkexec dialog](gui/setup-pkexec.png) |
 | ![Tools](gui/tools.png) | ![Logs](gui/logs.png) |
@@ -241,6 +241,26 @@ Every fix the app ran, or opened in a terminal, is appended to `~/.local/state/o
 lists the newest 30 with **Undo** (the undo lines, run the same way) or **Apply again** after an undo.
 
 ## AI (the AI tab)
+
+One sidebar entry, one page, collapsible sections top to bottom (screenshots `ai.png`, `ai-claude-missing.png`,
+`ai-claude-login.png`, `ai-local.png`, `ai-online.png`, `ai-edit-cli.png`; the old Local AI page is gone, a saved
+"local-ai" page name opens the AI page):
+
+- **Max's brain**: who answers voice commands: **Claude (CLI), default**, Local model on this PC, Online with a key
+  (saved as `[use] voice` in ai.toml; visible without Developer mode).
+- **Claude (CLI)**: status (found + version / not found / not working, looked at again on every page open and by Look
+  again), model Haiku (fast, default) / Sonnet, **Test** ("OK: haiku answered ... in 2.1 s" or the plain error; one real
+  request, run off the UI thread), **Open Claude login** (a terminal with `claude`, shown only when the test says the
+  login is missing), and the note that it uses the Claude Code you are logged into: no key.
+- **Voice settings**: AI on/off, When (fallback / always), Confirm, No window titles, Advanced (answer timeout, gaze,
+  log, and **Start Claude ahead (faster)** = `voice_ai_prewarm`, default on, shown while Claude is the brain), Check all
+  voice commands.
+- **Local model on this PC**: everything of the old Local AI page (On / Off, Low / Medium / High, speech, agent mode,
+  advanced, state, Test).
+- **Online providers**: add / edit / remove, keys, Which provider for what, (Developer mode: local servers found, the
+  omarchyvr-ai card, the last AI actions). The provider editor's Kind has "Claude (CLI, no key)" (model haiku / sonnet,
+  optional command path). **Autofix never offers the Claude CLI** (it sends over curl, which cannot run it): the Default
+  and Autofix choices leave it out, and a hand-edited choice is refused with a plain message.
 
 The language models the app and voice control use, in `~/.config/omarchyvr/ai.toml` (`omarchyvr_config::ai`, shared with
 `omarchyvr-voice`):

@@ -185,70 +185,104 @@ fn shots() -> Vec<Shot> {
             name: "ai",
             running: false,
             page: Page::Ai,
-            height: 2150.0,
+            height: 1000.0,
+            dark: true,
+            setup: |a| {
+                // the default: Claude (CLI) found, model Haiku, a good test
+                a.core.want_ai();
+                a.core.ai_set_voice_brain(omarchyvr_gui_core::ai::VoiceBrain::Claude);
+                a.core.ai_set_claude_model("haiku");
+                a.core.claude_look();
+                a.core.claude_test_run();
+            },
+        },
+        Shot {
+            name: "ai-claude-missing",
+            running: false,
+            page: Page::Ai,
+            height: 1000.0,
+            dark: true,
+            setup: |a| {
+                // Claude Code not installed: the plain hint, Test off
+                a.core.want_ai();
+                a.core.ai_set_voice_brain(omarchyvr_gui_core::ai::VoiceBrain::Claude);
+                a.core.ai.claude_status = Some(omarchyvr_config::claude_cli::ClaudeCliStatus::NotFound);
+            },
+        },
+        Shot {
+            name: "ai-claude-login",
+            running: false,
+            page: Page::Ai,
+            height: 1000.0,
+            dark: true,
+            setup: |a| {
+                // found, but the test says the login is missing: the Open Claude login button
+                a.core.want_ai();
+                a.core.ai_set_voice_brain(omarchyvr_gui_core::ai::VoiceBrain::Claude);
+                a.core.ai_set_claude_model("sonnet");
+                a.core.claude_look();
+                a.core.ai.claude_test = Some(Err("Claude CLI is not logged in".into()));
+            },
+        },
+        Shot {
+            name: "ai-local",
+            running: true,
+            page: Page::Ai,
+            height: 1800.0,
             dark: true,
             setup: |a| {
                 a.core.want_ai();
+                a.core.want_localai();
+                a.core.claude_look();
+                a.core.ai_set_local_models(true, false);
+                a.core.localai.test = Some(Ok(omarchyvr_gui_core::localai::parse_checks(
+                    &[
+                        "check router ok 31 Lara sorted a test command: system",
+                        "check action ok 190 Qwen3.5-4B-Q4_K_M (gpu (all layers)); 3.4 GB of video memory, 19.3 GB free",
+                        "check speech skip 0 large model off, the small one answers",
+                        "check agent fail 412 Qwen3.6-27B: port 8083: connection refused",
+                    ]
+                    .map(String::from),
+                )));
+            },
+        },
+        Shot {
+            name: "ai-help",
+            running: true,
+            page: Page::Ai,
+            height: 900.0,
+            dark: true,
+            setup: |a| {
+                a.core.want_ai();
+                a.core.claude_look();
+            },
+        },
+        Shot {
+            name: "ai-online",
+            running: false,
+            page: Page::Ai,
+            height: 1700.0,
+            dark: true,
+            setup: |a| {
+                // Online with a key (OpenRouter in the demo file): the providers and which one does what
+                a.core.want_ai();
+                a.core.claude_look();
                 a.core.ai_test("claude");
                 a.core.ai_test("openrouter");
             },
         },
         Shot {
-            name: "record",
-            running: true,
-            page: Page::Record,
-            height: 700.0,
-            dark: true,
-            setup: |_| {},
-        },
-        Shot {
-            name: "backgrounds",
+            name: "ai-edit-cli",
             running: false,
-            page: Page::Backgrounds,
-            height: 1900.0,
-            dark: true,
-            setup: |_| crate::pages::backgrounds::preload(),
-        },
-        Shot {
-            name: "local-ai",
-            running: true,
-            page: Page::LocalAi,
-            height: 1700.0,
+            page: Page::Ai,
+            height: 2300.0,
             dark: true,
             setup: |a| {
                 a.core.want_ai();
-                a.core.want_localai();
-                a.core.ai_set_local_models(true, false);
-                a.core.localai.test = Some(Ok(omarchyvr_gui_core::localai::parse_checks(
-                    &[
-                        "check router ok 31 Lara sorted a test command: system",
-                        "check action ok 190 Qwen3.5-4B-Q4_K_M (gpu (all layers)); 3.4 GB of video memory, 19.3 GB free",
-                        "check speech skip 0 large model off, the small one answers",
-                        "check agent fail 412 Qwen3.6-27B: port 8083: connection refused",
-                    ]
-                    .map(String::from),
-                )));
-            },
-        },
-        Shot {
-            name: "local-ai-help",
-            running: true,
-            page: Page::LocalAi,
-            height: 700.0,
-            dark: true,
-            setup: |a| {
-                a.core.want_ai();
-                a.core.want_localai();
-                a.core.ai_set_local_models(true, false);
-                a.core.localai.test = Some(Ok(omarchyvr_gui_core::localai::parse_checks(
-                    &[
-                        "check router ok 31 Lara sorted a test command: system",
-                        "check action ok 190 Qwen3.5-4B-Q4_K_M (gpu (all layers)); 3.4 GB of video memory, 19.3 GB free",
-                        "check speech skip 0 large model off, the small one answers",
-                        "check agent fail 412 Qwen3.6-27B: port 8083: connection refused",
-                    ]
-                    .map(String::from),
-                )));
+                a.core.claude_look();
+                let mut p = omarchyvr_config::ai::Provider::claude_cli();
+                p.command = Some("~/.local/bin/claude".into());
+                a.ui.ai_draft = Some(crate::pages::ai::AiDraft::for_shot(&p));
             },
         },
         Shot {
@@ -398,7 +432,7 @@ pub fn render_all(dir: &Path) -> io::Result<Vec<PathBuf>> {
         (s.setup)(&mut app);
         let ctx = egui::Context::default();
         crate::theme::install(&ctx, s.dark);
-        if s.name == "local-ai-help" {
+        if s.name == "ai-help" {
             crate::widgets::open_next_help(&ctx);
         }
         let path = dir.join(if dev { format!("{}-dev.png", s.name) } else { format!("{}.png", s.name) });

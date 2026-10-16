@@ -201,7 +201,7 @@ fn running_session_and_the_crash_dialog() {
 fn the_question_mark_opens_on_click_and_closes_on_click_or_esc() {
     let mut ui = Ui::new("help-click", false, std::time::Duration::ZERO);
     ui.wait_facts();
-    go(&mut ui, Page::LocalAi);
+    go(&mut ui, Page::Ai);
     ui.frames(4, std::time::Duration::from_millis(10), "local ai");
     let open = |ui: &Ui| egui::Popup::is_any_open(&ui.h.ctx);
     assert!(!open(&ui));

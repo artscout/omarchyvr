@@ -2215,6 +2215,7 @@ version = "0.1.0"
 dependencies = [
  "libc",
  "pimax-lens",
+ "serde_json",
 ]
 
 [[package]]

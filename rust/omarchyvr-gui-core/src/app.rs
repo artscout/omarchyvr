@@ -60,12 +60,10 @@ pub enum Page {
     Logs,
     /// Profiles and backups.
     Profiles,
-    /// AI providers (voice control, Autofix).
+    /// AI: which AI answers voice commands (Claude CLI, a local model, online), their settings and providers.
     Ai,
     /// Recording: headset video and tracking takes.
     Record,
-    /// Local AI models for Work: On / Off, Low / Medium / High, Online (Jev) instead (docs/AI.md 16).
-    LocalAi,
     /// VR backgrounds (the skybox library): pages/backgrounds.rs.
     Backgrounds,
     /// omarchyvrd: components, events, safe mode (the System page).
@@ -76,7 +74,7 @@ pub enum Page {
 
 impl Page {
     /// Every page, in navigation order.
-    pub const ALL: [Page; 16] = [
+    pub const ALL: [Page; 15] = [
         Page::Desk,
         Page::Display,
         Page::Tracking,
@@ -84,7 +82,6 @@ impl Page {
         Page::Desktop,
         Page::Backgrounds,
         Page::Record,
-        Page::LocalAi,
         Page::Ai,
         Page::Setup,
         Page::Developer,
@@ -110,7 +107,6 @@ impl Page {
             Page::Profiles => "profiles",
             Page::Ai => "ai",
             Page::Record => "record",
-            Page::LocalAi => "local-ai",
             Page::Backgrounds => "backgrounds",
             Page::System => "system",
             Page::Onboarding => "onboarding",
@@ -120,7 +116,12 @@ impl Page {
     /// From [`Page::name`].
     pub fn from_name(s: &str) -> Option<Page> {
         // "wizard": state files of the app before the onboarding replaced the first-run wizard
-        let s = if s == "wizard" { "onboarding" } else { s };
+        let s = match s {
+            "wizard" => "onboarding",
+            // the Local AI page became a section of the AI page
+            "local-ai" => "ai",
+            s => s,
+        };
         Page::ALL.into_iter().find(|p| p.name() == s)
     }
 }
@@ -2625,6 +2626,13 @@ pub fn interrupt_pid(m: &dyn Machine, pid: u32, comm: &str, start: Option<u64>, 
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_old_local_ai_page_name_opens_the_ai_page() {
+        assert_eq!(Page::from_name("local-ai"), Some(Page::Ai));
+        assert_eq!(Page::from_name("ai"), Some(Page::Ai));
+        assert!(Page::ALL.iter().all(|p| Page::from_name(p.name()) == Some(*p)));
+    }
+
     use super::*;
     use crate::facts::SessionProc;
 

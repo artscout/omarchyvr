@@ -80,7 +80,7 @@ pub fn script(wayvrctl: &Path, pimax_cam: &Path, file: &Path, flag: &Path) -> St
         s += &format!("sleep {secs}\n");
     }
     s += &format!("{c} panel-modify captions cap_l1 set-text -- 'Hand test: done'\n");
-    s += &format!("{c} panel-modify captions cap_l2 set-text -- 'Measuring... the result is in the Pimax app.'\n");
+    s += &format!("{c} panel-modify captions cap_l2 set-text -- 'Measuring... the result is in the Max app.'\n");
     s += "wait $rec\nst=$?\n";
     s += "sleep 4\n";
     s += &format!("{c} panel-modify captions cap_box set-visible 0\n");

@@ -246,7 +246,7 @@ pub fn app_fix(p: &Paths) -> UserFix {
     let svg = p.repo.join("linux/omarchyvr.svg");
     let apps = p.desktop_entry.parent().map(|d| d.display().to_string()).unwrap_or_default();
     UserFix {
-        why: "Install the app (binary, icon, desktop entry 'Pimax' in ~/.local/share/applications).".into(),
+        why: "Install the app (binary, icon, desktop entry 'omarchyvr' in ~/.local/share/applications).".into(),
         steps: vec![
             Cmd::new("cargo", &["build", "--release", "-p", "omarchyvr-app"]).cwd(&p.rust),
             install_cmd(&p.app_built, &p.app_installed, "755"),
@@ -557,7 +557,7 @@ pub fn build(facts: &Facts, live: &Live, p: &Paths) -> Vec<Item> {
         Some(InstallState::Missing) | None => Item::new("launcher", Group::App, "omarchyvr launcher", Level::Fail, "not built and not installed", Some(8), lf),
     });
     let app_ok = matches!(facts.app, Some(InstallState::UpToDate)) && facts.desktop_entry;
-    v.push(Item::new("app", Group::App, "This app (desktop entry 'Pimax')", if app_ok { Level::Ok } else { Level::Info },
+    v.push(Item::new("app", Group::App, "This app (desktop entry 'omarchyvr')", if app_ok { Level::Ok } else { Level::Info },
         if app_ok { "installed in ~/.local/bin with its desktop entry".to_string() } else { format!("desktop entry {}, binary {:?}", if facts.desktop_entry { "present" } else { "missing" }, facts.app.unwrap_or(InstallState::Missing)) },
         None, if app_ok { Fix::None } else { Fix::User(app_fix(p)) }));
 

@@ -132,7 +132,7 @@ pub fn request_body(r: &Request) -> String {
     let mut v = match r.backend.kind {
         Kind::Anthropic => json!({"model": r.backend.model, "max_tokens": r.max_tokens, "output_config": {"effort": r.effort}, "messages": messages}),
         Kind::OpenAi => json!({"model": r.backend.model, "messages": messages, "max_completion_tokens": r.max_tokens}),
-        Kind::OpenAiCompatible => json!({"model": r.backend.model, "messages": messages, "max_tokens": r.max_tokens, "temperature": 0.2, "stream": false}),
+        Kind::OpenAiCompatible | Kind::ClaudeCli => json!({"model": r.backend.model, "messages": messages, "max_tokens": r.max_tokens, "temperature": 0.2, "stream": false}),
     };
     if is_openrouter(&r.backend.base_url) {
         // the price of each request comes back in usage.cost
