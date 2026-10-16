@@ -47,7 +47,7 @@ impl Step {
             Step::Detect => "Find the headset",
             Step::Checks => "Check this computer",
             Step::Fixes => "Fix what the checks found",
-            Step::Udev => "Headset access (udev rule)",
+            Step::Udev => "System setup (one password)",
             Step::Ipd => "Set your IPD",
             Step::Pair => "Pair the controllers",
             Step::EyeCal => "Calibrate eye tracking",

@@ -114,6 +114,30 @@ pub fn show(ui: &mut Ui, app: &mut PimaxApp) {
         SetupTab::Install => install(ui, app),
         SetupTab::Autofix => autofix::show(ui, app),
     }
+    uninstall(ui, app);
+}
+
+/// Uninstall omarchyvr: the root part first (one password, its list shown first), then the user files; the app closes.
+fn uninstall(ui: &mut Ui, app: &mut PimaxApp) {
+    let busy = app.core.busy();
+    let running = app.core.live.anything_running();
+    widgets::section(
+        ui,
+        "Uninstall omarchyvr",
+        Some("Removes everything the installer changed and puts back what it replaced (docs/UNINSTALL.md). Downloads (AI models, speech models, backgrounds) and your recordings are kept; settings are saved into one backup file in your home first. Steam and SteamVR are not touched."),
+        |ui| {
+            ui.horizontal_wrapped(|ui| {
+                if widgets::tbutton(ui, "Show what would be removed", !busy).on_hover_text("A dry run: nothing changes, no password").clicked() {
+                    app.core.uninstall_dry_run();
+                }
+                let r = widgets::tbutton(ui, "Uninstall omarchyvr...", !busy && !running);
+                let r = if running { r.on_disabled_hover_text("Stop VR first") } else { r.on_hover_text("One password; a reboot when the NVIDIA module changes") };
+                if r.clicked() {
+                    app.core.ask_uninstall();
+                }
+            });
+        },
+    );
 }
 
 /// The install checklist.

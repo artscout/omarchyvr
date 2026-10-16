@@ -41,6 +41,7 @@ pub mod guards;
 pub mod guistate;
 pub mod handtest;
 pub mod headsets;
+pub mod install;
 pub mod instance;
 pub mod job;
 pub mod kernel;

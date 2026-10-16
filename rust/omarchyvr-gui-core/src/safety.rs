@@ -435,6 +435,22 @@ fn check_root_depth(script: &str, depth: usize) -> Result<(), String> {
                     return Err("setcap only on a monado-service binary".into());
                 }
             }
+            // the installer's one root job (crate::install): the installed copy of omarchyvr-root.sh, apply or
+            // uninstall, with an absolute .env plan; nothing else
+            "omarchyvr-root.sh" => {
+                let installed = prog == crate::install::ROOT_SCRIPT_INSTALLED
+                    || (prog.starts_with('/') && prog.ends_with("/.local/share/omarchyvr/data/installer/omarchyvr-root.sh"));
+                let ok = installed
+                    && !prog.contains("..")
+                    && matches!(args.first().map(String::as_str), Some("apply" | "uninstall"))
+                    && args.len() == 2
+                    && args[1].starts_with('/')
+                    && args[1].ends_with(".env")
+                    && !args[1].contains("..");
+                if !ok {
+                    return Err("the root job runs only as <installed>/omarchyvr-root.sh apply|uninstall /absolute/plan.env".into());
+                }
+            }
             "nvidia-patch-reapply.sh" => {
                 if !(prog == "/usr/local/lib/omarchyvr/nvidia-patch-reapply.sh" || prog == "/usr/local/lib/pimax/nvidia-patch-reapply.sh" || prog.ends_with("/linux/nvidia-patch-reapply.sh")) {  // names:keep
                     return Err("the reapply script runs from /usr/local/lib/omarchyvr (or the old /usr/local/lib/pimax) or the repository's linux/ only".into());  // names:keep

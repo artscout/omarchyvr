@@ -172,6 +172,17 @@ fn body(ui: &mut Ui, app: &mut PimaxApp, step: Step) {
             }
             note(ui, "Builds, the launcher and this app are on Setup > Install.");
         }
+        Step::Udev if app.core.onboarding.install.plan_text.is_some() => {
+            let done = app.core.onboarding.install.root_done;
+            ui.label(
+                RichText::new(if done { "Done: the system part of omarchyvr is set up." } else { "Not set up yet. This is everything that changes, as root, with one password:" })
+                    .color(if done { pal(ui).ok } else { pal(ui).warn }),
+            );
+            if let Some(t) = &app.core.onboarding.install.plan_text {
+                widgets::code_box(ui, &t.lines().map(str::to_string).collect::<Vec<_>>());
+            }
+            note(ui, "Undo: Ready > Uninstall omarchyvr (or ./uninstall.sh). When the list says reboot, reboot once afterwards.");
+        }
         Step::Udev => {
             let (text, c) = match app.core.facts.udev_rule {
                 Some(true) => ("The rule is installed and matches the repository's.", pal(ui).ok),

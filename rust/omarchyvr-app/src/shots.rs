@@ -311,6 +311,29 @@ fn shots() -> Vec<Shot> {
             },
         },
         Shot {
+            name: "onboarding-system",
+            running: false,
+            page: Page::Onboarding,
+            height: 900.0,
+            dark: true,
+            setup: |a| {
+                a.core.want_onboarding();
+                a.core.onboarding_use_module("dream-air");
+                for s in [Step::Checks, Step::Fixes] {
+                    a.core.onboarding_set(s, State::Done);
+                }
+                a.core.onboarding.install.root_done = false;
+            },
+        },
+        Shot {
+            name: "uninstall",
+            running: false,
+            page: Page::Setup,
+            height: 900.0,
+            dark: true,
+            setup: |a| a.core.ask_uninstall_demo(),
+        },
+        Shot {
             name: "profiles",
             running: false,
             page: Page::Profiles,

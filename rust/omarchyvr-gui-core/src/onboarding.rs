@@ -35,6 +35,8 @@ pub struct OnboardingView {
     pub root_for: Option<Step>,
     /// A pairing ended "paired" in this session (left, right).
     pub paired: [bool; 2],
+    /// The install of `./install.sh`: its one root job (System setup) and whether it ran.
+    pub install: crate::install::InstallInfo,
     /// The latest progress to write (the writer task takes it).
     slot: Arc<Mutex<Option<Progress>>>,
 }
@@ -45,7 +47,7 @@ pub fn intro(s: Step) -> &'static str {
         Step::Detect => "The app looks at the USB devices and matches them against the headset modules it knows. Pick the headset if it is not plugged in yet.",
         Step::Checks => "Driver, GPU, CPU, USB access and runtime checks, read-only: nothing is changed.",
         Step::Fixes => "What the checks found, each with its fix. Fixes as your user run here with their output shown; fixes that need root show the exact lines first and run only when you confirm them (pkexec asks for your password).",
-        Step::Udev => "A udev rule lets your user open the headset, its cameras and the eye tracker without root. It needs root once: the lines are shown before anything runs.",
+        Step::Udev => "One password sets up this PC: the udev rule that lets your user open the headset, its cameras and the eye tracker, and (on a tested NVIDIA driver with the headset plugged in) the display patches and the boot-time display mode, plus the realtime permission for VR. The exact list is shown before anything runs; nothing else changes.",
         Step::Ipd => "Measure the distance between your pupils with the eye tracker and set the lenses once (pimax-eye ipd in a terminal: wear the headset, press a to apply, q to save and quit).",
         Step::Pair => "Pair each controller once: press Pair, then hold the controller's pairing buttons until it connects (at most one try per hand every 30 s).",
         Step::EyeCal => "Calibrate eye tracking: pimax-eyecal starts its own VR session; keep your head still and follow the dots with your eyes, then save.",
@@ -60,7 +62,7 @@ pub fn run_label(s: Step) -> Option<&'static str> {
         Step::Detect => Some("Look again"),
         Step::Checks => Some("Run the checks"),
         Step::Fixes => Some("Check again"),
-        Step::Udev => Some("Install the udev rule..."),
+        Step::Udev => Some("Set up this PC..."),
         Step::Ipd => Some("Measure and set IPD"),
         Step::Pair => None,
         Step::EyeCal => Some("Calibrate eye tracking"),
@@ -108,6 +110,13 @@ impl AppCore {
 
     /// Read the progress file once (in the background).
     pub fn want_onboarding(&mut self) {
+        if !self.onboarding.install.loaded {
+            if self.demo {
+                self.onboarding.install = crate::install::demo_info();
+            } else {
+                self.refresh_install();
+            }
+        }
         if self.onboarding.loaded || self.task_busy("onboarding-load") {
             return;
         }
@@ -160,6 +169,8 @@ impl AppCore {
                 let n = self.onboarding_open_fixes();
                 (n > 0).then(|| format!("{n} failing check(s) still have a fix to run (or Skip this step)."))
             }
+            Step::Udev if self.onboarding.install.plan_text.is_some() => (!self.onboarding.install.root_done)
+                .then(|| "The system setup has not run yet: Set up this PC (one password).".to_string()),
             Step::Udev => match (self.facts.udev_rule, self.facts.doctor_level("udev")) {
                 (Some(true), Some(omarchyvr_doctor::Level::Ok) | None) => None,
                 (Some(true), _) => Some("The rule is installed but the headset nodes are not writable yet: Restart headset (top bar), then Check again.".into()),
@@ -274,6 +285,7 @@ impl AppCore {
                 self.refresh(true);
                 self.message = "Checking this PC...".into();
             }
+            Step::Udev if self.ask_system_setup() => self.onboarding.root_for = Some(s),
             Step::Udev => match findings::udev_fix(&self.paths.repo) {
                 Ok(p) => {
                     self.run_catalogue(CatalogueRun { planned: p, undo: false }, "Install the udev rule");
@@ -301,6 +313,7 @@ impl AppCore {
 
     /// A job ended: a step's failed job marks the step failed (it comes back first).
     pub(crate) fn onboarding_job_done(&mut self, label: &str, ok: bool) {
+        self.install_job_done(label, ok);
         if let Some((s, l)) = self.onboarding.running.clone() {
             if l == label {
                 self.onboarding.running = None;

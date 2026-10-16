@@ -168,7 +168,8 @@ pub fn page_label(p: Page) -> &'static str {
 }
 
 /// The help page: one short paragraph per feature (the "?" next to each setting says the same where it is).
-const HELP: [(&str, &str); 22] = [
+const HELP: [(&str, &str); 23] = [
+    ("Install and uninstall", "Install: ./install.sh in the omarchyvr clone builds and installs everything and opens this app; the Onboarding step System setup lists every system change and asks for your password once (a reboot only when the NVIDIA module or the boot image changed). Later Plays never ask. Uninstall: Ready > Uninstall omarchyvr (Show what would be removed first); downloads and recordings are kept, settings go into one backup file in your home. docs/INSTALL.md, docs/UNINSTALL.md."),
     ("The \"?\" marks", "Point at a \"?\" or click it (in the headset, click): a small box says what the setting does. Click it again, click anywhere else or press Esc to close it."),
     ("Ready", "Ready checks the PC and the headset; Fix does what is needed. Fixes that need root show their lines and ask for your password first."),
     ("Play and Work", "Play starts VR for Steam and OpenXR games. Work starts the desk (screens over passthrough). Stop ends what runs. The headset card on Home has the buttons."),
