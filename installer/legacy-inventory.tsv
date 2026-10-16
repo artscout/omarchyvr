@@ -1,0 +1,119 @@
+# What installs from before the install manifest (and before the rename to omarchyvr) left behind, by path.
+# uninstall.sh removes, resets or keeps each row that exists. $HOME is expanded; globs are allowed.
+# class: BIN (our binaries) | UNIT (user units) | ENTRY (desktop/autostart) | REG (OpenXR/OpenVR/Steam registration)
+#        RESET (settings, calibration, state, caches: backed up into one tar, then removed)
+#        KEEP (downloads: kept, moved to the new data dir) | KEEPDATA (recordings, user media: kept where they are)
+#        BUILD (our build outputs outside the lab: removed) | LAB (lab source trees and build dirs: removed only with
+#        --remove-lab-builds) | LINK (symlinks into the lab: removed)
+# class	path	note
+BIN	$HOME/.local/bin/pimax	launcher (old name)
+BIN	$HOME/.local/bin/pimaxd	stack owner (old name)
+BIN	$HOME/.local/bin/pimax-autod	auto mode (old name)
+BIN	$HOME/.local/bin/pimax-ai	local AI (old name)
+BIN	$HOME/.local/bin/pimax-anchor	room anchor (old name)
+BIN	$HOME/.local/bin/pimax-backgrounds	backgrounds (old name)
+BIN	$HOME/.local/bin/pimax-cam	camera tool
+BIN	$HOME/.local/bin/pimax-ctrltrack	controller tracking
+BIN	$HOME/.local/bin/pimax-desktest	desk test (old name)
+BIN	$HOME/.local/bin/pimax-doctor	doctor (old name)
+BIN	$HOME/.local/bin/pimax-eye	eye tool
+BIN	$HOME/.local/bin/pimax-eyecal	eye calibration
+BIN	$HOME/.local/bin/pimax-health	health (old name)
+BIN	$HOME/.local/bin/pimax-ipd	IPD motor
+BIN	$HOME/.local/bin/pimax-lens	lens tool
+BIN	$HOME/.local/bin/pimax-lenstest	lens test
+BIN	$HOME/.local/bin/pimax-passthrough	passthrough (old name)
+BIN	$HOME/.local/bin/pimax-perf	perf readout (old name)
+BIN	$HOME/.local/bin/pimax-record	recorder (old name)
+BIN	$HOME/.local/bin/pimax-room	room (old name)
+BIN	$HOME/.local/bin/pimax-roommap	room map (old name)
+BIN	$HOME/.local/bin/pimax-selfcal	camera self-calibration
+BIN	$HOME/.local/bin/pimax-setup	the app (old name)
+BIN	$HOME/.local/bin/pimax-slam	SLAM (old name)
+BIN	$HOME/.local/bin/pimax-voice	voice (old name)
+BIN	$HOME/.local/bin/pimax-voicebench	voice bench (old name)
+BIN	$HOME/.local/bin/pimax-voice-hud	voice HUD (old name)
+BIN	$HOME/.local/bin/xr-gaze	gaze test client
+BIN	$HOME/.local/bin/xr-handtest	hand test client
+BIN	$HOME/.local/bin/xr-pinchtest	pinch test client
+BIN	$HOME/.local/bin/libpimax_capi.so	C API library (unused at run time: Monado links the static library)
+BIN	$HOME/.local/bin/*.pre-*	backups of replaced binaries
+BIN	$HOME/.local/share/pimax/bin	xr-probe (games check; rebuilt on demand)
+BIN	$HOME/.local/share/pimax/bin-backup	rollback copies of earlier hand installs
+UNIT	$HOME/.config/systemd/user/pimax-keepalived.service	keepalive unit (symlink into the lab)
+UNIT	$HOME/.config/systemd/user/pimax-keepalived.service.d	keepalive drop-in
+UNIT	$HOME/.config/systemd/user/pimax-autod.service	auto mode unit
+UNIT	$HOME/.config/systemd/user/pimaxd.service	stack owner unit
+UNIT	$HOME/.config/systemd/user/pimax-ai.service	local AI unit
+UNIT	$HOME/.config/systemd/user/default.target.wants/pimax-keepalived.service	enablement link
+UNIT	$HOME/.config/systemd/user/graphical-session.target.wants/pimax*.service	enablement links
+ENTRY	$HOME/.config/autostart/pimax-setup.desktop	app at login
+ENTRY	$HOME/.local/share/applications/pimax.desktop	app launcher
+ENTRY	$HOME/.local/share/applications/pimax-vr.desktop	VR launcher
+ENTRY	$HOME/.local/share/icons/hicolor/scalable/apps/pimax.svg	app icon
+REG	$HOME/.config/environment.d/90-pimax-steam-vr.conf	Steam OpenXR import variable (steam-setup)
+REG	$HOME/.local/share/applications/steam.desktop	Steam entry copy with X-Pimax-Steam-VR (steam-setup off)
+REG	$HOME/.config/openxr/1/active_runtime.json	OpenXR runtime: our Monado build is removed; SteamVR's own link is left
+REG	$HOME/.config/openxr/1/active_runtime.json.pimax-backup	backup of the runtime before ours
+REG	$HOME/.config/openvr/openvrpaths.vrpath	OpenVR: our external driver entry is removed
+REG	$HOME/.config/openvr/openvrpaths.vrpath.pimax-steamvr	backup
+REG	$HOME/.config/openvr/openvrpaths.vrpath.pimax-xrizer	backup
+REG	$HOME/.config/pimax-vr-backup	undo state of the lab's vr_runtime_switch.sh
+REG	$HOME/.local/share/Steam/config/chaperone_info.vrchap.pimax-backup	room setup: Steam's original chaperone is put back
+REG	$HOME/.local/share/Steam/config/monado	empty dir (removed if empty)
+RESET	$HOME/.config/pimax	settings and calibration (ai.toml with your keys is kept, moved to ~/.config/omarchyvr)
+RESET	$HOME/.local/state/pimax	logs, sessions, jobs, crash reports
+RESET	$HOME/.cache/pimax	caches (gyro bias, voice vocab)
+RESET	$HOME/.cache/pimax-ctrl-replay	controller replay cache
+RESET	$HOME/.local/share/pimax/eye-calibration	eye calibration results
+RESET	$HOME/.local/share/pimax/eye-accuracy	eye accuracy results
+RESET	$HOME/.local/share/pimax/roommap	room map
+RESET	$HOME/.local/share/pimax/ctrl-sessions	controller sessions
+KEEP	$HOME/.local/share/pimax/ai	local AI runtime and models
+KEEP	$HOME/.local/share/pimax/backgrounds	VR backgrounds
+KEEP	$HOME/models	voice and speech models
+KEEP	$HOME/.local/share/monado/hand-tracking-models	Mercury hand models (no licence, personal use)
+KEEP	$HOME/src/dl-ort	ONNX Runtime download
+KEEP	$HOME/src/dl-gitlfs	git-lfs download
+KEEPDATA	$HOME/.local/share/pimax/slam-recordings	SLAM recordings (your data)
+KEEPDATA	$HOME/.local/share/pimax/tracking-recordings	tracking recordings (your data)
+KEEPDATA	$HOME/Videos/pimax	VR video recordings (your media)
+BUILD	$HOME/.local/lib/libbasalt.so*	Basalt (hand build)
+BUILD	$HOME/.local/lib/pkgconfig/basalt.pc	Basalt
+BUILD	$HOME/.local/share/basalt	Basalt config files
+BUILD	$HOME/.local/include/basalt	Basalt headers
+LINK	$HOME/src/monado-eye/build	symlink to the live Monado build
+LINK	$HOME/src/libpimax-hands-ws-link	symlink into the lab
+LAB	$HOME/src/monado-eye	Monado dev tree (main worktree; 14 sibling worktrees and their build dirs)
+LAB	$HOME/src/monado	Monado worktree
+LAB	$HOME/src/monado-*	Monado worktrees
+LAB	$HOME/src/wayvr	WayVR dev tree
+LAB	$HOME/src/target-*	cargo target dirs
+LAB	$HOME/src/pimax-target-*	cargo target dirs
+LAB	$HOME/src/wayvr-target-*	cargo target dirs
+LAB	$HOME/src/pimax-re-*	lab worktrees
+LAB	$HOME/src/basalt	Basalt source
+LAB	$HOME/src/basalt-deps	empty
+LAB	$HOME/src/onnxruntime-1.20.1	ONNX Runtime (hand extract)
+LAB	$HOME/src/whisper.cpp	whisper.cpp source and builds
+LAB	$HOME/src/venv-voice	speech library venv
+LAB	$HOME/src/desk-out	WayVR test homes and outputs
+LAB	$HOME/src/selfcal-*	research output
+LAB	$HOME/omarchyvr-target	cargo target
+LAB	$HOME/omarchyvr-export	export staging
+LAB	$HOME/fork-work	fork export staging
+LAB	$HOME/pimax-re-room	lab worktree
+LAB	$HOME/pimax-re-voiceloop	lab worktree
+LAB	$HOME/pimax-re-wt-room	lab worktree
+LAB	$HOME/scratch-verify	stale worktree
+LAB	$HOME/src/openvr	OpenVR SDK clone
+LAB	$HOME/src/xrizer	xrizer clone
+LAB	$HOME/src/CustomHeadsetOpenVR	unused clone
+LAB	$HOME/src/open-gpu-kernel-modules	NVIDIA source clone (patch work)
+LAB	$HOME/src/nvidia-610.57.04-flipfix	NVIDIA patch work tree
+LAB	$HOME/src/hands-ws	hand tracking work dir
+LAB	$HOME/src/polish-ws	work dir
+LAB	$HOME/src/cam-data	camera work data
+LAB	$HOME/src/venv-fw	voice venv (faster-whisper tests)
+LAB	$HOME/src/venv-sherpa-py	speech library venv
+LAB	$HOME/src/voice-bench	voice bench output

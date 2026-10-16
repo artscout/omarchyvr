@@ -1,0 +1,72 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+# Pinned components of one omarchyvr install (sourced by installer/lib.sh; KEY=VALUE, no spaces around '=').
+# Everything the installer downloads or clones is pinned here by commit or sha256. Files already on disk are REUSED
+# when their checksum matches (models, archives); otherwise they are downloaded again and checked.
+# SOURCE_* = "recorded" means the URL is in our code or docs; "assumed" means the files on the tested PC were fetched
+# by hand and the URL is the obvious upstream one: the checksum still decides (a mismatch is refused and reported).
+
+# --- forks (git submodules of this repository, branch omarchyvr) --------------------------------------------------
+MONADO_SUBMODULE=forks/monado
+WAYVR_SUBMODULE=forks/wayvr
+# WayVR cargo features of the tested build (fingerprint of ~/src/target-desk on 2026-10-16)
+WAYVR_FEATURES=openxr,osc,pipewire,wayland,x11
+
+# --- Basalt (VIO for 6DoF; unmodified upstream, BSD-3-Clause) -------------------------------------------------------
+BASALT_URL=https://gitlab.freedesktop.org/mateosss/basalt.git
+BASALT_COMMIT=df6e970c8da7636eb401a09e3317fbeaaf829b9a
+BASALT_SOURCE=recorded
+
+# --- ONNX Runtime (Mercury hand tracking in Monado; MIT) ------------------------------------------------------------
+ORT_VERSION=1.20.1
+ORT_URL=https://github.com/microsoft/onnxruntime/releases/download/v1.20.1/onnxruntime-linux-x64-1.20.1.tgz
+ORT_SHA256=67db4dc1561f1e3fd42e619575c82c601ef89849afc7ea85a003abbac1a1a105
+ORT_SOURCE=assumed
+# where an earlier hand install kept the same archive (reused when the checksum matches)
+ORT_REUSE=src/dl-ort/ort.tgz
+
+# --- sherpa-onnx C API (speech recognition on the processor, the default since lab 5174fc8; Apache-2.0) ------------
+SHERPA_PIP=sherpa-onnx-core==1.13.8
+SHERPA_CAPI_SHA256=e50ae8bca4db52b7be04f56f8ac1502b940ca124a26fac0d48d8cef7fc9823d4
+SHERPA_REUSE=src/venv-voice/lib/python3*/site-packages/sherpa_onnx/lib
+
+# --- voice models in ~/models (KEEP on uninstall) ------------------------------------------------------------------
+# Parakeet TDT 0.6B v3 int8 (default speech model) and Silero VAD. Source not recorded in the lab: FLAGGED, assumed
+# to be the k2-fsa/sherpa-onnx model releases; the checksums of the tested files decide.
+PARAKEET_DIR=models/parakeet-tdt-0.6b-v3-int8
+PARAKEET_URL=https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2
+PARAKEET_SOURCE=assumed
+PARAKEET_ENCODER_SHA256=acfc2b4456377e15d04f0243af540b7fe7c992f8d898d751cf134c3a55fd2247
+PARAKEET_DECODER_SHA256=179e50c43d1a9de79c8a24149a2f9bac6eb5981823f2a2ed88d655b24248db4e
+PARAKEET_JOINER_SHA256=3164c13fc2821009440d20fcb5fdc78bff28b4db2f8d0f0b329101719c0948b3
+VAD_FILE=models/vad/silero_vad.onnx
+VAD_URL=https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx
+VAD_SOURCE=assumed
+VAD_SHA256=9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6
+
+# --- optional: speech on the graphics card ('Speech on graphics card' switch, default Off) -------------------------
+# whisper.cpp with Vulkan, only its server; built only with --gpu-speech (there is no CPU whisper server any more).
+WHISPER_URL=https://github.com/ggml-org/whisper.cpp.git
+WHISPER_COMMIT=4979e04f5dcaccb36057e059bbaed8a2f5288315
+WHISPER_MODEL=models/whisper/ggml-large-v3-turbo-q5_0.bin
+WHISPER_MODEL_URL=https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin
+WHISPER_MODEL_SOURCE=assumed
+WHISPER_MODEL_SHA256=394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2
+
+# --- local AI (llama.cpp runtime, Qwen models, Lara router) --------------------------------------------------------
+# Pinned inside rust/pimax-ai (omarchyvr-ai): `omarchyvr-ai install --two-stage --router lara` downloads and checks
+# them (URLs and sha256 in its lib.rs / twostage.rs). Lara's own weights are TRAINED on this PC (`tune-lara`): reused
+# when present, never downloaded.
+
+# --- Mercury hand models (NO licence: personal use only, never redistributed; fetched only with --hand-models) -----
+HANDMODELS_URL=https://gitlab.freedesktop.org/monado/utilities/hand-tracking-models.git
+HANDMODELS_COMMIT=37a8a81bc8f433ac6cbdf2471909d2bac74beca1
+HANDMODELS_DIR=.local/share/monado/hand-tracking-models
+
+# --- NVIDIA (strict): patch only these exact driver versions, open kernel modules only ------------------------------
+NVIDIA_TESTED_VERSIONS=610.57.04
+NVIDIA_PACKAGE=nvidia-open-dkms
+
+# --- headsets (USB vendor:product) ---------------------------------------------------------------------------------
+# tested: Dream Air. Other Pimax ids get a read-only probe and the label "untested".
+HEADSET_TESTED=34a4:0044
+HEADSET_VENDOR=34a4
