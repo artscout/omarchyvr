@@ -87,6 +87,7 @@ fn auto(a: Args) -> CliResult {
 }
 
 fn main() {
+    omarchyvr_config::migrate_home(); // one time: ~/.config/omarchyvr etc. -> omarchyvr
     if let Err(e) = run() {
         if !e.msg.is_empty() {
             eprintln!("omarchyvr: {}", e.msg);

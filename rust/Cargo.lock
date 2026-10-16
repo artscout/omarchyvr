@@ -2212,6 +2212,7 @@ dependencies = [
 name = "omarchyvr-config"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "pimax-lens",
 ]
 

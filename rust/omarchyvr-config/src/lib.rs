@@ -17,10 +17,12 @@ pub mod ai;
 pub mod ctrl_inhand;
 pub mod diff;
 pub mod eye;
+pub mod migrate;
 pub mod paths;
 pub mod setup;
 pub mod store;
 
+pub use migrate::{migrate_home, migrate_legacy_dirs};
 pub use diff::{diff_lines, DiffLine};
 pub use setup::Setup;
 pub use store::{

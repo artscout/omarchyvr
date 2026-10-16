@@ -42,6 +42,7 @@ fn sync_core() -> AppCore {
 }
 
 fn main() {
+    omarchyvr_config::migrate_home(); // one time: ~/.config/omarchyvr etc. -> omarchyvr
     let args: Vec<String> = std::env::args().skip(1).collect();
     let has = |f: &str| args.iter().any(|a| a == f);
     let value = |f: &str| args.iter().position(|a| a == f).map(|i| args.get(i + 1).cloned());
