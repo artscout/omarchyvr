@@ -1,0 +1,19 @@
+[package]
+name = "pimax"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Pimax Dream Air hidraw I/O: discovery, wake/keepalive session thread, command/reply matching, callbacks."
+
+[dependencies]
+pimax-proto = { workspace = true, features = ["std"] }
+libc = { workspace = true }
+log = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+flate2 = { workspace = true }
+
+[[bench]]
+name = "latency"
+harness = false

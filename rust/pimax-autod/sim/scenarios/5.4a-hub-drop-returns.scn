@@ -1,0 +1,11 @@
+# 5.4 the USB3 hub drops (camera gone, HID present) and comes back by itself after 4 s (07:10): the broker exited,
+# SLAM cannot reconnect, so the broker and Monado's subtree restart in desk mode.
+start desk
+at 10 down usb.cam broker passthrough ctrltrack
+expect 12 notified Camera dropped: 6DoF and passthrough paused
+expect 13 runs 0
+expect 13 health monado degraded
+at 14 up usb.cam
+expect 15 ran stop-subtree broker
+expect 30 ran start monado
+expect 50 overall ok

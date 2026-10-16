@@ -1,0 +1,12 @@
+# 5.3 after a replug the restored Monado cannot acquire the display: the gate says needs-reboot, no more retries.
+start desk
+at 10 down usb.hid usb.cam usb.eye display.dp1
+at 120 up usb.hid usb.cam usb.eye display.dp1
+expect 125 ran start monado
+at 140 monado-log ERROR [comp_window_direct] vkAcquireDrmDisplayEXT failed: VK_ERROR_INITIALIZATION_FAILED
+at 141 exit monado code=1
+at 141 down wayvr passthrough ctrltrack perf broker
+expect 142 gate needs-reboot
+expect 142 overall needs-reboot
+expect 142 notified Reboot needed
+expect 400 runs 2

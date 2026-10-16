@@ -1,0 +1,15 @@
+# 5.3 the cable is pulled in a desk session: after the 6 s debounce a clean ordered stop (no budget), the intent
+# stays on, the chain waits for the headset; on replug (4 s steady) the session is restored.
+start desk
+at 10 down usb.hid usb.cam usb.eye display.dp1
+expect 15 runs 0
+expect 17 ran stop-subtree monado
+expect 40 intent on
+expect 40 health monado blocked
+expect 40 notified resumes when it is back
+expect 60 notified Headset not connected for 30 s
+at 120 up usb.hid usb.cam usb.eye display.dp1
+expect 123 runs 1
+expect 125 ran start monado
+expect 150 overall ok
+expect 150 runs 2

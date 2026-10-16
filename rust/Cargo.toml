@@ -1,0 +1,38 @@
+[workspace]
+resolver = "2"
+members = ["pimax", "pimax-*"]   # glob: new crates named pimax-<x> join automatically
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+rust-version = "1.80"
+
+[workspace.dependencies]
+pimax-proto = { path = "pimax-proto", default-features = false }
+pimax = { path = "pimax" }
+libc = "0.2"
+log = "0.4"
+thiserror = "2"
+miniz_oxide = { version = "0.8", default-features = false, features = ["with-alloc"] }
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+proptest = "1"
+cc = "1"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+debug = false
+strip = true
+
+[profile.bench]
+inherits = "release"
+
+# The self-calibration tests run dense stereo matching and a synthetic renderer on 640x480 tiles: optimise that crate
+# even in debug/test builds (seconds instead of minutes). Other crates keep the normal dev profile.
+[profile.dev.package.pimax-selfcal]
+opt-level = 3
+
+[profile.dev.package.pimax-room]
+opt-level = 3

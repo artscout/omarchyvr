@@ -1,0 +1,18 @@
+[package]
+name = "pimax-ctrltrack"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Offline controller constellation tracking for the Pimax Dream Air: LED-frame blob detection, LED model (controller_params.json), brute-force P3P correspondence, pose refinement and reprojection error."
+
+[lib]
+name = "pimax_ctrltrack"
+
+[[bin]]
+name = "pimax-ctrltrack"
+path = "src/main.rs"
+
+[dependencies]
+pimax-cam = { path = "../pimax-cam" }
+libc = { workspace = true }
+pimax-hands = { path = "../pimax-hands" }

@@ -1,0 +1,41 @@
+[package]
+name = "pimax-setup"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Pimax: the desktop app to install, run and diagnose the Pimax Dream Air stack on Linux (desk mode, setup checklist with fixes, tools, logs and history, first-run wizard). Thin egui UI over pimax-gui-core."
+
+[lib]
+name = "pimax_setup"
+path = "src/lib.rs"
+
+[[bin]]
+name = "pimax-setup"
+path = "src/main.rs"
+
+[features]
+default = []
+# A second renderer, wgpu (Vulkan), tried before glow; the supervisor falls back to glow when it cannot start. Only
+# for machines where the OpenGL buffer swap keeps failing (eframe ends on a failed swap; wgpu recovers lost or
+# outdated surfaces). Adds about 5.6 MB to the stripped binary.
+wgpu = ["eframe/wgpu"]
+# X11 (XWayland) as the last fallback when no Wayland connection works. Adds about 1 MB.
+x11 = ["eframe/x11"]
+
+[dependencies]
+pimax-gui-core = { path = "../pimax-gui-core" }
+pimax-config = { path = "../pimax-config" }
+pimax-doctor = { path = "../pimax-doctor" }
+# OpenGL (glow) on Wayland only by default: the smallest build; `wgpu` and `x11` add renderers (see [features])
+eframe = { version = "0.36", default-features = false, features = ["glow", "wayland", "default_fonts"] }
+png = "0.18"
+log = { workspace = true }
+libc = { workspace = true }
+# outline icons of the Pimax Play style look; only the used glyphs are compiled in (subset)
+egui-phosphor = { version = "0.14", default-features = false, features = ["subset"] }
+# native crashes (a graphics driver): a minidump written by the supervisor process
+crash-handler = "0.8"
+minidumper = "0.11"
+
+[dev-dependencies]
+egui_kittest = "0.36"

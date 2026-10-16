@@ -1,0 +1,46 @@
+# Pimax auto mode: copy to ~/.config/pimax/auto.toml and edit. Every key is optional; these are the defaults.
+# Read by pimax-autod at start (restart it after editing). Docs: docs/AUTO-MODE.md
+
+# Log what would be done, start/stop nothing. Flip to false once the live checklist passed.
+dry_run = true
+# Start a session when the headset is put on.
+auto_start = true
+# What starts: desk (WayVR desktop over passthrough) or game (the game runtime below).
+mode = "desk"
+# Game runtime: monado (our Monado + xrizer) or steamvr (phase 1: start SteamVR yourself; auto mode keeps out).
+# `pimax vr steam-options` follows this.
+game_runtime = "monado"
+# Desk preset: none, cinema, work, assistant (pimax desk start --preset).
+preset = "none"
+
+# Session flags: --6dof, --ctrl-track (needs 6dof), the wrist perf readout.
+sixdof = true
+ctrl_track = true
+perf = true
+# After a start, relocalise against this room map if ~/.local/share/pimax/roommap/<room_map>/map.bin exists
+# (pimax-roommap relocalize --source broker --name <room_map> --apply; Monado gets PIMAX_ANCHOR=1).
+relocalize = true
+room_map = "home"
+
+# Stop a game for idleness too (default: never touch a running game).
+sleep_games = false
+# Stop sessions auto mode did not start (default: only its own).
+sleep_foreign = false
+
+# Timing (seconds).
+poll_s = 2
+plug_debounce_s = 4
+unplug_debounce_s = 6
+wear_on_s = 4          # continuous wear evidence before a start
+dim_after_s = 60       # not worn this long -> idle-dim (notification)
+sleep_after_s = 600    # idle-dim this long -> sleep (session stopped)
+session_lost_s = 10
+retry_after_s = 120    # after a failed start (also needs a take-off + put-on)
+
+# Wear detection from IMU micro-motion (hidraw IF2, read-only): gyro std in deg/s.
+imu = true
+still_dps = 0.2
+worn_dps = 0.3
+
+pimax_bin = "~/.local/bin/pimax"
+roommap_bin = "~/pimax-re/rust/target/release/pimax-roommap"

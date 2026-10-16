@@ -1,0 +1,51 @@
+# Pimax Crystal Super: MOCK. Nothing here is verified on a real unit; the stack does not drive this headset.
+# It exists so the GUI, onboarding and checks already have room for it, and as the template a contributor with this
+# headset fills in (docs/ARCHITECTURE.md "Adding a headset"). No [[hid]] entries: the gate refuses every command.
+
+[device]
+id = "crystal-super"
+name = "Pimax Crystal Super"
+vendor = "pimax"
+status = "mock"
+usb_vid = 0x34a4
+usb_pids = []                          # unknown: never auto-matched
+usb_pid_candidates = [0x0012, 0x0018, 0x0040, 0x0101]              # UNVERIFIED, from CustomHeadsetOpenVR (analysis/research/portability-and-calibration-gui.md section 5)
+command_interface = 0
+
+[display]
+status = "unknown"
+mode = []
+refresh_hz = []
+needs = []
+note = "Crystal family protocol not reverse engineered (vronlinux)"
+
+[tracking]
+status = "unknown"
+head = "inside_out"
+
+[controllers]
+status = "unknown"
+slots = []
+pairing = "unknown"
+
+[eye_tracking]
+status = "unknown"
+
+[ipd]
+status = "unknown"
+motor = false
+
+[cameras]
+status = "unknown"
+count = 0
+
+[audio]
+status = "unknown"
+sink_match = []
+source_match = []
+
+[calibration]
+paths = []
+
+[onboarding]
+steps = ["detect", "checks", "fixes", "udev", "done"]

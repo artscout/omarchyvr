@@ -1,0 +1,33 @@
+usage: pimax desk <command> [options]
+  start [--no-passthrough] [--eye] [--6dof [--ctrl-track]] [--voice [--voice-hud]] [--no-perf] [--settle SECS] [--passthrough-bin P] [--wayvr-bin P] [--wayvr-home DIR]
+        [--voice-bin P] [--voice-hud-bin P] [--wayvrctl-bin P] [--perf-bin P]
+        [+ the options of `pimax vr start`: --fps, --monado-build, --connector, --dry-run, --force, --no-notify, ...]
+      monado-service (like `pimax vr start`), then pimax-passthrough run (the main OpenXR app), then WayVR as an
+      overlay (CPU screencopy config). --no-passthrough: Monado + WayVR only. --eye: PIMAX_EYE=1 and the build in
+      ~/src/monado-eye/build (unless --monado-build or PIMAX_MONADO_BUILD says otherwise). --6dof: live 6DoF head
+      tracking: starts `pimax-cam broker` first (stopped last by `desk stop`), PIMAX_SLAM=1 PIMAX_CAM_AE=1
+      PIMAX_CAM_SOURCE=broker + the Basalt config for Monado, passthrough reads the broker; needs the merged Monado
+      build (eye + slam, branch desk in ~/src/monado-eye) and refuses a build without the 6DoF code.
+      --ctrl-track (with --6dof): optical 6DoF controllers: `pimax-ctrltrack live --source broker` (LED frames ->
+      controller poses in the head frame, $XDG_RUNTIME_DIR/pimax-ctrltrack.pose) and PIMAX_CTRL_TRACK=1 for Monado,
+      which puts the controllers there. Out of view: gyro orientation (calibrated online from the optical poses,
+      ~/.config/pimax/ctrl-imu.json), arm-model hold relative to the head, rest pose after PIMAX_CTRL_TRACK_LOST_S (4 s).
+      Logs gyro + optical fixes to <session dir>/ctrl-imu-{left,right}.csv (pimax-ctrltrack imufit). See
+      analysis/controller-6dof.md.
+      Controller rays aim where you look (PIMAX_CTRL_AIM=head for Monado; set PIMAX_CTRL_AIM=level to keep the old
+      straight-ahead rays); hand placement: PIMAX_CTRL_REST (desk default, legacy), see analysis/hands-desk.md.
+      --voice: voice captions: `pimax-voice listen` (headset mic -> local speech-to-text, socket
+      $XDG_RUNTIME_DIR/pimax-voice.sock) and `pimax-voice captions` (the words on a WayVR panel under the main screen,
+      driven with wayvrctl; nothing is typed). --voice-hud adds the old head-locked `pimax-voice-hud` overlay too.
+      Performance readout on the RIGHT wrist (WayVR panel `perf`, like the watch but not grabbable), by default:
+      HMD fps vs 72/90, main app fps, frames missed in the last 5 s, app CPU/GPU ms; green, yellow under 95 %,
+      red under 85 %. Monado writes $XDG_RUNTIME_DIR/pimax-perf.stats (PIMAX_PERF_FILE), `pimax-perf run` shows it.
+      --no-perf turns it off.
+      Desk mode always hides the WayVR keyboard (conf.d/35-desk.yaml: enable_keyboard: false).
+      Logs per process in the session dir: monado.log, passthrough.log, wayvr.log, wayvr.stdout (+ voice.log, voicecap.log, voicehud.log).
+  stop [--grace SECS]
+      SIGINT to the voice HUD and listener (if started), WayVR, then passthrough (by pid, 10 s each), then Monado: SIGINT, SIGKILL only after --grace
+      (default 30 s); then the kernel log check (Xid / Idling display engine).
+  status
+      pids of the desk processes and `pimax vr status`.
+environment: PIMAX_MONADO_BUILD (default ~/src/monado-eye/build if built, else ~/src/monado/build), PIMAX_VR_SESSION_DIR.

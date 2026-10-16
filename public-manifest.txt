@@ -1,0 +1,148 @@
+# public-manifest.txt: the allow-list for tools/export-public.sh (docs/OPEN-SOURCE-PLAN.md 1.6-1.8).
+#
+# Only files committed at HEAD are considered. A file goes to the public export when it matches a "+" line and no
+# "-" line ("-" wins). Patterns are globs over repo paths ("**" = any number of directories).
+# "= DEST <- SRC" puts the committed file SRC at DEST in the export (synthetic stand-ins for private fixtures).
+# Everything not listed stays in the private lab. When you add a top-level path, decide here: in or out.
+
+# ---- top level -------------------------------------------------------------------------------------------------
++ README.md
++ AGENTS.md
++ LICENSE-MIT
++ LICENSE-APACHE
++ LICENSE-CC-BY-4.0
++ NOTICE
++ THIRD-PARTY.md
++ public-manifest.txt
++ .gitignore
++ .gitattributes
++ .claude/CLAUDE.md
+# lab diaries and personal notes (serials, dates, the lab PC): private
+- HISTORY.md
+- STATUS.md
+- NEXT-STEPS.md
+- vm-test-plan.md
+- pimax-stack.html
+- capture*.ps1
+
+# ---- code ------------------------------------------------------------------------------------------------------
++ rust/**
++ libpimax/**
++ linux/**
++ monado/**
++ packaging/**
++ windows/**
++ tools/export-public.sh
++ tools/make-synthetic-calib.py
++ tools/room-test.sh
++ tools/voice-test.sh
++ tools/known-test-failures.txt
+# personal helpers (Claude login transfer, USB stick, shared-drive defaults)
+- tools/make-transfer-stick.ps1
+- tools/restore-claude-omarchy.sh
+- tools/usb-stick-test.ps1
+
+# private fixtures: per-unit calibration, room images, Tobii (eye chip) USB transcripts and gaze captures
+- rust/pimax-cam/tests/fixtures/evening2.pxcam
+- rust/pimax-passthrough/tests/fixtures/*.png
+- rust/fixtures/if0_replies_coldstart.rec.gz
+- rust/pimax-eye/fixtures/*.usbpcap.gz
+- rust/pimax-eye/fixtures/*.golden.gz
+- rust/pimax-eye/data/replay-frames.txt
+= rust/pimax-cam/tests/fixtures/headset-calibration.xml <- rust/fixtures/synthetic/headset-calibration.xml
+= rust/pimax-eye/data/replay-frames.txt <- rust/fixtures/synthetic/replay-frames.txt
+
+# ---- docs ------------------------------------------------------------------------------------------------------
++ docs/**
+# a screenshot of Pimax Play (their UI)
+- docs/gui/inspiration/**
+
+# ---- analysis: protocol, display, tracking findings and their tools (D6) ---------------------------------------
++ analysis/tools/**
+- analysis/tools/ttp_*
++ analysis/anchor/**
++ analysis/research/*.md
+- analysis/research/eye-tracking.md
++ analysis/init-sequence.md
++ analysis/device-map.md
++ analysis/poweron.md
++ analysis/usb-stuck-recovery.md
++ analysis/reset-headset-slow-reenum.md
++ analysis/dp-edid-linux.md
++ analysis/edid-non-desktop.md
++ analysis/direct-mode.md
++ analysis/direct-mode-test.md
++ analysis/dsc-research.md
++ analysis/dsc-eye-duplication.md
++ analysis/headset-dpcd.md
++ analysis/nvidia-flip-hang.md
++ analysis/nvidia-dsc-linkrate.md
++ analysis/nvidia-hmd-modes-research.md
++ analysis/nvidia-vk-display-2h1or.md
++ analysis/nvkms-mode-validation.md
++ analysis/imu-orientation.md
++ analysis/imu-camera.md
++ analysis/camera-frames.md
++ analysis/camera-broker.md
++ analysis/controllers-linux.md
++ analysis/controller-activation.md
++ analysis/controller-6dof.md
++ analysis/ctrl-lock-rate.md
++ analysis/monado-driver.md
++ analysis/monado-controllers.md
++ analysis/lens-distortion.md
++ analysis/pvr-distortion-fit.md
++ analysis/slam-drift.md
++ analysis/slam-exposure.md
++ analysis/tracking-vs-windows.md
++ analysis/eye-gaze-full.md
++ analysis/eyetracking.md
++ analysis/wayvr-gaze.md
++ analysis/room-map.md
++ analysis/floor.md
++ analysis/passthrough-design.md
++ analysis/steamvr-games.md
++ analysis/steamvr-native-linux.md
++ analysis/windows-6dof-params.md
++ analysis/windows-linux-command-diff.md
++ analysis/rust-port.md
++ analysis/runtime-plan.md
++ analysis/auto-mode.md
++ analysis/voice.md
++ analysis/ae-stall.md
+# never public: eye-auth analysis, Tobii transcripts, raw logs, frames of the room, pickles, calibration, captures
+- analysis/eye-auth-feasibility.md
+- analysis/eye-coldstart*
+- analysis/eye-coldstart/**
+- analysis/headset-calibration*.xml
+- analysis/*.pkl
+- analysis/frames/**
+- analysis/overnight/**
+- analysis/passthrough/**
+- analysis/hands-desk/**
+- analysis/incidents/**
+- analysis/logs-*
+- analysis/logs-*/**
+- calib/**
+- pimax-data/**
+- captures*/**
+
+# ---- never, anywhere (also enforced by the extension deny-list in the script) ----------------------------------
+- **/*.pkl
+- **/*.pcap
+- **/*.pcapng
+- **/*.dll
+- **/*.exe
+- **/*.sys
+- **/*.dmp
+- **/*.pxcam
+- **/*.jpg
+- **/*.jpeg
+- **/*.pgm
+- **/*.ppm
+
+# ---- public third-party e-mail addresses that may stay (upstream authors and mailing lists) --------------------
+~ email @kernel.org
+~ email @lists.freedesktop.org
+~ email @netron.dev
+~ email @lach.pw

@@ -1,0 +1,22 @@
+[package]
+name = "pimax-difftest"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "Differential tests: the original C libpimax (decode.c, pimax.c compiled with renamed symbols) against the Rust port."
+
+[dependencies]
+pimax = { workspace = true }
+pimax-proto = { workspace = true, features = ["std"] }
+
+[build-dependencies]
+cc = { workspace = true }
+
+[dev-dependencies]
+flate2 = { workspace = true }
+proptest = { workspace = true }
+
+[[bench]]
+name = "decode"
+harness = false

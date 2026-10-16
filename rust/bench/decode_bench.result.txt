@@ -1,0 +1,12 @@
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+decode throughput, best of 15 passes (63369 IMU reports, 87611 controller reports)
+rust decode_imu                   3.3 ns/report     305.8 Mreports/s
+c    pimax_decode_imu             5.4 ns/report     185.8 Mreports/s
+rust decode_controller            3.6 ns/report     281.2 Mreports/s
+c    pimax_decode_controller      7.0 ns/report     143.4 Mreports/s
+ratio rust/c: imu 0.61x, controller 0.51x (below 1.0 = Rust faster)
+headroom: the headset produces 500 IMU + 2x250 controller reports per second

@@ -1,0 +1,45 @@
+From f19b4e7760e0ecf63936a3b4ac263c7436e72b7a Mon Sep 17 00:00:00 2001
+From: laughtt <22533943+laughtt@users.noreply.github.com>
+Date: Tue, 13 Oct 2026 22:47:47 +0800
+Subject: [PATCH] pimax: opt-in PIMAX_USE_RUST_LIBPIMAX to link the Rust
+ libpimax (pimax-capi)
+
+---
+ src/xrt/drivers/CMakeLists.txt | 17 +++++++++++++----
+ 1 file changed, 13 insertions(+), 4 deletions(-)
+
+diff --git a/src/xrt/drivers/CMakeLists.txt b/src/xrt/drivers/CMakeLists.txt
+index ac8548f..6b27c3e 100644
+--- a/src/xrt/drivers/CMakeLists.txt
++++ b/src/xrt/drivers/CMakeLists.txt
+@@ -114,14 +114,23 @@ if(XRT_BUILD_DRIVER_HDK)
+ endif()
+ 
+ if(XRT_BUILD_DRIVER_PIMAX)
+-	# libpimax (hidraw wake/keepalive/IMU library) is compiled straight into the driver.
++	# libpimax (hidraw wake/keepalive/IMU library). Default: the C sources are compiled straight into the driver.
++	# -DPIMAX_USE_RUST_LIBPIMAX=ON links the Rust port (rust/pimax-capi, identical C ABI) instead:
++	#   (cd ~/pimax-re/rust && cargo build --release -p pimax-capi)
+ 	set(PIMAX_LIBPIMAX_DIR "/home/user/pimax-re/libpimax" CACHE PATH "Path to libpimax")
++	option(PIMAX_USE_RUST_LIBPIMAX "Link libpimax_capi.a (Rust) instead of compiling libpimax/src/*.c" OFF)
++	set(PIMAX_RUST_TARGET_DIR "/home/user/pimax-re/rust/target/release" CACHE PATH "Directory with libpimax_capi.a")
+ 	find_package(Threads REQUIRED)
+-	add_library(
+-		drv_pimax STATIC
++	set(PIMAX_DRIVER_SOURCES
+ 		pimax/pimax_hmd.c pimax/pimax_lens.c pimax/pimax_lens.h pimax/pimax_interface.h pimax/pimax_prober.c pimax/pimax_ctrl.c pimax/pimax_ctrl.h
+-		${PIMAX_LIBPIMAX_DIR}/src/pimax.c ${PIMAX_LIBPIMAX_DIR}/src/decode.c
+ 		)
++	if(PIMAX_USE_RUST_LIBPIMAX)
++		add_library(drv_pimax STATIC ${PIMAX_DRIVER_SOURCES})
++		# native-static-libs reported by rustc for the staticlib: -lgcc_s -lutil -lrt -lpthread -lm -ldl -lc
++		target_link_libraries(drv_pimax PRIVATE ${PIMAX_RUST_TARGET_DIR}/libpimax_capi.a ${CMAKE_DL_LIBS} m rt util Threads::Threads)
++	else()
++		add_library(drv_pimax STATIC ${PIMAX_DRIVER_SOURCES} ${PIMAX_LIBPIMAX_DIR}/src/pimax.c ${PIMAX_LIBPIMAX_DIR}/src/decode.c)
++	endif()
+ 	target_include_directories(drv_pimax PRIVATE ${PIMAX_LIBPIMAX_DIR}/include)
+ 	target_link_libraries(drv_pimax PRIVATE xrt-interfaces aux_util aux_math Threads::Threads)
+ 	list(APPEND ENABLED_HEADSET_DRIVERS pimax)
+-- 
+2.55.0
+

@@ -1,0 +1,50 @@
+From de3a36e1cb0134c8b3102ea50be87767c1e7c581 Mon Sep 17 00:00:00 2001
+From: laughtt <22533943+laughtt@users.noreply.github.com>
+Date: Tue, 13 Oct 2026 20:59:38 +0800
+Subject: [PATCH 3/7] pimax: send video-prepare(72) at device creation and
+ publish rate to keepalive
+
+---
+ src/xrt/drivers/pimax/pimax_hmd.c | 19 +++++++++++++++++++
+ 1 file changed, 19 insertions(+)
+
+diff --git a/src/xrt/drivers/pimax/pimax_hmd.c b/src/xrt/drivers/pimax/pimax_hmd.c
+index 1d6c8e1..c464c4c 100644
+--- a/src/xrt/drivers/pimax/pimax_hmd.c
++++ b/src/xrt/drivers/pimax/pimax_hmd.c
+@@ -35,6 +35,7 @@
+ 
+ #include <math.h>
+ #include <stdio.h>
++#include <stdlib.h>
+ 
+ DEBUG_GET_ONCE_LOG_OPTION(pimax_log, "PIMAX_LOG", U_LOGGING_INFO)
+ //! TODO: the panels are mounted rotated by 90 deg (direction unknown). 0, 90, 180 or 270.
+@@ -406,6 +407,24 @@ pimax_hmd_create(void)
+ 		return NULL;
+ 	}
+ 
++	// Firmware only lights the panels after the video-prepare sequence and ~5.5 s of stable 72 Hz video.
++	// Also tell the keepalive service (pimax-keepalived) which rate to carry.
++	int prep = pimax_video_prepare(hmd->lib, 72);
++	HMD_INFO(hmd, "pimax_video_prepare(72) -> %d", prep);
++	const char *xdg = getenv("XDG_RUNTIME_DIR");
++	if (xdg != NULL) {
++		char path[512];
++		snprintf(path, sizeof(path), "%s/pimax-rate", xdg);
++		FILE *f = fopen(path, "w");
++		if (f != NULL) {
++			fputs("72\n", f);
++			fclose(f);
++			HMD_INFO(hmd, "wrote 72 to %s", path);
++		} else {
++			HMD_WARN(hmd, "could not write %s", path);
++		}
++	}
++
+ 	u_var_add_root(hmd, "Pimax Dream Air", true);
+ 	u_var_add_log_level(hmd, &hmd->log_level, "log_level");
+ 	u_var_add_bool(hmd, &hmd->bias_done, "gyro bias done");
+-- 
+2.55.0
+

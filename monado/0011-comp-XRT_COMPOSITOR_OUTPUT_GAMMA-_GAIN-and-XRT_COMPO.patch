@@ -1,0 +1,263 @@
+From 83da7177c492cd96e0f8c6ea1fc360e6667022f3 Mon Sep 17 00:00:00 2001
+From: laughtt <22533943+laughtt@users.noreply.github.com>
+Date: Wed, 14 Oct 2026 00:20:23 +0800
+Subject: [PATCH 11/17] comp: XRT_COMPOSITOR_OUTPUT_GAMMA / _GAIN and
+ XRT_COMPOSITOR_TARGET_FORMAT experiment knobs (default: no change)
+
+Why: sRGB clients already round-trip unchanged through the compute compositor (distortion.comp samples the sRGB
+swapchain through an sRGB view and ends with from_linear_to_srgb, written into the UNORM storage target; dumps of
+xr_eyetest_srgb show exactly the client's bytes) and UNORM clients are treated as linear and come out lifted. If the
+headset still looks too dark or too bright for a given game or panel, these knobs allow trying a different transfer
+curve without changing shaders each time:
+
+* XRT_COMPOSITOR_OUTPUT_GAMMA=<g>: the sRGB encoded result is raised to the power g (g < 1 brightens the mid tones,
+  g > 1 darkens them), XRT_COMPOSITOR_OUTPUT_GAIN=<k>: linear colour times k before the encode. Both default to 1.0,
+  which keeps the output unchanged (the shader skips the pow, the gain multiplication by 1.0 is exact). The values go
+  through the existing compute distortion UBO (one vec4 appended; a _Static_assert pins its std140 offset), set in
+  dispatch_project_pipeline, the one place all projection paths share. distortion.comp is the last stage that writes
+  the final target, so layer.comp (which writes the intermediate scratch image) needs no change. Values outside
+  0.05..20 / 0..100 are ignored with a warning. Compute path only (the graphics path has an sRGB target and no
+  shader encode).
+* XRT_COMPOSITOR_TARGET_FORMAT=<name>: try this target format first (A2B10G10R10_UNORM, B8G8R8A8_UNORM,
+  R8G8B8A8_UNORM, A8B8G8R8_UNORM; the SRGB names only apply with XRT_COMPOSITOR_COMPUTE=0), to get an 8 bit instead
+  of the 10 bit target. Only formats already in the candidate list are considered. (No fp16: the frame dump sizes
+  its staging buffer for 4 bytes per texel.)
+
+Both print a warning when active so that nobody forgets them. Verified with XRT_COMPOSITOR_DUMP_DIR on the Dream Air
+(analysis/overnight/polish.md): unset = identical to before in all flat areas, gamma 0.8 and gain 1.5 give the
+values the formulas predict to within 10 bit rounding, B8G8R8A8_UNORM gives fmt 44 dumps with the same colours.
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+---
+ src/xrt/auxiliary/render/render_compute.c     | 47 ++++++++++++++
+ src/xrt/auxiliary/render/render_interface.h   |  6 ++
+ .../auxiliary/render/shaders/distortion.comp  | 12 +++-
+ src/xrt/compositor/main/comp_settings.c       | 63 +++++++++++++++++++
+ 4 files changed, 127 insertions(+), 1 deletion(-)
+
+diff --git a/src/xrt/auxiliary/render/render_compute.c b/src/xrt/auxiliary/render/render_compute.c
+index ff9c97c..be00346 100644
+--- a/src/xrt/auxiliary/render/render_compute.c
++++ b/src/xrt/auxiliary/render/render_compute.c
+@@ -7,6 +7,7 @@
+  * @ingroup aux_render
+  */
+ 
++#include "util/u_debug.h"
+ #include "math/m_api.h"
+ #include "math/m_matrix_4x4_f64.h"
+ 
+@@ -14,6 +15,8 @@
+ 
+ #include "render/render_interface.h"
+ 
++#include <stddef.h>
++
+ 
+ /*
+  *
+@@ -278,6 +281,49 @@ update_compute_descriptor_set_target(struct vk_bundle *vk,
+ 	    NULL);                             // pDescriptorCopies
+ }
+ 
++/*!
++ * Debug: XRT_COMPOSITOR_OUTPUT_GAMMA=<g> raises the sRGB encoded output to the power g (g < 1 brightens the mid tones,
++ * g > 1 darkens them); XRT_COMPOSITOR_OUTPUT_GAIN=<k> multiplies the linear colour before the sRGB encode. Both default
++ * to 1.0, which leaves the output bit-identical. Applied only by the compute distortion shader, the last stage that
++ * writes the final target image.
++ */
++DEBUG_GET_ONCE_FLOAT_OPTION(output_gamma, "XRT_COMPOSITOR_OUTPUT_GAMMA", 1.0f)
++DEBUG_GET_ONCE_FLOAT_OPTION(output_gain, "XRT_COMPOSITOR_OUTPUT_GAIN", 1.0f)
++
++// The std140 offset of "vec4 output_adjust" in the Config block of distortion.comp: views, pre_transform and
++// post_transform are 2 x 16 bytes each, the two timewarp matrix arrays 2 x 64 bytes each.
++_Static_assert(offsetof(struct render_compute_distortion_ubo_data, output_adjust) == 352,
++               "output_adjust must sit at the std140 offset that distortion.comp expects");
++
++static void
++fill_output_adjust(struct render_compute_distortion_ubo_data *data)
++{
++	float gamma = debug_get_float_option_output_gamma();
++	float gain = debug_get_float_option_output_gain();
++	// Guard against nonsense (the variables are meant for experiments): fall back to "unchanged", and say so.
++	bool gamma_ok = gamma > 0.05f && gamma < 20.0f; // false for NaN as well
++	bool gain_ok = gain > 0.0f && gain < 100.0f;
++	data->output_adjust[0] = gamma_ok ? gamma : 1.0f;
++	data->output_adjust[1] = gain_ok ? gain : 1.0f;
++	static bool warned_range = false;
++	if (!warned_range && (!gamma_ok || !gain_ok)) {
++		warned_range = true;
++		U_LOG_W("XRT_COMPOSITOR_OUTPUT_GAMMA (%f) must be in 0.05..20 and XRT_COMPOSITOR_OUTPUT_GAIN (%f) in "
++		        "0..100: the invalid one is ignored",
++		        gamma, gain);
++	}
++	data->output_adjust[2] = 0.0f;
++	data->output_adjust[3] = 0.0f;
++
++	static bool logged = false;
++	if (!logged && (data->output_adjust[0] != 1.0f || data->output_adjust[1] != 1.0f)) {
++		logged = true;
++		U_LOG_W("Output colour adjustment active: gamma %.3f (XRT_COMPOSITOR_OUTPUT_GAMMA), gain %.3f "
++		        "(XRT_COMPOSITOR_OUTPUT_GAIN)",
++		        data->output_adjust[0], data->output_adjust[1]);
++	}
++}
++
+ static void
+ dispatch_project_pipeline(struct render_compute *render,
+                           VkSampler src_samplers[XRT_MAX_VIEWS],
+@@ -303,6 +349,7 @@ dispatch_project_pipeline(struct render_compute *render,
+ 		data->views[i] = views[i];
+ 		data->post_transforms[i] = src_norm_rects[i];
+ 	}
++	fill_output_adjust(data);
+ 
+ 
+ 	/*
+diff --git a/src/xrt/auxiliary/render/render_interface.h b/src/xrt/auxiliary/render/render_interface.h
+index b665be4..ac69dc1 100644
+--- a/src/xrt/auxiliary/render/render_interface.h
++++ b/src/xrt/auxiliary/render/render_interface.h
+@@ -1377,6 +1377,12 @@ struct render_compute_distortion_ubo_data
+ 	struct xrt_normalized_rect post_transforms[XRT_MAX_VIEWS];
+ 	struct xrt_matrix_4x4 transform_timewarp_scanout_begin[XRT_MAX_VIEWS];
+ 	struct xrt_matrix_4x4 transform_timewarp_scanout_end[XRT_MAX_VIEWS];
++
++	/*!
++	 * Output colour adjustment of distortion.comp: [0] exponent applied to the sRGB encoded result, [1] gain applied
++	 * to the linear colour, [2] and [3] unused. 1.0 and 1.0 leave the output unchanged.
++	 */
++	float output_adjust[4];
+ };
+ 
+ /*!
+diff --git a/src/xrt/auxiliary/render/shaders/distortion.comp b/src/xrt/auxiliary/render/shaders/distortion.comp
+index 075e1ff..55f1519 100644
+--- a/src/xrt/auxiliary/render/shaders/distortion.comp
++++ b/src/xrt/auxiliary/render/shaders/distortion.comp
+@@ -29,6 +29,9 @@ layout(set = 0, binding = 3, std140) uniform restrict Config
+ 	vec4 post_transform[2];
+ 	mat4 transform_timewarp_scanout_begin[2];
+ 	mat4 transform_timewarp_scanout_end[2];
++	// Output colour adjustment, see XRT_COMPOSITOR_OUTPUT_GAMMA / XRT_COMPOSITOR_OUTPUT_GAIN.
++	// x: exponent applied to the sRGB encoded result, y: gain applied to the linear colour. 1.0 / 1.0 = unchanged.
++	vec4 output_adjust;
+ }ubo;
+ 
+ 
+@@ -136,7 +139,14 @@ void main()
+ 	    1);                          //
+ 
+ 	// Do colour correction here since there are no automatic conversion in hardware available.
+-	colour = vec4(from_linear_to_srgb(colour.rgb), 1);
++	vec3 encoded = from_linear_to_srgb(colour.rgb * ubo.output_adjust.y);
++
++	// Optional extra transfer step, off by default: the default values leave the encoded colour bit-identical.
++	if (ubo.output_adjust.x != 1.0) {
++		encoded = pow(max(encoded, vec3(0.0)), vec3(ubo.output_adjust.x));
++	}
++
++	colour = vec4(encoded, 1);
+ 
+ 	imageStore(target, ivec2(offset.x + ix, offset.y + iy), colour);
+ }
+diff --git a/src/xrt/compositor/main/comp_settings.c b/src/xrt/compositor/main/comp_settings.c
+index 22e2580..0e5b68d 100644
+--- a/src/xrt/compositor/main/comp_settings.c
++++ b/src/xrt/compositor/main/comp_settings.c
+@@ -11,6 +11,8 @@
+ #include "util/u_debug.h"
+ #include "comp_settings.h"
+ 
++#include <string.h>
++
+ #ifdef XRT_OS_ANDROID
+ #define USE_COMPUTE_DEFAULT false
+ #else
+@@ -36,8 +38,26 @@ DEBUG_GET_ONCE_BOOL_OPTION(xcb_fullscreen, "XRT_COMPOSITOR_XCB_FULLSCREEN", fals
+ DEBUG_GET_ONCE_NUM_OPTION(xcb_display, "XRT_COMPOSITOR_XCB_DISPLAY", -1)
+ DEBUG_GET_ONCE_NUM_OPTION(default_framerate, "XRT_COMPOSITOR_DEFAULT_FRAMERATE", 60)
+ DEBUG_GET_ONCE_BOOL_OPTION(compute, "XRT_COMPOSITOR_COMPUTE", USE_COMPUTE_DEFAULT)
++DEBUG_GET_ONCE_OPTION(target_format, "XRT_COMPOSITOR_TARGET_FORMAT", NULL)
+ // clang-format on
+ 
++/*!
++ * Names accepted by XRT_COMPOSITOR_TARGET_FORMAT, the format of the final image that is handed to the display.
++ */
++static const struct
++{
++	const char *name;
++	VkFormat format;
++} target_format_names[] = {
++    {"A2B10G10R10_UNORM", VK_FORMAT_A2B10G10R10_UNORM_PACK32},
++    {"B8G8R8A8_UNORM", VK_FORMAT_B8G8R8A8_UNORM},
++    {"R8G8B8A8_UNORM", VK_FORMAT_R8G8B8A8_UNORM},
++    {"A8B8G8R8_UNORM", VK_FORMAT_A8B8G8R8_UNORM_PACK32},
++    {"B8G8R8A8_SRGB", VK_FORMAT_B8G8R8A8_SRGB},
++    {"R8G8B8A8_SRGB", VK_FORMAT_R8G8B8A8_SRGB},
++    {"A8B8G8R8_SRGB", VK_FORMAT_A8B8G8R8_SRGB_PACK32},
++};
++
+ static inline void
+ add_format(struct comp_settings *s, VkFormat format)
+ {
+@@ -53,6 +73,47 @@ add_format(struct comp_settings *s, VkFormat format)
+ 	s->format_count = count;
+ }
+ 
++/*!
++ * XRT_COMPOSITOR_TARGET_FORMAT=<name>: try this target format before all others (for example B8G8R8A8_UNORM to get an
++ * 8 bit target instead of the 10 bit A2B10G10R10 one). Only formats that are already in the list are considered, the
++ * compute path cannot write sRGB formats, so for those use XRT_COMPOSITOR_COMPUTE=0.
++ */
++static void
++prefer_target_format(struct comp_settings *s)
++{
++	const char *want = debug_get_option_target_format();
++	if (want == NULL || want[0] == '\0') {
++		return;
++	}
++
++	VkFormat format = VK_FORMAT_UNDEFINED;
++	for (size_t i = 0; i < ARRAY_SIZE(target_format_names); i++) {
++		if (strcmp(want, target_format_names[i].name) == 0) {
++			format = target_format_names[i].format;
++			break;
++		}
++	}
++	if (format == VK_FORMAT_UNDEFINED) {
++		U_LOG_W("XRT_COMPOSITOR_TARGET_FORMAT=%s is not a known name (A2B10G10R10_UNORM, B8G8R8A8_UNORM, ...)", want);
++		return;
++	}
++
++	for (uint32_t i = 0; i < s->format_count; i++) {
++		if (s->formats[i] != format) {
++			continue;
++		}
++		// Move to the front, keep the order of the others.
++		for (uint32_t k = i; k > 0; k--) {
++			s->formats[k] = s->formats[k - 1];
++		}
++		s->formats[0] = format;
++		// A warning, not info: the default global log level hides info, and an experimental override should be visible.
++		U_LOG_W("XRT_COMPOSITOR_TARGET_FORMAT=%s: trying this target format first", want);
++		return;
++	}
++	U_LOG_W("XRT_COMPOSITOR_TARGET_FORMAT=%s is not usable with the current compositor mode, ignored", want);
++}
++
+ static VkPresentModeKHR
+ get_desired_present_mode(void)
+ {
+@@ -160,6 +221,8 @@ comp_settings_init(struct comp_settings *s, struct xrt_device *xdev)
+ 		add_format(s, VK_FORMAT_A8B8G8R8_SRGB_PACK32);
+ 	}
+ 
++	prefer_target_format(s);
++
+ 	s->display = debug_get_num_option_xcb_display();
+ 	s->color_space = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+ 	s->present_mode = get_desired_present_mode();
+-- 
+2.55.0
+

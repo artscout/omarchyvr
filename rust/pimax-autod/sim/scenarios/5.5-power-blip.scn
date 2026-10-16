@@ -1,0 +1,8 @@
+# 5.5 a headset power blip shorter than the 6 s debounce: libpimax reconnects by itself, pimaxd does nothing.
+start desk
+at 10 down usb.hid usb.cam usb.eye display.dp1
+at 13 up usb.hid usb.cam usb.eye display.dp1
+at 30 down usb.hid
+at 32 up usb.hid
+expect 60 runs 0
+expect 60 overall ok

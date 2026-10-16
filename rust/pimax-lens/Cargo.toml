@@ -1,0 +1,21 @@
+[package]
+name = "pimax-lens"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Pimax Dream Air lens distortion model (per-channel radial polynomials, visibility mask, debug UV grid) with a C ABI for the Monado driver."
+
+[lib]
+name = "pimax_lens"
+crate-type = ["staticlib", "rlib"]
+
+[[bin]]
+name = "pimax-lens"
+path = "src/bin/pimax-lens.rs"
+
+[dependencies]
+miniz_oxide = { workspace = true }
+libc = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }

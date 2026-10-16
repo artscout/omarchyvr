@@ -1,0 +1,61 @@
+# Pimax Dream Air lens model for the Monado pimax driver.
+# Install:  mkdir -p ~/.config/pimax && cp lens.conf.example ~/.config/pimax/lens.conf
+# Path override: PIMAX_LENS_CONF=/path/to/file.   Read once when monado-service starts: restart it after editing.
+# Forced off for one run:  PIMAX_LENS_OFF=1.
+#
+# Model: for a point p on the panel (units of HALF the display height, +x right, +y up as the viewer sees the image,
+# measured from the optical centre) the ray tangent is   tan = base*scale * p' * (1 + k1 r^2 + k2 r^4 + k3 r^6),
+# p' = p / ca,  r = |p'|.  The client renders a pinhole image covering `fov`; the compositor warps it.
+# Sections: [common] (or no section) applies to both eyes, [left] / [right] override one eye. Later lines win.
+# Every key may appear in any section. '#' and ';' start comments.
+
+[common]
+# distortion = on        # off / 0 = no lens correction at all (flat pinhole image stretched over the panel, fov still used)
+# Half-angles in degrees of the rendered FOV: left right up down. Visible FOV is limited by the panel/lens;
+# anything beyond the panel edge is wasted render area, anything short of it shows black at the edge.
+fov = 50 50 44.5 44.5
+# Focal term (tan of ray angle per unit radius at the centre) and an overall multiplier. scale > 1: world looks
+# smaller / more is seen; scale < 1: magnified.
+base = 0.65307
+scale = 1.0
+# Radial polynomial, per colour channel. Positive k1 = more angle at the edge (counter pincushion).
+k_g = 0.60779 -0.72489 0.58858
+k_r = 0.60779 -0.72489 0.58858
+k_b = 0.60779 -0.72489 0.58858
+# Lateral chromatic aberration: radius divisor per channel (r > 1 pushes that colour towards the centre).
+ca_r = 1.0045
+ca_g = 1.0
+ca_b = 0.995
+
+[left]
+# Optical centre offset from the panel centre, in half-display-heights: x y (+x right, +y up).
+# The left eye's nose is on its right, so the centre is shifted toward +x.
+center = 0.1060 0.0090
+
+[right]
+center = -0.1060 0.0090
+
+# ---------------------------------------------------------------------------------------------------------------
+# Optional extensions (the lines above are the whole old format; nothing below is active until you uncomment it, and
+# a file without these keys gives bit-identical output to the old C model: rust/pimax-lens-difftest checks that).
+#
+# More polynomial terms per channel: k, k_r, k_g, k_b take 3 to 5 numbers (k1..k5 multiply r^2 .. r^10).
+#   k_r = 0.60779 -0.72489 0.58858 0.0 0.0
+# Per-channel focal term and optical-centre shift (half-heights); base = f sets all three channels, base_r etc. one:
+#   base_r = 0.6531
+#   shift_b = 0.002 0.0
+# Fit range: the default polynomial is fitted to the angle table out to panel radius r = 1.148 (55 deg). Beyond
+# `fit_range` the radial curve continues as its tangent line instead of the polynomial (which rises steeply and
+# folds back for some coefficient sets). The panel corner is at r = 1.47; 0 = off (the old behaviour).
+#   fit_range = 1.15
+# Edge black-out: black margin at the panel edges in half-display-heights, one number for all sides or L R T B.
+#   blackout = 0.02
+# Visibility mask: black outside a shape around the optical centre (semi-axes a b in half-heights):
+#   mask = ellipse 1.1 1.0        # also: rect a b | superellipse a b n | off
+#   mask_feather = 0.03           # width of the transition band outside the boundary
+# A configured mask also becomes the XR_KHR_visibility_mask mesh the apps get (hidden / visible / line loop).
+#
+# Look at the result without a headset:   pimax-lens show --conf FILE     pimax-lens grid --conf FILE --out DIR
+# Inside Monado:  PIMAX_LENS_DEBUG_GRID=/tmp/lensgrid monado-service      (writes the UV grid pictures of both eyes)
+# Fit new coefficients to an angle,radius table (built-in: the Dream Air table, see analysis/lens-distortion.md):
+#   pimax-lens fit --terms 4 [--rmax 1.5] [--table my.csv]

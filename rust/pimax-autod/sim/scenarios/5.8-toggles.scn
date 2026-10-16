@@ -1,0 +1,14 @@
+# 5.8 live toggles: voice off stops act and captions before listen; perf off stops it; 6DoF is a restart toggle
+# and is refused (applies at the next start); perf on starts it again.
+start desk voice
+at 10 cmd toggle voice off
+expect 11 ran stop voice.act
+expect 20 ran stop voice.captions
+expect 20 ran stop voice.listen
+at 30 cmd toggle perf off
+expect 33 ran stop perf
+at 40 cmd toggle sixdof off
+expect 45 health broker ok
+at 50 cmd toggle perf on
+expect 53 ran start perf
+expect 60 overall ok

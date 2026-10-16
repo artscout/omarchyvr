@@ -1,0 +1,11 @@
+# Game-running: a Steam game runs in our Monado session. Taking the headset off never stops it.
+# When the game exits the idle session goes to sleep.
+config mode=game
+at 0 plugged=1 motion=worn
+expect 8 active(game)
+at 20 game=1
+at 30 motion=still
+expect 91 idle-dim(game)
+expect 2000 idle-dim(game)  # sleep_games = false: never stopped
+at 2100 game=0
+expect 2101 sleep

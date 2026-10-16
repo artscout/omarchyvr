@@ -1,0 +1,5 @@
+window 60.0 s, headset connected, same time interval for every process
+process                                       cpu ms    cpu %  wakeups/s   RSS kB  threads
+python service (pimax_keepalived.py)           403.0    0.672      778.1    12532        1
+rust  pimax keepalived                         340.8    0.568      789.0     3092        2
+rust uses 85 % of the python CPU time, 25 % of its RSS

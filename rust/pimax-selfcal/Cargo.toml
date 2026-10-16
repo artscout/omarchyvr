@@ -1,0 +1,20 @@
+[package]
+name = "pimax-selfcal"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Self-calibration for the Pimax Dream Air tracking cameras: dense stereo matches on recorded (later live) frames, rotation-only bundle adjustment of the camera-to-camera extrinsics, a learned-calibration overlay next to the factory blob (with sanity bounds and rollback), and before/after checks (rectified vertical disparity, passthrough eye-view overlap)."
+
+[lib]
+name = "pimax_selfcal"
+path = "src/lib.rs"
+
+[[bin]]
+name = "pimax-selfcal"
+path = "src/main.rs"
+
+[dependencies]
+pimax-cam = { path = "../pimax-cam" }
+# eye-view (passthrough) before/after check and the PNG decoder; OpenXR/Vulkan in that crate are dlopen'ed,
+# nothing here links or opens a runtime.
+pimax-passthrough = { path = "../pimax-passthrough" }

@@ -1,0 +1,13 @@
+# Rust replacement for linux/pimax-keepalived.service. NOT installed. See analysis/rust-port.md (switch-over plan).
+# Install (after approval):  install -Dm755 rust/target/release/pimax ~/.local/bin/pimax
+[Unit]
+Description=Pimax Dream Air USB keepalive, Rust (wake + 58 04 39 every 213 ms)
+Conflicts=pimax-keepalived.service
+
+[Service]
+ExecStart=%h/.local/bin/pimax keepalived
+Restart=always
+RestartSec=1
+
+[Install]
+WantedBy=default.target

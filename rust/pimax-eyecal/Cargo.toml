@@ -1,0 +1,21 @@
+[package]
+name = "pimax-eyecal"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Eye-tracking calibration and accuracy test for the Pimax Dream Air under Monado (OpenXR/Vulkan): per-eye calibration with comfortable head-locked targets, separate validation, head-motion check, smooth pursuit, live cursor, end-to-end check through the runtime."
+
+[lib]
+name = "pimax_eyecal"
+path = "src/lib.rs"
+
+[[bin]]
+name = "pimax-eyecal"
+path = "src/main.rs"
+
+[dependencies]
+pimax-eye = { path = "../pimax-eye" }
+pimax-lenstest = { path = "../pimax-lenstest" }
+openxr = "0.22"
+ash = "0.38"
+libc = { workspace = true }

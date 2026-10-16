@@ -1,0 +1,18 @@
+[package]
+name = "pimax-cam"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Pimax Dream Air tracking cameras (UVC 34a4:0014): V4L2 capture, tile split, frame metadata, IMU-clock timestamps, factory calibration (KB4 fisheye), raw recording/replay, stereo rectification check. C ABI (include/pimax_cam.h) for the Monado driver."
+
+[lib]
+name = "pimax_cam"
+crate-type = ["rlib", "staticlib"]
+
+[[bin]]
+name = "pimax-cam"
+path = "src/main.rs"
+
+[dependencies]
+libc = { workspace = true }
+miniz_oxide = { workspace = true }

@@ -1,0 +1,9 @@
+# 5.4 the camera does not come back within 20 s (09:21): reset-headset once (ordered stop, approved exit bytes),
+# the camera is back after 90 s, the session is restored.
+start desk
+sim reset_back=90
+at 10 down usb.cam broker passthrough ctrltrack
+expect 29 runs 0
+expect 31 ran reset-headset usb.cam
+expect 140 ran start monado
+expect 170 overall ok

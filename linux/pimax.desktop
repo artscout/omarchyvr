@@ -1,0 +1,20 @@
+# Desktop entry TEMPLATE of the Pimax app (rust/pimax-setup). @PIMAX_SETUP@ is replaced by the path of the installed
+# binary. The app installs it itself (Setup > Launcher and app > This app, no root), or by hand:
+#   cd ~/pimax-re/rust && cargo build --release -p pimax-setup
+#   install -Dm755 target/release/pimax-setup ~/.local/bin/pimax-setup
+#   install -Dm644 ../linux/pimax.svg ~/.local/share/icons/hicolor/scalable/apps/pimax.svg
+#   sed "s|@PIMAX_SETUP@|$HOME/.local/bin/pimax-setup|g" ../linux/pimax.desktop > ~/.local/share/applications/pimax.desktop
+# Remove: rm ~/.local/share/applications/pimax.desktop ~/.local/share/icons/hicolor/scalable/apps/pimax.svg ~/.local/bin/pimax-setup
+
+[Desktop Entry]
+Type=Application
+Name=omarchyvr
+GenericName=VR headset app (Pimax Dream Air, unofficial)
+Comment=Start desk mode, check and fix the setup, run the headset tools
+Exec=@PIMAX_SETUP@
+Icon=pimax
+Terminal=false
+Categories=Utility;
+Keywords=VR;OpenXR;Monado;Pimax;Dream Air;headset;desk;
+StartupWMClass=pimax
+StartupNotify=true

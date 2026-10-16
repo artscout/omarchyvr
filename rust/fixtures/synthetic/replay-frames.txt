@@ -1,0 +1,4 @@
+# Replay frame list of the eye chip cold start: NOT DISTRIBUTED.
+# The real list is derived from a USB transcript of the eye-tracking chip and stays in the private lab
+# (docs/OPEN-SOURCE-PLAN.md D6). With this empty list, eye tracking cannot start; the tests that need the real list
+# skip. Follow-up: load the list at runtime from the user's own capture.

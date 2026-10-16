@@ -1,0 +1,15 @@
+omarchyvr
+Copyright (c) 2026 The omarchyvr contributors
+
+This is an unofficial community project. It is not affiliated with, made by, or endorsed by
+Pimax Technology (Shanghai) Co., Ltd. or the Omarchy project.
+
+"Pimax", "Dream Air", "Crystal" and related names are trademarks of Pimax. "Omarchy" is the name of the Omarchy
+project. "SteamVR" and "Steam" are trademarks of Valve Corporation. "NVIDIA" is a trademark of NVIDIA Corporation.
+"Tobii" is a trademark of Tobii AB. These names are used only to say what the software works with.
+
+The software is provided "as is", without warranty of any kind. It sends USB commands to the headset and changes
+system settings; use it at your own risk. It never flashes firmware.
+
+Licences: code MIT OR Apache-2.0 (LICENSE-MIT, LICENSE-APACHE); docs and data CC-BY-4.0 (LICENSE-CC-BY-4.0).
+Third-party components: THIRD-PARTY.md.

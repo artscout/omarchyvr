@@ -1,0 +1,11 @@
+# 5.2 WayVR dies with an Xid 31: the gate goes to caution (a warning only), WayVR is not restarted automatically
+# (the user is asked); a Fix restarts it.
+start desk
+at 10 klog NVRM: Xid (PCI:0000:01:00): 31, pid=1007, name=wayvr, channel 0x00000013, intr 00000000. MMU Fault
+at 10 exit wayvr sig=11
+at 10 down perf
+expect 11 gate caution
+expect 60 runs 0
+expect 60 notified WayVR crashed with a GPU fault
+at 70 cmd fix wayvr
+expect 72 ran start wayvr

@@ -1,0 +1,30 @@
+# Dream Air lens model with the fit range capped where the data ends: the default coefficients (unchanged), plus
+# fit_range = 1.15. The angle table behind the polynomial ends at panel radius 1.148 (55 deg off axis); the panel
+# corners are at r = 1.47. Without fit_range the polynomial is extrapolated there and rises 3x steeper than the table
+# does at its end (tan slope about 12 against about 4); with fit_range the curve continues as its tangent line
+# (slope 4.3, close to the table's own 4.0..4.1 at the end). Inside r <= 1.15 the picture is exactly the default one.
+# Install:  cp lens.conf.corners.example ~/.config/pimax/lens.conf   (restart monado-service)
+# Test:     analysis/tools/run_lens_test.sh --lens-conf analysis/tools/lens.conf.corners.example
+# Not measured: nobody knows what the lens shows beyond 55 deg (the corners may be hidden by the lens barrel). The
+# FOV edge pattern (white fill) and the corner frames show what is visible; a mask or blackout line below cuts
+# what is not.
+[common]
+fov = 50 50 44.5 44.5
+base = 0.65307
+scale = 1.0
+k = 0.60779 -0.72489 0.58858
+ca_r = 1.0045
+ca_g = 1.0
+ca_b = 0.995
+fit_range = 1.15
+
+# The optical centre sits 0.027 half-heights towards the nose, so the temporal edge of each panel is at 51.6 deg and the
+# default 50 deg FOV clips a ~36 px sliver there (pimax-lens show). To render it, give the temporal side more FOV:
+#   [left]  fov = 52 50 44.5 44.5
+#   [right] fov = 50 52 44.5 44.5
+
+[left]
+center = 0.1060 0.0090
+
+[right]
+center = -0.1060 0.0090

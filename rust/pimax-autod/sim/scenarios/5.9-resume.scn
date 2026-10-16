@@ -1,0 +1,8 @@
+# 5.9 the PC resumes from a suspend: 15 s without verdicts; Monado alive but frames frozen is one subtree restart.
+start desk
+at 50 resume 3600
+at 51 degrade monado frames stalled: perf stats 40 s old
+expect 64 runs 0
+expect 67 ran stop-subtree monado
+expect 90 ran start monado
+expect 110 overall ok

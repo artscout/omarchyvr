@@ -1,0 +1,23 @@
+# Pimax local AI (llama-server for voice control, see docs/AI.md). NOT installed or enabled by anything; to try it:
+#   install -Dm644 packaging/systemd/pimax-ai.service ~/.config/systemd/user/pimax-ai.service
+#   systemctl --user daemon-reload && systemctl --user start pimax-ai      (enable for login start)
+# GPU mode: about 4 GiB of VRAM next to the VR session. CPU only: change ExecStart to `... serve --cpu --foreground`.
+# Listens on 127.0.0.1:8080 only. `pimax-ai status` / `pimax-ai stop` work on the unit's process too (same pid file).
+[Unit]
+Description=Pimax local AI (llama.cpp llama-server, Qwen3.5 4B, 127.0.0.1:8080)
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/pimax-re/rust/target/release/pimax-ai serve --foreground
+Restart=on-failure
+RestartSec=10
+# low priority: VR frame time first (the command line adds nice 19 + idle I/O as well)
+Nice=19
+IOSchedulingClass=idle
+CPUWeight=20
+MemoryHigh=6G
+
+[Install]
+WantedBy=graphical-session.target

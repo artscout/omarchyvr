@@ -1,0 +1,21 @@
+[package]
+name = "pimax-eye"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Tobii EyeChip (USB 2104:0561) of the Pimax Dream Air: TTP framing, gaze packet decoder, USBPcap replay planner and the `pimax-eye` client."
+
+[lib]
+name = "pimax_eye"
+path = "src/lib.rs"
+
+[[bin]]
+name = "pimax-eye"
+path = "src/main.rs"
+
+[dependencies]
+libc = { workspace = true }
+
+[dev-dependencies]
+flate2 = { workspace = true }
+proptest = { workspace = true }

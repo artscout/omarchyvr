@@ -1,0 +1,11 @@
+# P7: the ordered stop after an unplug finds Monado hung: never SIGKILLed, the gate latches needs-reboot, the user
+# is told the choices, and nothing restarts on replug.
+start desk
+sim monado_hangs=1
+at 10 down usb.hid usb.cam usb.eye display.dp1
+expect 17 ran stop-subtree monado
+expect 21 gate needs-reboot
+expect 21 notified was NOT killed
+expect 21 overall needs-reboot
+at 100 up usb.hid usb.cam usb.eye display.dp1
+expect 200 runs 1

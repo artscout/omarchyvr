@@ -1,0 +1,7 @@
+# A launcher stop (pimax desk stop: the user-stop marker) sets the intent off; nothing restarts.
+start desk
+at 10 facts user_stop=1
+at 10 down monado wayvr passthrough ctrltrack perf broker
+expect 12 intent off
+expect 60 runs 0
+expect 60 overall ok

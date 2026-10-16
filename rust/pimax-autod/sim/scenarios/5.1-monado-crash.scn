@@ -1,0 +1,23 @@
+# 5.1 Monado crashes (the Basalt SIGABRT) in a desk session: its clients exit as collateral (no budget), the subtree
+# restarts after the 30 s backoff, the second crash waits 120 s, the third within 15 min opens the breaker.
+start desk
+at 10 exit monado sig=6
+at 10 down wayvr passthrough ctrltrack perf
+expect 11 health monado down
+expect 11 health wayvr blocked
+expect 11 overall down
+expect 11 notified monado exited: crash
+expect 39 runs 0
+expect 41 ran start monado
+expect 70 overall ok
+at 100 exit monado sig=6
+at 100 down wayvr passthrough ctrltrack perf
+expect 219 runs 1
+expect 221 ran start monado
+expect 250 overall ok
+at 300 exit monado sig=6
+at 300 down wayvr passthrough ctrltrack perf
+expect 302 health monado failed
+expect 302 overall needs-you
+expect 302 notified keeps failing
+expect 700 runs 2

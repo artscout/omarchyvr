@@ -1,0 +1,16 @@
+# 5.2 voice.listen crashes (exit 101, a panic): captions and act are collateral; listen restarts with the leaf
+# backoff (2, 4, 8, 16, 60 s); the 6th crash within 10 min opens the breaker.
+start desk voice
+at 10 exit voice.listen code=101
+at 10 down voice.captions voice.act
+expect 11 health voice.captions blocked
+expect 13 ran start voice.listen
+expect 30 ran start voice.captions
+expect 30 ran start voice.act
+at 100 exit voice.listen code=101
+at 200 exit voice.listen code=101
+at 300 exit voice.listen code=101
+at 400 exit voice.listen code=101
+at 520 exit voice.listen code=101
+expect 530 health voice.listen failed
+expect 530 notified Voice listener keeps failing

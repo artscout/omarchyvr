@@ -1,0 +1,18 @@
+[package]
+name = "pimax-device"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Headset modules (TOML descriptors + a small trait), the HID command allowlist enforced at the send layer, system Check/Fix types and the onboarding progress file. No device I/O of its own."
+
+[lib]
+name = "pimax_device"
+path = "src/lib.rs"
+
+[dependencies]
+# Host abstraction and the existing checks (wrapped, not moved yet; see docs/ARCHITECTURE.md "Migration").
+pimax-doctor = { path = "../pimax-doctor" }
+
+[dev-dependencies]
+pimax-proto = { workspace = true, features = ["std"] }

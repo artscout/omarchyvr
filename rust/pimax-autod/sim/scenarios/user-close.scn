@@ -1,0 +1,6 @@
+# The user closes WayVR (exit 0): user intent wins, it is turned off for the session and not restarted.
+start desk
+at 10 exit wayvr user
+expect 12 notified was closed outside pimaxd
+expect 60 runs 0
+expect 60 health wayvr off

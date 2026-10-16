@@ -1,0 +1,10 @@
+# 5.2 WayVR SIGSEGV, gate ok: L2 restart after 5 s, the panel (perf) follows for free, the preset is re-applied.
+start desk
+at 10 exit wayvr sig=11
+at 10 down perf
+expect 14 runs 0
+expect 16 ran start wayvr
+expect 30 ran reapply preset
+expect 30 ran start perf
+expect 40 overall ok
+expect 40 runs 3

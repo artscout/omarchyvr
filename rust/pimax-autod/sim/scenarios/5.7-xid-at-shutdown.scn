@@ -1,0 +1,13 @@
+# 5.7 the user stops the session (leaves first, Monado after WayVR, the broker last); WayVR's Xid 31 on the way out
+# sets the gate to caution, which warns only: the next start is not blocked.
+start desk
+at 10 cmd session=off
+expect 11 ran stop perf
+expect 30 ran stop monado
+expect 40 ran stop broker
+expect 40 intent off
+at 41 klog NVRM: Xid (PCI:0000:01:00): 31, pid=1007, name=wayvr, channel 0x00000013
+expect 42 gate caution
+expect 42 notified GPU warning
+at 100 cmd session=on
+expect 102 ran start monado

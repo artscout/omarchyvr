@@ -1,0 +1,9 @@
+# 5.9: Monado died across the suspend: after the 15 s resume grace it is restored as collateral (no budget, no
+# 30 s crash backoff).
+start desk
+at 50 resume 3600
+at 51 exit monado
+at 51 down wayvr passthrough ctrltrack perf
+expect 64 runs 0
+expect 67 ran start monado
+expect 90 overall ok

@@ -1,0 +1,6 @@
+# Failed start: no retry loop while it stays on the head.
+sim fail_start=1
+at 0 plugged=1 motion=worn
+expect 5 worn
+expect 8 plugged
+expect 200 plugged

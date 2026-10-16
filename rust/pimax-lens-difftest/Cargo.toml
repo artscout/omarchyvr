@@ -1,0 +1,16 @@
+[package]
+name = "pimax-lens-difftest"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "Differential tests: the original C lens model (pimax_lens.c of Monado commit 1da3626, untouched, symbols renamed c_*) against the Rust pimax-lens crate, plus a C ABI link test."
+
+[dependencies]
+pimax-lens = { path = "../pimax-lens" }
+
+[build-dependencies]
+cc = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }

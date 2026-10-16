@@ -1,0 +1,10 @@
+# 5.6 after a replug DP stays disconnected: Monado is blocked on display.dp1, no start and no budget, until the drm
+# uevent shows it connected.
+start desk
+at 10 down usb.hid usb.cam usb.eye display.dp1
+expect 17 ran stop-subtree monado
+at 100 up usb.hid usb.cam usb.eye
+expect 150 health monado blocked
+expect 150 runs 1
+at 200 up display.dp1
+expect 205 ran start monado

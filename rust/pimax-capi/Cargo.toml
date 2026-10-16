@@ -1,0 +1,23 @@
+[package]
+name = "pimax-capi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "C ABI of libpimax (include/pimax.h) implemented on top of the Rust pimax crate: drop-in libpimax.so / libpimax.a."
+
+[lib]
+name = "pimax_capi"
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+pimax = { workspace = true }
+pimax-proto = { workspace = true, features = ["std"] }
+libc = { workspace = true }
+# C ABI of the controller hand tracking (pimax_hands.h) is exported from this library too: Monado links ONE Rust
+# staticlib (two would clash on the bundled std), so libpimax_capi.a carries both.
+pimax-hands = { path = "../pimax-hands" }
+# Eye gaze session (Tobii EyeChip); C ABI in src/eye.rs, header pimax-eye/include/pimax_eye.h.
+pimax-eye = { path = "../pimax-eye" }
+
+[dev-dependencies]
+flate2 = { workspace = true }

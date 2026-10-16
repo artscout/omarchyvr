@@ -1,0 +1,11 @@
+# Take-off: worn from the start, taken off at 100 s, put on again at 200 s. Dims, never stops, recovers.
+at 0 plugged=1 motion=worn
+expect 5 worn
+expect 8 active(desk)
+at 100 motion=still
+expect 159 active(desk)     # dim_after_s = 60
+expect 161 idle-dim(desk)
+at 200 motion=worn
+expect 203 idle-dim(desk)   # 4 s of wear needed
+expect 205 active(desk)
+end 260

@@ -1,0 +1,11 @@
+# Big / private / third-party data stays local only
+captures/
+captures2/
+pimax-data/
+refs/
+*.pcap
+*.pcapng
+*.iso
+__pycache__/
+*.pyc
+.claude/worktrees/

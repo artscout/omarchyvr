@@ -1,0 +1,7 @@
+# 5.4 the reset does not bring the camera back: no second automatic reset (once, then ask: user decision 5).
+start desk
+sim reset_back=never
+at 10 down usb.cam broker passthrough ctrltrack
+expect 31 ran reset-headset usb.cam
+expect 200 notified Restart headset once more
+expect 600 runs 1

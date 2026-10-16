@@ -1,0 +1,12 @@
+# The safe-mode flag stops automatic actions at once; turning it off lets the plan run.
+start desk
+at 5 cmd safe-mode on
+at 10 exit wayvr sig=11
+expect 30 runs 0
+expect 30 would start wayvr
+at 40 cmd safe-mode off
+expect 42 ran start wayvr
+# explicit user commands still work in safe mode
+at 60 cmd safe-mode on
+at 70 cmd toggle perf off
+expect 72 ran stop perf

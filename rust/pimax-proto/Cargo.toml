@@ -1,0 +1,18 @@
+[package]
+name = "pimax-proto"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Pimax Dream Air wire protocol: framing and decoders. no_std, no I/O, 100% safe Rust."
+
+[features]
+default = ["alloc"]
+alloc = ["dep:miniz_oxide"]
+std = ["alloc"]
+
+[dependencies]
+miniz_oxide = { workspace = true, optional = true }
+
+[dev-dependencies]
+flate2 = { workspace = true }
+proptest = { workspace = true }

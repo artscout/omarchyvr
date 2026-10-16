@@ -1,0 +1,4 @@
+IMU report -> Handler::on_imu latency (fake device, socketpair; real headset delivers 500 reports/s)
+paced 500 Hz, 10 s     n=5000   latency us: p50     7.1  p90    13.4  p99    93.9  max    124.7 |      500 reports/s | session thread cpu 0.030s
+paced 1 kHz, 5 s       n=5000   latency us: p50     3.0  p90    11.9  p99   101.9  max    154.9 |     1000 reports/s | session thread cpu 0.020s
+burst (unpaced)        n=100000 latency us: p50   245.0  p90   249.7  p99   260.6  max    329.5 |  1165928 reports/s | session thread cpu 0.070s

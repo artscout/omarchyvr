@@ -1,0 +1,20 @@
+[package]
+name = "pimax-components"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "The Pimax stack's component model (docs/RESILIENCE-PLAN.md): the Component trait, the dependency graph, restart policy (budgets, backoff, breaker, flapping), the pure reconcile(), read-only probes, the GPU safety gate, event sources (uevent, pidfd, kernel log, resume) and `pimax-health`."
+
+[lib]
+name = "pimax_components"
+path = "src/lib.rs"
+
+[[bin]]
+name = "pimax-health"
+path = "src/bin/pimax-health.rs"
+
+[dependencies]
+libc = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }

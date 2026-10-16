@@ -1,0 +1,5 @@
+# 5.1 in a game (vr mode): a game is never stopped or restarted; the user is told.
+start vr
+at 10 exit monado sig=6
+expect 12 notified VR runtime stopped during a game
+expect 120 runs 0

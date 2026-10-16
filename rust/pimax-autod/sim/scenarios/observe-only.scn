@@ -1,0 +1,7 @@
+# Observe only (the default, and safe mode): the plan is logged as "would", nothing runs.
+config restart.enabled=false
+start desk
+at 10 exit monado sig=6
+at 10 down wayvr passthrough ctrltrack perf
+expect 41 would start monado
+expect 100 runs 0

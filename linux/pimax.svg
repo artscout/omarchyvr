@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <title>Pimax</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2f78c8"/>
+      <stop offset="1" stop-color="#1c4f8f"/>
+    </linearGradient>
+    <linearGradient id="lens" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#9fe0ff"/>
+      <stop offset="1" stop-color="#3aa0e0"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="120" height="120" rx="26" fill="url(#bg)"/>
+  <!-- strap -->
+  <path d="M14 58 C14 40 30 34 64 34 C98 34 114 40 114 58" fill="none" stroke="#dbe8f7" stroke-width="5" stroke-linecap="round" opacity="0.55"/>
+  <!-- visor -->
+  <rect x="16" y="46" width="96" height="44" rx="18" fill="#f4f8fc"/>
+  <!-- nose cut -->
+  <path d="M54 90 Q64 74 74 90 Z" fill="url(#bg)"/>
+  <!-- lenses -->
+  <circle cx="42" cy="66" r="13" fill="url(#lens)" stroke="#1c4f8f" stroke-width="3"/>
+  <circle cx="86" cy="66" r="13" fill="url(#lens)" stroke="#1c4f8f" stroke-width="3"/>
+  <circle cx="38" cy="62" r="3.5" fill="#ffffff" opacity="0.8"/>
+  <circle cx="82" cy="62" r="3.5" fill="#ffffff" opacity="0.8"/>
+</svg>

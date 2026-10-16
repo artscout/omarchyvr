@@ -1,0 +1,8 @@
+# makepkg output (packaging/arch): clone of the repository, build tree, package tree, packages, logs
+arch/pimax-re/
+arch/src/
+arch/pkg/
+arch/*.pkg.tar.*
+arch/*.log
+# AppImage output (packaging/appimage): AppDir and .AppImage
+appimage/build/

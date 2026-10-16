@@ -1,0 +1,21 @@
+[package]
+name = "pimax-lenstest"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "OpenXR (Vulkan) lens test patterns for the Pimax Dream Air under Monado: grid, angle rings, per-channel grids, FOV edge, moving square at 100% and 25%, corner frames, and the eye-tracking accuracy test (gaze); controller or timed switching; frame capture to PNG."
+
+[lib]
+name = "pimax_lenstest"
+path = "src/lib.rs"
+
+[[bin]]
+name = "pimax-lenstest"
+path = "src/main.rs"
+
+[dependencies]
+pimax-lens = { path = "../pimax-lens" }
+pimax-eye = { path = "../pimax-eye" }
+openxr = "0.22"
+ash = "0.38"
+libc = { workspace = true }

@@ -1,0 +1,169 @@
+# PKGBUILD for pimax-linux-git: the Pimax Dream Air stack on Linux, built from the local git checkout.
+#
+# Packaged: the desktop app (pimax-setup), the launcher (pimax), the tools the app and the launcher start, the docs,
+# scripts and NVIDIA patches the app reads (/usr/share/pimax), the udev rule, the desktop entry and the icon.
+# NOT packaged: the Monado and WayVR builds (~/src/monado-eye, ~/src/wayvr and the other builds the app checks),
+# Basalt, the voice models and the sherpa-onnx library. They stay user builds in the home directory.
+# Root steps (udev reload, NVIDIA patches and pacman hooks, setcap) stay with the app's Setup page.
+#
+# Build and install:  cd packaging/arch && makepkg -si
+# makepkg clones the repository, so only COMMITTED files are built: commit before you build.
+# To build from somewhere else, change source=. Keep the "pimax-re::" prefix: build() and package() use
+# $srcdir/pimax-re. Examples:
+#   source=("pimax-re::git+https://github.com/laughtt/omarchyvr.git")
+#   source=("pimax-re::git+file:///home/user/pimax-re#branch=some-branch")
+#
+# The packaged launcher (/usr/bin/pimax) finds its tools next to itself (pimax-tools vr::config::tools_dir); a
+# launcher run from the home directory keeps using ~/pimax-re/rust/target/release.
+
+pkgname=omarchyvr-git
+_pkgname=omarchyvr
+pkgver=r0.0000000   # replaced by pkgver()
+pkgrel=1
+pkgdesc='omarchyvr: unofficial Pimax Dream Air VR stack for Linux: app, VR launcher, device tools (git version; not affiliated with Pimax)'
+arch=('x86_64')
+url='https://github.com/laughtt/omarchyvr'
+license=('MIT OR Apache-2.0')
+
+# Found with readelf -d and the library names inside the release binaries:
+#   linked:   libc, libm, libgcc_s (every binary), libpipewire-0.3 (pimax-voice, default feature "pipewire")
+#   dlopen:   pimax-setup (eframe 0.36 with wgpu, glow, wayland and x11) and the OpenXR tools (openxr crate "loaded")
+# No hidapi, libusb, v4l or alsa: the tools talk to /dev/hidraw*, usbfs and /dev/video* directly.
+depends=(
+  glibc              # libc.so.6, libm.so.6
+  libgcc             # libgcc_s.so.1 (the gcc-libs meta package pulls it in too)
+  libpipewire        # libpipewire-0.3.so.0: pimax-voice (headset microphone capture)
+  wayland            # libwayland-client.so.0, libwayland-egl.so.1: pimax-setup
+  libxkbcommon       # libxkbcommon.so.0: pimax-setup
+  vulkan-icd-loader  # libvulkan.so.1: pimax-setup renders with wgpu (Vulkan); the driver comes with the GPU stack
+  libglvnd           # libEGL.so.1, libGL.so.1: pimax-setup, OpenGL fallback renderer
+  openxr             # libopenxr_loader.so.1: passthrough, eyecal, lenstest, voice-hud, xr-handtest
+)
+makedepends=(
+  cargo              # provided by the rust package
+  git
+  clang              # libclang for bindgen: pipewire-sys and libspa-sys (pimax-voice)
+)
+optdepends=(
+  'polkit: root fixes on the Setup page (pkexec)'
+  'xdg-utils: open folders from the app (xdg-open)'
+  'libnotify: desktop notifications (notify-send)'
+  'alacritty: terminal for the TUI tools (foot, kitty or $TERMINAL also work)'
+  'pipewire: the daemon pimax-voice records the headset microphone from'
+  'libxkbcommon-x11: X11 fallback of the app (also needs libx11, libxcursor, libxi, libxrender)'
+)
+# debug: makepkg keeps the symbols of the stripped binaries in pimax-linux-git-debug (/usr/lib/debug/.build-id), so a
+# crash report's minidump can be symbolicated later (docs/GUI.md, "Stripped binaries")
+options=('debug')
+provides=("$_pkgname")
+conflicts=("$_pkgname")
+
+source=("pimax-re::git+file:///home/user/pimax-re")
+sha256sums=('SKIP')
+
+# cargo package -> binary it installs. The 11 tools are RELEASE_BINS in rust/pimax-gui-core/src/facts.rs (the app
+# looks for them in /usr/bin); pimax-setup is the app. The launcher binary "pimax" is built by the package
+# pimax-tools (the package named "pimax" is only the library); pimax-voice-hud comes from pimax-voicehud and
+# xr-handtest from pimax-xrtest (which also builds xr-gaze and xr-pinchtest; they are not installed).
+_cargo_packages=(
+  pimax-setup pimax-tools
+  pimax-passthrough pimax-perf pimax-cam pimax-slam pimax-ctrltrack pimax-eye pimax-eyecal pimax-lenstest
+  pimax-voice pimax-voicehud pimax-xrtest
+  pimax-roommap pimax-anchor pimax-autod
+)
+_bins=(
+  pimax-setup pimax
+  pimax-passthrough pimax-perf pimax-cam pimax-slam pimax-ctrltrack pimax-eye pimax-eyecal pimax-lenstest
+  pimax-voice pimax-voice-hud xr-handtest
+  pimax-roommap pimax-anchor pimax-autod
+)
+
+pkgver() {
+  cd "$srcdir/pimax-re"
+  printf 'r%s.%s' "$(git rev-list --count HEAD)" "$(git rev-parse --short=7 HEAD)"
+}
+
+prepare() {
+  cd "$srcdir/pimax-re/rust"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+  cd "$srcdir/pimax-re/rust"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+  # The app shows the commit and the build date (rust/pimax-setup/build.rs reads both variables)
+  # the workspace profile strips at link time; leave that to makepkg so it can split the symbols off
+  export CARGO_PROFILE_RELEASE_STRIP=false CARGO_PROFILE_RELEASE_DEBUG=line-tables-only
+  PIMAX_GIT_HASH=$(git rev-parse --short=9 HEAD)
+  SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
+  export PIMAX_GIT_HASH SOURCE_DATE_EPOCH
+  local p args=()
+  for p in "${_cargo_packages[@]}"; do
+    args+=(-p "$p")
+  done
+  cargo build --release --locked "${args[@]}"
+}
+
+# No check(): several test suites need the headset or a running session.
+
+package() {
+  cd "$srcdir/pimax-re"
+  local b f share="$pkgdir/usr/share/pimax"
+
+  for b in "${_bins[@]}"; do
+    install -Dm755 "rust/target/release/$b" "$pkgdir/usr/bin/$b"
+  done
+
+  # Docs. The app detects a package install by /usr/share/pimax/docs/LESSONS.md (pimax-gui-core/src/paths.rs,
+  # is_system_install) and reads INVENTORY.md and LESSONS.md on its Logs & History page.
+  install -Dm644 -t "$share/docs" docs/*.md
+  if compgen -G 'docs/gui/*.png' >/dev/null; then
+    install -Dm644 -t "$share/docs/gui" docs/gui/*.png
+  fi
+  for f in LESSONS.md INVENTORY.md; do
+    [[ -f "$share/docs/$f" ]] || { error "docs/$f is missing: the app would not see a package install"; return 1; }
+  done
+
+  # Scripts: vr_runtime_switch.sh is run by the Tools page, run_slam_view.sh is shown there (it calls run_slam.sh).
+  # Both run_slam*.sh still use $HOME/pimax-re (rust/target/release, analysis/tools) and need that checkout.
+  install -Dm755 -t "$share/analysis/tools" analysis/tools/{vr_runtime_switch,run_slam_view,run_slam}.sh
+
+  # udev rule: the real one, and a copy for the app (it compares /etc/udev/rules.d/70-pimax.rules with
+  # <repo>/linux/70-pimax.rules, and the repo is /usr/share/pimax here).
+  install -Dm644 linux/70-pimax.rules "$pkgdir/usr/lib/udev/rules.d/70-pimax.rules"
+  install -Dm644 linux/70-pimax.rules "$share/linux/70-pimax.rules"
+
+  # What the Setup page and pimax-doctor read from <repo>/linux for the root fixes (hooks, patches, EDID override).
+  # Nothing is applied here: the hooks go to /etc/pacman.d/hooks only when the user runs that fix.
+  install -Dm755 linux/nvidia-patch-reapply.sh "$share/linux/nvidia-patch-reapply.sh"
+  install -Dm644 -t "$share/linux" \
+    linux/nvidia-2h1or-viewport.patch linux/nvidia-2h1or-flip-fix.patch linux/nvidia-evo-makeroom-bounded-wait.patch \
+    linux/nvidia-pimax-patch.hook linux/nvidia-pimax-verify.hook \
+    linux/pimax-dp-edid*.bin linux/DISPLAY.md
+
+  # Room row: the printable AprilTag; auto mode: its config example and a user unit for the packaged daemon
+  # (installed, not enabled: `systemctl --user enable --now pimax-autod`; dry run until auto.toml says otherwise)
+  install -Dm644 -t "$share/analysis/anchor" analysis/anchor/tag36h11-id0-150mm.pdf analysis/anchor/README.md
+  install -Dm644 packaging/auto.toml.example "$share/auto.toml.example"
+  sed -e 's|%h/pimax-re/rust/target/release/pimax-autod|/usr/bin/pimax-autod|' packaging/systemd/pimax-autod.service |
+    install -Dm644 /dev/stdin "$pkgdir/usr/lib/systemd/user/pimax-autod.service"
+  grep -q '^ExecStart=/usr/bin/pimax-autod run' "$pkgdir/usr/lib/systemd/user/pimax-autod.service" ||
+    { error 'pimax-autod.service: the ExecStart line was not substituted'; return 1; }
+
+  # systemd user unit: NOT in /usr/lib/systemd/user. linux/pimax-keepalived.service runs
+  # "python3 %h/pimax-re/linux/pimax_keepalived.py" (a home path, superseded by "pimax keepalived"; the live
+  # setup overrides ExecStart with a drop-in in ~/.config/systemd/user), so it is only data here.
+  install -Dm644 linux/pimax-keepalived.service "$share/linux/pimax-keepalived.service"
+
+  # Desktop entry: the template (placeholder @PIMAX_SETUP@) is kept for the app's own installer, the system entry
+  # has the template's comment header removed and the placeholder replaced.
+  install -Dm644 linux/pimax.desktop "$share/linux/pimax.desktop"
+  install -Dm644 linux/pimax.svg "$share/linux/pimax.svg"
+  install -Dm644 linux/pimax.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/pimax.svg"
+  sed -e '/^#/d' -e '/./,$!d' -e 's|@PIMAX_SETUP@|/usr/bin/pimax-setup|g' linux/pimax.desktop |
+    install -Dm644 /dev/stdin "$pkgdir/usr/share/applications/pimax.desktop"
+  grep -qx 'Exec=/usr/bin/pimax-setup' "$pkgdir/usr/share/applications/pimax.desktop" ||
+    { error 'pimax.desktop: the Exec line was not substituted'; return 1; }
+}

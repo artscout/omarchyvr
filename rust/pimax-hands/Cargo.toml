@@ -1,0 +1,20 @@
+[package]
+name = "pimax-hands"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Controller-driven hand tracking for the Dream Air: trigger/grip/touch -> finger curls (One Euro + thumb state machine), grip->wrist pose, C ABI for the Monado driver."
+
+[lib]
+name = "pimax_hands"
+# rlib: pimax-capi re-exports the C ABI (Monado links ONE Rust staticlib, two would clash on the bundled std).
+# staticlib: for Monado builds that use the C libpimax and so link libpimax_hands.a on its own.
+crate-type = ["rlib", "staticlib"]
+
+[dependencies]
+
+[dev-dependencies]
+proptest = { workspace = true }
+# tests/replay.rs drives the mapping with the real recorded controller reports
+pimax-proto = { workspace = true, features = ["std"] }
+flate2 = { workspace = true }

@@ -1,0 +1,19 @@
+[package]
+name = "pimax-anchor"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Room anchor for the Pimax Dream Air: a printed AprilTag on the desk, detected by the headset cameras, brings the VR windows back to the same real spot every session (Monado world offset file)."
+
+[lib]
+name = "pimax_anchor"
+
+[[bin]]
+name = "pimax-anchor"
+path = "src/main.rs"
+
+[dependencies]
+pimax-cam = { path = "../pimax-cam" }
+pimax-ctrltrack = { path = "../pimax-ctrltrack" }
+libc = { workspace = true }
+apriltag-sys = "0.4"

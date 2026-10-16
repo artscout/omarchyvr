@@ -1,0 +1,17 @@
+$ pimax desk stop --dry-run --grace 12 --no-kill
+exit Some(0)
+--- stdout
+pimax desk: would stop, in this order (SIGINT by pid, never by name):
+  1. voicehud: pid 999999 from $ROOT/session/voicehud.pid (pimax-voice-hud), wait 10 s
+  2. voiceact: pid 999999 from $ROOT/session/voiceact.pid (pimax-voice), wait 10 s
+  3. voicecap: pid 999999 from $ROOT/session/voicecap.pid (pimax-voice), wait 10 s
+  4. voice: pid 999999 from $ROOT/session/voice.pid (pimax-voice), wait 10 s
+  5. perf: pid 999999 from $ROOT/session/perf.pid (pimax-perf), wait 10 s
+  6. wayvr: pid 999999 from $ROOT/session/wayvr.pid (wayvr), wait 15 s, then a notice and 15 s more; still alive once Monado is gone: SIGTERM, then SIGKILL by pid
+  7. passthrough: pid 999999 from $ROOT/session/passthrough.pid (pimax-passthrou), wait 10 s
+  8. ctrltrack: pid 999999 from $ROOT/session/ctrltrack.pid (pimax-ctrltrack), wait 10 s
+  9. monado-service: pid 999999 from $ROOT/session/monado.pid, SIGINT, wait 12 s, never SIGKILL (a hung service is left alive, the GPU gate says reboot)
+  10. broker: pid 999999 from $ROOT/session/broker.pid (pimax-cam), wait 10 s
+  then the kernel log check (Xid / Idling display engine)
+  then the VR screens' outputs (PIMAX-*) are removed once no monado-service runs
+--- stderr

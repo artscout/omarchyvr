@@ -1,0 +1,24 @@
+[package]
+name = "pimax-autod"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Auto mode for the Pimax Dream Air: a small user daemon that starts the VR desk/game session when the headset is put on and stops it when it is left alone (pure state machine, dry-run by default, JSON-lines control socket, simulator)."
+
+[lib]
+name = "pimax_autod"
+path = "src/lib.rs"
+
+[[bin]]
+name = "pimax-autod"
+path = "src/main.rs"
+
+[[bin]]
+name = "pimaxd"
+path = "src/bin/pimaxd.rs"
+
+[dependencies]
+pimax = { workspace = true }
+pimax-proto = { workspace = true, features = ["std"] }
+pimax-components = { path = "../pimax-components" }
+libc = { workspace = true }

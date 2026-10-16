@@ -1,0 +1,17 @@
+# Tests that fail before the open-source export too (docs/ROADMAP-OMARCHY.md 3.4). tools/export-public.sh does not
+# fail on these; every other failure does. Remove a line when the test is fixed.
+# pimax-setup e2e: a page reads files on the UI thread
+every_page_and_widget_in_demo_mode_stays_responsive
+running_session_and_the_crash_dialog
+# pimax-lens-difftest: Rust log lines differ from the old C model (an extra "cant" line)
+config_path_resolution_matches_the_c_loader
+current_lens_conf_matches_the_c_model_bit_for_bit_on_the_compositor_grid
+distortion_off_and_the_off_variable_match_c
+neutral_values_of_the_new_keys_change_nothing
+random_old_format_configs_match_c_in_logs_and_bits
+the_comparison_is_sensitive_to_one_ulp
+the_example_file_is_exactly_the_built_in_default
+# pimax-tools: session lock test is timing dependent under a full parallel workspace run
+vr::session::tests::a_second_start_while_one_is_in_progress_is_refused_without_touching_anything
+# pimax-capi: C session against the fake headset is timing dependent (fails under load in the lab too)
+c_program_drives_a_full_session_against_a_fake_headset

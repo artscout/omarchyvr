@@ -1,0 +1,7 @@
+# 5.3 the cable is pulled during a game: notify and wait, never stop the game (user decision 4).
+start vr
+at 10 down usb.hid usb.cam usb.eye display.dp1
+expect 30 runs 0
+expect 30 notified the game keeps running
+at 60 up usb.hid usb.cam usb.eye display.dp1
+expect 90 runs 0
