@@ -36,7 +36,7 @@ impl SimDesk {
                 w("0x55d4c8a1e5f0", "foot", "nvim agent.rs", 2, 3),
                 w("0x55d4c8a1f600", "Code", "agent.rs - omarchyvr - Visual Studio Code", 1, 4),
                 w("0x55d4c8a20710", "discord", "#general | Friends - Discord", 3, 5),
-                w("0x55d4c8a21820", "firefox", "Pull requests - laughtt/omarchyvr - Mozilla Firefox", 4, 6),
+                w("0x55d4c8a21820", "firefox", "Pull requests - example/project - Mozilla Firefox", 4, 6),
                 w("0x55d4c8a22930", "steam", "Steam", 4, 7),
             ],
             dispatched: Vec::new(),
