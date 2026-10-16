@@ -11,7 +11,7 @@ That is the only command. Claude Code can run it for you. Everything after it ha
 
 | # | Where | What you do | Password |
 |---|---|---|---|
-| 1 | terminal (or Claude) | `./install.sh`: it checks this PC and builds everything (about 45-90 min the first time, at the lowest priority, so you can keep working). It installs the set and opens the app. | no |
+| 1 | terminal (or Claude) | `./install.sh`: it checks this PC and builds everything (about 15-30 min the first time on a fast PC, at the lowest priority, so you can keep working). It installs the set and opens the app. | no |
 | 2 | app, setup wizard, "System setup" step | read the list of system changes, click **Set up this PC** | **one** (pkexec) |
 | 3 | app | if the list said "reboot": reboot (only when the NVIDIA module or the boot image changed) | no |
 | 4 | app, Home | **Play**: SteamVR starts with the headset | no |
