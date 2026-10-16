@@ -8,7 +8,7 @@
   (and, for tracking scenarios, the Pimax pose logger), you do the action, press Enter, it stops and names the files
   YYYYMMDD-HHMMSS-<scenario>-hub<N>.pcap (same naming as all earlier takes; -Pcapng converts with editcap) in <session>\usb-captures\.
   While recording type  m <text>  + Enter to drop a timestamped marker into notes.txt.
-  Session folder: <OutRoot>\pimax-win-session-<date>\ . Put this script on the shared NTFS drive (UUID from `shared_drive_uuid` in `~/.config/pimax/paths.toml`)
+  Session folder: <OutRoot>\pimax-win-session-<date>\ . Put this script on the shared NTFS drive (UUID from `shared_drive_uuid` in `~/.config/omarchyvr/paths.toml`)
   and run it from there; everything lands on that drive, no copying needed.
   Licensing: copied Pimax Play files are for local analysis only, never redistributed.
   Needs: USBPcap (C:\Program Files\USBPcap\USBPcapCMD.exe). Optional: Wireshark (editcap for .pcapng).
@@ -329,5 +329,5 @@ while ($true) {
     }
 }
 Copy-Logs 'after'
-Say ("Done. Everything is in {0}. On Linux: pimax mount-shared, then tell the agent the folder name." -f $sessionDir) Green -Speak
+Say ("Done. Everything is in {0}. On Linux: omarchyvr mount-shared, then tell the agent the folder name." -f $sessionDir) Green -Speak
 Read-Host 'Enter to close'

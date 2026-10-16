@@ -5,7 +5,7 @@
 
 Sends only the per-slot attach burst (0x16, 0x50, 0x0a, 0x03; init-sequence.md step 13),
 then prints decoded EP 0x82 controller reports (`53 32 08 SS 43 ...`) ~10x/s per slot and
-0x37 battery heartbeats. Runs happily next to pimax-keepalived (each open fd gets its own
+0x37 battery heartbeats. Runs happily next to omarchyvr-keepalived (each open fd gets its own
 copy of input reports). Field layout: analysis/controllers-settings.md R2.4.
 """
 import os

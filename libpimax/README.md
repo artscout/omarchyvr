@@ -24,7 +24,7 @@ Callbacks run on the session thread. Do not call `pimax_request` from a callback
     pimax-cli controllers [s]  attach burst for slots 2 and 3, decoded reports
     pimax-cli info             serial (0x16) and version (0x03)
 The CLI has no video commands. `pimax_video_prepare()` exists in the library but nothing calls it.
-It can run next to `pimax-keepalived` (both send keepalives).
+It can run next to `omarchyvr-keepalived` (both send keepalives).
 
 ## Known gaps
 See the report that came with this commit: no tests of video path, controller battery/touch semantics unverified, no cameras, IPD set, brightness, eye tracking.

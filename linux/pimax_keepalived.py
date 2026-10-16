@@ -3,7 +3,7 @@
 
 Without a host sending 58 04 39 every ~213 ms the headset firmware drops off USB after ~5.4 s.
 Runs as a user service (udev rule 70-pimax.rules grants hidraw access via uaccess):
-    systemctl --user enable --now pimax-keepalived
+    systemctl --user enable --now omarchyvr-keepalived
 It must also read IF1-IF3: the kernel only polls a HID interrupt endpoint while its hidraw node is
 open, and if nobody drains the 500 Hz IMU stream the firmware's tx queue fills and it detaches.
 Other tools can open the headset hidraw nodes in parallel; each open fd gets its own copy of the reports.

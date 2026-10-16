@@ -44,7 +44,7 @@
 
 # private fixtures: per-unit calibration, room images, Tobii (eye chip) USB transcripts and gaze captures
 - rust/pimax-cam/tests/fixtures/evening2.pxcam
-- rust/pimax-passthrough/tests/fixtures/*.png
+- rust/omarchyvr-passthrough/tests/fixtures/*.png
 - rust/fixtures/if0_replies_coldstart.rec.gz
 - rust/pimax-eye/fixtures/*.usbpcap.gz
 - rust/pimax-eye/fixtures/*.golden.gz

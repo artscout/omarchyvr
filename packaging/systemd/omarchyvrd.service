@@ -1,0 +1,26 @@
+# omarchyvrd: the Pimax stack's owner (docs/PIMAXD.md). User unit, started at login (user decision 2026-10-15).
+# NOT installed or enabled by anything. Between sessions (no VR running), see analysis/omarchyvrd-live-checklist.md:
+#   install -Dm644 packaging/systemd/omarchyvrd.service ~/.config/systemd/user/omarchyvrd.service
+#   systemctl --user daemon-reload && systemctl --user enable --now omarchyvrd
+# Observe only until ~/.config/omarchyvr/omarchyvrd.toml says [restart] enabled = true (and ~/.config/omarchyvr/safe-mode is
+# absent). Replaces omarchyvr-autod.service (same socket): do not run both. Stopping the unit never stops a VR session.
+[Unit]
+Description=Pimax Dream Air stack owner (auto mode + component reconciler)
+After=graphical-session.target omarchyvr-keepalived.service
+PartOf=graphical-session.target
+Conflicts=omarchyvr-autod.service
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/omarchyvrd run
+# only the daemon itself: sessions and the leaves it respawned (setsid) survive a restart
+KillMode=process
+KillSignal=SIGTERM
+Restart=on-failure
+RestartSec=10
+Nice=5
+
+[Install]
+WantedBy=graphical-session.target

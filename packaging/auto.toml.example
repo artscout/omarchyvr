@@ -1,5 +1,5 @@
-# Pimax auto mode: copy to ~/.config/pimax/auto.toml and edit. Every key is optional; these are the defaults.
-# Read by pimax-autod at start (restart it after editing). Docs: docs/AUTO-MODE.md
+# Pimax auto mode: copy to ~/.config/omarchyvr/auto.toml and edit. Every key is optional; these are the defaults.
+# Read by omarchyvr-autod at start (restart it after editing). Docs: docs/AUTO-MODE.md
 
 # Log what would be done, start/stop nothing. Flip to false once the live checklist passed.
 dry_run = true
@@ -8,17 +8,17 @@ auto_start = true
 # What starts: desk (WayVR desktop over passthrough) or game (the game runtime below).
 mode = "desk"
 # Game runtime: monado (our Monado + xrizer) or steamvr (phase 1: start SteamVR yourself; auto mode keeps out).
-# `pimax vr steam-options` follows this.
+# `omarchyvr vr steam-options` follows this.
 game_runtime = "monado"
-# Desk preset: none, cinema, work, assistant (pimax desk start --preset).
+# Desk preset: none, cinema, work, assistant (omarchyvr desk start --preset).
 preset = "none"
 
 # Session flags: --6dof, --ctrl-track (needs 6dof), the wrist perf readout.
 sixdof = true
 ctrl_track = true
 perf = true
-# After a start, relocalise against this room map if ~/.local/share/pimax/roommap/<room_map>/map.bin exists
-# (pimax-roommap relocalize --source broker --name <room_map> --apply; Monado gets PIMAX_ANCHOR=1).
+# After a start, relocalise against this room map if ~/.local/share/omarchyvr/roommap/<room_map>/map.bin exists
+# (omarchyvr-roommap relocalize --source broker --name <room_map> --apply; Monado gets PIMAX_ANCHOR=1).
 relocalize = true
 room_map = "home"
 
@@ -42,5 +42,5 @@ imu = true
 still_dps = 0.2
 worn_dps = 0.3
 
-pimax_bin = "~/.local/bin/pimax"
-roommap_bin = "~/pimax-re/rust/target/release/pimax-roommap"
+pimax_bin = "~/.local/bin/omarchyvr"
+roommap_bin = "~/pimax-re/rust/target/release/omarchyvr-roommap"

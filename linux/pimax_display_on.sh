@@ -1,6 +1,6 @@
 #!/bin/bash
 # MVP: light the Dream Air panel on Linux (NVIDIA, Hyprland). Run as the desktop user; uses sudo for debugfs/sysfs.
-# Needs: pimax-keepalived running. Mode: 7104x1840@72 (990 MHz, 24 bpp, 4 DP lanes, no DSC).
+# Needs: omarchyvr-keepalived running. Mode: 7104x1840@72 (990 MHz, 24 bpp, 4 DP lanes, no DSC).
 # Why the EDID override: the stock EDID only lists 7104x3840 @ 2.17/2.64 GHz (nvidia-drm rejects them, no modes),
 # and declares colour depth "undefined" so nvidia sends 18 bpp, which the LT7911UXE bridge does not turn into a picture.
 set -e

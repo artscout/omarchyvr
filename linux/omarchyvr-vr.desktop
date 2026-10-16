@@ -1,11 +1,11 @@
-# Desktop entry TEMPLATE for the one-click VR launcher (pimax vr start). @PIMAX@ is replaced by the path of the pimax
+# Desktop entry TEMPLATE for the one-click VR launcher (omarchyvr vr start). @OMARCHYVR@ is replaced by the path of the pimax
 # binary when it is installed; nothing is installed automatically.
 #
 # Install (as your user, no sudo; the pimax binary must be the new one that has the `vr` subcommand):
 #   mkdir -p ~/.local/share/applications
-#   sed "s|@PIMAX@|$HOME/.local/bin/pimax|g" ~/pimax-re/linux/pimax-vr.desktop > ~/.local/share/applications/pimax-vr.desktop
-#   desktop-file-validate ~/.local/share/applications/pimax-vr.desktop && update-desktop-database ~/.local/share/applications
-# Remove: rm ~/.local/share/applications/pimax-vr.desktop
+#   sed "s|@OMARCHYVR@|$HOME/.local/bin/omarchyvr|g" ~/pimax-re/linux/omarchyvr-vr.desktop > ~/.local/share/applications/omarchyvr-vr.desktop
+#   desktop-file-validate ~/.local/share/applications/omarchyvr-vr.desktop && update-desktop-database ~/.local/share/applications
+# Remove: rm ~/.local/share/applications/omarchyvr-vr.desktop
 #
 # --wait keeps the launcher process alive while the Monado service runs, so launchers that clean up the process group
 # of a finished app (systemd scopes/services started by uwsm) cannot kill the service. Progress and errors arrive as
@@ -16,7 +16,7 @@ Type=Application
 Name=Pimax VR
 GenericName=Start the Pimax Dream Air
 Comment=Preflight checks, then start the Monado OpenXR service for the Pimax Dream Air (72 Hz)
-Exec=@PIMAX@ vr start --wait
+Exec=@OMARCHYVR@ vr start --wait
 Icon=video-display
 Terminal=false
 Categories=Utility;
@@ -26,12 +26,12 @@ Actions=start90;stop;status;
 
 [Desktop Action start90]
 Name=Start Pimax VR at 90 Hz
-Exec=@PIMAX@ vr start --fps 90 --wait
+Exec=@OMARCHYVR@ vr start --fps 90 --wait
 
 [Desktop Action stop]
 Name=Stop Pimax VR
-Exec=@PIMAX@ vr stop
+Exec=@OMARCHYVR@ vr stop
 
 [Desktop Action status]
 Name=Pimax VR status (notification)
-Exec=@PIMAX@ vr status --notify
+Exec=@OMARCHYVR@ vr status --notify

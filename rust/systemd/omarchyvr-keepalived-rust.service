@@ -1,0 +1,13 @@
+# Rust replacement for linux/omarchyvr-keepalived.service. NOT installed. See analysis/rust-port.md (switch-over plan).
+# Install (after approval):  install -Dm755 rust/target/release/omarchyvr ~/.local/bin/omarchyvr
+[Unit]
+Description=Pimax Dream Air USB keepalive, Rust (wake + 58 04 39 every 213 ms)
+Conflicts=omarchyvr-keepalived.service
+
+[Service]
+ExecStart=%h/.local/bin/omarchyvr keepalived
+Restart=always
+RestartSec=1
+
+[Install]
+WantedBy=default.target

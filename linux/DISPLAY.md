@@ -12,7 +12,7 @@ later in the Monado driver, not in Hyprland.
   See analysis/nvidia-dsc-linkrate.md, analysis/headset-dpcd.md.
 
 ## Setup (needs sudo)
-1. Keepalive: `systemctl --user enable --now pimax-keepalived` (linux/pimax-keepalived.service, udev rule linux/70-pimax.rules).
+1. Keepalive: `systemctl --user enable --now omarchyvr-keepalived` (linux/omarchyvr-keepalived.service, udev rule linux/70-pimax.rules).
 2. EDID override at boot (8 bpc + native modes + 3840x2160/1080p fallbacks):
    ```
    sudo install -D -m644 linux/pimax-dp-edid-native.bin /etc/pimax/dp-edid.bin
@@ -73,7 +73,7 @@ and checks `modinfo nvidia-modeset | grep merged_head_sync`
 (hooks run sorted by file name: 65-nvidia-pimax-patch < 70-dkms-install < 75-nvidia-pimax-verify < 90-mkinitcpio-install).
 Install (copies to a root-owned directory because pacman runs the hook as root; one command, see also the header of
 nvidia-pimax-patch.hook):
-  sudo env L="$HOME/pimax-re/linux" bash -c 'install -Dm755 $L/nvidia-patch-reapply.sh /usr/local/lib/pimax/nvidia-patch-reapply.sh && for p in nvidia-2h1or-viewport nvidia-2h1or-flip-fix nvidia-evo-makeroom-bounded-wait; do install -Dm644 $L/$p.patch /usr/local/lib/pimax/$p.patch; done && install -Dm644 $L/nvidia-pimax-patch.hook /etc/pacman.d/hooks/65-nvidia-pimax-patch.hook && install -Dm644 $L/nvidia-pimax-verify.hook /etc/pacman.d/hooks/75-nvidia-pimax-verify.hook'
+  sudo env L="$HOME/pimax-re/linux" bash -c 'install -Dm755 $L/nvidia-patch-reapply.sh /usr/local/lib/omarchyvr/nvidia-patch-reapply.sh && for p in nvidia-2h1or-viewport nvidia-2h1or-flip-fix nvidia-evo-makeroom-bounded-wait; do install -Dm644 $L/$p.patch /usr/local/lib/omarchyvr/$p.patch; done && install -Dm644 $L/nvidia-pimax-patch.hook /etc/pacman.d/hooks/65-nvidia-pimax-patch.hook && install -Dm644 $L/nvidia-pimax-verify.hook /etc/pacman.d/hooks/75-nvidia-pimax-verify.hook'
 Check without changing anything (also works as a normal user): `linux/nvidia-patch-reapply.sh --check`
 (exit 0 = patched, 2 = needs a patch). Verify the built module: `linux/nvidia-patch-reapply.sh --verify`.
 Manual one-shot incl. rebuild: `sudo linux/nvidia-patch-reapply.sh --rebuild`
@@ -85,46 +85,46 @@ If the hook cannot apply the patches it prints a banner and exits 1; pacman stil
 then makes an UNPATCHED module: look for the banner in the pacman output / `journalctl -t pimax-nvidia-patch`
 (/var/log/pacman.log also records that the hook failed).
 Remove it when NVIDIA merges the fixes into the driver you run:
-  sudo rm /etc/pacman.d/hooks/65-nvidia-pimax-patch.hook /etc/pacman.d/hooks/75-nvidia-pimax-verify.hook && sudo rm -r /usr/local/lib/pimax
+  sudo rm /etc/pacman.d/hooks/65-nvidia-pimax-patch.hook /etc/pacman.d/hooks/75-nvidia-pimax-verify.hook && sudo rm -r /usr/local/lib/omarchyvr
 
-## One-click VR: `pimax vr` (2026-10-14)
-Needs the new `pimax` binary (the installed one predates the `vr` subcommand; the keepalive service runs the
+## One-click VR: `omarchyvr vr` (2026-10-14)
+Needs the new `omarchyvr` binary (the installed one predates the `vr` subcommand; the keepalive service runs the
 installed file, so replace it atomically and leave the service alone):
-  cd ~/pimax-re/rust && cargo build --release -p pimax-tools
-  install -m755 target/release/pimax ~/.local/bin/pimax.new && mv -f ~/.local/bin/pimax.new ~/.local/bin/pimax
-Commands (details: `pimax vr help`):
-  pimax vr start [--fps 72|90] [--dump DIR [--dump-frames 100,300]] [--wait] [--debug] [--no-notify]
-      preflight (headset 34a4:0044 on USB, pimax-keepalived active, DP-1 connected, no Xid/"Idling" in this boot's
+  cd ~/pimax-re/rust && cargo build --release -p omarchyvr-tools
+  install -m755 target/release/omarchyvr ~/.local/bin/pimax.new && mv -f ~/.local/bin/pimax.new ~/.local/bin/omarchyvr
+Commands (details: `omarchyvr vr help`):
+  omarchyvr vr start [--fps 72|90] [--dump DIR [--dump-frames 100,300]] [--wait] [--debug] [--no-notify]
+      preflight (headset 34a4:0044 on USB, omarchyvr-keepalived active, DP-1 connected, no Xid/"Idling" in this boot's
       kernel log, no monado-service running), then monado-service detached (own session, log
-      /tmp/pimax-vr-session/monado.log, pid file monado.pid), returns after "gyro bias done" (keep the headset still
+      /tmp/omarchyvr-session/monado.log, pid file monado.pid), returns after "gyro bias done" (keep the headset still
       ~3 s). Env as analysis/tools/run_vr_session.sh plus PIMAX_FPS (video prepare + keepalive rate + frame interval)
       and XRT_NO_STDIN=1. 72 Hz = display mode index 2, 90 Hz = index 3 (`--mode N` overrides).
-  pimax vr stop [--grace S] [--all] SIGINT to the service this tool started (pid file), SIGKILL after 5 s, 15 s while a client is
+  omarchyvr vr stop [--grace S] [--all] SIGINT to the service this tool started (pid file), SIGKILL after 5 s, 15 s while a client is
                                     still connected (with a warning), then the kernel log check (exit 2 = reboot); --all also stops
-                                    monado-service processes of yours that were not started by `pimax vr start`. One stop at a
+                                    monado-service processes of yours that were not started by `omarchyvr vr start`. One stop at a
                                     time (Monado's SIGINT handler is single-shot: a second SIGINT would kill it half way)
-  pimax vr status [--notify]        service, rate, log summary (frame interval, missed frames, clients), headset/display/kernel
-  pimax vr steam-options            prints the Steam launch options line (pipe it into wl-copy)
-  pimax vr dump-stats FILE.raw...   mean/dominant colours, black %, probe pixels of start --dump images, --ppm writes a preview
-  pimax vr dump-diff A.raw B.raw    pixel diff of two dumps, separating edge noise from flat-area differences
-  pimax vr start --gamma G --gain K --target-format NAME   colour experiments (need analysis/overnight/srgb-target.patch)
-  Under `flock LOCK pimax vr start` the lock is released when start returns (descriptors are not inherited by the
+  omarchyvr vr status [--notify]        service, rate, log summary (frame interval, missed frames, clients), headset/display/kernel
+  omarchyvr vr steam-options            prints the Steam launch options line (pipe it into wl-copy)
+  omarchyvr vr dump-stats FILE.raw...   mean/dominant colours, black %, probe pixels of start --dump images, --ppm writes a preview
+  omarchyvr vr dump-diff A.raw B.raw    pixel diff of two dumps, separating edge noise from flat-area differences
+  omarchyvr vr start --gamma G --gain K --target-format NAME   colour experiments (need analysis/overnight/srgb-target.patch)
+  Under `flock LOCK omarchyvr vr start` the lock is released when start returns (descriptors are not inherited by the
   service); use `--wait` to keep it for the whole session.
-Desktop entry (template `linux/pimax-vr.desktop`, not installed; actions Start 90 Hz / Stop / Status):
-  sed "s|@PIMAX@|$HOME/.local/bin/pimax|g" ~/pimax-re/linux/pimax-vr.desktop > ~/.local/share/applications/pimax-vr.desktop
-  desktop-file-validate ~/.local/share/applications/pimax-vr.desktop && update-desktop-database ~/.local/share/applications
+Desktop entry (template `linux/omarchyvr-vr.desktop`, not installed; actions Start 90 Hz / Stop / Status):
+  sed "s|@OMARCHYVR@|$HOME/.local/bin/omarchyvr|g" ~/pimax-re/linux/omarchyvr-vr.desktop > ~/.local/share/applications/omarchyvr-vr.desktop
+  desktop-file-validate ~/.local/share/applications/omarchyvr-vr.desktop && update-desktop-database ~/.local/share/applications
 Test scripts (headset!, run under the lock when other agents are active): analysis/tools/run_vr_fps_test.sh (72/90 Hz
 with dumps and firmware log) and analysis/tools/run_vr_color_test.sh (sRGB vs UNORM client).
 
-## Desk mode: `pimax desk` (2026-10-14)
-`pimax desk start` = Monado (as `pimax vr start`, honours `PIMAX_MONADO_BUILD`), then `pimax-passthrough run` (room camera view
+## Desk mode: `omarchyvr desk` (2026-10-14)
+`omarchyvr desk start` = Monado (as `omarchyvr vr start`, honours `PIMAX_MONADO_BUILD`), then `omarchyvr-passthrough run` (room camera view
 as the MAIN OpenXR app), then WayVR (`--openxr --show --no-autostart`, `XDG_CONFIG_HOME=~/src/desk-out/wayvr-home-am/config`,
 CPU `capture_method: screencopy`) on top. WayVR creates an `XR_EXTX_overlay` session (`create_overlay_session` in
 wayvr/src/backend/openxr/helpers.rs; it refuses to start without the extension), so the passthrough app stays the main session.
 Flags: `--no-passthrough`, `--eye` (PIMAX_EYE=1 + `~/src/monado-eye/build`). Logs in the session dir (`monado.log`,
-`passthrough.log`, `wayvr.log`, `wayvr.stdout`). `pimax desk stop`: SIGINT WayVR, then passthrough (by pid, 10 s each), then Monado
+`passthrough.log`, `wayvr.log`, `wayvr.stdout`). `omarchyvr desk stop`: SIGINT WayVR, then passthrough (by pid, 10 s each), then Monado
 (SIGINT, SIGKILL only after `--grace`, default 30 s), then the Xid / "Idling display engine" kernel log check.
 Not yet tried on the headset: passthrough + WayVR overlay together (each was run separately, WayVR over xr_room in
 analysis/overnight/desk.md). The camera must be free: no PIMAX_CAM / PIMAX_HANDS=mercury in the environment.
-`pimax vr start` also finds the headset connector by EDID (PVR 0xD242 / 0x1019) instead of `DP-1`, and warns when
-monado-service lacks `cap_sys_nice` (prints the setcap line). `pimax mount-shared` prints the mount command for the shared NTFS drive.
+`omarchyvr vr start` also finds the headset connector by EDID (PVR 0xD242 / 0x1019) instead of `DP-1`, and warns when
+monado-service lacks `cap_sys_nice` (prints the setcap line). `omarchyvr mount-shared` prints the mount command for the shared NTFS drive.

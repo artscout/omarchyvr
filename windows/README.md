@@ -49,9 +49,9 @@ cargo run --release -p pimax-lens -- fit-pvr /path/to/pimax-windows-dump-.../pim
 ```
 
 It prints the fit per eye and channel (residual in degrees per radius, max error), whether the curve is radially symmetric,
-a comparison with the current `~/.config/pimax/lens.conf` (angle at the same panel radius, radius needed for 5..50 degrees),
-and writes the variant `~/.config/pimax/lens-ipd/pvr.conf` (`cant_deg` from the eye poses). `lens.conf` itself is never touched.
-Try it with `PIMAX_LENS_CONF=~/.config/pimax/lens-ipd/pvr.conf`. Useful flags: `--dry-run`, `--per-channel`, `--v-down`,
+a comparison with the current `~/.config/omarchyvr/lens.conf` (angle at the same panel radius, radius needed for 5..50 degrees),
+and writes the variant `~/.config/omarchyvr/lens-ipd/pvr.conf` (`cant_deg` from the eye poses). `lens.conf` itself is never touched.
+Try it with `PIMAX_LENS_CONF=~/.config/omarchyvr/lens-ipd/pvr.conf`. Useful flags: `--dry-run`, `--per-channel`, `--v-down`,
 `--terms N`, `--conf FILE`, `--out FILE`.
 
 ## 3. Recording guide (USB traffic and SLAM ground truth)

@@ -1,16 +1,16 @@
 # Pimax auto mode (user unit). NOT installed by anything; to try it (after the live checklist,
 # analysis/auto-mode-live-checklist.md):
-#   install -Dm644 packaging/systemd/pimax-autod.service ~/.config/systemd/user/pimax-autod.service
-#   systemctl --user daemon-reload && systemctl --user start pimax-autod      (enable for login start)
-# Dry run unless ~/.config/pimax/auto.toml says dry_run = false. Stopping the unit never stops a VR session.
+#   install -Dm644 packaging/systemd/omarchyvr-autod.service ~/.config/systemd/user/omarchyvr-autod.service
+#   systemctl --user daemon-reload && systemctl --user start omarchyvr-autod      (enable for login start)
+# Dry run unless ~/.config/omarchyvr/auto.toml says dry_run = false. Stopping the unit never stops a VR session.
 [Unit]
 Description=Pimax Dream Air auto mode (start/stop the VR session when the headset is put on / left)
-After=graphical-session.target pimax-keepalived.service
+After=graphical-session.target omarchyvr-keepalived.service
 PartOf=graphical-session.target
 
 [Service]
 Type=simple
-ExecStart=%h/pimax-re/rust/target/release/pimax-autod run
+ExecStart=%h/.local/bin/omarchyvr-autod run
 # only the daemon itself: the sessions it starts are detached by the launcher and survive a restart
 KillMode=process
 KillSignal=SIGTERM

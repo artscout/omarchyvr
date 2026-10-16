@@ -3,7 +3,7 @@ SUBSYSTEM=="usb", ATTRS{idVendor}=="34a4", MODE="0660", TAG+="uaccess"
 SUBSYSTEM=="usb", ATTRS{idVendor}=="2104", ATTRS{idProduct}=="0561", MODE="0660", TAG+="uaccess"
 
 # Keep the USB hubs of the headset chain and the headset's own devices out of runtime autosuspend.
-# Evidence 2026-10-16: after `pimax vr reset-headset` (eSpiCmdSysReset) the headset left USB at 1.1 s and was seen again
+# Evidence 2026-10-16: after `omarchyvr vr reset-headset` (eSpiCmdSysReset) the headset left USB at 1.1 s and was seen again
 # only after ~61-80 s (Windows: 7.8 s). The hubs above it (1a40:0101 external hub, 05e3 Genesys hubs) have
 # power/control=auto with autosuspend delay 0, so the hub suspends the moment its only child disappears.
 # See analysis/reset-headset-slow-reenum.md.

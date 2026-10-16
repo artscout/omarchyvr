@@ -1,0 +1,20 @@
+# Desktop entry TEMPLATE of the Pimax app (rust/omarchyvr-app). @OMARCHYVR_APP@ is replaced by the path of the installed
+# binary. The app installs it itself (Setup > Launcher and app > This app, no root), or by hand:
+#   cd ~/pimax-re/rust && cargo build --release -p omarchyvr-app
+#   install -Dm755 target/release/omarchyvr-app ~/.local/bin/omarchyvr-app
+#   install -Dm644 ../linux/omarchyvr.svg ~/.local/share/icons/hicolor/scalable/apps/omarchyvr.svg
+#   sed "s|@OMARCHYVR_APP@|$HOME/.local/bin/omarchyvr-app|g" ../linux/omarchyvr.desktop > ~/.local/share/applications/omarchyvr.desktop
+# Remove: rm ~/.local/share/applications/omarchyvr.desktop ~/.local/share/icons/hicolor/scalable/apps/omarchyvr.svg ~/.local/bin/omarchyvr-app
+
+[Desktop Entry]
+Type=Application
+Name=omarchyvr
+GenericName=VR headset app (Pimax Dream Air, unofficial)
+Comment=Unofficial VR stack for the Pimax Dream Air
+Exec=@OMARCHYVR_APP@
+Icon=omarchyvr
+Terminal=false
+Categories=Utility;
+Keywords=VR;OpenXR;Monado;Pimax;Dream Air;headset;desk;
+StartupWMClass=omarchyvr
+StartupNotify=true

@@ -2,9 +2,9 @@
 """Prepare the headset for video (init-sequence.md section 7 steps 5-8) and tail both firmware logs.
 
     python3 pimax_video_on.py [fps=72] [seconds=40]
-Needs pimax-keepalived running (it sends wake + keepalive). After this, scan out the DP connector
+Needs omarchyvr-keepalived running (it sends wake + keepalive). After this, scan out the DP connector
 at exactly <fps> Hz; the bridge log should show `fps calc <fps>` and after ~5.5 s `Panel ON`.
-Writes <fps> to $XDG_RUNTIME_DIR/pimax-rate so pimax-keepalived switches to `58 04 39 00 <fps> 00`.
+Writes <fps> to $XDG_RUNTIME_DIR/pimax-rate so omarchyvr-keepalived switches to `58 04 39 00 <fps> 00`.
 """
 import glob
 import os

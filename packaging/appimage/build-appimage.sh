@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build an AppImage of the Pimax app: pimax-setup, the pimax launcher and the docs the app reads.
+# Build an AppImage of the Pimax app: omarchyvr-app, the omarchyvr launcher and the docs the app reads.
 # Run it by hand. It installs nothing and needs no root.
 #
 #   packaging/appimage/build-appimage.sh
@@ -11,17 +11,17 @@
 #   SKIP_BUILD=1      do not run cargo, use the binaries already in the target directory
 #   APPIMAGETOOL      appimagetool to use (default: the one on PATH)
 #
-# Scope: the app only. The helper tools (pimax-cam, pimax-passthrough, ...), the Monado and WayVR builds, Basalt and
+# Scope: the app only. The helper tools (pimax-cam, omarchyvr-passthrough, ...), the Monado and WayVR builds, Basalt and
 # the voice models are not inside. The Arch package (packaging/arch) carries the tools.
 #
-# Why AppRun sets PIMAX_REPO: the app detects a package install only for /usr/bin/pimax-setup (is_system_install in
-# rust/pimax-gui-core/src/paths.rs). Inside an AppImage the executable is under /tmp/.mount_*, so Paths::from_env
+# Why AppRun sets PIMAX_REPO: the app detects a package install only for /usr/bin/omarchyvr-app (is_system_install in
+# rust/omarchyvr-gui-core/src/paths.rs). Inside an AppImage the executable is under /tmp/.mount_*, so Paths::from_env
 # falls back to PIMAX_REPO, else ~/pimax-re. Paths expects <repo>/docs/LESSONS.md, so the docs go to
-# $APPDIR/usr/share/pimax/docs and AppRun sets PIMAX_REPO=$APPDIR/usr/share/pimax (a PIMAX_REPO that the caller
+# $APPDIR/usr/share/omarchyvr/docs and AppRun sets PIMAX_REPO=$APPDIR/usr/share/omarchyvr (a PIMAX_REPO that the caller
 # already exports wins).
 #
 # With PIMAX_REPO set, Paths looks for every release binary in <repo>/rust/target/release. The AppDir therefore has
-# usr/share/pimax/rust/target/release as a symlink to usr/bin, so the app finds the bundled pimax-setup and pimax.
+# usr/share/omarchyvr/rust/target/release as a symlink to usr/bin, so the app finds the bundled omarchyvr-app and omarchyvr.
 # The other tools are not bundled: the app reports them as not built, and the launcher still looks for them in
 # ~/pimax-re/rust/target/release.
 #
@@ -49,20 +49,20 @@ target=$(realpath -m "${CARGO_TARGET_DIR:-$repo/rust/target}")
 
 if [ "${SKIP_BUILD:-0}" != 1 ]; then
   command -v cargo >/dev/null || die "cargo not found"
-  # "pimax" is only the library crate; the launcher binary called pimax is built by the package pimax-tools.
-  # pimax-setup's build script reads PIMAX_GIT_HASH and SOURCE_DATE_EPOCH if you set them (else it asks git).
-  CARGO_TARGET_DIR=$target cargo build --release --locked -p pimax-setup -p pimax-tools
+  # "pimax" is only the library crate; the launcher binary called omarchyvr is built by the package omarchyvr-tools.
+  # omarchyvr-app's build script reads PIMAX_GIT_HASH and SOURCE_DATE_EPOCH if you set them (else it asks git).
+  CARGO_TARGET_DIR=$target cargo build --release --locked -p omarchyvr-app -p omarchyvr-tools
 fi
-for b in pimax-setup pimax; do
+for b in omarchyvr-app omarchyvr; do
   [ -x "$target/release/$b" ] || die "$target/release/$b is missing (build failed, or SKIP_BUILD=1 without a build)"
 done
 
 rm -rf -- "$appdir"
-share=$appdir/usr/share/pimax
+share=$appdir/usr/share/omarchyvr
 
 # binaries
-install -Dm755 "$target/release/pimax-setup" "$appdir/usr/bin/pimax-setup"
-install -Dm755 "$target/release/pimax" "$appdir/usr/bin/pimax"
+install -Dm755 "$target/release/omarchyvr-app" "$appdir/usr/bin/omarchyvr-app"
+install -Dm755 "$target/release/omarchyvr" "$appdir/usr/bin/omarchyvr"
 
 # what the app reads from <repo>: docs, the udev rule it compares, the script its Steam runtime tool runs
 install -Dm644 -t "$share/docs" "$repo"/docs/*.md
@@ -72,28 +72,28 @@ fi
 install -Dm644 "$repo/linux/70-pimax.rules" "$share/linux/70-pimax.rules"
 install -Dm755 "$repo/analysis/tools/vr_runtime_switch.sh" "$share/analysis/tools/vr_runtime_switch.sh"
 
-# <repo>/rust/target/release -> usr/bin (usr/share/pimax/rust/target/../../../../bin is usr/bin)
+# <repo>/rust/target/release -> usr/bin (usr/share/omarchyvr/rust/target/../../../../bin is usr/bin)
 mkdir -p "$share/rust/target"
 ln -s ../../../../bin "$share/rust/target/release"
 
 # desktop entry (top level for appimagetool, and under usr/share/applications): the template without its comment
 # header, Exec by name because AppRun starts the app
-sed -e '/^#/d' -e '/./,$!d' -e 's|@PIMAX_SETUP@|pimax-setup|g' "$repo/linux/pimax.desktop" >"$appdir/pimax.desktop"
-grep -qx 'Exec=pimax-setup' "$appdir/pimax.desktop" || die "linux/pimax.desktop has no @PIMAX_SETUP@ placeholder"
-install -Dm644 "$appdir/pimax.desktop" "$appdir/usr/share/applications/pimax.desktop"
+sed -e '/^#/d' -e '/./,$!d' -e 's|@OMARCHYVR_APP@|omarchyvr-app|g' "$repo/linux/omarchyvr.desktop" >"$appdir/omarchyvr.desktop"
+grep -qx 'Exec=omarchyvr-app' "$appdir/omarchyvr.desktop" || die "linux/omarchyvr.desktop has no @OMARCHYVR_APP@ placeholder"
+install -Dm644 "$appdir/omarchyvr.desktop" "$appdir/usr/share/applications/omarchyvr.desktop"
 
-# icon: top level (Icon=pimax), .DirIcon, and the hicolor path
-install -Dm644 "$repo/linux/pimax.svg" "$appdir/pimax.svg"
-install -Dm644 "$repo/linux/pimax.svg" "$appdir/usr/share/icons/hicolor/scalable/apps/pimax.svg"
-ln -s pimax.svg "$appdir/.DirIcon"
+# icon: top level (Icon=omarchyvr), .DirIcon, and the hicolor path
+install -Dm644 "$repo/linux/omarchyvr.svg" "$appdir/omarchyvr.svg"
+install -Dm644 "$repo/linux/omarchyvr.svg" "$appdir/usr/share/icons/hicolor/scalable/apps/omarchyvr.svg"
+ln -s omarchyvr.svg "$appdir/.DirIcon"
 
 cat >"$appdir/AppRun" <<'EOF'
 #!/bin/sh
 # AppRun of the Pimax AppImage (written by packaging/appimage/build-appimage.sh)
 APPDIR=${APPDIR:-$(dirname "$(readlink -f "$0")")}
 export APPDIR
-export PIMAX_REPO="${PIMAX_REPO:-$APPDIR/usr/share/pimax}"
-exec "$APPDIR/usr/bin/pimax-setup" "$@"
+export PIMAX_REPO="${PIMAX_REPO:-$APPDIR/usr/share/omarchyvr}"
+exec "$APPDIR/usr/bin/omarchyvr-app" "$@"
 EOF
 chmod 755 "$appdir/AppRun"
 
