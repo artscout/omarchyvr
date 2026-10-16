@@ -1,6 +1,6 @@
 # Pimax Dream Air (SLAM): tracking cameras, hand tracking, Linux feasibility
 
-Date: 2026-10-13. Read-only research. No HID commands sent, pimax-keepalived not touched.
+Date: 2026-10-13. Read-only research. No HID commands sent, omarchyvr-keepalived not touched.
 
 ## 1. Public specs (web)
 

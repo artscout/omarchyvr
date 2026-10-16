@@ -1,12 +1,12 @@
 #!/bin/bash
-# Lens test session: starts monado-service (direct mode, reads the CURRENT ~/.config/pimax/lens.conf) and runs
+# Lens test session: starts monado-service (direct mode, reads the CURRENT ~/.config/omarchyvr/lens.conf) and runs
 # pimax-lenstest, the OpenXR test pattern client. Glue only: the logic is in rust/pimax-lenstest.
 #
 #   run_lens_test.sh                         guided session in the headset (controllers or keyboard in THIS terminal)
 #   run_lens_test.sh --auto 8                same, stepping through everything every 8 s
 #   run_lens_test.sh --capture DIR           no wearer needed: show every pattern, save what the compositor puts on the
 #                                            panel (after the lens model) as PNGs into DIR
-#   run_lens_test.sh --lens-conf F ...       use F instead of ~/.config/pimax/lens.conf (exported as PIMAX_LENS_CONF)
+#   run_lens_test.sh --lens-conf F ...       use F instead of ~/.config/omarchyvr/lens.conf (exported as PIMAX_LENS_CONF)
 #   all other options go to pimax-lenstest (see: pimax-lenstest --help)
 #
 # Environment:
@@ -15,8 +15,8 @@
 #   NO_DEVICE=1    do not open the headset USB (compositor + panel link only; for captures nobody watches)
 #   WINDOWED=1     use a window on the desktop instead of the headset (implies NO_DEVICE=1, scaled down)
 #   MODE=N         XRT_COMPOSITOR_DESIRED_MODE (default 2 = 7104x3840@72, see direct-mode-test.md)
-#   LOGDIR         where monado.log goes (default /tmp/pimax-lens-test)
-#   HEADSET_LOCK=1 take /tmp/pimax-headset.lock (flock -o) for the whole run: use it when other agents are about.
+#   LOGDIR         where monado.log goes (default /tmp/omarchyvr-lens-test)
+#   HEADSET_LOCK=1 take /tmp/omarchyvr-headset.lock (flock -o) for the whole run: use it when other agents are about.
 #                  (If you wrap this script in flock yourself, use `flock -o`: see the note at the sleep below.)
 # Stops monado-service with SIGINT (waits, then SIGKILL) and checks the kernel log for NVIDIA display errors.
 
@@ -26,7 +26,7 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 if [ "${HEADSET_LOCK:-0}" = 1 ] && [ -z "${_LENS_LOCKED:-}" ]; then
 	# -o: children (the sleep that feeds monado-service its stdin) must not inherit the lock descriptor, or a
 	# leftover sleep would hold the headset lock after this script has ended
-	_LENS_LOCKED=1 exec flock -o -w 3600 /tmp/pimax-headset.lock "$0" "$@"
+	_LENS_LOCKED=1 exec flock -o -w 3600 /tmp/omarchyvr-headset.lock "$0" "$@"
 fi
 
 M=${MONADO_BUILD:-$HOME/src/monado/build}
@@ -38,7 +38,7 @@ if [ -z "$APP" ]; then
 		[ -x "$c" ] && { APP=$c; break; }
 	done
 fi
-LOGDIR=${LOGDIR:-/tmp/pimax-lens-test}
+LOGDIR=${LOGDIR:-/tmp/omarchyvr-lens-test}
 mkdir -p "$LOGDIR"
 
 die() { echo "run_lens_test: $*" >&2; exit 1; }
@@ -79,7 +79,7 @@ cat <<TXT
 === lens test session ===
 monado:  $SVC
 client:  $APP
-lens.conf: ${PIMAX_LENS_CONF:-$HOME/.config/pimax/lens.conf}   (read once when monado-service starts: edit it, then run this again)
+lens.conf: ${PIMAX_LENS_CONF:-$HOME/.config/omarchyvr/lens.conf}   (read once when monado-service starts: edit it, then run this again)
 log:     $LOGDIR/monado.log   (grep "pimax lens" for what the driver loaded)
 TXT
 "$APP" config ${LENS_CONF:+--lens-conf "$LENS_CONF"} 2>/dev/null | head -3

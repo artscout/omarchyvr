@@ -173,7 +173,7 @@ blocks must improve. **Rollback**: every save keeps the previous overlay as `.pr
 swaps them, `clear` returns to the factory calibration). Later, an automatic rollback when tracking quality drops
 after a new overlay (more relocalisations, larger reprojection error).
 
-Storage: `~/.config/pimax/cam-calib-overlay.json`, next to the factory XML and never inside it:
+Storage: `~/.config/omarchyvr/cam-calib-overlay.json`, next to the factory XML and never inside it:
 
 ```json
 {
@@ -188,7 +188,7 @@ Storage: `~/.config/pimax/cam-calib-overlay.json`, next to the factory XML and n
 }
 ```
 
-Readers (`pimax-cam`, `pimax-passthrough`) refuse it for another headset (device UID), another factory calibration
+Readers (`pimax-cam`, `omarchyvr-passthrough`) refuse it for another headset (device UID), another factory calibration
 (date), unknown camera ids or any rotation above 3 deg, and fall back to the factory values. Version 2 would add
 camera-IMU rotation, time offset and translations, each with a sigma; readers ignore fields they do not know.
 
@@ -198,7 +198,7 @@ Two jobs: **relocalise** at session start (the same world frame every time, so b
 windows stay where they were), and **accumulate evidence** ("spot points" seen in many sessions) for the
 calibration.
 
-Contents of one room (`~/.local/share/pimax/rooms/<uuid>/`), no images:
+Contents of one room (`~/.local/share/omarchyvr/rooms/<uuid>/`), no images:
 
 | File | Content | Size |
 |---|---|---|
@@ -247,7 +247,7 @@ int pimax_selfcal_poll(pimax_selfcal *s, pimax_selfcal_status *out);   /* new ov
 
 ### 5.4 Privacy
 
-* Local only: the overlay (~1 KB of numbers) in `~/.config/pimax/`, room maps in `~/.local/share/pimax/rooms/`,
+* Local only: the overlay (~1 KB of numbers) in `~/.config/omarchyvr/`, room maps in `~/.local/share/omarchyvr/rooms/`,
   created with user-only permissions. None of this code has a network dependency; nothing is uploaded.
 * No images are stored in a map, only features and 3-D points. Feature maps can still be turned back into
   recognisable pictures of the room (Pittaluga et al., "Revealing Scenes by Inverting Structure from Motion
@@ -308,22 +308,22 @@ S=~/src/target-selfcal/release/pimax-selfcal
 $S selftest --out /tmp/selftest                       # synthetic end-to-end, PASS/FAIL, pictures
 $S estimate ~/pimax-re/analysis/overnight/cam/morning2 --out /tmp/real --holdout   # report, summary.json, pictures
 $S estimate FILE.pxcam@0:200:5 --out DIR              # 200 tracking frames, every 5th
-$S estimate ... --write                                # install ~/.config/pimax/cam-calib-overlay.json if the gate passes
+$S estimate ... --write                                # install ~/.config/omarchyvr/cam-calib-overlay.json if the gate passes
 $S check FILE.pxcam@0:100:10 --overlay                # factory vs factory+overlay, eye-view check
 $S pairs SCENES --dy-search 24 --out DIR              # per-pair matches, rejection reasons, pictures, diagnosis
 $S lens SCENES                                        # image circle vs principal point
 $S show | rollback | clear                            # the installed overlay
-P=~/src/target-passthrough/release/pimax-passthrough  # (or ~/src/target-selfcal/release/)
+P=~/src/target-passthrough/release/omarchyvr-passthrough  # (or ~/src/target-selfcal/release/)
 $P render --tiles PREFIX --out DIR --overlay default  # passthrough with the learned calibration
 $P run --overlay default                              # live client, opt-in
 ~/src/target-selfcal/release/pimax-cam rectify SRC --out DIR --overlay default
 ```
 
-Tests (`CARGO_TARGET_DIR=~/src/target-selfcal cargo test -p pimax-selfcal -p pimax-cam -p pimax-passthrough`):
+Tests (`CARGO_TARGET_DIR=~/src/target-selfcal cargo test -p pimax-selfcal -p pimax-cam -p omarchyvr-passthrough`):
 pimax-selfcal 25 unit + 2 synthetic end-to-end + 2 real-data tests (about 20 s, most of it the synthetic
-rendering and matching); pimax-passthrough 26 unit + 3 integration (new: overlay applied to the rig, sub-pixel
+rendering and matching); omarchyvr-passthrough 26 unit + 3 integration (new: overlay applied to the rig, sub-pixel
 peak); pimax-cam 48 unit + 3 integration (2 live tests ignored). `cargo clippy -p pimax-selfcal -p pimax-cam
--p pimax-passthrough --all-targets -- -D warnings` and `cargo fmt --check` are clean; `cargo check --workspace
+-p omarchyvr-passthrough --all-targets -- -D warnings` and `cargo fmt --check` are clean; `cargo check --workspace
 --all-targets` passes.
 
 ## 7. Recording request (main session)
@@ -345,7 +345,7 @@ What the user does (about one minute):
 Commands (the same lock as before):
 
 ```bash
-L="flock -o -w 3600 /tmp/pimax-headset.lock"
+L="flock -o -w 3600 /tmp/omarchyvr-headset.lock"
 C=~/src/target-selfcal/release/pimax-cam
 $L $C stats --seconds 5                     # expect ~50 fps, lost 0
 $L $C tiles "" --out /tmp/selfcal-tiles --kind tracking   # look at the mosaic: not white, not black?

@@ -4,9 +4,9 @@ The full plan, with tables and scenarios, is [../analysis/resilience-plan.html](
 
 ## Review: what we have and what is missing
 Four actors watch the session, and none of them sees the whole picture:
-- the launcher watchdog (`pimax-tools/src/vr/supervise.rs`);
-- auto mode (`pimax-autod`, not installed);
-- the GUI monitor and preflight (`pimax-gui-core`);
+- the launcher watchdog (`omarchyvr-tools/src/vr/supervise.rs`);
+- auto mode (`omarchyvr-autod`, not installed);
+- the GUI monitor and preflight (`omarchyvr-gui-core`);
 - the `pimax-device` checks.
 
 The checks exist four times: launcher preflight, GUI preflight, GUI guards and pimax-device. The GPU-line classifier exists twice with different policies, and USB presence is read three ways.
@@ -33,18 +33,18 @@ What happens when a device disappears (from code and logs):
 - **G10:** WayVR's 10 s screen reset is not visible.
 
 ## Decisions
-1. **One owner: `pimaxd`**, grown out of `pimax-autod`.
+1. **One owner: `omarchyvrd`**, grown out of `omarchyvr-autod`.
    - Why: it is already a std-thread user daemon with a pure state machine, a simulator, a JSON-lines socket, 2 MB RSS and only libc as a dependency.
    - systemd supervises the daemon. The CLI, GUI and voice are clients.
    - It adopts running sessions from pid files and pidfds, so restarting the daemon never stops a session.
-2. **A shared `pimax-components` crate** with a `Component` trait: `id, kind, deps, wanted, toggle, probe, start, stop, set_live, ladder, grace`.
+2. **A shared `omarchyvr-components` crate** with a `Component` trait: `id, kind, deps, wanted, toggle, probe, start, stop, set_live, ladder, grace`.
    - One module per component.
    - Pure graph, policy and `reconcile()` functions, tested with the autod-style simulator.
 3. **Desired state:**
-   - `~/.config/pimax/pimaxd.toml` holds the persistent toggles and budgets.
-   - `$XDG_RUNTIME_DIR/pimaxd/intent` holds whether a session should run (on/off), plus who set it.
-   - `~/.config/pimax/safe-mode` is a flag file.
-4. **Actual state:** `{"cmd":"state"}` on the socket, mirrored to `$XDG_RUNTIME_DIR/pimaxd/state.json`.
+   - `~/.config/omarchyvr/omarchyvrd.toml` holds the persistent toggles and budgets.
+   - `$XDG_RUNTIME_DIR/omarchyvrd/intent` holds whether a session should run (on/off), plus who set it.
+   - `~/.config/omarchyvr/safe-mode` is a flag file.
+4. **Actual state:** `{"cmd":"state"}` on the socket, mirrored to `$XDG_RUNTIME_DIR/omarchyvrd/state.json`.
    - Per-component health: off, starting, ok, degraded, blocked, down, failed, unknown.
    - An overall value: ok, degraded, down, needs-you, needs-reboot.
 5. **Events, without root or new dependencies:**
@@ -72,10 +72,10 @@ What happens when a device disappears (from code and logs):
 | Phase | Content | Agent |
 |---|---|---|
 | P0 | Watchdog hotfixes: no automatic SIGKILL, wait for the device without spending tries, no restart after Xid or acquire failure, stop waits for WayVR to exit | Sonnet |
-| P1 | `pimax-components` core: model, graph, policy, read-only probes, `pimax health` | Sonnet |
+| P1 | `omarchyvr-components` core: model, graph, policy, read-only probes, `pimax health` | Sonnet |
 | P2 | Events: uevent, pidfd, kernel follower, resume; `pimax health --watch` | Sonnet |
 | P3 | Move start and stop into components (byte-identical dry-run golden files) | Opus |
-| P4 | pimaxd observe-only (safe mode), toml and intent, snapshot and socket, sim scripts per scenario | Opus |
+| P4 | omarchyvrd observe-only (safe mode), toml and intent, snapshot and socket, sim scripts per scenario | Opus |
 | P5 | Leaf remediation (voice, perf, ctrltrack, ai, passthrough, wayvr) | Sonnet |
 | P6 | Launcher as a client (`set` + wait, `--no-daemon` fallback), watchdog retired | Sonnet |
 | P7 | Core remediation: Monado subtree, gate, unplug and replug, hub drop, resume, sleep inhibit | Opus |
@@ -84,21 +84,21 @@ What happens when a device disappears (from code and logs):
 | P10 | Docs, unit enablement | Haiku |
 
 The work runs in four lanes:
-- **Lane A (pimax-tools):** P0 → P3 → P6.
-- **Lane B (pimax-components and autod):** P1 (with P2 alongside) → P4 → P5 → P7.
+- **Lane A (omarchyvr-tools):** P0 → P3 → P6.
+- **Lane B (omarchyvr-components and autod):** P1 (with P2 alongside) → P4 → P5 → P7.
 - **Lane C (pimax-cam, passthrough, ctrltrack, roommap, Monado, WayVR):** P9, any time.
 - **Lane D (GUI):** P8, after the P4 schema.
 
 P0, P1, P2 and P9 can start now.
 
 ## Open questions
-1. Should pimaxd start at login?
+1. Should omarchyvrd start at login?
 2. Are the budgets right?
 3. Should a WayVR Xid 31 at shutdown block manual starts, or only automatic ones?
 4. If the headset is unplugged mid-game, should we only notify, stop after N minutes, or restart on replug?
 5. Should a camera-only drop in desk mode trigger an automatic reset-headset?
 6. Should we block sleep during a session, or stop the session before suspend?
-7. Should `auto.toml` merge into `pimaxd.toml`?
+7. Should `auto.toml` merge into `omarchyvrd.toml`?
 8. Should there also be in-headset toasts?
 9. Should `--force` be allowed past needs-reboot?
 10. When may P9 touch the Monado and WayVR branches?

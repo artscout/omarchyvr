@@ -1,6 +1,6 @@
 # Dream Air stuck USB enumeration: recovery without rebooting
 
-> **Correction 2026-10-15:** a dropped USB3 side (camera 34a4:0014 gone, HID 34a4:0044 still there) does NOT need a physical junction-box power unplug. `pimax vr reset-headset` (exit mode) brought the camera back by itself ~90 s after the reset started (usb 2-4 disconnect 09:21:43; reset 09:24:~; camera back 09:26:31). `pimax desk start` / `vr start --6dof` now run this automatically (`--no-auto-recover` skips it). The old tool gave up after 60 s; it now waits 150 s (`--wait`).
+> **Correction 2026-10-15:** a dropped USB3 side (camera 34a4:0014 gone, HID 34a4:0044 still there) does NOT need a physical junction-box power unplug. `omarchyvr vr reset-headset` (exit mode) brought the camera back by itself ~90 s after the reset started (usb 2-4 disconnect 09:21:43; reset 09:24:~; camera back 09:26:31). `omarchyvr desk start` / `vr start --6dof` now run this automatically (`--no-auto-recover` skips it). The old tool gave up after 60 s; it now waits 150 s (`--wait`).
 
 
 Scope: research only. Nothing was reset, unbound, power-cycled or written. Commands below are for the next incident. Do not run them while the headset is working.

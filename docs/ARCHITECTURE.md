@@ -15,25 +15,25 @@ Goals, from the user:
 ## 1. Layers
 
 ```
-pimax-setup (GUI) ── pages: Home, Onboarding, Setup/Checks, Autofix, Tools, Logs, Profiles
+omarchyvr-app (GUI) ── pages: Home, Onboarding, Setup/Checks, Autofix, Tools, Logs, Profiles
      │ uses
-pimax-gui-core ──── facts, preflight, redact, bundle, profiles, job runner (runs only the user's approved commands)
+omarchyvr-gui-core ──── facts, preflight, redact, bundle, profiles, job runner (runs only the user's approved commands)
      │ uses
 pimax-device ────── HeadsetModule + descriptors (devices/<id>/device.toml), HID allowlist + Gate,
      │              Check trait + checks/, Fix catalogue, Autofix reply contract, onboarding progress file
      │ uses
-pimax-doctor ────── Host trait (real / fake), today's checks (bridged, then moved check by check)
-                    ── tools that touch the device (pimax, pimax-eye, pimax-cam, pimax-autod) build reports through
+omarchyvr-doctor ────── Host trait (real / fake), today's checks (bridged, then moved check by check)
+                    ── tools that touch the device (pimax, pimax-eye, pimax-cam, omarchyvr-autod) build reports through
                        a module and send through Gate (after the migration)
 ```
 
 `pimax-device` has no I/O of its own:
 - Modules build reports.
 - `Gate` writes them to a writer that the caller has opened.
-- Checks read through `pimax_doctor::Host`.
+- Checks read through `omarchyvr_doctor::Host`.
 - Fixes are rendered as text for the user to run.
 
-Its only dependency is `pimax-doctor`.
+Its only dependency is `omarchyvr-doctor`.
 
 ## 2. Device modules
 
@@ -107,7 +107,7 @@ Dream Air commands (all on IF0, 64 bytes, zero padded). Sources:
 | id | bytes | constraint | built today in |
 |---|---|---|---|
 | wake | `58 06 1a 05 01 00 00` | | pimax-proto/src/frame.rs:46 |
-| keepalive | `58 04 39 00 RR 00` | RR ∈ {0, 0x48, 0x5a} | frame.rs:53; pimax-tools/src/vr/reset.rs:26-30 |
+| keepalive | `58 04 39 00 RR 00` | RR ∈ {0, 0x48, 0x5a} | frame.rs:53; omarchyvr-tools/src/vr/reset.rs:26-30 |
 | app_unlock | `58 05 5b 05 02 02` | | frame.rs:66 |
 | panel_on | `58 04 29 00 01` | | frame.rs:67 |
 | announce_refresh | `58 0d 1a 05 02 FPS` | 72, 90 | frame.rs:69 |
@@ -118,7 +118,7 @@ Dream Air commands (all on IF0, 64 bytes, zero padded). Sources:
 | read_calib_block | `58 07 0a 00 01 <addr u16le> 10` | any addr | pimax-proto/src/calib.rs:38 |
 | eye_power_on | `58 05 3c 05 00 01` | once per enumeration, 5 s | pimax-eye/src/power.rs:17-22 |
 | ipd_motor | `58 06 5c 05 01 <mm×100 u16le>` | 5800..7200 | pimax-eye/src/ipd.rs:39-45 |
-| start_pair | `58 04 04 00 SS` | SS ∈ {2, 3}, once per request, 30 s | pimax-autod/src/pairing.rs:87-92 |
+| start_pair | `58 04 04 00 SS` | SS ∈ {2, 3}, once per request, 30 s | omarchyvr-autod/src/pairing.rs:87-92 |
 | camera_ae | `58 19 51 00 01 32` + 10 × u16le | exposure 100..4108, gain 13..215 | pimax-cam/src/ae.rs:30-36,118-129,386-389 |
 
 Denied with a reason:
@@ -127,7 +127,7 @@ Denied with a reason:
 - `58 ?? 55` and `58 ?? 56` activation blobs.
 
 Never listed, so refused:
-- the visor probe `58 04 2c 00 00` (pimax-autod/src/visor.rs:14; it needs the user's approval before it can be added);
+- the visor probe `58 04 2c 00 00` (omarchyvr-autod/src/visor.rs:14; it needs the user's approval before it can be added);
 - any other 0x5b blob;
 - anything unknown.
 
@@ -140,7 +140,7 @@ The Dream Air SE, Crystal Light, Crystal Super and 8KX have descriptors with:
 - no `usb_pids`, only unverified `usb_pid_candidates` (from CustomHeadsetOpenVR via the portability report, section 5);
 - no HID commands, so their `Gate` refuses everything. A test checks this.
 
-The mock ids match `pimax-gui-core/src/headsets.rs`.
+The mock ids match `omarchyvr-gui-core/src/headsets.rs`.
 
 ### 2.5 Adding a headset (contributor flow)
 1. Copy `devices/dream-air-se/` to `devices/<id>/` and fill in what you can verify. Give every value a source.
@@ -152,7 +152,7 @@ The mock ids match `pimax-gui-core/src/headsets.rs`.
 
 ### 3.1 Contract (`src/check.rs`)
 - `trait Check { id(), area(), run(&Ctx) -> Vec<Finding> }`.
-- `Ctx` holds the `Host` (real or fake), pimax-doctor's `Opts` and the matched module.
+- `Ctx` holds the `Host` (real or fake), omarchyvr-doctor's `Opts` and the matched module.
 - A check is pure and read-only. Through `Host` it can only read files, list directories, check access and run read-only commands.
 - `Finding` has `check`, `area`, `severity` (Info < Ok < Warn < Fail, the same order as doctor's `Level`), `title`, `detail` and `fix: Option<FixRef>`.
 - `FixRef` is a catalogue id plus arguments. `CATALOGUE` is a fixed list of `Fix` entries, each with:
@@ -176,7 +176,7 @@ The mock ids match `pimax-gui-core/src/headsets.rs`.
 | runtime | active OpenXR runtime (`~/.config/openxr/1/active_runtime.json` → Monado), `openvrpaths.vrpath` → xrizer and read-only, stale monado-service | doctor `lease`, `stale-service`; LESSONS 20 |
 | device | the module's own checks: calibration files present, lens.conf serial, firmware versions against `firmware_seen` | doctor `lens-conf`, `tobii` |
 
-`checks::doctor::DoctorBridge` runs all 13 pimax-doctor checks now and maps each one to a `Finding`. The doctor's
+`checks::doctor::DoctorBridge` runs all 13 omarchyvr-doctor checks now and maps each one to a `Finding`. The doctor's
 free-text fixes become catalogue `FixRef`s where an entry exists: setcap, udev, keepalive, patches, kernel-log,
 stale-service. Other fixes stay as text in `detail`. This lets the GUI move to `Finding` before the checks themselves
 move.
@@ -189,7 +189,7 @@ detect → match module → checks → fixes → udev → IPD → controller pai
 ```
 
 - **Steps:** each module lists the steps it supports (`[onboarding] steps`). The mocks only list detect, checks, fixes, udev and done.
-- **Progress file:** progress is stored in `~/.local/state/pimax/onboarding.state` (`$XDG_STATE_HOME`), as plain `step = done|skipped|failed` lines plus `module = <id>`. The code is `src/onboarding.rs` (`Progress::{load, save, next}`).
+- **Progress file:** progress is stored in `~/.local/state/omarchyvr/onboarding.state` (`$XDG_STATE_HOME`), as plain `step = done|skipped|failed` lines plus `module = <id>`. The code is `src/onboarding.rs` (`Progress::{load, save, next}`).
   - The file is written atomically.
   - Unknown lines are ignored.
   - Deleting the file starts over.
@@ -203,9 +203,9 @@ detect → match module → checks → fixes → udev → IPD → controller pai
 | fixes | each Warn/Fail finding with a FixRef. User fixes run through the job runner; root fixes show their lines, Copy and pkexec |
 | udev | the `udev.install_rules` fix, then re-check hidraw access |
 | ipd | `pimax-eye ipd` measure, then apply once (`ipd_motor`) |
-| pair | `pimax-autod pair left/right` (`start_pair`), at most once per 30 s per hand |
+| pair | `omarchyvr-autod pair left/right` (`start_pair`), at most once per 30 s per hand |
 | eye_cal | `pimax-eyecal` |
-| room | the Room row: `pimax-roommap`, or skip |
+| room | the Room row: `omarchyvr-roommap`, or skip |
 
 ## 5. Autofix (LLM) page
 
@@ -227,7 +227,7 @@ detect → match module → checks → fixes → udev → IPD → controller pai
    - At most 5 fixes are accepted per answer.
 
    There is no way to express free-form shell.
-5. **Approve:** each accepted fix is shown with its commands, undo, root and reboot flags. The user approves fixes one at a time; user-level fixes run through the job runner, root fixes go through Copy or pkexec. Each one is appended to `~/.local/state/pimax/fixes.log` (`autofix::log_line`, tab-separated: time, id, outcome, commands, undo), and the page lists "Undo" for every logged fix.
+5. **Approve:** each accepted fix is shown with its commands, undo, root and reboot flags. The user approves fixes one at a time; user-level fixes run through the job runner, root fixes go through Copy or pkexec. Each one is appended to `~/.local/state/omarchyvr/fixes.log` (`autofix::log_line`, tab-separated: time, id, outcome, commands, undo), and the page lists "Undo" for every logged fix.
 6. **Contribute** (nothing is uploaded automatically):
    - A working fix or a new module becomes a local git branch `contrib/<date>-<id>` in the user's clone. It holds the descriptor or check change plus `reports/<date>-<module>.toml` (the test report, 6.2) and a `PATCH.md` with what changed, the evidence and the fixes.log lines.
    - The page prints `git format-patch` and `gh pr create` lines for the user to run.
@@ -272,14 +272,14 @@ No serials, user names or paths. The redactor runs on it, and CI rejects any rep
 ### 6.3 CI (offline only; no device, no GPU)
 - `cargo test --workspace` and `cargo clippy -D warnings`.
 - Descriptor lint: every `devices/*/device.toml` loads and validates, every `[[hid]]` has a `source`, and every state-changing command has `approved`.
-- Replay fixtures: the `*.rec.gz` HID captures are run through `pimax` decoders. A new `allowlist_replay` test checks that every host→device report in the fixtures passes the module's allowlist, so the allowlist and reality can't drift apart.
+- Replay fixtures: the `*.rec.gz` HID captures are run through `omarchyvr` decoders. A new `allowlist_replay` test checks that every host→device report in the fixtures passes the module's allowlist, so the allowlist and reality can't drift apart.
 - Doctor `FakeHost` scenarios for every check.
 - A secret and serial scan over the diff (the patterns above, plus `sk-ant-`, `ghp_` and `/home/<user>`).
 
 ### 6.4 AGENTS.md / CONTRIBUTING (rules for humans and LLM agents)
 - Only send bytes seen in vendor captures. Every `[[hid]]` cites its capture, and state-changing commands need a maintainer's approval line.
 - **Never flash firmware.** Never send device-side calibration writes (eye blob 0x456 and friends) or activation blobs.
-- **Never force a DRM hotplug** (`/sys/class/drm/*/status`). Never SIGKILL Monado; stop it with `pimax vr stop --grace 30`, and kill by PID only, never by name pattern.
+- **Never force a DRM hotplug** (`/sys/class/drm/*/status`). Never SIGKILL Monado; stop it with `omarchyvr vr stop --grace 30`, and kill by PID only, never by name pattern.
 - No silent root: root actions are catalogue fixes that the user runs.
 - New fixes are reviewed code (an entry in `CATALOGUE` with undo), never shell in prose.
 - Don't commit vendor binaries, firmware, DLLs, crash dumps, raw USB captures with serials, or factory calibration files. Fixtures must be scrubbed, with serials replaced by `P511XXXXXXXX`-style masks of the same length.
@@ -299,9 +299,9 @@ No serials, user names or paths. The redactor runs on it, and CI rejects any rep
 - **Trademarks:** "Pimax", "Dream Air" and "Crystal" are used only nominatively ("for Pimax headsets"), with no logos and a "not affiliated" line in the README.
 - **Safety:** a user's headset can be bricked by bad commands. The allowlist and the "no flashing" rule are the mitigation; add a disclaimer and no-warranty notice.
 
-## 7. GUI integration (for the GUI agent; pimax-setup and pimax-gui-core are not edited here)
+## 7. GUI integration (for the GUI agent; omarchyvr-app and omarchyvr-gui-core are not edited here)
 
-1. **Model list:** `pimax-gui-core/src/headsets.rs` replaces `MODELS` with `pimax_device::all()`.
+1. **Model list:** `omarchyvr-gui-core/src/headsets.rs` replaces `MODELS` with `pimax_device::all()`.
    - Capability labels come from `Support::label()`.
    - `detect` uses `pimax_device::detect(vid, pid)` on `facts.rs`'s USB list.
    - `Possibly(m)` shows "possibly <name> (not supported yet)".
@@ -309,7 +309,7 @@ No serials, user names or paths. The redactor runs on it, and CI rejects any rep
    - state comes from `onboarding::Progress::load(Progress::path(env))`;
    - each step's page has Run, Skip and Back;
    - "Start over" deletes the file.
-   - The IPD, pair, eye_cal and room steps call the existing tools (pimax-eye ipd, pimax-autod pair, pimax-eyecal, pimax-roommap) through the job runner.
+   - The IPD, pair, eye_cal and room steps call the existing tools (pimax-eye ipd, omarchyvr-autod pair, pimax-eyecal, omarchyvr-roommap) through the job runner.
 3. **Setup and Checks page:** shows `Vec<Finding>` grouped by `Area`, from `default_checks()` plus `DoctorBridge`.
    - The Fix button calls `FixRef::plan()`.
    - User fixes run in the job runner. Root fixes show the lines with Copy and pkexec, and must never run silently.
@@ -332,24 +332,24 @@ No serials, user names or paths. The redactor runs on it, and CI rejects any rep
 | 1 | GUI uses `pimax_device::all()` / `detect` for the model list (headsets.rs) | none, read only |
 | 2 | GUI Setup page shows `DoctorBridge` + `default_checks()` findings; doctor CLI unchanged | none |
 | 3 | Move doctor checks one at a time into `pimax-device/src/checks/<area>.rs` (order: setcap → merged-head-sync (done as ports), kernel-log, stale-service, lease, udev, keepalive, connector, patches, gpu, headset/tobii, lens-conf). Doctor's `run_checks` then calls the new checks and converts `Finding` → `Check` so its CLI/JSON stay identical; doctor's tests keep passing | low; one check per commit |
-| 4 | Move `Host`/`FakeHost` from pimax-doctor into pimax-device (re-export from doctor), flip the dependency | low |
+| 4 | Move `Host`/`FakeHost` from omarchyvr-doctor into pimax-device (re-export from doctor), flip the dependency | low |
 | 5 | `pimax-eye ipd --apply` builds via `module.ipd_report()` and sends via `Gate` (replaces `motor_report` + raw write); same bytes, pinned by the existing test vectors | medium: touches a device path; test with the user present |
-| 6 | `pimax-autod` pairing: `pair_report` + `Gate`; keep the IF3 log watch | medium; user present |
+| 6 | `omarchyvr-autod` pairing: `pair_report` + `Gate`; keep the IF3 log watch | medium; user present |
 | 7 | `pimax-cam` AE: `DreamAir::ae_report` + `Gate` | medium |
-| 8 | `pimax` session (keepalive, wake, video prepare, attach burst, calib reads) sends through a `Gate` held by the session writer thread | higher: the keepalive is timing critical; `Gate::send` is a linear scan over ~16 specs (sub-µs), measure first |
+| 8 | `omarchyvr` session (keepalive, wake, video prepare, attach burst, calib reads) sends through a `Gate` held by the session writer thread | higher: the keepalive is timing critical; `Gate::send` is a linear scan over ~16 specs (sub-µs), measure first |
 | 9 | Monado's C driver sends through the Rust C ABI (`pimax-capi`) → add `pimax_gate_send` and make the C side use it | highest; last |
 
 ## 9. Hard-coded Dream Air specifics found (to move into the descriptor over time)
 
 | What | Where |
 |---|---|
-| USB IDs 34a4:0044 (and 0043 bridge, 0014 cameras) | pimax-proto/src/lib.rs:35-41; pimax-doctor lib.rs consts; pimax-eye/src/ipd.rs:81 (`HID_ID=0003:000034A4:00000044`); pimax-cam/src/v4l2.rs:37-39; pimax-tools/src/vr/reset.rs:67; pimax/src/discovery.rs:54,93,112 |
+| USB IDs 34a4:0044 (and 0043 bridge, 0014 cameras) | pimax-proto/src/lib.rs:35-41; omarchyvr-doctor lib.rs consts; pimax-eye/src/ipd.rs:81 (`HID_ID=0003:000034A4:00000044`); pimax-cam/src/v4l2.rs:37-39; omarchyvr-tools/src/vr/reset.rs:67; pimax/src/discovery.rs:54,93,112 |
 | Eye tracker 2104:0561 | pimax-eye/src/replay.rs:21-23; pimax-eye/src/power.rs:64-69 |
-| EDID PVR / 0x1019 | pimax-tools/src/vr/edid.rs:5-7; doctor `Connector::is_pimax` |
+| EDID PVR / 0x1019 | omarchyvr-tools/src/vr/edid.rs:5-7; doctor `Connector::is_pimax` |
 | HID commands | section 2.3 |
-| Display mode 7104x3840, 72/90 Hz, panel 3552x3840 | pimax-lens/src/pvrfit.rs:1716,1731; pimax-tools/src/vr/config.rs:30-58; aspect 3840/3552 in pimax-lens (config.rs:516, lib.rs:306, model.rs:302, capi.rs:207,274, mask.rs:171) and the lenstest crates |
+| Display mode 7104x3840, 72/90 Hz, panel 3552x3840 | pimax-lens/src/pvrfit.rs:1716,1731; omarchyvr-tools/src/vr/config.rs:30-58; aspect 3840/3552 in pimax-lens (config.rs:516, lib.rs:306, model.rs:302, capi.rs:207,274, mask.rs:171) and the lenstest crates |
 | Camera layout 4×640x480 tiles in 2560x832 | pimax-cam/src/frame.rs:13-28, v4l2.rs:389-411 |
 | IPD 58-72 mm | pimax-eye/src/ipd.rs:16-17, ipd_watch.rs:194 |
 | Lens defaults, `lens.conf` | pimax-lens/src/config.rs:481-485, bin/pimax-lens.rs:10 |
 | Controller slots 2/3 | pimax-proto/src/lib.rs:49-51 |
-| Calibration and user paths | ~/.config/pimax/{lens.conf, ipd.env, eye-calibration.toml, auto.toml}, ~/.cache/pimax/gyro-bias, ~/.local/share/pimax/{roommap, eye-calibration, slam-recordings}; pimax-ctrltrack/src/model.rs:77-80 hard-codes a path with controller serials under pimax-data/ (must change before release) |
+| Calibration and user paths | ~/.config/omarchyvr/{lens.conf, ipd.env, eye-calibration.toml, auto.toml}, ~/.cache/omarchyvr/gyro-bias, ~/.local/share/omarchyvr/{roommap, eye-calibration, slam-recordings}; pimax-ctrltrack/src/model.rs:77-80 hard-codes a path with controller serials under pimax-data/ (must change before release) |

@@ -1,0 +1,127 @@
+# kind	old	new   (old/new are Python regexes for protect/regex; plain tokens for word/ident/path)
+# protect: left untouched (shared with the Monado/WayVR forks, hardware, data, lab).  regex: applied first, in order.
+# word: hyphenated token, boundaries (?<![A-Za-z0-9_-]) .. (?![A-Za-z0-9_]).  ident: Rust identifier, whole token.  path: exact repo path.
+# skip: path prefix whose files are never rewritten (frozen copies of old code)
+# Sorted longest-first inside each kind by tools/apply-names.py. See docs/NAMES.md.
+protect	pimax-record\.shm	
+protect	pimax-anchor\.offset(?!\.owner)	
+protect	pimax-anchor\.head	
+protect	pimax-anchor-offset	
+protect	pimax-stage-bounds	
+protect	pimax-rate(?![A-Za-z0-9_])	
+protect	pimax-ctrl-inhand(?:-mode)?	
+protect	pimax-haptic-request	
+protect	pimax-hmd\.state	
+protect	pimax-basalt-calib\.json	
+protect	pimax-slam-info\.json	
+protect	pimax-camera-hand	
+protect	pimax-ctrl-(?:left|right)(?![A-Za-z0-9_])	
+protect	pimax-re(?![A-Za-z0-9_])	
+protect	pimax-data(?![A-Za-z0-9_])	
+protect	pimax-windows	
+protect	pimax-poses	
+protect	pimax-play	
+protect	pimax-dp-edid	
+protect	pimax-local(?![A-Za-z0-9_])	
+protect	pimax-dream-air	
+protect	pimax-linux(?![A-Za-z0-9_])	
+protect	70-pimax\.rules	
+protect	nvidia-pimax-(?:patch|verify)	
+protect	pimax-nvidia-patch	
+regex	(\.config|\.cache|\.local/share|\.local/state)/pimax-ctrl-replay	\1/omarchyvr/ctrl-replay
+regex	(\.config|\.cache|\.local/share|\.local/state)/pimax(?![A-Za-z0-9_-])	\1/omarchyvr
+regex	(XDG_(?:CONFIG|DATA|CACHE|STATE)_HOME\}?)/pimax(?![A-Za-z0-9_-])	\1/omarchyvr
+regex	/usr/local/lib/pimax(?![A-Za-z0-9_-])	/usr/local/lib/omarchyvr
+regex	X-Pimax-Steam-VR	X-Omarchyvr-Steam-VR
+regex	(?:(?<![A-Za-z0-9_./~-])|(?<=\\[tn]))pimax (?=(?:vr|desk|keepalived|controllers|auto|doctor|mount-shared|steam-setup|info|calib|video-on|logtail|probe|imu|record)\b)	omarchyvr 
+regex	(?<=bin/)pimax(?![A-Za-z0-9_.-])	omarchyvr
+regex	`pimax`	`omarchyvr`
+regex	(?<![A-Za-z0-9_.-])pimax\.(desktop|svg)\b	omarchyvr.\1
+regex	(?<=join\(")pimax(?=[/"])	omarchyvr
+regex	(?<=")pimax: 	omarchyvr: 
+regex	(?<=")pimax (?=\{)	omarchyvr 
+regex	(?<=CARGO_BIN_EXE_)pimax-setup	omarchyvr-app
+regex	(?<=CARGO_BIN_EXE_)pimaxd	omarchyvrd
+regex	(?<=CARGO_BIN_EXE_)pimax(?![A-Za-z0-9_-])	omarchyvr
+regex	(?<=CARGO_BIN_EXE_)pimax-(?=(?:ai|anchor|autod|backgrounds|components|config|desktest|doctor|gui-core|hud|passthrough|perf|record|room|roommap|slam|voice|voicebench|voicehud|xrtest|tools|health)\b)	omarchyvr-
+regex	(?<=90-)pimax-steam-vr	omarchyvr-steam-vr
+regex	@PIMAX_SETUP@	@OMARCHYVR_APP@
+regex	@PIMAX@	@OMARCHYVR@
+regex	(?<=release/)pimax(?![A-Za-z0-9_.-])	omarchyvr
+regex	(?<=debug/)pimax(?![A-Za-z0-9_.-])	omarchyvr
+regex	(?<=Icon=)pimax\b	omarchyvr
+regex	(?<=StartupWMClass=)pimax\b	omarchyvr
+regex	(?<=state/)pimax(?![A-Za-z0-9_-])	omarchyvr
+regex	(?<=share/)pimax(?![A-Za-z0-9_-])	omarchyvr
+regex	(?<=config/)pimax(?![A-Za-z0-9_-])	omarchyvr
+regex	(?<=cache/)pimax(?![A-Za-z0-9_-])	omarchyvr
+regex	pimaxd	omarchyvrd
+regex	(?<=PIMAX_BIN:-)pimax(?=\})	omarchyvr
+regex	pimax (?=\{(?:kind|k)\})	omarchyvr 
+regex	(?<=\$ )pimax (?=\{)	omarchyvr 
+regex	(?<![A-Za-z0-9_-])pimax-vr(?=\.desktop)	omarchyvr-vr
+regex	(?<![A-Za-z0-9_-])pimax-(?=[a-z0-9-]*-(?:test|tmp|e2e|shots|pages)\b)	omarchyvr-
+word	pimax-vr-session	omarchyvr-session
+word	pimax-pimaxd	omarchyvrd
+word	pimaxd	omarchyvrd
+word	pimax-setup	omarchyvr-app
+word	pimax-health	omarchyvr-health
+word	pimax-keepalived	omarchyvr-keepalived
+word	pimax-steam-vr	omarchyvr-steam-vr
+word	pimax-report	omarchyvr-report
+word	pimax-cam-broker	omarchyvr-cam-broker
+word	pimax-headset	omarchyvr-headset
+word	pimax-screens	omarchyvr-screens
+word	pimax-floor-grid	omarchyvr-floor-grid
+word	pimax-app-terminal	omarchyvr-app-terminal
+word	pimax-applog	omarchyvr-applog
+word	pimax-imu-log	omarchyvr-imu-log
+word	pimax-ctrl-svc	omarchyvr-ctrl-svc
+word	pimax-ctrlrec-broker	omarchyvr-ctrlrec-broker
+word	pimax-theme-installed	omarchyvr-theme-installed
+word	pimax-ai	omarchyvr-ai
+ident	pimax_ai	omarchyvr_ai
+word	pimax-anchor	omarchyvr-anchor
+ident	pimax_anchor	omarchyvr_anchor
+word	pimax-autod	omarchyvr-autod
+ident	pimax_autod	omarchyvr_autod
+word	pimax-backgrounds	omarchyvr-backgrounds
+ident	pimax_backgrounds	omarchyvr_backgrounds
+word	pimax-components	omarchyvr-components
+ident	pimax_components	omarchyvr_components
+word	pimax-config	omarchyvr-config
+ident	pimax_config	omarchyvr_config
+word	pimax-desktest	omarchyvr-desktest
+ident	pimax_desktest	omarchyvr_desktest
+word	pimax-doctor	omarchyvr-doctor
+ident	pimax_doctor	omarchyvr_doctor
+word	pimax-gui-core	omarchyvr-gui-core
+ident	pimax_gui_core	omarchyvr_gui_core
+word	pimax-hud	omarchyvr-hud
+ident	pimax_hud	omarchyvr_hud
+word	pimax-passthrough	omarchyvr-passthrough
+ident	pimax_passthrough	omarchyvr_passthrough
+word	pimax-perf	omarchyvr-perf
+ident	pimax_perf	omarchyvr_perf
+word	pimax-record	omarchyvr-record
+ident	pimax_record	omarchyvr_record
+word	pimax-room	omarchyvr-room
+ident	pimax_room	omarchyvr_room
+word	pimax-roommap	omarchyvr-roommap
+ident	pimax_roommap	omarchyvr_roommap
+word	pimax-slam	omarchyvr-slam
+ident	pimax_slam	omarchyvr_slam
+word	pimax-voice	omarchyvr-voice
+ident	pimax_voice	omarchyvr_voice
+word	pimax-voicebench	omarchyvr-voicebench
+ident	pimax_voicebench	omarchyvr_voicebench
+word	pimax-voicehud	omarchyvr-voicehud
+ident	pimax_voicehud	omarchyvr_voicehud
+word	pimax-xrtest	omarchyvr-xrtest
+ident	pimax_xrtest	omarchyvr_xrtest
+word	pimax-tools	omarchyvr-tools
+ident	pimax_tools	omarchyvr_tools
+ident	pimax_setup	omarchyvr_app
+path	docs/PIMAXD.md	docs/OMARCHYVRD.md
+path	packaging/systemd/pimaxd.service	packaging/systemd/omarchyvrd.service
+skip	rust/pimax-lens-difftest/csrc/old/	

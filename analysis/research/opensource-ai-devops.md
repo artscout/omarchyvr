@@ -110,7 +110,7 @@ Confidence: many primary pages (Omarchy repo files, Monado GitLab, ALVR wiki, Gi
 1. **Human-gated AI PRs with a scoped token.** The agent opens a PR on a bot branch; a maintainer label and a human approval are required; `AGENTS.md` lists protected paths (protocol, install scripts). Use a pinned claude-code-action >= v1.0.94 (verify).
 2. **Replay-based regression benches with statistical thresholds.** Use the existing Windows-capture replay plus Bencher-style thresholds (`--err` on PRs, base-branch comparison). Run on the self-hosted rig only for real-hardware checks.
 3. **Opt-in redacted diagnostics bundle (hw-probe model).** Allowlisted fields, hashed device IDs, no environment, preview in the app before send, and a public reduced export.
-4. **Migrations-as-state for installs (Omarchy model).** Idempotent, forward-only upgrade scripts recorded in a state file, plus an optional `pimax` package/installer that the user opts into.
+4. **Migrations-as-state for installs (Omarchy model).** Idempotent, forward-only upgrade scripts recorded in a state file, plus an optional `omarchyvr` package/installer that the user opts into.
 5. **Per-driver CMake option and profiles (Monado/Envision model).** Keep `XRT_BUILD_DRIVER_PIMAX` in one build; expose presets per headset in the app.
 
 Open items to verify before building: Omarchy CONTRIBUTING and CI (`test/`, `.github/`); Monado GitLab CI config; the exact claude-code-action release notes; Bencher current English flags; KernelCI and Valve SteamVR bug tracker practices.

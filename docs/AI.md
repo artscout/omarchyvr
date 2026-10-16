@@ -2,16 +2,16 @@
 
 Voice control has an AI agent. You say "Max, ..." and the agent reads the request together with what you are looking at,
 your windows and the VR session. Then it acts through tools, under the same safety rules as the spoken command
-catalogue. The model can run on this machine (`pimax-ai`, llama.cpp) or be Claude or OpenAI.
+catalogue. The model can run on this machine (`omarchyvr-ai`, llama.cpp) or be Claude or OpenAI.
 
-- Code: `rust/pimax-ai` (install / serve / status / stop of the local model) and `rust/pimax-voice/src/agent.rs` (the
+- Code: `rust/omarchyvr-ai` (install / serve / status / stop of the local model) and `rust/omarchyvr-voice/src/agent.rs` (the
   agent).
-- Settings: `~/.config/pimax/ai.toml`, written by the Pimax app's **AI tab** (`pimax_config::ai`).
-- Log: `~/.local/state/pimax/logs/ai.log`.
+- Settings: `~/.config/omarchyvr/ai.toml`, written by the Pimax app's **AI tab** (`omarchyvr_config::ai`).
+- Log: `~/.local/state/omarchyvr/logs/ai.log`.
 
 ## 1. The local model
 
-**Recommended while VR runs: `pimax-ai serve --cpu`** (the 4B on 24 CPU threads at nice 19; section 11 has the
+**Recommended while VR runs: `omarchyvr-ai serve --cpu`** (the 4B on 24 CPU threads at nice 19; section 11 has the
 measurements). GPU mode is ten times faster but drops about one VR frame per command.
 
 | | `serve --cpu` (recommended in VR) | `serve` (GPU) |
@@ -35,15 +35,15 @@ Sources (pinned; each SHA-256 is checked):
 A CPU-only runtime (`--runtime cpu`, 17 MiB) is available for machines without Vulkan.
 
 ```sh
-cd ~/pimax-re/rust && cargo build --release -p pimax-ai
-target/release/pimax-ai install            # 4.1 GB into ~/.local/share/pimax/ai; resumes; run again after a failure
-target/release/pimax-ai install --dry-run  # what it would fetch
-target/release/pimax-ai serve              # GPU, all layers, 127.0.0.1:8080, waits until loaded
-target/release/pimax-ai serve --cpu        # no GPU at all (the 4B, 3/4 of the CPU threads): the VR default
-target/release/pimax-ai serve --gpu-layers 20   # part on the GPU
-target/release/pimax-ai status [--json]
-target/release/pimax-ai test               # one tiny request, prints the latency
-target/release/pimax-ai stop
+cd ~/pimax-re/rust && cargo build --release -p omarchyvr-ai
+target/release/omarchyvr-ai install            # 4.1 GB into ~/.local/share/omarchyvr/ai; resumes; run again after a failure
+target/release/omarchyvr-ai install --dry-run  # what it would fetch
+target/release/omarchyvr-ai serve              # GPU, all layers, 127.0.0.1:8080, waits until loaded
+target/release/omarchyvr-ai serve --cpu        # no GPU at all (the 4B, 3/4 of the CPU threads): the VR default
+target/release/omarchyvr-ai serve --gpu-layers 20   # part on the GPU
+target/release/omarchyvr-ai status [--json]
+target/release/omarchyvr-ai test               # one tiny request, prints the latency
+target/release/omarchyvr-ai stop
 ```
 
 The server:
@@ -53,19 +53,19 @@ The server:
   `enable_thinking: false`.
 
 Files:
-- pid file: `~/.local/state/pimax/ai/llama-server.pid` (`stop` checks that the PID is a llama-server before signalling);
-- server log: `~/.local/state/pimax/logs/llama-server.log`.
+- pid file: `~/.local/state/omarchyvr/ai/llama-server.pid` (`stop` checks that the PID is a llama-server before signalling);
+- server log: `~/.local/state/omarchyvr/logs/llama-server.log`.
 
 It answers to any model name; `pimax-local` is its alias.
 
-A systemd user unit is in `packaging/systemd/pimax-ai.service`. It is not installed; its header says how to try it.
+A systemd user unit is in `packaging/systemd/omarchyvr-ai.service`. It is not installed; its header says how to try it.
 
 **GPU budget next to VR.** The RTX 4090 has 24 GiB. A desk session (Monado, WayVR, passthrough) uses a few GiB, and the
-agent adds about 3.5 GiB, capped by design at 4 GiB (`pimax-ai status` prints the actual figure from `nvidia-smi`). The
+agent adds about 3.5 GiB, capped by design at 4 GiB (`omarchyvr-ai status` prints the actual figure from `nvidia-smi`). The
 model only computes while a request runs, for a fraction of a second after "Max ...". If frame time suffers anyway,
 use `serve --cpu`, or `--gpu-layers N` with a smaller N.
 
-## 2. Settings (`~/.config/pimax/ai.toml`)
+## 2. Settings (`~/.config/omarchyvr/ai.toml`)
 
 Do not create the file by hand unless you want to. The AI tab writes it (mode 0600). An example:
 
@@ -78,7 +78,7 @@ default = "local"
 [use]
 voice = "local"              # the provider voice uses (else `default`)
 
-[providers.local]            # pimax-ai serve
+[providers.local]            # omarchyvr-ai serve
 kind = "openai-compatible"
 base_url = "http://127.0.0.1:8080/v1"
 model = "pimax-local"
@@ -116,7 +116,7 @@ voice_ai_confidence = 0.6
 Rules:
 - No file means the agent is off, and the old `[llm]` fallback and AI switch behave as before.
 - A file with no providers means the local server at 127.0.0.1:8080.
-- `pimax-voice act` reads the file at start, so restart it after a change. It prints a line like
+- `omarchyvr-voice act` reads the file at start, so restart it after a change. It prints a line like
   "AI agent: local (openai-compatible pimax-local, local) (fallback, compact, 77 tools, ask below 60% confidence,
   debug on)".
 
@@ -194,7 +194,7 @@ built for the prompt cache and a small model:
   own slots and value shapes, so the 4B answers in 4-8 tokens. Remote models get the same text without a grammar
   (the parser is lenient).
 - The decision goes through the same checks as a tool call (section 5): safety, careful = spoken yes, window ids.
-- `cache_prompt` is on, and `pimax-voice act` primes the cache at start and again whenever `/health` turns ready
+- `cache_prompt` is on, and `omarchyvr-voice act` primes the cache at start and again whenever `/health` turns ready
   (server restart).
 - Lessons from the bench: the model copied the literal answer-format placeholder ("INTENT ...") and any id-like text
   in the context ("vr: preset cinema" made it answer `vr.preset.cinema` for "give me three screens"; a "last
@@ -205,7 +205,7 @@ built for the prompt cache and a small model:
   time. Hence the short message (no window list unless the request is about windows; leading spinner glyphs of
   terminal titles are dropped anyway).
 
-`pimax-voice aiprompt WORDS...` prints the request for some words.
+`omarchyvr-voice aiprompt WORDS...` prints the request for some words.
 
 ### Tool calling (`voice_ai_style = "tools"`; remote providers now default to two stages, section 14)
 
@@ -279,7 +279,7 @@ The policy is enforced in code; the model cannot change it:
     screens/apps: the VR screens (output, left/center/right, workspace) with their apps (id, class, title cut to
     80 characters, tab count), the other workspaces, the gaze target (app id, screen, tab guess, fixation);
     tabs/browser: up to 12 apps with their tab counts; session/passthrough/recording/captions: the VR session
-    (running, preset, background, passthrough, captions; from pimaxd: overall health, side, components up or down,
+    (running, preset, background, passthrough, captions; from omarchyvrd: overall health, side, components up or down,
     recording) and the time; session (undo): the last 5 commands with what ran and its result; other: all of it;
   - `strip_titles = true` removes every window and tab title;
   - OpenRouter also learns your key (in the Authorization header only) and the models it routes to.
@@ -300,7 +300,7 @@ The policy is enforced in code; the model cannot change it:
 
 ## 7. Log
 
-`~/.local/state/pimax/logs/ai.log` gets one JSON line per request: request, provider, mode, context (compact: the user
+`~/.local/state/omarchyvr/logs/ai.log` gets one JSON line per request: request, provider, mode, context (compact: the user
 message as `prompt`, the `answer`, the `decision`), tool calls with their results, outcome or error, and
 milliseconds. Every wake-word request also gets a `{"trace": ...}` line: the heard words, the route (match, fuzzy,
 noise, ai, yes), the fuzzy candidates, the model's decision, what ran, whether it asked, the result and the latency
@@ -326,18 +326,18 @@ noise, ai, yes), the fuzzy candidates, the model's decision, what ran, whether i
 
 ## 9. Live test
 
-1. Leave VR running. If you do not want the GPU used, run `pimax-ai serve --cpu`. Otherwise run `pimax-ai serve`;
-   `pimax-ai status` then shows the VRAM.
+1. Leave VR running. If you do not want the GPU used, run `omarchyvr-ai serve --cpu`. Otherwise run `omarchyvr-ai serve`;
+   `omarchyvr-ai status` then shows the VRAM.
 2. In the AI tab: provider local, voice AI = fallback. Or write the example above.
 3. Restart the voice actor; its log shows "AI agent: ...".
 4. Try the examples. Check that "close" and "lock" ask for "yes", and that `ai.log` has the lines.
 5. Dry run without touching anything:
-   `pimax-voice do "Max I want to watch a film" --dry-run`.
+   `omarchyvr-voice do "Max I want to watch a film" --dry-run`.
    This sends a model request, but the actions are printed, not run.
 
 ## 10. AI tab integration (for the GUI)
 
-**Keys in ai.toml** (all in `pimax_config::ai`):
+**Keys in ai.toml** (all in `omarchyvr_config::ai`):
 - `voice_ai` (off | fallback | always): show it as a 3-way toggle.
 - `strip_titles` (bool): a privacy checkbox. Show the section 6 list next to it when the voice provider is remote.
 - `[use] voice` and `default` pick the provider.
@@ -346,22 +346,22 @@ noise, ai, yes), the fuzzy candidates, the model's decision, what ran, whether i
 - Optional, preserved if present: `voice_ai_timeout_s`, `voice_ai_gaze`, `voice_ai_log`. The current parser warns about
   them and drops them on save, so please keep unknown top-level keys.
 
-**Local model controls:** run `rust/target/release/pimax-ai <cmd>` (or `~/.cargo/bin/pimax-ai`). All are user-level
+**Local model controls:** run `rust/target/release/omarchyvr-ai <cmd>` (or `~/.cargo/bin/omarchyvr-ai`). All are user-level
 and need no sudo.
 
 | Button | Command | Notes |
 |---|---|---|
-| Install | `pimax-ai install` | 4.1 GB; progress bars on stderr; text lines on stdout; can be run again to resume |
-| Start | `pimax-ai serve` (GPU) / `pimax-ai serve --cpu` | returns after "ready" (or "still loading"); exit 1 + message on error |
-| Stop | `pimax-ai stop` | |
-| Status | `pimax-ai status --json` | poll every few seconds |
-| Test | `pimax-ai test` | prints "<ms> ms: <reply>" |
+| Install | `omarchyvr-ai install` | 4.1 GB; progress bars on stderr; text lines on stdout; can be run again to resume |
+| Start | `omarchyvr-ai serve` (GPU) / `omarchyvr-ai serve --cpu` | returns after "ready" (or "still loading"); exit 1 + message on error |
+| Stop | `omarchyvr-ai stop` | |
+| Status | `omarchyvr-ai status --json` | poll every few seconds |
+| Test | `omarchyvr-ai test` | prints "<ms> ms: <reply>" |
 
-`pimax-ai status --json` prints one line:
+`omarchyvr-ai status --json` prints one line:
 
 ```json
 {"installed":true,
- "runtime":"/home/u/.local/share/pimax/ai/runtime/runtime-vulkan-b11630/llama-b11630/llama-server",
+ "runtime":"/home/u/.local/share/omarchyvr/ai/runtime/runtime-vulkan-b11630/llama-b11630/llama-server",
  "models":[{"id":"model-gpu","file":"Qwen3.5-4B-Q4_K_M.gguf","installed":true},
            {"id":"model-cpu","file":"Qwen3.5-2B-Q4_K_M.gguf","installed":true}],
  "running":{"pid":1234,"port":8080,"mode":"gpu (all layers)","model":"Qwen3.5-4B-Q4_K_M.gguf","url":"http://127.0.0.1:8080/v1"},
@@ -381,14 +381,14 @@ Show these:
 
 ## 11. Speed and accuracy (measured 2026-10-15, VR desk session running)
 
-`pimax-voice aibench` sends the phrases of `rust/pimax-voice/tests/fixtures/aibench.tsv` (45 real and mangled
+`omarchyvr-voice aibench` sends the phrases of `rust/omarchyvr-voice/tests/fixtures/aibench.tsv` (45 real and mangled
 transcripts: the live ones from voiceact.log plus paraphrases and noise) through the full route against the running
 server, executing nothing (hyprctl and gaze are read live). Latency = end of the transcript to the decision.
 
 ```sh
-pimax-voice aibench --runs 3                      # ai.toml's provider
-pimax-voice aibench --url http://127.0.0.1:8081/v1/chat/completions --label "variant"   # another server
-pimax-voice aibench --style tools --timeout-s 10  # the old tool-calling request
+omarchyvr-voice aibench --runs 3                      # ai.toml's provider
+omarchyvr-voice aibench --url http://127.0.0.1:8081/v1/chat/completions --label "variant"   # another server
+omarchyvr-voice aibench --style tools --timeout-s 10  # the old tool-calling request
 ```
 
 | setup | right | wrong actions | model latency p50 / p95 |
@@ -410,7 +410,7 @@ Findings:
 - **CPU threads:** 8 -> 16 -> 24 threads at nice 19: 2.6 -> 1.4 -> 1.27 s. nice 0 instead of 19 gained little
   (8 threads: 2.49 vs 2.61 s), so the server stays at nice 19. Generation stays at ~12 tokens/s (memory bound with
   VR running), so the 4-8 answer tokens cost 0.35-0.7 s; prompt evaluation ~100-120 tokens/s.
-- **VR frame timing** (`/run/user/1000/pimax-perf.stats`, 8 s windows): idle 0 skipped frames; CPU 16 or 24 threads
+- **VR frame timing** (`/run/user/1000/omarchyvr-perf.stats`, 8 s windows): idle 0 skipped frames; CPU 16 or 24 threads
   back to back: 0 skipped, late ratio unchanged; GPU back to back (53 requests): 53 skipped frames and late frames
   35 % -> 78 %, i.e. **about one skipped frame per GPU request**.
 - **"Vulkan at 8 tokens/s next to Monado" was the first request after a server start**: Vulkan builds its pipelines
@@ -418,12 +418,12 @@ Findings:
   106 tok/s generation). Warm, the GPU does 800-2,100 tok/s prompt and ~95 tok/s generation even with VR running.
   llama.cpp has no Vulkan queue-priority option, and NVIDIA time-slices between processes, so the compositor still
   loses a frame when a request lands; `--gpu-layers N` (partial offload) would only add CPU-GPU transfers. The GPU
-  stays an option (`pimax-ai serve`) when a dropped frame per command is acceptable.
+  stays an option (`omarchyvr-ai serve`) when a dropped frame per command is acceptable.
 
 ## 12. The debug line under the captions
 
-With `voice_ai_debug = true` (the default) `pimax-voice act` writes one line per command to
-`$XDG_RUNTIME_DIR/pimax-voice-debug.line`, and `pimax-voice captions` shows it under the newest transcript line, in
+With `voice_ai_debug = true` (the default) `omarchyvr-voice act` writes one line per command to
+`$XDG_RUNTIME_DIR/omarchyvr-voice-debug.line`, and `omarchyvr-voice captions` shows it under the newest transcript line, in
 dim cyan (`#5fd0e0`, set with `wayvrctl panel-modify captions cap_l2 set-color`; the panel XML is unchanged). It
 clears with the captions after the silence timeout. Format (fitted to the 56-character caption width; the latency
 always shows):
@@ -437,12 +437,12 @@ always shows):
 | `~window.wider .62 > AI none 9/9 > ignored 831ms` | the model says: not a command |
 | `~media.next .80 > AI timed out > Did you mean "skip song"? ~ 4012ms` | model failure, asked about the candidate |
 
-"Max, debug off" / "Max, debug on" toggle it (also in `~/.local/state/pimax/logs/ai.log` as `trace` lines, always).
-The captions panel exists only in sessions started with voice (`pimax desk start --voice` or the assistant preset).
+"Max, debug off" / "Max, debug on" toggle it (also in `~/.local/state/omarchyvr/logs/ai.log` as `trace` lines, always).
+The captions panel exists only in sessions started with voice (`omarchyvr desk start --voice` or the assistant preset).
 
-## 13. Checking every command (`pimax-voice audit`, 2026-10-15)
+## 13. Checking every command (`omarchyvr-voice audit`, 2026-10-15)
 
-`pimax-voice audit` (the AI page's **Check all voice commands**; docs/VOICE.md) runs each enabled intent's first
+`omarchyvr-voice audit` (the AI page's **Check all voice commands**; docs/VOICE.md) runs each enabled intent's first
 phrase (exact), an ASR-mangled copy of it and the natural phrasings of `tests/fixtures/audit.tsv` through the full
 route in a dry run, with `voice_confirm = none`, and writes `analysis/voice-audit.html` (the app: `<state>/voice-audit.html`).
 It pauses 1 s after each model request (`--pause-ms`), so a run takes ~4 minutes.
@@ -472,7 +472,7 @@ focuses the same window.
 
 User decisions (2026-10-15): stage 1 is `typesafe/jev-router` and only classifies, with little context; stage 2 is a
 cheaper model with tools, the category's tools only and the minimum state those tools need. Exact catalogue hits stay
-local. Code: `rust/pimax-voice/src/remote.rs`, `Agent::two_stage`.
+local. Code: `rust/omarchyvr-voice/src/remote.rs`, `Agent::two_stage`.
 
 ```toml
 [providers.openrouter]
@@ -510,13 +510,13 @@ compact request, 4 s), else the matcher asks "Did you mean ...?" or says "Didn't
 `~media.next .80 > AI system .99 > openrouter timed out > local omarchy.media.next 9/9 > Next song 8911ms`.
 
 **State, built in ~16 ms** (measured, VR desk session running): `hyprctl -j clients`, `activewindow`, `monitors`,
-`wayvrctl gaze` and pimaxd's snapshot (`$XDG_RUNTIME_DIR/pimaxd/state.json`, re-read at most once a second, ignored
+`wayvrctl gaze` and omarchyvrd's snapshot (`$XDG_RUNTIME_DIR/omarchyvrd/state.json`, re-read at most once a second, ignored
 when older than 30 s). The passthrough socket is not asked (it can take 2 s).
 
 **Cost.** OpenRouter requests carry `usage: {include: true}` and `reasoning: {enabled: false}`; `usage.cost` is added
 up per command (ai.log `cost`, the trace, the audit's total).
 
-**Benchmark** (`pimax-voice audit --remote --max 40 --action-model M`: the same 40 natural phrasings the matcher
+**Benchmark** (`omarchyvr-voice audit --remote --max 40 --action-model M`: the same 40 natural phrasings the matcher
 leaves to the model, spread over the intents, dry run, nice 19, 1 s apart, VR desk session running; latency = end of
 the transcript to the decision, both stages):
 
@@ -535,9 +535,9 @@ voice log go through `agent::redact` (`sk-...`, long opaque tokens), errors too;
 never reaches ai.log, a toast or a request body.
 
 ```sh
-pimax-voice audit --remote --max 40 --pause-ms 1000 --out analysis/voice-audit-remote.html
-pimax-voice audit --remote --action-model anthropic/claude-haiku-5.5    # another stage-2 model
-pimax-voice audit --remote --log --fixture my.tsv     # only these phrases; ai.log keeps requests and costs
+omarchyvr-voice audit --remote --max 40 --pause-ms 1000 --out analysis/voice-audit-remote.html
+omarchyvr-voice audit --remote --action-model anthropic/claude-haiku-5.5    # another stage-2 model
+omarchyvr-voice audit --remote --log --fixture my.tsv     # only these phrases; ai.log keeps requests and costs
 ```
 
 ## 15. The local model's HTTP 400 (fixed 2026-10-15)
@@ -577,12 +577,12 @@ from a list that shows size, video memory, speed and the audit's accuracy, with 
   question (our 11 categories with a short description each) with one probability per category in one forward pass.
   No text is generated, so it cannot go off script. It runs on the processor only (PyTorch CPU, ~2 GB of RAM).
 - As published it does not know this desk's words ("dim", "necks background", "liz windows"). **Lara** is Laya tuned on
-  this PC to the command catalogue (`pimax-ai tune-lara`): every catalogue phrase of every intent, its ASR-mangled
-  copy and some chatter (1,975 rows; `pimax-voice routerbench --out`), 3 epochs on the processor (here ~65 minutes on
+  this PC to the command catalogue (`omarchyvr-ai tune-lara`): every catalogue phrase of every intent, its ASR-mangled
+  copy and some chatter (1,975 rows; `omarchyvr-voice routerbench --out`), 3 epochs on the processor (here ~65 minutes on
   16 cores at nice 19, next to VR and these benchmarks; 0.8 GB). The audit's natural phrasings stay out, so the audit tests unseen wording.
   Laya's own calibration slice (in-sample): 41 % -> 90 %.
 
-### The pipeline (`rust/pimax-voice/src/router.rs`, `Agent::lara_filtered`)
+### The pipeline (`rust/omarchyvr-voice/src/router.rs`, `Agent::lara_filtered`)
 
 Exact phrases, near-exact fuzzy hits and noise stay with the matcher (no model, as in every mode). Everything else:
 
@@ -612,34 +612,34 @@ missing router as `Lara off > ...`.
 | action | `qwen3.5-4b` (recommended) | Qwen3.5-4B Q4_K_M (the simple mode's model) | 2.6 GiB | ~3.0 GB VRAM (measured 3,006 MiB) | Apache-2.0 |
 | action | `qwen3.5-9b` | Qwen3.5-9B IQ4_XS (Q4_K_M would be 5.3 GiB) | 4.8 GiB | ~4.8 GB VRAM (measured 4,846 MiB) | Apache-2.0 |
 
-On this PC everything above is downloaded already (2026-10-16), and Lara is tuned (`~/.local/share/pimax/ai/laya/lara`).
+On this PC everything above is downloaded already (2026-10-16), and Lara is tuned (`~/.local/share/omarchyvr/ai/laya/lara`).
 
-Downloads are pinned and checked: GGUF files by Hugging Face revision and LFS SHA-256 (`pimax-ai` `Asset`s); Laya by
+Downloads are pinned and checked: GGUF files by Hugging Face revision and LFS SHA-256 (`omarchyvr-ai` `Asset`s); Laya by
 `laya==0.4.8` with every Python package at a tested version (`LAYA_CONSTRAINTS`, PyTorch's CPU wheel index) and the
 checkpoint at the revision Laya lists as reviewed (`LAYA_REVISION=reviewed`). Nothing is bundled in this repository.
 
-### Runtime (`rust/pimax-ai/src/twostage.rs`)
+### Runtime (`rust/omarchyvr-ai/src/twostage.rs`)
 
 | port | process | pid file / log |
 |---|---|---|
 | 8080 | llama-server with the action model (in the simple mode: the simple model) | `llama-server.pid`, `llama-server.log` |
 | 8081 | `laya-serve` (Lara / Laya, CPU, 8 threads, offline, nice 19) or llama-server (0.8B, CPU) | `router.pid`, `ai-router.log` |
-| - | `pimax-ai watch` (VRAM watch) | `vram-watch.pid`, `ai-vram-watch.log` |
+| - | `omarchyvr-ai watch` (VRAM watch) | `vram-watch.pid`, `ai-vram-watch.log` |
 
 ```sh
-pimax-ai install --two-stage [--router lara|laya|qwen3.5-0.8b] [--action qwen3.5-4b|qwen3.5-9b]
-pimax-ai up            # what ai.toml asks for (simple or two stages), fitted to the free VRAM; waits until ready
-pimax-ai fit [--json]  # what up would choose now and why
-pimax-ai test --two-stage   # "two stages: router 31 ms: system; model 190 ms (...); VRAM 3.0 GB in use, 19.3 GB free"
-pimax-ai down          # router, model and watch
-pimax-ai tune-lara     # (again) tune Laya to the catalogue
+omarchyvr-ai install --two-stage [--router lara|laya|qwen3.5-0.8b] [--action qwen3.5-4b|qwen3.5-9b]
+omarchyvr-ai up            # what ai.toml asks for (simple or two stages), fitted to the free VRAM; waits until ready
+omarchyvr-ai fit [--json]  # what up would choose now and why
+omarchyvr-ai test --two-stage   # "two stages: router 31 ms: system; model 190 ms (...); VRAM 3.0 GB in use, 19.3 GB free"
+omarchyvr-ai down          # router, model and watch
+omarchyvr-ai tune-lara     # (again) tune Laya to the catalogue
 ```
 
-pimaxd's `ai.server` component (System page: "Local AI (pimax-ai)") now starts `pimax-ai up` and stops with
-`pimax-ai down`, so Play and Work bring the AI up in the saved shape; it stays a leaf (VR never waits for it).
+omarchyvrd's `ai.server` component (System page: "Local AI (omarchyvr-ai)") now starts `omarchyvr-ai up` and stops with
+`omarchyvr-ai down`, so Play and Work bring the AI up in the saved shape; it stays a leaf (VR never waits for it).
 
 **Video memory: Auto by default** (`vram_mib = "auto"`, the AI page's "Video memory for AI": Auto / up to 4, 6, 8, 12 GB).
-At each `up` (each Play / Work start, or a change of the setting) `pimax-ai` reads the free VRAM (nvidia-smi; its own
+At each `up` (each Play / Work start, or a change of the setting) `omarchyvr-ai` reads the free VRAM (nvidia-smi; its own
 server's memory counts as free) and what runs next to it from the process list:
 
 | session | VRAM kept free for it |
@@ -653,11 +653,11 @@ Then (`twostage::fit`): the chosen model whole on the GPU when it fits; else a s
 fits whole; else llama.cpp's own fit (`--fit on --fit-target M`: as many layers as leave M MiB free, the rest on the
 CPU, slower; checked: the 9B with `--fit-target 18000` took 3.8 GB, left 18.1 GB free and answered); below 1.5 GB of
 room, the CPU. A limit ("up to N GB") caps the room. `gpu_layers = N` by hand wins over
-all of it. While the model sits on the GPU, `pimax-ai watch` checks every 15 s: when a game squeezes the free memory
+all of it. While the model sits on the GPU, `omarchyvr-ai watch` checks every 15 s: when a game squeezes the free memory
 under half its reserve, the model is fitted again (fewer layers, the smaller model or the CPU). It never grows back by
 itself (the next start does), so it cannot flap.
 
-### Settings (`~/.config/pimax/ai.toml`, via `pimax_config::ai`)
+### Settings (`~/.config/omarchyvr/ai.toml`, via `omarchyvr_config::ai`)
 
 ```toml
 voice_local = "two-stage"      # simple (default) | two-stage; with [use] voice = a local provider
@@ -670,15 +670,15 @@ vram_mib = "auto"              # or a limit in MiB
 ```
 
 "AI runs on" writes only `[use] voice`, `voice_local` and this section; keys and other providers stay as they are
-(`AiConfig::set_runs_on`, tested with a key in the file). `pimax-voice act` checks the file every 2 s and loads the new
+(`AiConfig::set_runs_on`, tested with a key in the file). `omarchyvr-voice act` checks the file every 2 s and loads the new
 agent between two commands (no restart; a toast "AI: This PC, 2 stages" and the watch button follow).
 
 ### Where the switch is (user decision 2026-10-16)
 
-- **Work only.** The local models belong to Work (the WayVR desk for work and movies). pimaxd's `ai.server` is a session
+- **Work only.** The local models belong to Work (the WayVR desk for work and movies). omarchyvrd's `ai.server` is a session
   component whose rule is "Work and Local models On": Play / SteamVR / games never start them, and a Work session that
-  switches to Play stops them (`pimax-ai down`). The switch is `voice_local_models` in ai.toml (pimaxd reads it each
-  round; it wins over pimaxd.toml's `ai_server`). Off and no online choice: voice has no AI agent (offline commands).
+  switches to Play stops them (`omarchyvr-ai down`). The switch is `voice_local_models` in ai.toml (omarchyvrd reads it each
+  round; it wins over omarchyvrd.toml's `ai_server`). Off and no online choice: voice has no AI agent (offline commands).
 - **App: Local AI** (navigation, next to Ready): the switch **Local models On / Off**; **How much of the PC the AI may
   use**: Low / Medium (recommended) / High, each with its download, RAM, video memory, speed and the audit's result;
   **Advanced: choose models**: Lara on / off (two stages or the model alone), the router and action model pickers
@@ -686,10 +686,10 @@ agent between two commands (no restart; a toast "AI: This PC, 2 stages" and the 
   **State**: Download (and tune), Start / Test (each stage's time, the VRAM in use) / Stop, Lara's and the model's
   state; **Online (Jev) instead**: a separate switch. Screenshot `local-ai.png`. The AI page's "AI runs on" card
   shows the current choice and opens this page.
-- **WayVR, Work desk: the watch** (left wrist): "Local AI: On" (press: On / Off, `pimax-voice ai-mode local-toggle`)
+- **WayVR, Work desk: the watch** (left wrist): "Local AI: On" (press: On / Off, `omarchyvr-voice ai-mode local-toggle`)
   and, while on, the preset button "Medium" (press: Low -> Medium -> High, `ai-mode preset-next`). Hidden unless Pimax
-  voice shows it; `pimax-voice act` sets the texts over `wayvrctl panel-modify watch ...` at start and on every change;
-  `ai-mode` loads or unloads the models (`pimax-ai up`, detached).
+  voice shows it; `omarchyvr-voice act` sets the texts over `wayvrctl panel-modify watch ...` at start and on every change;
+  `ai-mode` loads or unloads the models (`omarchyvr-ai up`, detached).
 
 | preset | router + action model | download | memory | hard 40 / all | speed |
 |---|---|---|---|---|---|
@@ -714,7 +714,7 @@ may be of several categories); the composite requests got intents of their own (
 `win.screen.open`, `win.screen.gather`); and one toast lists every step's result. The session's 29 requests as an
 audit fixture (`tests/fixtures/live-2026-10-16.tsv`, VOICE.md "Live session 2026-10-16").
 
-### Benchmark (2026-10-16, `pimax-voice audit --hard` and the full audit, dry run)
+### Benchmark (2026-10-16, `omarchyvr-voice audit --hard` and the full audit, dry run)
 
 Setup: VR Work session running at the start (WayVR was stopped by someone else at 12:46, during the two-stage runs),
 the machine busy (Lara's tuning on 16 cores at nice 19, other builds), dry run, 1 s between model requests. **Hard 40** =
@@ -737,7 +737,7 @@ the strict pass rate). Latency: end of the transcript to the decision, model req
 | Two stages, stage 2 = tool calling (the online design): Laya + 4B GPU | 23/40 | - | 0.86 / 2.12 s | 3.0 GB | 4.0 s (3.4 s Lara) |
 | Online (section 14, 2026-10-15): jev-router + gpt-6-luna | 37/40 | - | 3.4 / 5.1 s | 0 | (remote) |
 
-Router alone (`pimax-voice routerbench`, stage 1 only; "offered" = the right category among the ones Lara passes on).
+Router alone (`omarchyvr-voice routerbench`, stage 1 only; "offered" = the right category among the ones Lara passes on).
 | router | categories right | offered | with the matcher's guess | p50 |
 |---|---|---|---|---|
 Natural phrasings (242, the audit's own; never in Lara's training rows) and the hard 40:
@@ -781,7 +781,7 @@ the bench script (not kept).
 
 ## 17. Speech recognition on the GPU (2026-10-16)
 
-User request (2026-10-16): a "Large GPU" speech-recognition choice next to the local AI in Work. `pimax-voice listen`
+User request (2026-10-16): a "Large GPU" speech-recognition choice next to the local AI in Work. `omarchyvr-voice listen`
 used Parakeet TDT 0.6B v3 int8 on the processor; it now has a second engine, whisper.cpp's `whisper-server`
 (large-v3-turbo, Vulkan), and Parakeet gets hotwords.
 
@@ -794,7 +794,7 @@ used Parakeet TDT 0.6B v3 int8 on the processor; it now has a second engine, whi
 | whisper large-v3-turbo q5_0, GPU (Vulkan, whisper-server) | 6.4% | 10.3% | 43 / 69 ms | 835 MB |
 | distil-large-v3, GPU | 3.6% | 10.6% | 36 / 52 ms | 1.7 GB |
 
-Through `pimax-voice transcribe` (the whole path: Silero VAD, segments, partials, the engine; WER on the final of each
+Through `omarchyvr-voice transcribe` (the whole path: Silero VAD, segments, partials, the engine; WER on the final of each
 clip) the numbers are different, because the VAD cuts and the wake word ("Max") sits first:
 
 | `--engine` | clean | noisy | decode p50 / p95 |
@@ -809,7 +809,7 @@ distil-large-v3 is not used: no better than turbo in noise and twice the memory.
 
 ### Integration
 
-- **Engine** (`rust/pimax-voice/src/engine.rs`, no cargo feature): `EngineSpec::WhisperServer { port, timeout_ms,
+- **Engine** (`rust/omarchyvr-voice/src/engine.rs`, no cargo feature): `EngineSpec::WhisperServer { port, timeout_ms,
   fallback }`. Per segment (partials and finals both): a WAV (16 kHz, 16-bit, mono, in memory, padded to 1.1 s) goes as
   multipart `file` + `response_format=json` + `temperature=0.0` to `POST http://127.0.0.1:8082/inference`; connect
   timeout 250 ms, answer timeout 4 s. On any failure the segment is decoded by the Parakeet fallback (always loaded)
@@ -821,23 +821,23 @@ distil-large-v3 is not used: no better than turbo in noise and twice the memory.
   next request and degrades), at nice 19 / ionice. Binary `~/src/whisper.cpp/build-vk/bin/whisper-server`, model
   `~/models/whisper/ggml-large-v3-turbo-q5_0.bin` (not downloaded by the app yet; a missing file is a plain-words
   message and the small model answers).
-- **Lifecycle** (same rule as section 16): a third slot of `pimax-ai` (`Slot::Asr`, port 8082, `asr.pid`,
-  `ai-asr.log`), started and stopped by pimaxd's `ai.server` through `pimax-ai up` / `down`: Work only, with Local
-  models On. `up` decides first and counts the server's 0.9 GB in the fit of the action model. `pimax-ai stop --asr`,
-  `pimax-ai status` (line "speech") and `status --json` (`asr`, `asr_missing`) show it.
-- **Setting** (`ai.toml`, `pimax_config::ai::Asr`): `asr = "auto" | "cpu" | "gpu"`, default auto (key absent). **Superseded by section 19: the default is the processor; `auto` now means `cpu`.**
+- **Lifecycle** (same rule as section 16): a third slot of `omarchyvr-ai` (`Slot::Asr`, port 8082, `asr.pid`,
+  `ai-asr.log`), started and stopped by omarchyvrd's `ai.server` through `omarchyvr-ai up` / `down`: Work only, with Local
+  models On. `up` decides first and counts the server's 0.9 GB in the fit of the action model. `omarchyvr-ai stop --asr`,
+  `omarchyvr-ai status` (line "speech") and `status --json` (`asr`, `asr_missing`) show it.
+- **Setting** (`ai.toml`, `omarchyvr_config::ai::Asr`): `asr = "auto" | "cpu" | "gpu"`, default auto (key absent). **Superseded by section 19: the default is the processor; `auto` now means `cpu`.**
   Auto: the large model when Local models are On and at least 1.5 GB of video memory is free, else the small one. `cpu`
   never starts the server; `gpu` starts it when 0.9 GB + margin is free and the local models are On. Local models Off:
   no server (Work only rule), the small model answers.
-- **`pimax-voice listen`/`transcribe`** read `asr` at start (`--engine auto`, the default): small = Parakeet with
+- **`omarchyvr-voice listen`/`transcribe`** read `asr` at start (`--engine auto`, the default): small = Parakeet with
   hotwords; auto/gpu = the server engine with the Parakeet fallback; the engine line goes to voice.log and the `hello`
   event. Other commands (bench, audit) use fixed Parakeet. `--engine parakeet --no-hotwords|whisper-server`,
-  `--asr-port`, `--asr-timeout-ms` override. A change of `asr` reaches the server at once (the app runs `pimax-ai up`)
+  `--asr-port`, `--asr-timeout-ms` override. A change of `asr` reaches the server at once (the app runs `omarchyvr-ai up`)
   and the engine at the next voice start.
 - **Hotwords** (CPU option): sherpa-onnx C API fields exist (`hotwords_file`, `hotwords_score`, `modeling_unit`,
   `bpe_vocab`); `SttConfig.hotwords` switches to `modified_beam_search`, score 1.5 (2 to 8 were worse). Words: Max,
   passthrough, screens, workspace, YouTube, Chrome, terminal, foot, cinema, Omarchy (`engine::HOTWORDS`); the files
-  (`hotwords.txt`, `bpe.vocab` built from tokens.txt) are written to `~/.cache/pimax/voice/`.
+  (`hotwords.txt`, `bpe.vocab` built from tokens.txt) are written to `~/.cache/omarchyvr/voice/`.
 - **App**: Local AI page, card "Speech recognition": Auto / Small (processor) / Large (graphics card) with the numbers
   of each, the decision in plain words, a chip for the server and the missing-file message. Help line in the app's
   help. Not done: a WayVR watch button (it would need `act.rs`, edited elsewhere), a Download button for the model and
@@ -849,19 +849,19 @@ User request: try a quantised ~27B Qwen for agent mode (multi-step goals) next t
 
 **The model.** Qwen3.6-27B exists (Qwen, Apache-2.0). GGUF `unsloth/Qwen3.6-27B-GGUF`, revision `82d411a`, file
 `Qwen3.6-27B-Q4_K_M.gguf`, 15.66 GiB (16,817,244,384 bytes, SHA-256 `5ed60d0a...392a0`, checked), in
-`~/.local/share/pimax/ai/models/Qwen3.6-27B/`. Measured 16.7 GB of VRAM with a 16k context.
+`~/.local/share/omarchyvr/ai/models/Qwen3.6-27B/`. Measured 16.7 GB of VRAM with a 16k context.
 
 **Wiring (opt-in only).** `[local_two_stage] agent = "qwen3.6-27b"` (default: absent = off). `AiConfig::set_agent(Some(id))`
 (for the Local AI page's picker) writes that key plus `voice_agent_url = http://127.0.0.1:8083/v1/chat/completions` and
 `voice_agent_model`, which voice reads (goal steps only; simple commands stay on Lara + 4B; the usual model is the
-fallback while the 27B is not up); `set_agent(None)` removes all three. `pimax-ai up` starts the server (port 8083, slot
+fallback while the 27B is not up); `set_agent(None)` removes all three. `omarchyvr-ai up` starts the server (port 8083, slot
 `agent`) only when the setting is on, the file is downloaded, the session is none or the Work desk (never SteamVR or a
 game; the watch stops it when one appears) and the free VRAM covers 18 GB plus the session's reserve. Presets, Play
-and Work never set it. `pimax-ai down` stops it. Download: `pimax-ai install --two-stage` fetches it when the setting is on.
+and Work never set it. `omarchyvr-ai down` stops it. Download: `omarchyvr-ai install --two-stage` fetches it when the setting is on.
 Still to do on the app side (not touched here, another agent's files): a "27B agent model" switch on the Local AI page
 calling `set_agent`, with its size, 17 GB VRAM and the result below.
 
-**Benchmark** (`pimax-voice audit --url ... --pause-ms 200`, dry run, one model at a time on port 8083, VR closed, Lara on
+**Benchmark** (`omarchyvr-voice audit --url ... --pause-ms 200`, dry run, one model at a time on port 8083, VR closed, Lara on
 the processor, 4B of the user's own server left running; scripts in the session scratchpad). Sets: **hard 40** (the
 two-stage set), **agent 7+10** (`agent-2026-10-16.tsv`: 7 goals, 10 single commands), **long 12** (`agent27b-2026-10-16.tsv`:
 goals of 3 to 8 steps). Wrong actions = steps that ran but are not in the goal; per-step time = goal time / steps run.
@@ -923,25 +923,25 @@ needs 2.4 to 10 s per command on the processor: out of the question. Parakeet is
 accurate on the processor (6.4% clean, 15.2% noisy), is a 2-thread in-process engine (no server, no port, no VRAM, English
 and Spanish) and is the budget winner under the 600 ms p95 target by a wide margin.
 
-**Default: Parakeet TDT v3 int8 with hotwords, 2 threads** (`pimax-voice --threads`, default 2; 4 threads would give 108 ms
+**Default: Parakeet TDT v3 int8 with hotwords, 2 threads** (`omarchyvr-voice --threads`, default 2; 4 threads would give 108 ms
 but 2 leaves more of the 32 threads alone). Monado's threads are SCHED_FIFO (cap_sys_nice) and preempt any normal
 thread, so this CPU work cannot take their time slices; the part that is shared is memory bandwidth and caches, which
 Parakeet barely touches.
 
 ### What changed
 
-- **Setting**: `asr = "cpu" | "gpu"` in `~/.config/pimax/ai.toml` (`pimax_config::ai::Asr`, `AiConfig::asr_on_gpu()`). The
+- **Setting**: `asr = "cpu" | "gpu"` in `~/.config/omarchyvr/ai.toml` (`omarchyvr_config::ai::Asr`, `AiConfig::asr_on_gpu()`). The
   default is the processor and the key is absent. **Migration**: the old default `auto` (no key, or `asr = "auto"`,
   which picked the GPU server whenever 1.5 GB were free) now means the processor; only an explicit `asr = "gpu"`
   (chosen by hand in the old selector) stays on the graphics card. No file is rewritten.
 - **App**: Local AI page, card "Speech recognition": one switch "Speech on graphics card" (default Off) with the "?"
   "GPU is faster but can make VR stutter.", the measured numbers of both, the plain-words decision, and the state of the
-  graphics-card server. Saved to ai.toml at once, so `pimax-ai`, `pimax-voice` and the CLI share it; each Work start
-  and each restart of the session (pimaxd's `ai.server`, `pimax-ai up`) re-reads it, so it needs no flag in
+  graphics-card server. Saved to ai.toml at once, so `omarchyvr-ai`, `omarchyvr-voice` and the CLI share it; each Work start
+  and each restart of the session (omarchyvrd's `ai.server`, `omarchyvr-ai up`) re-reads it, so it needs no flag in
   `start-argv.txt` (a restart keeps it because it lives in ai.toml, not in the argument list).
-- **Wiring**: `pimax-ai up` (Work start, the `ai.server` health watch, the Local AI buttons, the resume after Game mode)
+- **Wiring**: `omarchyvr-ai up` (Work start, the `ai.server` health watch, the Local AI buttons, the resume after Game mode)
   starts the whisper-server on port 8082 only when the switch is On (`asr_decision`); Off stops it. Game mode / Play
-  never start it (they only bring back what `up` decides). `pimax-voice listen` uses Parakeet unless the switch is On
+  never start it (they only bring back what `up` decides). `omarchyvr-voice listen` uses Parakeet unless the switch is On
   and the local models run, in which case it asks the server and falls back to Parakeet as before. The voice client,
   port and API are unchanged.
 - Not kept: a whisper CPU server on port 8082. It would be slower and less accurate than Parakeet, so no second

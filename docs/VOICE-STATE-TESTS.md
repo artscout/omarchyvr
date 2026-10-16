@@ -3,7 +3,7 @@
 The voice AI is measured by the **state it reaches**. Whether it picked the right intent name does not count.
 The user wants state X and has state Y: which tools, in which order, get from Y to X, and does anything else change?
 
-`pimax-voice audit --state` is the quality measure. The old `pimax-voice audit` (intent names,
+`omarchyvr-voice audit --state` is the quality measure. The old `omarchyvr-voice audit` (intent names,
 tests/fixtures/*.tsv) is kept as a fast smoke test of the matcher only (section 5).
 
 ## 1. The World (src/world.rs)
@@ -13,7 +13,7 @@ tests/fixtures/*.tsv) is kept as a fast smoke test of the matcher only (section 
 | part | what |
 |---|---|
 | screens 1-6 | present (Screens setting), shown in VR, the workspace each shows, width, distance, place (yaw/pitch), curvature |
-| show rule | `$XDG_RUNTIME_DIR/pimax-screens.state`: limit, pinned, hidden, sort |
+| show rule | `$XDG_RUNTIME_DIR/omarchyvr-screens.state`: limit, pinned, hidden, sort |
 | workspaces | id, and the screen (monitor) each lives on |
 | apps | address, handle (t1, c1, ...), kind (terminal/browser/editor/video/pimax/other), class, title, cwd, workspace, fullscreen, browser tabs + active tab |
 | focus, gaze | the focused app and screen; the screen and app the eyes rest on |
@@ -21,7 +21,7 @@ tests/fixtures/*.tsv) is kept as a fast smoke test of the matcher only (section 
 | media, rest | volume, mute, music, track; recording; screen locked; typed text and keys; events (reminder, screenshot) |
 | session | running, mode, preset |
 
-The **screen visibility** rule is the one in pimax-tools `vr/screens.rs::visibility`:
+The **screen visibility** rule is the one in omarchyvr-tools `vr/screens.rs::visibility`:
 - the main screen always shows;
 - another screen shows when it is pinned, busy (has an app) or focused, up to `limit` screens;
 - the focused screen shows even over the limit;
@@ -43,10 +43,10 @@ writes to it. Each primitive mirrors its implementation:
 | command | mirrors |
 |---|---|
 | `hyprctl dispatch hl.dsp.focus/window.move/close/fullscreen/float/send_key_state/...` | Hyprland: focusing a window shows its workspace on its monitor; moving to a new workspace creates it on the focused monitor; empty, unshown workspaces vanish |
-| `pimax desk screens show/more/add/hide` | screens.rs `parse_show` + `plan_show` (the focused screen counts as shown) |
-| `pimax desk preset P` | preset.rs `live_steps`: show rule, passthrough, width/distance/curvature |
+| `omarchyvr desk screens show/more/add/hide` | screens.rs `parse_show` + `plan_show` (the focused screen counts as shown) |
+| `omarchyvr desk preset P` | preset.rs `live_steps`: show rule, passthrough, width/distance/curvature |
 | `wayvrctl screen-nudge [--step S] NAME DIR` | WayVR grabmath `nudge` (step 0.02-1, default 0.25; a hidden screen does not move) |
-| launchers, `wtype`, volume, media, `pimax record`, `pimax desk stop`, the passthrough socket | their effect on the state |
+| launchers, `wtype`, volume, media, `omarchyvr record`, `omarchyvr desk stop`, the passthrough socket | their effect on the state |
 
 A command the Sim does not know is listed in `Sim::unmodelled`, and the case fails as a "simulator gap" rather than
 passing by accident. These places are approximations and are marked `APPROX:` in world.rs:
@@ -119,12 +119,12 @@ asks "say yes", the case answers yes unless it sets `yes = false`, so the end st
 ## 4. Runs, variants, the leaderboard
 
 ```
-pimax-voice audit --state                       # every case, the pipeline as ai.toml sets it
-pimax-voice audit --state --subset 40 --seed 3  # ~40 cases stratified by tier, under a minute
-pimax-voice audit --state --split dev           # tune on dev only; confirm on --split held and --split fresh
-pimax-voice audit --state --variant lara-off    # an experiment (tests/state/variants/*.toml or a file)
-pimax-voice audit --state --no-ai               # matcher and rules only: checks the cases and the simulator
-pimax-voice audit --state --snapshot            # the live World as JSON, read-only
+omarchyvr-voice audit --state                       # every case, the pipeline as ai.toml sets it
+omarchyvr-voice audit --state --subset 40 --seed 3  # ~40 cases stratified by tier, under a minute
+omarchyvr-voice audit --state --split dev           # tune on dev only; confirm on --split held and --split fresh
+omarchyvr-voice audit --state --variant lara-off    # an experiment (tests/state/variants/*.toml or a file)
+omarchyvr-voice audit --state --no-ai               # matcher and rules only: checks the cases and the simulator
+omarchyvr-voice audit --state --snapshot            # the live World as JSON, read-only
 ```
 
 Built-in variants: `baseline`, `lara-off`, `state-prompt` (for the planner), and one per local model:
@@ -151,7 +151,7 @@ and calls `variant::honour(knob)` for each knob it uses. The report names every 
 
 ## 5. Why the old audit said 99%
 
-`pimax-voice audit` builds most of its cases from the catalogue itself:
+`omarchyvr-voice audit` builds most of its cases from the catalogue itself:
 - each intent's own first phrase, which the exact matcher hits by construction;
 - a one-word ASR swap of that phrase, which the alias table undoes;
 - natural phrasings written next to the prompt examples (several are word for word in the prompt).

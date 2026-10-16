@@ -1,7 +1,7 @@
 # Rust port of the userspace stack (2026-10-13)
 
 Workspace: `rust/` (see `rust/README.md` for the crate list and commands). Everything was added next to the existing code.
-Not touched: the running `pimax-keepalived` service and its unit, `~/.config/systemd`, `~/src/monado`, the C library, the python tools,
+Not touched: the running `omarchyvr-keepalived` service and its unit, `~/.config/systemd`, `~/src/monado`, the C library, the python tools,
 the headset display. Nothing is committed.
 
 ## Architecture
@@ -10,7 +10,7 @@ pimax-proto   pure functions on 64-byte reports        no_std, forbid(unsafe_cod
    |
 pimax         ppoll session thread + discovery         std, libc (only unsafe: ppoll/eventfd/socketpair/sigaction in sys.rs)
    |    \
-   |     pimax-tools  (bin `pimax`)                    8 subcommands replacing linux/*.py
+   |     omarchyvr-tools  (bin `omarchyvr`)                    8 subcommands replacing linux/*.py
    |
 pimax-capi    extern "C" pimax.h, cdylib + staticlib   drop-in for libpimax (soname libpimax.so.0)
 pimax-difftest (test only)                             C decode.c/pimax.c via `cc` crate, symbols renamed c_*
@@ -53,20 +53,20 @@ reply data length `LL-3` clamped to 60, serial parsing, attach burst bytes, vide
 | pimax-proto | 25 | decoders on real data (IMU p83: 63 369 reports; controller p82 + captures2 buttons capture: 102 334 reports; python golden for all of them), 0x37 on the 28 captured packets vs python, calibration blob reassembled from the Windows cold-start capture inflates to `headset-calibration.xml` byte-for-byte, round trip/shuffle/duplicates/truncation/corruption, log lines from the real IF3 capture, framing bytes vs python/video_on/attach, port of `test_controllers_replay.py` (all 10 left-controller events in marker order, touch bits, analog ranges, right idle/round-1 checks), 7 proptest properties x 20 000 random/structured reports (no panics, magic acceptance, invariants) |
 | pimax | 15 | discovery in a fake sysfs (4 IF + bridge, partial, empty); session on the fake headset: wake first, keepalive spacing 213 +- 40 ms, rate byte from handle and from rate file, passive mode silent, IMU/controller/status/log events and counters, request matching (a 0x37 and an unrelated reply do not satisfy it), timeout, calibration with a lost reply (retry), unplug/replug (wake again, states Connected/Disconnected/Connected, pending request aborted), auto-attach initial burst and rate-limited re-attach, no re-attach while reports flow, video-prepare order, close < 100 ms |
 | pimax-capi | 7 | real `pimax.h` vs Rust: sizes/offsets of all structs, constants, 14/14 functions exported, soname; **unmodified `libpimax/tools/pimax-cli.c` builds and runs against the cdylib (installed as libpimax.so.0) and links against the staticlib**; a C program drives a full session (callbacks, requests, `-ETIMEDOUT`/`-EMSGSIZE`/`-ENOTCONN`, attach and video-prepare wire bytes, unplug); decoder output of C `decode.c` and Rust byte-identical (`%a` floats) on 366k reports; CMake consumer (static driver lib -> executable) with C sources and with `libpimax_capi.a`; Monado's built objects import 5 libpimax symbols, all exported |
-| pimax-tools | 9 | Mahony filter vs quaternions from `pimax_imu_orient.py` on the real p83 capture (126 checkpoints, max deviation < 1e-9), wrap handling, axis modes; CLI black box (usage, no-headset errors, logtail, keepalived idle CPU and SIGTERM, offline `calib --blob` == Windows XML) |
+| omarchyvr-tools | 9 | Mahony filter vs quaternions from `pimax_imu_orient.py` on the real p83 capture (126 checkpoints, max deviation < 1e-9), wrap handling, axis modes; CLI black box (usage, no-headset errors, logtail, keepalived idle CPU and SIGTERM, offline `calib --blob` == Windows XML) |
 | pimax-difftest | 6 | **Rust == C**: 166 658 captured reports (63 369 IMU, 102 334 controller, 955 other), 49 152 single-byte mutations of three real reports, 200 000 proptest reports, slot/sample-selection corners, `find_interfaces` on this machine (mask 0b1111, same four paths); bit-exact floats. 0 differences. The only intended difference (battery masking) is checked as `c.battery == rust.battery | charging << 7` |
 
-Live (headset connected, `pimax-keepalived` running, all read-only, ran in parallel with the service, service never left `active`,
+Live (headset connected, `omarchyvr-keepalived` running, all read-only, ran in parallel with the service, service never left `active`,
 USB devnum unchanged): `cargo test -p pimax --test live -- --ignored`: 7/7 (interfaces, identity reads `0x16` -> `P511X0X000000000001`,
 `0x03` -> `00 00 21 01`, `0x50`; calibration 84 reads in 250 ms == Windows XML; IMU 501 reports/s, device clock span 3.00 s, |a| 0.998 g;
 controller attach: both slots answered 0x16/0x50/0x0a/0x03, L 1237 / R 1246 reports in 5 s, battery 90 % / 100 %; passive log; a 7 s
-passive session while only the service keeps the headset alive). `cargo test -p pimax-tools --test live -- --ignored`: 4/4.
+passive session while only the service keeps the headset alive). `cargo test -p omarchyvr-tools --test live -- --ignored`: 4/4.
 Never sent: video-prepare, IPD, brightness, eye power, pairing. The sessions in the live tests send neither wake nor keepalive.
 
 ## Performance
 | measurement | python / C | Rust |
 |---|---|---|
-| `keepalived` CPU over 60 s, same window, headset connected (`bench/cpu_compare.py`) | python service: 403.0 ms = 0.672 % | `pimax keepalived`: 340.8 ms = 0.568 % (85 %). An earlier run before dropping the per-report EAGAIN read: 434 vs 398 ms |
+| `keepalived` CPU over 60 s, same window, headset connected (`bench/cpu_compare.py`) | python service: 403.0 ms = 0.672 % | `omarchyvr keepalived`: 340.8 ms = 0.568 % (85 %). An earlier run before dropping the per-report EAGAIN read: 434 vs 398 ms |
 | `keepalived` RSS / threads | 12.5 MB / 1 | 3.1 MB / 2 (main thread sits in `sigwait`) |
 | `keepalived` wakeups | 778 /s | 789 /s (dominated by the 1000 reports/s that must be drained: syscall bound for both) |
 | `decode_imu` (`cargo bench -p pimax-difftest`) | C 5.4 ns | 3.3 ns (0.61x) |
@@ -80,42 +80,42 @@ Latency was measured against the in-process fake (the C library cannot be pointe
 poll wake-up, read, decode and callback dispatch, not USB.
 
 ## Switch-over plan (EXECUTED 2026-10-13 22:47: keepalive drop-in rust.conf active; Monado built with PIMAX_USE_RUST_LIBPIMAX=ON)
-### (a) systemd user service: python -> `pimax keepalived`
+### (a) systemd user service: python -> `omarchyvr keepalived`
 1. Build and install the binary (no effect on the running service):
-   `cd ~/pimax-re/rust && cargo build --release && install -Dm755 target/release/pimax ~/.local/bin/pimax`
+   `cd ~/pimax-re/rust && cargo build --release && install -Dm755 target/release/omarchyvr ~/.local/bin/omarchyvr`
 2. Re-run `cargo test --workspace` and the two live suites.
-3. Exact unit diff. `~/.config/systemd/user/pimax-keepalived.service` is a symlink to `linux/pimax-keepalived.service`, so either edit that file:
+3. Exact unit diff. `~/.config/systemd/user/omarchyvr-keepalived.service` is a symlink to `linux/omarchyvr-keepalived.service`, so either edit that file:
 ```diff
---- a/linux/pimax-keepalived.service
-+++ b/linux/pimax-keepalived.service
+--- a/linux/omarchyvr-keepalived.service
++++ b/linux/omarchyvr-keepalived.service
 @@
 -Description=Pimax Dream Air USB keepalive (wake + 58 04 39 every 213 ms)
 +Description=Pimax Dream Air USB keepalive, Rust (wake + 58 04 39 every 213 ms)
  
  [Service]
 -ExecStart=/usr/bin/python3 %h/pimax-re/linux/pimax_keepalived.py
-+ExecStart=%h/.local/bin/pimax keepalived
++ExecStart=%h/.local/bin/omarchyvr keepalived
  Restart=always
  RestartSec=1
 ```
-   or, leaving the repo file alone, use a drop-in (`~/.config/systemd/user/pimax-keepalived.service.d/rust.conf`):
+   or, leaving the repo file alone, use a drop-in (`~/.config/systemd/user/omarchyvr-keepalived.service.d/rust.conf`):
 ```ini
 [Service]
 ExecStart=
-ExecStart=%h/.local/bin/pimax keepalived
+ExecStart=%h/.local/bin/omarchyvr keepalived
 ```
-   A ready, verified (`systemd-analyze --user verify`) stand-alone unit is in `rust/systemd/pimax-keepalived-rust.service`.
+   A ready, verified (`systemd-analyze --user verify`) stand-alone unit is in `rust/systemd/omarchyvr-keepalived-rust.service`.
 4. Switch with no gap longer than the 5.4 s firmware window:
 ```
-systemd-run --user --unit=pimax-ka-trial %h/.local/bin/pimax keepalived --no-wake   # second sender keeps the headset alive
-systemctl --user daemon-reload && systemctl --user restart pimax-keepalived         # python -> rust (wake is re-sent, as on any restart)
-systemctl --user status pimax-keepalived; journalctl --user -u pimax-keepalived -n 20
+systemd-run --user --unit=pimax-ka-trial %h/.local/bin/omarchyvr keepalived --no-wake   # second sender keeps the headset alive
+systemctl --user daemon-reload && systemctl --user restart omarchyvr-keepalived         # python -> rust (wake is re-sent, as on any restart)
+systemctl --user status omarchyvr-keepalived; journalctl --user -u omarchyvr-keepalived -n 20
 systemctl --user stop pimax-ka-trial
 ```
    (A plain `daemon-reload` + `restart` also works: the restart gap is about 1 s.) Rate file `$XDG_RUNTIME_DIR/pimax-rate` is shared in
-   both directions, so `pimax_video_on.py` and `pimax video-on` both work with either daemon.
-5. Rollback: remove the drop-in (or `git checkout linux/pimax-keepalived.service`), `systemctl --user daemon-reload && systemctl --user restart pimax-keepalived`.
-   The python script is untouched. `rm ~/.local/bin/pimax` is optional.
+   both directions, so `pimax_video_on.py` and `omarchyvr video-on` both work with either daemon.
+5. Rollback: remove the drop-in (or `git checkout linux/omarchyvr-keepalived.service`), `systemctl --user daemon-reload && systemctl --user restart omarchyvr-keepalived`.
+   The python script is untouched. `rm ~/.local/bin/omarchyvr` is optional.
 
 ### (b) Monado pimax driver on `pimax-capi` (opt-in, default stays the C sources)
 Patch (checked with `git apply --check` against `~/src/monado`, not applied): `rust/monado-opt-in-rust-libpimax.patch`. It only edits

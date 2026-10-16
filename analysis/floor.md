@@ -1,8 +1,8 @@
 # Floor: detection, Monado floor, drift lock, floor grid (2026-10-15)
 
-The complaint: "we always end up under the floor". Code: `rust/pimax-roommap/src/floor.rs` (detection, storage,
-follower), `floorcmd.rs` (`pimax-roommap floor ...`), `rust/pimax-passthrough/src/floorgrid.rs` (grid in VR), the
-Room page (`rust/pimax-setup/src/pages/room.rs`, `rust/pimax-gui-core/src/room.rs`), and the Monado commit
+The complaint: "we always end up under the floor". Code: `rust/omarchyvr-roommap/src/floor.rs` (detection, storage,
+follower), `floorcmd.rs` (`omarchyvr-roommap floor ...`), `rust/omarchyvr-passthrough/src/floorgrid.rs` (grid in VR), the
+Room page (`rust/omarchyvr-app/src/pages/room.rs`, `rust/omarchyvr-gui-core/src/room.rs`), and the Monado commit
 `6094c0c` on `desk` (local only, never pushed). Everything below ran offline on recordings and the saved `home` map.
 Nothing touched the live session.
 
@@ -136,7 +136,7 @@ agree) run **causally**: each window is scored with the correction from earlier 
 
 ## 5. Monado side
 
-* **Floor:** no change. `pimax-roommap relocalize --apply` and `apply` now add the floor shift from the map's
+* **Floor:** no change. `omarchyvr-roommap relocalize --apply` and `apply` now add the floor shift from the map's
   `floor.toml` (`--no-floor`: old behaviour). The output says how much.
 * **Optional glide patch:** `~/src/monado-eye` commit `6094c0c` on `desk` (local only). It changes the
   `pimax_anchor.h` hook:
@@ -150,7 +150,7 @@ agree) run **causally**: each window is scored with the correction from earlier 
 
 ## 6. Floor grid in VR
 
-`pimax-passthrough run --floor` (or the `o` key, or `$XDG_RUNTIME_DIR/pimax-floor-grid` = `1`/`0`, read once a
+`omarchyvr-passthrough run --floor` (or the `o` key, or `$XDG_RUNTIME_DIR/omarchyvr-floor-grid` = `1`/`0`, read once a
 second; the Room page has the switch):
 * It draws one OpenXR quad layer in STAGE space at y = 0: 6 x 6 m, a 1024² premultiplied texture, 0.5 m cyan lines.
 * The lines fade out from 0.8 m to 2.8 m and are cleared under your feet.
@@ -177,24 +177,24 @@ Below the steps:
 * **AprilTag:** unchanged.
 
 Floor actions are jobs of kind `room:floor`, so they never touch the offset owner (one writer per session stays).
-Demo mode shows a synthetic room. `PIMAX_ROOM_SHOT=DIR cargo test -p pimax-setup room_page_picture -- --ignored`
+Demo mode shows a synthetic room. `PIMAX_ROOM_SHOT=DIR cargo test -p omarchyvr-app room_page_picture -- --ignored`
 renders the page.
 
 ## 8. Live test (needs the user)
 
-1. Install `pimax-roommap`, `pimax-passthrough` and `pimax-setup` from `rust/target/release` the usual way. They are
+1. Install `omarchyvr-roommap`, `omarchyvr-passthrough` and `omarchyvr-app` from `rust/target/release` the usual way. They are
    only built in the repo target so far.
-2. `pimax desk start --6dof --ctrl-track --anchor` (the tag test's flags), then wait until tracking runs.
-3. `pimax-roommap floor detect --name home --save`: offline, writes `home/floor.toml`. Expect about -0.42 m.
-4. `pimax-roommap relocalize --source broker --name home --apply`: look around. The output should print
+2. `omarchyvr desk start --6dof --ctrl-track --anchor` (the tag test's flags), then wait until tracking runs.
+3. `omarchyvr-roommap floor detect --name home --save`: offline, writes `home/floor.toml`. Expect about -0.42 m.
+4. `omarchyvr-roommap relocalize --source broker --name home --apply`: look around. The output should print
    "floor: ... puts the room -1.18 m vertically".
-5. `pimax-roommap floor show --name home`, standing upright: "head now: X m above Monado's STAGE floor" should be
+5. `omarchyvr-roommap floor show --name home`, standing upright: "head now: X m above Monado's STAGE floor" should be
    your eye height (about 1.5-1.7 m). Sit down: about 1.1-1.25 m.
-6. Floor grid: `pimax-passthrough run --floor` (or `echo 1 > $XDG_RUNTIME_DIR/pimax-floor-grid` with passthrough
+6. Floor grid: `omarchyvr-passthrough run --floor` (or `echo 1 > $XDG_RUNTIME_DIR/omarchyvr-floor-grid` with passthrough
    running). The lines should lie on the real floor; put a controller on it and look.
-7. Touch refine: `pimax-roommap floor touch --name home --hand right --save`. Lay the controller flat on the floor
+7. Touch refine: `omarchyvr-roommap floor touch --name home --hand right --save`. Lay the controller flat on the floor
    in view and let go. It prints the touch vs points difference: expect under 2 cm.
-8. Drift lock: `pimax-roommap floor follow --dry-run --seconds 60` prints the measured floor and target every 2 s.
+8. Drift lock: `omarchyvr-roommap floor follow --dry-run --seconds 60` prints the measured floor and target every 2 s.
    Without `--dry-run` it writes the offset (smoothly). Leave it running for a long session and check with `floor
    show` that the head height stays put.
 9. With the Monado patch relinked: `PIMAX_ANCHOR_SLEW` defaults apply. The Monado log shows "offset placed at once"

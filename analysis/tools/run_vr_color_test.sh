@@ -1,7 +1,7 @@
 #!/bin/bash
 # Colour pipeline check (opens the headset and the display!): one monado-service session, two clients with the same
 # test pattern, one with an sRGB swapchain (xr_eyetest_srgb) and one with a UNORM swapchain (xr_eyetest); the final
-# compositor image (what goes to the display) is dumped for one frame of each and summarised with `pimax vr dump-stats`.
+# compositor image (what goes to the display) is dumped for one frame of each and summarised with `omarchyvr vr dump-stats`.
 # Left eye background of the pattern is (0,0x20,0x80) = 0,32,128, right eye (0x80,0x20,0x20) = 128,32,32.
 #
 # Usage:  run_vr_color_test.sh OUTDIR [MONADO_BUILD]
@@ -9,11 +9,11 @@
 # Env:    PIMAX_BIN (default pimax), SECS (8 per client), SCALE (50: smaller client swapchains, xr_eyetest copies them
 #         from the CPU), anything else is passed to monado-service, e.g. XRT_COMPOSITOR_OUTPUT_GAMMA=1.2,
 #         XRT_COMPOSITOR_TARGET_FORMAT=B8G8R8A8_UNORM, XRT_COMPOSITOR_COMPUTE=0
-# Overnight rule: hold the headset lock:  flock -w 3600 /tmp/pimax-headset.lock run_vr_color_test.sh /tmp/out
+# Overnight rule: hold the headset lock:  flock -w 3600 /tmp/omarchyvr-headset.lock run_vr_color_test.sh /tmp/out
 set -u
 OUT=${1:?usage: run_vr_color_test.sh OUTDIR [MONADO_BUILD]}
 BUILD=${2:-$HOME/src/monado/build}
-PIMAX=${PIMAX_BIN:-pimax}
+PIMAX=${PIMAX_BIN:-omarchyvr}
 SECS=${SECS:-8}
 T=$HOME/pimax-re/analysis/tools
 mkdir -p "$OUT/dump"
@@ -44,7 +44,7 @@ done
 STOP_RC=$?
 cat "$OUT/stop.txt"
 say "stop rc=$STOP_RC; usb: $(lsusb | grep 34a4:0044 || echo MISSING)"
-cp /tmp/pimax-vr-session/monado.log "$OUT/monado.log" 2>/dev/null
+cp /tmp/omarchyvr-session/monado.log "$OUT/monado.log" 2>/dev/null
 grep -E "dumped|COMPUTE|target format|imageFormat" "$OUT/monado.log" | head -8 | tee -a "$OUT/test.log"
 
 for f in "$OUT"/dump/frame*.raw; do

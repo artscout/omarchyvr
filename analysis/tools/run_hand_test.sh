@@ -10,10 +10,10 @@
 #        CARGO_TARGET_DIR (default ~/src/target-hands, else ~/pimax-re/rust/target)
 #        XR_HANDTEST (prebuilt client)  NO_BUILD=1  SECS (client seconds per phase, default 10; demo phases 24)
 #        POSE=imu (PIMAX_CTRL_POSE for the service)  OUT (log dir)  DRYRUN=1 (take the lock, print what would run)
-#        PIMAX_HEADSET_LOCK (lock file, default /tmp/pimax-headset.lock)
+#        PIMAX_HEADSET_LOCK (lock file, default /tmp/omarchyvr-headset.lock)
 # Exit status: 0 all phases passed, 1 a phase failed, 3 kernel Xid / "Idling display engine" seen (stop all headset work).
 set -u
-LOCK=${PIMAX_HEADSET_LOCK:-/tmp/pimax-headset.lock}
+LOCK=${PIMAX_HEADSET_LOCK:-/tmp/omarchyvr-headset.lock}
 
 # Defaults: the overnight worktree build if it exists, else the user's build; same idea for the cargo target dir.
 if [ -z "${MONADO_BUILD:-}" ]; then
@@ -25,7 +25,7 @@ if [ -z "${CARGO_TARGET_DIR:-}" ]; then
 	[ -d "$CARGO_TARGET_DIR/release" ] || CARGO_TARGET_DIR=$HOME/pimax-re/rust/target
 fi
 export CARGO_TARGET_DIR
-OUT=${OUT:-/tmp/pimax-hand-test.$$}
+OUT=${OUT:-/tmp/omarchyvr-hand-test.$$}
 SECS=${SECS:-10}
 PHASES=("$@")
 [ ${#PHASES[@]} -gt 0 ] || PHASES=(nodevice real)
@@ -38,7 +38,7 @@ if [ -z "${XR_HANDTEST:-}" ]; then
 	if [ -z "${NO_BUILD:-}" ]; then
 		# other agents add crates to the workspace all the time; a half-written one can break the build for a while
 		for try in 1 2 3 4 5 6; do
-			(cd "$HOME/pimax-re/rust" && cargo build --release -p pimax-xrtest) >"$OUT/cargo-build.log" 2>&1 && break
+			(cd "$HOME/pimax-re/rust" && cargo build --release -p omarchyvr-xrtest) >"$OUT/cargo-build.log" 2>&1 && break
 			echo "cargo build failed (try $try), retrying"; sleep 10
 		done
 	fi

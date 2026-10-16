@@ -117,7 +117,7 @@ combination, not tested anywhere. **[U]** = could not verify (paywall, bot wall,
   in the front end (CPU cost at 2 x 25 Hz is the open question; XFeat has 64-dim descriptors, SuperPoint 256 [L:
   arXiv 2607.04615 summary]).
 - **[H]:** gain-compensated normalisation before KLT lifts feature counts in the saturated segments with no learned
-  model. Test on `pimax-slam` replay.
+  model. Test on `omarchyvr-slam` replay.
 
 ### A8. Low-cost matcher on a downscaled pyramid
 - **What:** Run SuperPoint or XFeat on a 320x240 copy of each tracking frame, and feed the matches to Basalt as

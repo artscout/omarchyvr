@@ -47,7 +47,7 @@ power-on default in 0.7-1.5 s (Windows' cold start: ~1.1 s). Dry run on the exis
 10410/449 (correct: nothing brighter is allowed).
 
 Knobs: `PIMAX_CAM_AE=0|dry|1`, `PIMAX_CAM_AE_TARGET`, `_EXP_MIN` (100), `_EXP_MAX` (4108), `_GAIN_MIN/_MAX` (13/215),
-`_PERIOD_MS`, `_K`, `_DEADBAND`, `_UPPER`, `_QUANTIZE`. Offline: `pimax-slam ae REC.pxcam`.
+`_PERIOD_MS`, `_K`, `_DEADBAND`, `_UPPER`, `_QUANTIZE`. Offline: `omarchyvr-slam ae REC.pxcam`.
 
 Frame time: the driver now stamps tracker/recorder frames at mid-exposure (`PIMAX_SLAM_EXPOSURE_MID=1`, default;
 +5.2 ms at 10410). The offset sweep on the first lit recording confirms or rejects this (best offset ~0 = right).
@@ -55,7 +55,7 @@ Frame time: the driver now stamps tracker/recorder frames at mid-exposure (`PIMA
 ## 6. What needs approval, and the first test
 Approve sending `58 19 51 00 01 32 ...` with values only from the ranges above. First live run: `PIMAX_CAM_AE=dry`
 (log only), then `PIMAX_CAM_AE=1` with `PIMAX_SLAM_RECORD=1`; expect one ~0.3 s camera gap at the first command,
-then `pimax-slam timing` on a `.pxcam` / the 5 s stats line should show exposure moving into 1.1k-4.1k.
+then `omarchyvr-slam timing` on a `.pxcam` / the 5 s stats line should show exposure moving into 1.1k-4.1k.
 
 ## Live walk 2026-10-14 15:22
 

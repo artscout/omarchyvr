@@ -66,7 +66,7 @@ The Windows capture notes (`analysis/windows-capture-20261015.md`) show that tak
 
 - Predict at **90 Hz** (render rate), not at IMU rate. The network runs once per frame (11 ms budget) and the IMU is integrated in between.
 - A 1-2 M parameter 1D CNN on the 200-sample window: a few ms on CPU (est.); the GPU is much faster (RTX 4090 available). A GRU of 100k parameters: well below 1 ms on CPU through ONNX Runtime (est.).
-- ONNX Runtime is already in our build for hand tracking, so the runtime is in place. The pipeline must be a leaf pimaxd component that can be disabled without losing frames (CLAUDE.md section 2, item 5).
+- ONNX Runtime is already in our build for hand tracking, so the runtime is in place. The pipeline must be a leaf omarchyvrd component that can be disabled without losing frames (CLAUDE.md section 2, item 5).
 
 ### Haptics and rumble noise
 
@@ -128,7 +128,7 @@ The 0.5 s and 1 s rows are close to what the literature suggests for 1 s IMU win
 1. **Measure first (1-2 days).** Build an offline harness: replay recorded takes with masked optical data, run the current Monado arm model and the bias-corrected IMU variant, report RMSE at 0.5/1/2 s. Use the existing Record tracking takes.
 2. **Classic improvements (1-2 weeks).** Bias estimation by zero-velocity updates, gyro scale from the optical fit (`controller-6dof` phase 2), the Kalman filter with the Mahalanobis gate, rumble gating from the haptic command, device-clock timestamps. These are needed anyway for the 6DoF path.
 3. **Data (1-2 weeks, mostly the user's time).** A dedicated take set (20-30 min, worn, with rumble on in some takes, low arm, behind the back, handovers). Keep it in `pimax-data`.
-4. **Learned model (2-4 weeks).** A 1D CNN or GRU of 50k-500k parameters, TLIO-style output (displacement + covariance), trained on self-supervised masked windows, with the rumble state and the arm prior as inputs. Export to ONNX, run in a leaf pimaxd component, default off, a switch in the app ("Occlusion prediction"), and ship only if it beats the classic path on held-out takes.
+4. **Learned model (2-4 weeks).** A 1D CNN or GRU of 50k-500k parameters, TLIO-style output (displacement + covariance), trained on self-supervised masked windows, with the rumble state and the arm prior as inputs. Export to ONNX, run in a leaf omarchyvrd component, default off, a switch in the app ("Occlusion prediction"), and ship only if it beats the classic path on held-out takes.
 5. **Gate:** ship only with a switch, a status line in the app, and no change when the component fails (CLAUDE.md section 2).
 
 ## Sources

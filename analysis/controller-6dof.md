@@ -161,17 +161,17 @@ Statistics that validate the poses without ground truth:
 
 One combined recording: camera frames and controller reports together, 60-90 s. It gives the gyro scale, the axes and
 the time offset, and it is the replay test set for phase 5. The commands were not run by this agent. They open the
-headset (camera stream) and listen to the controller reports. `pimax controllers` sends only the attach burst bytes
+headset (camera stream) and listen to the controller reports. `omarchyvr controllers` sends only the attach burst bytes
 that Windows sends, as it always has.
 
 ```bash
-L="flock -o -w 3600 /tmp/pimax-headset.lock"
+L="flock -o -w 3600 /tmp/omarchyvr-headset.lock"
 # terminal 1: camera broker (shares the camera)
 $L pimax-cam broker
 # terminal 2: camera recording from the broker (2.2 GB per minute)
 pimax-cam record ~/ctrl-imu.pxcam --source broker --seconds 90
 # terminal 3, started at the same time: every controller report with device timestamps
-pimax controllers 95 --raw > ~/ctrl-imu-hid.log
+omarchyvr controllers 95 --raw > ~/ctrl-imu-hid.log
 ```
 
 During the 90 s, with the room lit as for `ctrl-test`:
@@ -219,7 +219,7 @@ Built before the full constellation port, so the controllers show up at their re
 * The aim frame is the LED-model frame pitched 52 deg about x (`--aim-pitch-deg`, or
   `PIMAX_CTRLTRACK_AIM_PITCH_DEG`). That is the mean hold in `ctrl-test`, so a controller held naturally points
   straight ahead.
-* Camera 1-3 corrections are loaded from `~/.config/pimax/ctrl-cam-extrinsics.json`.
+* Camera 1-3 corrections are loaded from `~/.config/omarchyvr/ctrl-cam-extrinsics.json`.
   * They were made by `track --fit-extrinsics --save-extrinsics` on `ctrl-test.pxcam`.
   * A copy is in `controller-6dof/ctrl-cam-extrinsics.json`.
   * `--factory` ignores them.
@@ -237,7 +237,7 @@ results.
 * Then `monado-service` (same build) with:
   * `PIMAX_NO_DEVICE=1 PIMAX_CTRL_HANDS_DEMO=1 PIMAX_CTRL_TRACK=1 XRT_COMPOSITOR_NULL=1`;
   * its own `XDG_RUNTIME_DIR`;
-  * the `pimax` USB driver disabled in a private `config_v0.json`.
+  * the `omarchyvr` USB driver disabled in a private `config_v0.json`.
 
   `analysis/tools/ctrlcli.c` was the OpenXR client.
 * Result: aim poses with `POSITION_TRACKED` (flags 0xf), for example L (-0.05 -0.07 -0.38), R (0.11 -0.05 -0.39) m.
@@ -247,7 +247,7 @@ results.
   * At the end of the recording (headset put down on the controllers) a few wrong poses appear.
   * A single new controller far on one side is labelled by that side.
 
-**Launcher:** `pimax desk start --eye --6dof --ctrl-track`.
+**Launcher:** `omarchyvr desk start --eye --6dof --ctrl-track`.
 
 * It adds `pimax-ctrltrack live --source broker:<socket>` (log `ctrltrack.log` in the session dir) and passes
   `PIMAX_CTRL_TRACK=1` to Monado.
@@ -282,7 +282,7 @@ Monado then asks the fuser for the pose at each requested time.
 * It is fitted by least squares (12 unknowns) for 9 camera-to-IMU time offsets (-64..+64 ms); the best R² wins.
 * `C` = scale x axis mapping (raw LSB -> aim-frame rad/s); bias = `-C^-1 d`; the bias is refined further at rest.
 * After 150 good pairs (at least 40 of them moving, R² >= 0.8) the gyro turns on by itself.
-* The fit is saved per hand to `~/.config/pimax/ctrl-imu.json` (every 30 s and at shutdown) and loaded at the next
+* The fit is saved per hand to `~/.config/omarchyvr/ctrl-imu.json` (every 30 s and at shutdown) and loaded at the next
   start, so the gyro is on from the first second.
 * A saved fit is replaced by an online one only after 400 pairs.
 * `PIMAX_CTRL_TRACK_IMU=0` turns the gyro off. `=1` forces the old guess (16.4 LSB per deg/s, raw axes) while unfitted.
@@ -290,10 +290,10 @@ Monado then asks the fuser for the pose at each requested time.
 
 **Log for the offline fit:**
 
-* `pimax desk start --6dof --ctrl-track` sets `PIMAX_CTRL_IMU_LOG=<session dir>/ctrl-imu`.
+* `omarchyvr desk start --6dof --ctrl-track` sets `PIMAX_CTRL_IMU_LOG=<session dir>/ctrl-imu`.
 * The driver writes `ctrl-imu-left.csv` and `ctrl-imu-right.csv` (every gyro sample + every fix, first 10 min,
   `PIMAX_CTRL_IMU_LOG_MIN`).
-* `pimax-ctrltrack imufit /tmp/pimax-vr-session/ctrl-imu-*.csv [--save]` replays them through the same fit and prints
+* `pimax-ctrltrack imufit /tmp/omarchyvr-session/ctrl-imu-*.csv [--save]` replays them through the same fit and prints
   R² per time offset. It also prints how well the fitted gyro alone predicts the optical rotation after 0.25 / 0.5 /
   1 s, against holding the last orientation.
 
@@ -317,7 +317,7 @@ Monado then asks the fuser for the pose at each requested time.
 
 ## 7c. Hands that merged or jumped together: diagnosis and body model
 
-**Evidence** (user's live session, `/tmp/pimax-vr-session/ctrl-imu-left.csv`, 900 fixes): the left hand's optical
+**Evidence** (user's live session, `/tmp/omarchyvr-session/ctrl-imu-left.csv`, 900 fixes): the left hand's optical
 fixes jumped 20-40 cm onto the right controller's place for one or two frames and then came back (for example at
 1.6 s, 7.5 s and 32.9 s: x -0.20 -> +0.08 -> -0.22 m, head frame). That is identity confusion. The live tracker gave a
 second solve, or the other controller, to the slot that was free:
@@ -375,7 +375,7 @@ Through Monado (no-device replay):
 
 ## 7d. Session 18:13 follow-up: robust gyro fit, blend timing, velocity (2026-10-14)
 
-**Session 18:13** (logs in `~/.local/share/pimax/ctrl-sessions/20261014-1813/`):
+**Session 18:13** (logs in `~/.local/share/omarchyvr/ctrl-sessions/20261014-1813/`):
 
 * Coverage: optical 56-59 %, extrapolated 6 %, out-of-view hold 35-38 %, rest pose 0 %.
 * Merges: 0-1. Dropped as "merged": 13 + 11.
@@ -392,7 +392,7 @@ Through Monado (no-device replay):
      * time offset 0 ms for both.
    * The gyro alone predicts the optical orientation after 0.25 / 0.5 / 1 s within 2.0-2.5 / 3.2-3.4 / 3.8-4.0 deg
      (median). Holding the last pose gives 13-19 / 25-35 / 24-45 deg.
-   * Saved to `~/.config/pimax/ctrl-imu.json` with `pimax-ctrltrack imufit <logs> --save`, so the gyro is on from the
+   * Saved to `~/.config/omarchyvr/ctrl-imu.json` with `pimax-ctrltrack imufit <logs> --save`, so the gyro is on from the
      next start.
 2. **The re-entry blend starts at the first display request after the fix**, not at the LED frame time (40-80 ms
    earlier). It blends from what that request would have shown and lasts 150 ms.
@@ -400,7 +400,7 @@ Through Monado (no-device replay):
 
 ## 7e. Session 18:27: where the remaining motion comes from, filter (2026-10-14)
 
-Logs: `~/.local/share/pimax/ctrl-sessions/20261014-1827/`. The gyro was on (saved fit), and `ctrltrack.log` shows
+Logs: `~/.local/share/omarchyvr/ctrl-sessions/20261014-1827/`. The gyro was on (saved fit), and `ctrltrack.log` shows
 that the camera 1-3 extrinsic corrections were loaded.
 
 Metrics: `analysis/tools/ctrl_motion.py`, on the live log and on `pimax-ctrltrack fusereplay` output (same gyro

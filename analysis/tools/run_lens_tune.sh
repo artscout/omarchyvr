@@ -1,5 +1,5 @@
 #!/bin/bash
-# Lens tuning session in DIRECT mode on the headset: Monado + xr_grid. Edit ~/.config/pimax/lens.conf (or set
+# Lens tuning session in DIRECT mode on the headset: Monado + xr_grid. Edit ~/.config/omarchyvr/lens.conf (or set
 # PIMAX_LENS_CONF), run again, look. See analysis/lens-distortion.md.
 # Usage: SECS=60 [FPS=72] [PIMAX_LENS_CONF=file] run_lens_tune.sh [outdir]
 OUT=${1:-/tmp/pimax-lens-tune}; mkdir -p "$OUT"

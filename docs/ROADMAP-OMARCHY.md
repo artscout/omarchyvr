@@ -15,7 +15,7 @@ Blockers (details in section 4):
 5. **Games are not proven.** No SteamVR run, and one OpenVR game through xrizer (Dungeons of Eternity) only. There is no VR home for Play yet.
 6. Also: known failing tests, no LICENSE file in the repo, forks never upstreamed, a reverse-engineered HID protocol with no Pimax permission.
 
-Good news: the app, the launcher, pimaxd (self-healing), Work mode (WayVR desk), voice and the AI tab already exist and are GUI-driven.
+Good news: the app, the launcher, omarchyvrd (self-healing), Work mode (WayVR desk), voice and the AI tab already exist and are GUI-driven.
 
 ## 2. What "install = everything works" means
 
@@ -23,8 +23,8 @@ One install, then the Pimax app opens by itself at login and walks the user thro
 
 | Piece | Delivered by | Root step | Notes |
 |---|---|---|---|
-| Pimax app `pimax-setup` + autostart | package `pimax-linux` | none (autostart file in `/etc/xdg/autostart`) | exists in the PKGBUILD, autostart to check |
-| Rust tools (`pimax`, `pimax-voice`, `pimax-record`, `pimaxd`, ...) | same package | none | whole workspace, installed together |
+| Pimax app `omarchyvr-app` + autostart | package `pimax-linux` | none (autostart file in `/etc/xdg/autostart`) | exists in the PKGBUILD, autostart to check |
+| Rust tools (`omarchyvr`, `omarchyvr-voice`, `omarchyvr-record`, `omarchyvrd`, ...) | same package | none | whole workspace, installed together |
 | Our Monado fork (Pimax driver, SLAM, eye, controller tracking, anchor, recorder tap, camera hands) | package `monado-pimax` | `cap_sys_nice` on `monado-service` | one build, all markers; Basalt is a build dependency |
 | WayVR fork (eye-gaze, screens, hands pointer) | package `wayvr-pimax` | none | must not conflict with Arch/AUR `wayvr` |
 | OpenVR bridge | package `xrizer` (AUR or ours) | none | GPL-3.0-or-later |
@@ -45,8 +45,8 @@ Definition: after `install`, a user with an NVIDIA GPU and the headset on DP pre
 | Area | State | Where |
 |---|---|---|
 | Rust workspace | 30+ crates: device protocol, tools, config, GUI core, setup app, voice, AI, hands, eye, SLAM glue, ctrl tracking, anchor, room map, record, passthrough, lens, doctor | `rust/`, `docs/INVENTORY.md` |
-| App | Home (Play and Work), Setup (Checks, Builds, Autofix, Onboarding), Room, AI, System (pimaxd) pages | `docs/GUI.md`, `docs/PLAY.md` |
-| Self-healing | pimaxd with components, GPU gate, careful restarts | `docs/PIMAXD.md`, `docs/RESILIENCE-PLAN.md` |
+| App | Home (Play and Work), Setup (Checks, Builds, Autofix, Onboarding), Room, AI, System (omarchyvrd) pages | `docs/GUI.md`, `docs/PLAY.md` |
+| Self-healing | omarchyvrd with components, GPU gate, careful restarts | `docs/PIMAXD.md`, `docs/RESILIENCE-PLAN.md` |
 | Work (desk) | WayVR desk, up to 4 screens, eye gaze, hands before controllers, voice commands | `docs/SCREENS.md`, `docs/VOICE.md`, `docs/EYE.md` |
 | Voice and AI | wake word "Max", offline matcher, local model, remote two-stage | `docs/VOICE.md`, `docs/AI.md` |
 | Hands | Mercury camera hands as `XR_EXT_hand_tracking` | `docs/HANDS.md` |
@@ -73,9 +73,9 @@ About 15 other build directories sit in `~/src` (`monado`, `monado-slam`, `monad
 | Monado build location | `~/src/monado-eye/build` (17 mentions in Rust sources), `~/src/monado/build` (6) | ask the package: `/usr/lib/monado-pimax/...`, the app reads one path from config |
 | WayVR location | `~/src/wayvr` | `/usr/bin/wayvr-pimax` |
 | Cargo targets | `~/src/target-desk`, `target-eye`, ... | not needed after packaging |
-| Voice Python venv | `~/src/venv-voice` (5) | Rust/ONNX voice, or a venv the app creates under `~/.local/share/pimax` |
+| Voice Python venv | `~/src/venv-voice` (5) | Rust/ONNX voice, or a venv the app creates under `~/.local/share/omarchyvr` |
 | ONNX Runtime | vendored `~/src/onnxruntime-1.20.1` | AUR/Arch `onnxruntime` package or a pinned download |
-| Calibration | `/home/user/pimax-re/analysis/headset-calibration.xml` | read from the headset or from `/usr/share/pimax` |
+| Calibration | `/home/user/pimax-re/analysis/headset-calibration.xml` | read from the headset or from `/usr/share/omarchyvr` |
 | User path in tests and docs | `/home/user` | use `$HOME` |
 | PKGBUILD source | `git+file:///home/user/...` example | tagged tarball from GitHub |
 | NVIDIA PCI id in the modeset config | `0000:01:00.0` | detect it |
@@ -87,8 +87,8 @@ Known failing or fragile (the project has run them as "pre-existing"):
 
 | Test | Problem | Action |
 |---|---|---|
-| `pimax-setup` e2e: "the UI thread read files during frames" (`tests/common/mod.rs:257`) | a page reads files on the UI thread | move the read to a worker, or cache it |
-| `pimax-tools` `calib_offline_decodes_the_real_windows_blob` (`tests/cli.rs:100`) | fails; CRLF in the calibration XML is one suspect | normalise line endings; add a small fixture |
+| `omarchyvr-app` e2e: "the UI thread read files during frames" (`tests/common/mod.rs:257`) | a page reads files on the UI thread | move the read to a worker, or cache it |
+| `omarchyvr-tools` `calib_offline_decodes_the_real_windows_blob` (`tests/cli.rs:100`) | fails; CRLF in the calibration XML is one suspect | normalise line endings; add a small fixture |
 | CRLF in calibration XML | Windows capture has CRLF | parser trims `\r` |
 | `pimax-lens-difftest` | fails | find the cause; mark the golden |
 
@@ -164,7 +164,7 @@ Sources must be public for a package. Monado and WayVR commits are local-only to
 
 Facts from the repo:
 
-- `pimax vr steam-options` prints only the Steam launch options line for Monado: `PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1 [XR_RUNTIME_JSON=<runtime json>] %command%` (`rust/pimax-tools/src/vr/config.rs`, `steam_options`). Since pressure-vessel 0.20260925 the container shares the Monado IPC socket only with that variable (LESSONS row 27). It does not start SteamVR.
+- `omarchyvr vr steam-options` prints only the Steam launch options line for Monado: `PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1 [XR_RUNTIME_JSON=<runtime json>] %command%` (`rust/omarchyvr-tools/src/vr/config.rs`, `steam_options`). Since pressure-vessel 0.20260925 the container shares the Monado IPC socket only with that variable (LESSONS row 27). It does not start SteamVR.
 - Auto mode `game_runtime = steamvr` is "phase 1 (static)": nothing is started, it only notifies (`docs/AUTO-MODE.md:63`).
 - The design for real SteamVR is in `analysis/steamvr-native-linux.md`: Monado's SteamVR plugin `driver_monado.so` (already built from our branch) for tracking, plus the CustomHeadsetOpenVR fork for display. Known gaps there: no EDID properties, no touch-controller bindings, no eye-gaze. The SteamVR Linux compositor can use the Wayland DRM lease, so the display path looks possible, but **nothing has been run**.
 - Two ways to run OpenVR games on this headset:
@@ -185,7 +185,7 @@ SteamVR also rewrites `openvrpaths.vrpath`; the fix used today is making the fil
 | T3 | OpenXR native | Monado's `hello_xr` (sample), then a free OpenXR game such as `Vivecraft` (Minecraft Java, needs the licence) or any OpenXR title the user has | stereo correct, no ghosting, 72 Hz | same |
 | T4 | SteamVR runtime stage 1 | SteamVR "Room setup" (no game) | headset appears, display lit, no pose yet | vrserver and vrcompositor logs, a photo of the display state |
 | T5 | SteamVR runtime stage 2 | `The Lab` first level | head tracking from our driver, controller buttons (after bindings patch) | logs, FPS |
-| T6 | Stop and restart | any | session ends clean, no leftover `monado-service`, cap still set | pimaxd verdict |
+| T6 | Stop and restart | any | session ends clean, no leftover `monado-service`, cap still set | omarchyvrd verdict |
 
 Game picks are suggestions; the user should confirm which titles he owns. The app should show a "Games test" page that lists the tests, runs each, and saves a report (HTML) the agents can read.
 

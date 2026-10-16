@@ -1,7 +1,7 @@
 #!/bin/bash
 # Live 6DoF walk with the camera view in the headset, in one command:
 #   camera broker (one camera stream shared) -> Monado SLAM (run_slam.sh live, reads the broker)
-#   -> pimax-passthrough (reads the broker) so you see where you walk.
+#   -> omarchyvr-passthrough (reads the broker) so you see where you walk.
 #
 #   run_slam_view.sh [SECS]     default 90 s. Env: PIMAX_CAM_AE (default 0), PXCAM (raw .pxcam of all frames), M (Monado build, default ~/src/monado-slam/build)
 # Stops everything it started (by PID) at the end and prints a short check of the run.
@@ -11,8 +11,8 @@ export PIMAX_CAM_AE=${PIMAX_CAM_AE:-0}
 M=${M:-$HOME/src/monado-slam/build}
 T=$HOME/pimax-re/analysis/tools
 BIN=$HOME/pimax-re/rust/target/release
-RECROOT=$HOME/.local/share/pimax/slam-recordings
-SOCK=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/pimax-cam-broker.sock
+RECROOT=$HOME/.local/share/omarchyvr/slam-recordings
+SOCK=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/omarchyvr-cam-broker.sock
 LOGD=$(mktemp -d /tmp/pimax-slamview.XXXX)
 BROKER=; PT=; SLAM=
 
@@ -31,9 +31,9 @@ cleanup() {
 trap 'echo; echo "interrupted"; cleanup; exit 130' INT TERM
 
 # 1. Preflight: nothing may hold the camera or run Monado already.
-pgrep -x monado-service >/dev/null && die "monado-service is already running (pgrep -a monado); stop it first (pimax desk stop / pimax vr stop --grace 30)"
+pgrep -x monado-service >/dev/null && die "monado-service is already running (pgrep -a monado); stop it first (omarchyvr desk stop / omarchyvr vr stop --grace 30)"
 for v in /dev/video*; do fuser "$v" >/dev/null 2>&1 && die "$v is busy: $(fuser -v "$v" 2>&1 | tail -n +2 | tr -s ' ')"; done
-for b in pimax-cam pimax-passthrough; do [ -x "$BIN/$b" ] || die "missing $BIN/$b (cargo build --release -p $b in ~/pimax-re/rust)"; done
+for b in pimax-cam omarchyvr-passthrough; do [ -x "$BIN/$b" ] || die "missing $BIN/$b (cargo build --release -p $b in ~/pimax-re/rust)"; done
 rm -f "$SOCK"
 
 # 2. Camera broker.
@@ -70,7 +70,7 @@ echo "[2/3] Monado SLAM up, recording to $OUT"
 
 # 4. Passthrough view (stdin kept open so it does not see EOF). It must connect before the pose printer
 #    (POSE_DELAY=12 above): Monado shows only the first app that becomes active.
-XR_RUNTIME_JSON=$M/openxr_monado-dev.json "$BIN/pimax-passthrough" run --source broker \
+XR_RUNTIME_JSON=$M/openxr_monado-dev.json "$BIN/omarchyvr-passthrough" run --source broker \
 	< <(tail -f /dev/null) >"$LOGD/passthrough.log" 2>&1 &
 PT=$!
 sleep 3

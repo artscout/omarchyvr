@@ -3,19 +3,19 @@ User request: try a quantised ~27B Qwen for agent mode (multi-step goals) next t
 
 **The model.** Qwen3.6-27B exists (Qwen, Apache-2.0). GGUF `unsloth/Qwen3.6-27B-GGUF`, revision `82d411a`, file
 `Qwen3.6-27B-Q4_K_M.gguf`, 15.66 GiB (16,817,244,384 bytes, SHA-256 `5ed60d0a...392a0`, checked), in
-`~/.local/share/pimax/ai/models/Qwen3.6-27B/`. Measured 16.7 GB of VRAM with a 16k context.
+`~/.local/share/omarchyvr/ai/models/Qwen3.6-27B/`. Measured 16.7 GB of VRAM with a 16k context.
 
 **Wiring (opt-in only).** `[local_two_stage] agent = "qwen3.6-27b"` (default: absent = off). `AiConfig::set_agent(Some(id))`
 (for the Local AI page's picker) writes that key plus `voice_agent_url = http://127.0.0.1:8083/v1/chat/completions` and
 `voice_agent_model`, which voice reads (goal steps only; simple commands stay on Lara + 4B; the usual model is the
-fallback while the 27B is not up); `set_agent(None)` removes all three. `pimax-ai up` starts the server (port 8083, slot
+fallback while the 27B is not up); `set_agent(None)` removes all three. `omarchyvr-ai up` starts the server (port 8083, slot
 `agent`) only when the setting is on, the file is downloaded, the session is none or the Work desk (never SteamVR or a
 game; the watch stops it when one appears) and the free VRAM covers 18 GB plus the session's reserve. Presets, Play
-and Work never set it. `pimax-ai down` stops it. Download: `pimax-ai install --two-stage` fetches it when the setting is on.
+and Work never set it. `omarchyvr-ai down` stops it. Download: `omarchyvr-ai install --two-stage` fetches it when the setting is on.
 Still to do on the app side (not touched here, another agent's files): a "27B agent model" switch on the Local AI page
 calling `set_agent`, with its size, 17 GB VRAM and the result below.
 
-**Benchmark** (`pimax-voice audit --url ... --pause-ms 200`, dry run, one model at a time on port 8083, VR closed, Lara on
+**Benchmark** (`omarchyvr-voice audit --url ... --pause-ms 200`, dry run, one model at a time on port 8083, VR closed, Lara on
 the processor, 4B of the user's own server left running; scripts in the session scratchpad). Sets: **hard 40** (the
 two-stage set), **agent 7+10** (`agent-2026-10-16.tsv`: 7 goals, 10 single commands), **long 12** (`agent27b-2026-10-16.tsv`:
 goals of 3 to 8 steps). Wrong actions = steps that ran but are not in the goal; per-step time = goal time / steps run.

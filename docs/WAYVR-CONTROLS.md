@@ -1,12 +1,12 @@
 # WayVR controls in desk mode (Pimax controllers)
 
-1. **Grip on a screen**: it follows your hand rigidly. Release: it stays there in the room (world-locked, saved on `pimax desk stop`, restored on the next start).
+1. **Grip on a screen**: it follows your hand rigidly. Release: it stays there in the room (world-locked, saved on `omarchyvr desk stop`, restored on the next start).
 2. **Thumbstick up/down while gripping**: push away / pull closer (0.4-8 m); the size scales with distance so it keeps its apparent size (far = cinema screen).
 3. **Grip the same screen with both hands**: pull apart / together to resize (0.3-6 m wide), turn your hands to rotate it. This is the only resize gesture.
 4. A short hint ("stick: push/pull . both grips: resize") shows by the grabbing hand. Optional pin (A right / X left click toggles grabbable): `world_lock_pin: true`. Recenter the play space: double-click left menu. **Reset screens** (all back in front): double-click B (right) or `wayvrctl reset-screens`. Unusable screens (bad pose, too close/far, out of view for 10 s) go back by themselves (see wayvr.log "auto-reset").
 
-Config: `pimax desk start` rewrites `~/src/desk-out/wayvr-home-am/config/wayvr/conf.d/30-worldlock.yaml` every start (do not edit; change the constant in `rust/pimax-tools/src/vr/desk.rs`). Static poses live in SLAM space: start the headset at about the same place.
-Install (desk stopped, `pgrep -x wayvr` empty): `cp ~/src/target-desk-test/release/wayvr ~/src/target-desk/release/wayvr`, and the launcher: `cd ~/pimax-re/rust && cargo build --release -p pimax-tools && install -m755 target/release/pimax ~/.local/bin/pimax`.
+Config: `omarchyvr desk start` rewrites `~/src/desk-out/wayvr-home-am/config/wayvr/conf.d/30-worldlock.yaml` every start (do not edit; change the constant in `rust/omarchyvr-tools/src/vr/desk.rs`). Static poses live in SLAM space: start the headset at about the same place.
+Install (desk stopped, `pgrep -x wayvr` empty): `cp ~/src/target-desk-test/release/wayvr ~/src/target-desk/release/wayvr`, and the launcher: `cd ~/pimax-re/rust && cargo build --release -p omarchyvr-tools && install -m755 target/release/omarchyvr ~/.local/bin/omarchyvr`.
 
 ## Controller models and the pointer ray (2026-10-16)
 **What you see:** with "Use controllers in Work" on, each controller in use gets a 3D model at your hand, the same
@@ -49,7 +49,7 @@ must leave the front tip of the drawn controller and lie on the ray; the grip ax
 handle. The drawn controller should cover your real one. If the ray is still pitched for you, tell us (the aim pitch
 is a setting, 52 deg).
 
-## Performance readout on the right wrist (`pimax-perf`)
-Default in `pimax desk start` (off with `--no-perf`), and `pimax vr start --perf` for games. Four lines on a 10 cm panel on the back of the RIGHT wrist (the watch's pose mirrored, not grabbable, fades when turned away): `HMD 72/72` (compositor fps vs the 72/90 target), `APP 71/72` (main app: the game, or passthrough in desk mode), `miss N /5s` (late or skipped compositor frames in the last 5 s), `cpu x gpu y` (app CPU ms between xrBeginFrame and xrEndFrame, GPU ms until its fence signals). Green from 95 % of the target, yellow under 95 %, red under 85 % (times: green under 80 % of the frame period, yellow under 100 %, red beyond).
-Data: Monado (`~/src/monado-eye`, branch desk, `comp_multi_system.c`) writes `$XDG_RUNTIME_DIR/pimax-perf.stats` every 0.5 s when `PIMAX_PERF_FILE` is set (the launcher sets it); `rust/pimax-perf` (`pimax-perf run`) reads it and drives the WayVR custom panel `perf` over `wayvrctl batch`. Needs the Monado relink (setcap) and WayVR `b26591a`+ (`~/src/target-desk/release/wayvr`).
-Game mode: the launcher starts a second, minimal WayVR (`--openxr --headless`: an XR_EXTX_overlay session with no screens, no watch, no keyboard; config home `~/src/desk-out/wayvr-home-perf`) plus `pimax-perf`; `pimax vr stop` stops them first. Not yet tried with a real game on the headset.
+## Performance readout on the right wrist (`omarchyvr-perf`)
+Default in `omarchyvr desk start` (off with `--no-perf`), and `omarchyvr vr start --perf` for games. Four lines on a 10 cm panel on the back of the RIGHT wrist (the watch's pose mirrored, not grabbable, fades when turned away): `HMD 72/72` (compositor fps vs the 72/90 target), `APP 71/72` (main app: the game, or passthrough in desk mode), `miss N /5s` (late or skipped compositor frames in the last 5 s), `cpu x gpu y` (app CPU ms between xrBeginFrame and xrEndFrame, GPU ms until its fence signals). Green from 95 % of the target, yellow under 95 %, red under 85 % (times: green under 80 % of the frame period, yellow under 100 %, red beyond).
+Data: Monado (`~/src/monado-eye`, branch desk, `comp_multi_system.c`) writes `$XDG_RUNTIME_DIR/omarchyvr-perf.stats` every 0.5 s when `PIMAX_PERF_FILE` is set (the launcher sets it); `rust/omarchyvr-perf` (`omarchyvr-perf run`) reads it and drives the WayVR custom panel `perf` over `wayvrctl batch`. Needs the Monado relink (setcap) and WayVR `b26591a`+ (`~/src/target-desk/release/wayvr`).
+Game mode: the launcher starts a second, minimal WayVR (`--openxr --headless`: an XR_EXTX_overlay session with no screens, no watch, no keyboard; config home `~/src/desk-out/wayvr-home-perf`) plus `omarchyvr-perf`; `omarchyvr vr stop` stops them first. Not yet tried with a real game on the headset.

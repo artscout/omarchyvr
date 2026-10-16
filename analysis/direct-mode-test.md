@@ -34,7 +34,7 @@ Runs XR_EYETEST_SECONDS (default 20) then exits the session.
 ```
 cd ~/pimax-re/analysis/tools
 gcc -O2 -o xr_eyetest xr_eyetest.c -lopenxr_loader -lvulkan -ldl
-XRT_COMPOSITOR_DESIRED_MODE=2 SECS=25 ./run_direct_test.sh /tmp/pimax-direct-test
+XRT_COMPOSITOR_DESIRED_MODE=2 SECS=25 ./run_direct_test.sh /tmp/omarchyvr-direct-test
 # logs: monado.log client.log fwlog.txt in that dir. Manual stop: pkill -x -INT monado-service
 ```
 (run_direct_test.sh sets the env above, starts monado-service via `sleep 40 | monado-service`, passive
@@ -80,5 +80,5 @@ XRT_COMPOSITOR_DESIRED_MODE=2 (7104x3840@72): user sees LEFT eye blue/L arrow UP
 
 ## MILESTONE 2026-10-13: head-tracked 3D VR in the headset
 analysis/tools/run_xr_room.sh (xr_room, world-locked sky/markers) with the pimax driver (3DoF IMU, lens distortion from
-~/.config/pimax/lens.conf defaults): user reports everything in place, smooth, distortion "similar to Windows";
+~/.config/omarchyvr/lens.conf defaults): user reports everything in place, smooth, distortion "similar to Windows";
 slight reflections at the edges (likely lens glare / edge of distortion mesh; tune later).

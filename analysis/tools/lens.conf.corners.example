@@ -3,7 +3,7 @@
 # corners are at r = 1.47. Without fit_range the polynomial is extrapolated there and rises 3x steeper than the table
 # does at its end (tan slope about 12 against about 4); with fit_range the curve continues as its tangent line
 # (slope 4.3, close to the table's own 4.0..4.1 at the end). Inside r <= 1.15 the picture is exactly the default one.
-# Install:  cp lens.conf.corners.example ~/.config/pimax/lens.conf   (restart monado-service)
+# Install:  cp lens.conf.corners.example ~/.config/omarchyvr/lens.conf   (restart monado-service)
 # Test:     analysis/tools/run_lens_test.sh --lens-conf analysis/tools/lens.conf.corners.example
 # Not measured: nobody knows what the lens shows beyond 55 deg (the corners may be hidden by the lens barrel). The
 # FOV edge pattern (white fill) and the corner frames show what is visible; a mask or blackout line below cuts

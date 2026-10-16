@@ -1,10 +1,10 @@
 # Head tracking vs Pimax on Windows (takes 8-12, 2026-10-15)
 
-Tool: `pimax-slam bench-windows TAKE [--root pimax-data/windows-20261015] [--predict-ms N] [--latency-ms N]`
-(`rust/pimax-slam/src/winbench.rs`). `WINBENCH_EXPLORE=1` adds the parameter sweeps below,
+Tool: `omarchyvr-slam bench-windows TAKE [--root pimax-data/windows-20261015] [--predict-ms N] [--latency-ms N]`
+(`rust/omarchyvr-slam/src/winbench.rs`). `WINBENCH_EXPLORE=1` adds the parameter sweeps below,
 `WINBENCH_GYRO_SCALE=k` a gyro-scale A/B, `WINBENCH_DEBUG=1` the worst errors and every correction. Every
 `PIMAX_SLAM_*` switch of the live output applies (the replay uses `HeadParams::from_env()`).
-`pimax-slam bench-basalt DATASET` bins Basalt's poses against the gyro by head angular speed (our Linux recordings).
+`omarchyvr-slam bench-basalt DATASET` bins Basalt's poses against the gyro by head angular speed (our Linux recordings).
 
 ## What the captures can and cannot give
 
@@ -94,7 +94,7 @@ above 300; take 12 has 5 s above 300 deg/s, where **Pimax's own tracker lost 6Do
 1. **Vision in fast turns (unmeasured on Linux, the likely gap).** Pimax's own visual tracker loses 6DoF at
    400-640 deg/s with 10.4 ms exposure. Ours runs with AE (cap 4108, 2.5x shorter) or 10410 without AE; there is no
    Linux recording with deliberate fast turns yet. Needed: a Linux take like take 12 (`Record tracking`,
-   scenario "fast turns", AE on), then `run_slam.sh replay` + `bench-basalt` + `pimax-slam corrections`.
+   scenario "fast turns", AE on), then `run_slam.sh replay` + `bench-basalt` + `omarchyvr-slam corrections`.
 2. **25 Hz tracking frames** limit position accuracy between poses (fast p95 9.6 mm; 7.6 mm at 50 Hz). The
    cameras deliver 50 superframes/s alternating tracking/LED frames, so 50 Hz needs the LED frames usable for
    tracking (not now).
@@ -116,4 +116,4 @@ above 300; take 12 has 5 s above 300 deg/s, where **Pimax's own tracker lost 6Do
 lost 6DoF 4 times (82 % tracked). Features that still match between frames at over 450 deg/s: median 124; motion
 blur about 3 px at our AE exposure (about 1.7 ms) against about 20 px at Pimax's 10.4 ms. That answers cause 1 above
 for the cameras; a Basalt replay of such a take needs the head IMU log that sessions write from the 2026-10-16 build
-on (`pimax-slam take-euroc`).
+on (`omarchyvr-slam take-euroc`).

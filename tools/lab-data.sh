@@ -20,7 +20,7 @@ cd "$REPO"
 PRIVATE=(
     analysis/headset-calibration.xml
     rust/pimax-cam/tests/fixtures/evening2.pxcam
-    'rust/pimax-passthrough/tests/fixtures/*.png'
+    'rust/omarchyvr-passthrough/tests/fixtures/*.png'
     rust/fixtures/if0_replies_coldstart.rec.gz
     'rust/pimax-eye/fixtures/*.usbpcap.gz'
     'rust/pimax-eye/fixtures/*.golden.gz'

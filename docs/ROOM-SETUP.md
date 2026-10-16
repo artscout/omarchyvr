@@ -6,7 +6,7 @@ The room setup is the same on every start, for Monado games, WayVR (Work) and St
 ## What the user does (app only)
 
 The **Room** page > Room setup (also the Room setup button at the top of the window). Two buttons. Both are guided **in the headset**: a text panel in front of you, the
-`pimax-hud` overlay over WayVR. Every step also goes to the app's Output panel, and the result shows in the Room row.
+`omarchyvr-hud` overlay over WayVR. Every step also goes to the app's Output panel, and the result shows in the Room row.
 If Work is not running with 6DoF and the room anchor, the button starts it first (the hand test does the same).
 
 **Fast setup (about 30 s)**
@@ -34,7 +34,7 @@ If Work is not running with 6DoF and the room anchor, the button starts it first
 The room name is the app's Room name field (the map folder). Run either setup again any time, e.g. after moving
 furniture.
 
-**Switches** (saved in `~/.config/pimax/room.toml`, shared with `pimax vr room ...`):
+**Switches** (saved in `~/.config/omarchyvr/room.toml`, shared with `omarchyvr vr room ...`):
 
 - **Put my room in place at every Play and Work** (default on, once a room is saved).
 - **Tell SteamVR my play area and floor** (default on).
@@ -49,12 +49,12 @@ furniture.
 
 | File | What |
 |---|---|
-| `~/.local/share/pimax/roommap/<room>/room-setup.toml` | label, mode, centre (x z), forward `yaw_deg`, the boundary polygon (room frame of the map), `play_area` (width x, depth z), `head_m` |
+| `~/.local/share/omarchyvr/roommap/<room>/room-setup.toml` | label, mode, centre (x z), forward `yaw_deg`, the boundary polygon (room frame of the map), `play_area` (width x, depth z), `head_m` |
 | `<room>/floor.toml` | the floor height (existing; `analysis/floor.md`) |
 | `<room>/last-reloc.toml` | the room fix of the current session (existing) |
-| `$XDG_RUNTIME_DIR/pimax-room.status` | `state` (searching, ok, failed, skipped, off), `room`, `pid`, `text`, `when` |
+| `$XDG_RUNTIME_DIR/omarchyvr-room.status` | `state` (searching, ok, failed, skipped, off), `room`, `pid`, `text`, `when` |
 | `$XDG_RUNTIME_DIR/pimax-stage-bounds` | `pimax-stage-bounds 1` / `pid N` / `size W D`: Monado's STAGE bounds |
-| `~/.config/pimax/room.toml` | `auto`, `room`, `steamvr` |
+| `~/.config/omarchyvr/room.toml` | `auto`, `room`, `steamvr` |
 | `~/.local/share/Steam/config/chaperone_info.vrchap` | SteamVR's room setup; ours is universe `2` |
 | `.../chaperone_info.vrchap.pimax-backup` | SteamVR's own file, from before our first write |
 
@@ -64,7 +64,7 @@ furniture.
 Monado applies (the `PIMAX_ANCHOR=1` hook) is now:
 
 ```
-offset = setup_from_room * floor_shift * room_from_slam      (pimax-roommap setup::final_offset / write_offset)
+offset = setup_from_room * floor_shift * room_from_slam      (omarchyvr-roommap setup::final_offset / write_offset)
 ```
 
 So once the room is recognised, the app world *is* the setup frame:
@@ -74,29 +74,29 @@ So once the room is recognised, the app world *is* the setup frame:
 
 A room without `room-setup.toml` keeps the old offset: floor only, map origin.
 
-**At every start** (`pimax vr start` on both paths, `pimax desk start`, also through pimaxd):
+**At every start** (`omarchyvr vr start` on both paths, `omarchyvr desk start`, also through omarchyvrd):
 
 - With `auto` on and the room's `map.bin` there, the start gets `PIMAX_ANCHOR=1`. `room::auto_anchor` handles it in
   `parse_options`, so it works whatever the app's anchor toggle says.
-- After the start, `pimax-roommap auto --name <room>` runs detached at nice 15. It writes `<session>/room-auto.pid` and
+- After the start, `omarchyvr-roommap auto --name <room>` runs detached at nice 15. It writes `<session>/room-auto.pid` and
   `room-auto.log`. It:
   1. waits for Monado's head ring (the hook recreates it at every start);
   2. leaves the session alone if the AprilTag owns this session's offset;
   3. relocalises in 15 s windows for up to 120 s;
   4. applies floor + centre + forward, writes the STAGE bounds and the owner file (`roommap <pid>`);
   5. writes the status file.
-- Stop ends it by pid (SIGTERM, only if its name is `pimax-roommap`) if it is still running.
+- Stop ends it by pid (SIGTERM, only if its name is `omarchyvr-roommap`) if it is still running.
 - Failure is a status line. VR keeps going.
 
 **The head-pose feed** (`$XDG_RUNTIME_DIR/pimax-anchor.head`, live failure 2026-10-16):
 
 - The ring is only trusted when its writer pid is the running `monado-service` (or SteamVR's `vrserver` when no
-  monado-service runs) and its newest sample is under 5 s old (`pimax_anchor::world::feed_now`). Otherwise the setup
+  monado-service runs) and its newest sample is under 5 s old (`omarchyvr_anchor::world::feed_now`). Otherwise the setup
   stops at once and says why in plain words: missing, left over from a closed Monado, taken over by another program
   (pid named), or stopped N s ago. A lost feed after a failed recognition stops the setup instead of mapping anew
-  without poses. `pimax-anchor status` prints the same sentence.
+  without poses. `omarchyvr-anchor status` prints the same sentence.
 - The setup's in-headset panel opens the running Monado's runtime (its build's `openxr_monado-dev.json`), never the
-  system's `active_runtime.json`. `pimax-hud` refuses any other runtime while a monado-service runs: on 2026-10-16
+  system's `active_runtime.json`. `omarchyvr-hud` refuses any other runtime while a monado-service runs: on 2026-10-16
   the panel followed `active_runtime.json` to SteamVR, SteamVR's Monado driver opened the headset a second time
   inside vrserver, deleted the offset file, recreated the ring with vrserver's pid and closed; monado-service kept
   writing into the deleted file, so the setup saw "no head movement" and "0 with a Monado head pose (pid 182552)".
@@ -106,7 +106,7 @@ A room without `room-setup.toml` keeps the old offset: floor only, map origin.
   removed and no live writer keeps it fresh. Basalt restarts ("SqrtKeypointVioEstimator restarted", logged as
   "tracker re-zeroed while still") do not touch the ring.
 
-**SteamVR** (`pimax vr start` with Games run with: SteamVR, before SteamVR is launched, `room::write_chaperone`):
+**SteamVR** (`omarchyvr vr start` with Games run with: SteamVR, before SteamVR is launched, `room::write_chaperone`):
 
 - driver_monado reports `Prop_CurrentUniverseId_Uint64 = 2` for the HMD and both controllers. It is a constant in
   `steamvr_drv/ovrd_driver.cpp`, so no Monado change is needed. This machine's own `chaperone_info.vrchap` (written by
@@ -126,7 +126,7 @@ marker `PIMAX_STAGE_BOUNDS`) answers STAGE from `$XDG_RUNTIME_DIR/pimax-stage-bo
 monado-service. The file is read on every call, so the bounds appear the moment the room is in place. The play
 area rectangle is centred on the STAGE origin, which is what OpenXR asks for.
 
-**In-headset guide.** `pimax-hud` has a new `Opts::input` option. It adds one action set:
+**In-headset guide.** `omarchyvr-hud` has a new `Opts::input` option. It adds one action set:
 
 - a float "select": Touch `trigger/value`, simple `select/click`, Index `trigger/value`, and
   `hand_interaction_ext` `pinch_ext/value` when offered;
@@ -142,12 +142,12 @@ head ring, and forward by holding still still works.
 Live failure 2026-10-15 22:40 (Work, night, one monitor lit): Fast setup did not recognise the morning map (0 of
 626 frame sets matched) and the 30 s map made **0 keyframes from 751 posed frames**. With an empty map every frame
 wants a keyframe (no head motion needed), so no frame had the 40 stereo points a keyframe needs. Measured from the
-broker (`pimax-roommap light`): brightness **8/255**, auto-exposure pinned at its ceiling (exposure 4108, gain 215,
+broker (`omarchyvr-roommap light`): brightness **8/255**, auto-exposure pinned at its ceiling (exposure 4108, gain 215,
 the largest values Windows uses; ~1/5 of the power-on 10410/449 product), **0 stereo points** in 30 frame sets.
 Daylight (`hands-lit.pxcam`): 31/255, 87 stereo points, 30 of 31 frame sets usable.
 
 What changed:
-- **Low-light stretch before ORB** (`pimax_room::stereo::LOW_LIGHT`, used by mapping, recognition and the session):
+- **Low-light stretch before ORB** (`omarchyvr_room::stereo::LOW_LIGHT`, used by mapping, recognition and the session):
   a frame whose 99th percentile is below 100 is box-filtered 3x3 and stretched (p99 to 200, at most 6x). Lit frames
   are untouched. ORB descriptors are pixel-pair comparisons, so stretched night frames still match daylight keyframes.
   Daylight recording darkened to 8/255 with sensor noise: 8 of 31 frame sets usable without, 26-28 with; synthetic
@@ -170,29 +170,29 @@ needs a live A/B in a dark room first.
 
 ## Engine (agents, tests)
 
-- `pimax-roommap light [--source broker|FILE.pxcam] [--seconds 5] [--no-stretch] [--darken F --noise G]`: can the
+- `omarchyvr-roommap light [--source broker|FILE.pxcam] [--seconds 5] [--no-stretch] [--darken F --noise G]`: can the
   room be mapped now (brightness, exposure/gain, ORB corners, stereo points); `--darken` simulates a darker room.
 
 ```
-pimax-roommap setup fast|full [--name NAME] [--label TEXT] [--no-hud] [--map-seconds S]
-pimax-roommap setup show [--name NAME]
-pimax-roommap auto [--name NAME] [--wait S] [--status FILE]
-pimax vr room [status|on|off|steamvr on|off|name NAME]
+omarchyvr-roommap setup fast|full [--name NAME] [--label TEXT] [--no-hud] [--map-seconds S]
+omarchyvr-roommap setup show [--name NAME]
+omarchyvr-roommap auto [--name NAME] [--wait S] [--status FILE]
+omarchyvr vr room [status|on|off|steamvr on|off|name NAME]
 ```
 
 Tests:
 
-- pimax-roommap `setup` (geometry, frames, final offset, TOML, the guided steps against a scripted fake input) and
+- omarchyvr-roommap `setup` (geometry, frames, final offset, TOML, the guided steps against a scripted fake input) and
   `setupcmd` (STAGE -> room conversion, wrap, bounds file);
-- pimax-tools `vr::room`: settings, setup frame equal to pimax-roommap's, vrchap keeps other universes and backs up
+- omarchyvr-tools `vr::room`: settings, setup frame equal to omarchyvr-roommap's, vrchap keeps other universes and backs up
   once, status, time format;
-- pimax-gui-core `roomsetup`: setup command and `room-setup.toml` parsing.
+- omarchyvr-gui-core `roomsetup`: setup command and `room-setup.toml` parsing.
 
 ## Not done / risks
 
 - The floor in SteamVR assumes driver_monado's raw space has the same 1.6 m tracking origin as monado-service's STAGE
   (same `u_builder_setup_tracking_origins`, offset 0). Check in the headset that SteamVR's floor matches the real one.
-- Under SteamVR the room is found by `pimax-roommap auto` as in Monado (broker + head ring of vrserver). The setup
+- Under SteamVR the room is found by `omarchyvr-roommap auto` as in Monado (broker + head ring of vrserver). The setup
   itself runs in Work (the panel is an OpenXR overlay on Monado).
 - The boundary needs tracked controller positions: optical controller tracking (`--ctrl-track`, which Full setup turns
   on) or camera hands (pinch).

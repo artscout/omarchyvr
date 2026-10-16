@@ -1,6 +1,6 @@
 # AE push stall: why IMU and cameras stopped after the first 0x51 (2026-10-14)
 
-Run `~/.local/share/pimax/slam-recordings/20261014-150658-live` (`PIMAX_CAM_AE=1`, SLAM + EuRoC recording, Monado
+Run `~/.local/share/omarchyvr/slam-recordings/20261014-150658-live` (`PIMAX_CAM_AE=1`, SLAM + EuRoC recording, Monado
 `9dfbadc`). Analysed offline only: nothing sent to the device.
 
 ## Verdict

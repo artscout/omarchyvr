@@ -13,7 +13,7 @@ The screens are filled in this order: left, right, up, up-left, up-right.
 
 ## Screen numbers (single source of truth)
 Every VR screen has a fixed number. It is the same everywhere: the number badge WayVR draws on each screen,
-`pimax desk screens show N` (the first N screens in this order), and voice ("screen 3"):
+`omarchyvr desk screens show N` (the first N screens in this order), and voice ("screen 3"):
 
 | number | slot | output |
 |---|---|---|
@@ -32,16 +32,16 @@ Every VR screen has a fixed number. It is the same everywhere: the number badge 
 - The badges: `wayvrctl screen-numbers show|hide|flash [N]|off|ondemand|always` (WayVR 29c5a2c). Voice flashes them
   on "Max" alone and on screen commands, and flashes the target screen N after a move (`windows::badges`); voice also
   has "show / hide / always show screen numbers". A missing command (older WayVR) is ignored.
-- Code: `SCREEN_ORDER` in `rust/pimax-voice/src/windows.rs`, the same order as `Slot` in `rust/pimax-tools/src/vr/screens.rs`.
+- Code: `SCREEN_ORDER` in `rust/omarchyvr-voice/src/windows.rs`, the same order as `Slot` in `rust/omarchyvr-tools/src/vr/screens.rs`.
 
 Each extra screen is a real Hyprland desktop. You can open apps on it, move apps to it, and focus it.
 
 ## In the app
 **Desktop > Screens** (developer mode): choose 1 to 6 screens. The default is 4 (the desktop + left, right and up).
-- The choice is saved in `~/.config/pimax/gui-state.toml` as `screens = N`.
-- It reaches the Work start as `pimax desk start --screens N`. The flag is only written when N is not 4, because 4 is
+- The choice is saved in `~/.config/omarchyvr/gui-state.toml` as `screens = N`.
+- It reaches the Work start as `omarchyvr desk start --screens N`. The flag is only written when N is not 4, because 4 is
   the launcher's default.
-- The start records it in `start-argv.txt`, so restarts and pimaxd keep it. The app also reads `--screens` back from
+- The start records it in `start-argv.txt`, so restarts and omarchyvrd keep it. The app also reads `--screens` back from
   the record, so a change made during the session (see "Showing more screens") becomes the app's setting.
 
 Under the selector, a readiness line shows the state of the screens:
@@ -77,11 +77,11 @@ Under the selector, a readiness line shows the state of the screens:
      right screens, the same way up sits above main (`grabmath::desk_neighbour`, slots `up-left` / `up-right`).
    - The same command also shows or hides each screen.
    - Presets call it with `--place --hide-others`. In that case WayVR app panels are not used.
-4. **Screens on demand.** `pimax desk screens watch` is a small process of the session (pimaxd leaf component
+4. **Screens on demand.** `omarchyvr desk screens watch` is a small process of the session (omarchyvrd leaf component
    `screens`). It follows Hyprland's event socket.
    - A VR screen is **shown while its workspace has an app, or while it has the focus**. Otherwise it is hidden, but it
      keeps running.
-   - Presets set a limit, kept in `$XDG_RUNTIME_DIR/pimax-screens.state`:
+   - Presets set a limit, kept in `$XDG_RUNTIME_DIR/omarchyvr-screens.state`:
 
      | preset | screens shown |
      |---|---|
@@ -92,7 +92,7 @@ Under the selector, a readiness line shows the state of the screens:
    - The **focused** screen is always shown, even over the limit: an app that opens there, or "go to the left
      screen", never lands on a screen you cannot see.
    - Voice screen commands lift the limit.
-   - If the watcher fails, the screens just stay as they are, and pimaxd restarts it.
+   - If the watcher fails, the screens just stay as they are, and omarchyvrd restarts it.
 5. **Modes never close apps** (user report 2026-10-15). A mode (cinema, work-3, work-1, assistant) only changes how
    many screens show and where they are. It reads Hyprland and tells WayVR which screens to show; it never closes,
    kills or moves an app. A screen it hides keeps its apps, and the toast names them: "Cinema mode. Still open on
@@ -110,13 +110,13 @@ an output live. A Work session has the screens that its start made, and the comm
 The voice process calls these; each prints ONE plain line for the headset toast and exits 0, or prints a plain error
 and exits 1 (2 for a wrong argument):
 ```
-pimax desk screens show N      # N = 1..6: the main screen + the first N-1 of left, right, up, up-left, up-right
-pimax desk screens more K      # the screens shown now (counted like the watcher does) + K, capped at 6
-pimax desk screens add SLOT    # left | right | up | up-left | up-right: pin and show that one, raise the limit
-pimax desk screens hide 4,3    # (voice: "close / remove screen 4 and 3") those screens hide, even with apps; apps stay open
-pimax desk screens hide others # (voice: "close everything") only the main screen; no app closes
+omarchyvr desk screens show N      # N = 1..6: the main screen + the first N-1 of left, right, up, up-left, up-right
+omarchyvr desk screens more K      # the screens shown now (counted like the watcher does) + K, capped at 6
+omarchyvr desk screens add SLOT    # left | right | up | up-left | up-right: pin and show that one, raise the limit
+omarchyvr desk screens hide 4,3    # (voice: "close / remove screen 4 and 3") those screens hide, even with apps; apps stay open
+omarchyvr desk screens hide others # (voice: "close everything") only the main screen; no app closes
 ```
-- `show N` pins those screens and sets the limit to N in `pimax-screens.state`, then sends `desk-screens` to WayVR
+- `show N` pins those screens and sets the limit to N in `omarchyvr-screens.state`, then sends `desk-screens` to WayVR
   (a screen that was hidden is placed when it shows). N above 6 shows 6 and says "That's the most: 6 screens".
 - If the session started with fewer screens, the missing ones cannot be made live. The line says it in plain words
   ("6 screens need Screens = 6 in the Pimax app and a Work restart. Showing 4 screens"), the screens that exist are
@@ -125,23 +125,23 @@ pimax desk screens hide others # (voice: "close everything") only the main scree
 - No Work session: "No Work session is running", exit 1, nothing written.
 - They never close, kill or move an app, and never run a Hyprland dispatcher.
 - A mode (preset) switch afterwards sets its own limit and pinned screens again.
-- Voice phrases (done in `pimax-voice`): "two more screens" = `more 2`, "four screens" = `show 4`, "a screen up
+- Voice phrases (done in `omarchyvr-voice`): "two more screens" = `more 2`, "four screens" = `show 4`, "a screen up
   there" = `add up`.
 
 ## Screen numbers (badges)
 Every VR screen can show a number badge at its top centre (a rounded pill with a big digit and the slot name, e.g.
 "3 RIGHT"), so you can say "Max, move the terminal from screen 2 to screen 4". The number belongs to the slot, the same
-order as `pimax desk screens show N`:
+order as `omarchyvr desk screens show N`:
 
 | number | 1 | 2 | 3 | 4 | 5 | 6 |
 |---|---|---|---|---|---|---|
 | slot | main | left | right | up | up-left | up-right |
 
-- **Modes** (app: Desktop > Screen numbers; saved in `~/.config/pimax/wayvr-desk.conf` as
+- **Modes** (app: Desktop > Screen numbers; saved in `~/.config/omarchyvr/wayvr-desk.conf` as
   `screen_numbers = off|ondemand|always`, written by `desk start` into conf.d as `screen_numbers: on_demand|always|off`,
   so restarts keep it; a change applies at once to a running WayVR): **On demand** (default: shown about 5 s when a
   screen is shown or hidden, re-placed or moved, or flashed), **Always**, **Off**.
-- **WayVR commands** (`wayvrctl screen-numbers ...`, for pimax-voice): `show` (all badges ~5 s), `hide`,
+- **WayVR commands** (`wayvrctl screen-numbers ...`, for omarchyvr-voice): `show` (all badges ~5 s), `hide`,
   `flash` (same as show), `flash N` (show and highlight screen N: bigger and amber for ~2.5 s, the target of a voice
   command), and the mode words `off`, `ondemand`, `always`.
 - The badges follow their screen when it moves or resizes. They are not pointable. Only shown screens get one.
@@ -193,13 +193,13 @@ The words follow the user's decisions of 2026-10-15 (docs/VOICE-DECISIONS.md):
 | move the terminal from here to screen 4, move everything from screen 2 to screen 5 | the same, only the apps on the first screen ("here" = looked at / focused) |
 | swap screens 1 and 2 | the apps of the two screens change places; the screens stay where they are |
 | go to screen 3, what's on screen 3, make screen 2 bigger, open YouTube on screen 3 | focus, list, resize or move (bigger, smaller, closer, farther, left, right, up, down), open a site / URL / file / terminal there |
-| save this layout (as coding), restore the (coding) layout | remembers which app is on which screen (`~/.local/state/pimax/voice-layouts.json`); restore moves the open apps back, nothing opens or closes |
+| save this layout (as coding), restore the (coding) layout | remembers which app is on which screen (`~/.local/state/omarchyvr/voice-layouts.json`); restore moves the open apps back, nothing opens or closes |
 | list windows | the VR screens with their apps: "4 screens \| 1 Main: foot, firefox \| 2 Left: empty \| 3 Right: code \| 4 Up: empty \| not shown: 3 (steam)" |
 | close window | closes the whole screen's apps. It asks "say yes" only when there are 2 or more apps; with one app it closes at once ("close this" = one app, at once). |
 | close the other windows / only this window / one screen | **shows one screen only** (the work-1 preset). It never closes workspaces or apps. |
 
 The app has the same two buttons under **Screens**: **Put everything in its own window** and **Put everything back
-together**. They are enabled while Work runs, and they run the same voice intent (`pimax-voice do --no-wake ...`).
+together**. They are enabled while Work runs, and they run the same voice intent (`omarchyvr-voice do --no-wake ...`).
 
 ### What you see with "put everything in its own window"
 The Work session starts with all apps stacked on the big main screen: for example two terminals, Chrome, the Pimax
@@ -221,12 +221,12 @@ voice process (see [VOICE.md](VOICE.md)).
 
 ## CLI (for agents and tests)
 ```
-pimax desk start --screens 1|2|3|4|5|6     # default 4
-pimax desk screens status                  # last start's report, the outputs, what VR shows
-pimax desk screens sync [--dry-run]        # send the visibility to WayVR once
-pimax desk screens create|remove [--screens N] [--dry-run]   # refused while a monado-service runs
-pimax desk screens show N | more K | add SLOT   # voice: one plain line, exit 0 / 1 (see above)
-pimax desk screens watch                   # the session's watcher (started by desk start)
+omarchyvr desk start --screens 1|2|3|4|5|6     # default 4
+omarchyvr desk screens status                  # last start's report, the outputs, what VR shows
+omarchyvr desk screens sync [--dry-run]        # send the visibility to WayVR once
+omarchyvr desk screens create|remove [--screens N] [--dry-run]   # refused while a monado-service runs
+omarchyvr desk screens show N | more K | add SLOT   # voice: one plain line, exit 0 / 1 (see above)
+omarchyvr desk screens watch                   # the session's watcher (started by desk start)
 wayvrctl desk-screens [--place] [--hide-others] [-w 2] [-d 2.5] [-c 0] [--gap 0.05] main=SUNSHINE left=PIMAX-LEFT right=PIMAX-RIGHT:hide up=PIMAX-UP:hide up-left=PIMAX-UPLEFT up-right=PIMAX-UPRIGHT
 ```
 Tests never reach the real compositor:
@@ -239,7 +239,7 @@ Tests never reach the real compositor:
 - Monitor rules added with `hyprctl eval` stay in Hyprland's memory until the next reload. They only match the
   `PIMAX-*` names.
 - Code:
-  - `rust/pimax-tools/src/vr/screens.rs` (outputs, state, watcher);
-  - `rust/pimax-voice/src/windows.rs` (voice);
-  - `rust/pimax-gui-core/src/screens.rs` and `rust/pimax-setup/src/pages/screens.rs` (app);
+  - `rust/omarchyvr-tools/src/vr/screens.rs` (outputs, state, watcher);
+  - `rust/omarchyvr-voice/src/windows.rs` (voice);
+  - `rust/omarchyvr-gui-core/src/screens.rs` and `rust/omarchyvr-app/src/pages/screens.rs` (app);
   - WayVR `desk_screens` in `wayvr/src/ipc/events.rs` and `grabmath::desk_neighbour`.

@@ -1,6 +1,6 @@
 # Tests that fail before the open-source export too (docs/ROADMAP-OMARCHY.md 3.4). tools/export-public.sh does not
 # fail on these; every other failure does. Remove a line when the test is fixed.
-# pimax-setup e2e: a page reads files on the UI thread
+# omarchyvr-app e2e: a page reads files on the UI thread
 every_page_and_widget_in_demo_mode_stays_responsive
 running_session_and_the_crash_dialog
 # pimax-lens-difftest: Rust log lines differ from the old C model (an extra "cant" line)
@@ -11,9 +11,9 @@ neutral_values_of_the_new_keys_change_nothing
 random_old_format_configs_match_c_in_logs_and_bits
 the_comparison_is_sensitive_to_one_ulp
 the_example_file_is_exactly_the_built_in_default
-# pimax-tools: session lock test is timing dependent under a full parallel workspace run
+# omarchyvr-tools: session lock test is timing dependent under a full parallel workspace run
 vr::session::tests::a_second_start_while_one_is_in_progress_is_refused_without_touching_anything
 # pimax-capi: C session against the fake headset is timing dependent (fails under load in the lab too)
 c_program_drives_a_full_session_against_a_fake_headset
-# pimax-tools: the hands golden prints an eye-calibration hint when the private calibration is absent (public export)
+# omarchyvr-tools: the hands golden prints an eye-calibration hint when the private calibration is absent (public export)
 hands_dry_run_output_matches_the_golden_files

@@ -2,7 +2,7 @@
 
 ## The switch
 **Display** > **Render quality**: Quality / Balanced / Performance. Saved as `scale_pct` in
-`~/.config/pimax/gui-state.toml`; the next Play or Work passes it as `XRT_COMPOSITOR_SCALE_PERCENTAGE` (the CLI reads
+`~/.config/omarchyvr/gui-state.toml`; the next Play or Work passes it as `XRT_COMPOSITOR_SCALE_PERCENTAGE` (the CLI reads
 the same variable, or `SCALE`). Developer mode adds a custom slider (50-200 %).
 
 | Preset | Scale | Per eye (game render size) | Pixels |
@@ -17,20 +17,20 @@ the same variable, or `SCALE`). Developer mode adds a custom slider (50-200 %).
   OpenVR recommended render target size. The game may scale again with its own setting.
 - **SteamVR**: the Pimax driver's `GetRecommendedRenderTargetSize` = the same size x scale. SteamVR's Auto
   resolution multiplies it again (on an RTX 4090 up to 150 % of the pixels: 4700x4348 per eye at Quality,
-  vrcompositor.txt 2026-10-15). `pimax vr start` therefore sets SteamVR to manual 100 %
+  vrcompositor.txt 2026-10-15). `omarchyvr vr start` therefore sets SteamVR to manual 100 %
   (`supersampleManualOverride`, `supersampleScale` in steamvr.vrsettings, only while SteamVR is stopped), so the
   preset is the one setting.
 - Without the variable Monado's default is 140 %; the launcher always passes it (100 by default).
 
 ## Frame health in the session card
-While a session runs the card shows the render size and a line from `$XDG_RUNTIME_DIR/pimax-perf.stats`:
+While a session runs the card shows the render size and a line from `$XDG_RUNTIME_DIR/omarchyvr-perf.stats`:
 headset fps, **dropped frames** (`comp_skipped`: display periods where the headset showed the previous image again)
 and the game's fps and GPU time against the frame budget (13.9 ms at 72 Hz).
 
 `comp_late` is not a dropped frame: it counts compositor commits (render, present, then the bounded wait for the GPU
 queue) that returned after the *predicted display time*. Monado's fake pacer gives the compositor only 3 ms before the
 present and predicts display 4 ms after it, so the wait after presenting alone can pass that time. A smooth 72 fps
-session showed 92 % late with 2 skipped in 14061 frames. The wrist readout (pimax-perf) counts only skipped frames as
+session showed 92 % late with 2 skipped in 14061 frames. The wrist readout (omarchyvr-perf) counts only skipped frames as
 missed since 2026-10-15; the card line shows late as a percentage ("92 % late") and the tooltip explains it.
 
 ## Other causes of delay (2026-10-15 findings)
@@ -46,7 +46,7 @@ missed since 2026-10-15; the card line shows late as a percentage ("92 % late") 
   frame repeats the image of 11 ms earlier: at an ordinary 15-60 deg/s head turn the screens jump 0.17-0.67 deg
   (6-25 panel pixels).
 - **Tracking was fine.** Replaying the session's `head-imu.csv` through the driver's head tracker
-  (`pimax-slam corrections`): jitter while worn and quiet 0.3-0.5 mm vertical, 0.8-0.9 mm horizontal (under one
+  (`omarchyvr-slam corrections`): jitter while worn and quiet 0.3-0.5 mm vertical, 0.8-0.9 mm horizontal (under one
   pixel on a screen 2.5 m away); IMU 1 kHz with no gap over 1.02 ms; 4 IMU samples held by the gate in the whole
   session; one tracker re-zero (about 18:13) held without a jump. Monado ran with the realtime GPU queue and SCHED_FIFO
   threads (cap_sys_nice was set).
@@ -58,26 +58,26 @@ missed since 2026-10-15; the card line shows late as a percentage ("92 % late") 
   are re-projected by Monado, so that is not the shake.
 - What helps: no AI benchmarks on the GPU servers while VR runs; AI preset Low (model on the processor) or Parakeet
   (processor) speech recognition when smoothness matters; Sunshine off.
-- **Timeline:** `pimax-perf` now writes one line every 5 s to the session's `perf.log`
+- **Timeline:** `omarchyvr-perf` now writes one line every 5 s to the session's `perf.log`
   (`perf: unix=... mono_ms=... fps=... frames+N dropped+N late+N app_fps=... app_gpu_ms=...`), so the next session
   shows *when* frames dropped and they can be lined up with `voice.log`, `ai.log` and the llama-server log.
 
 ## Game mode: free the graphics card while playing
-**Display** > **Performance**: one switch, "Game mode" (default on, also in Home > Quick settings). **Sunshine is never stopped or paused** (user rule; the old "Pause Sunshine" switch and `pause_sunshine` setting are gone, an old value in gamemode.toml is ignored and dropped at the next save). It only applies to **Play** (`pimax vr start`), never to Work.
-- At Play start (after VR is up) it pauses the **local AI** (`pimax-ai stop`: SIGTERM,
+**Display** > **Performance**: one switch, "Game mode" (default on, also in Home > Quick settings). **Sunshine is never stopped or paused** (user rule; the old "Pause Sunshine" switch and `pause_sunshine` setting are gone, an old value in gamemode.toml is ignored and dropped at the next save). It only applies to **Play** (`omarchyvr vr start`), never to Work.
+- At Play start (after VR is up) it pauses the **local AI** (`omarchyvr-ai stop`: SIGTERM,
   llama-server on Vulkan). Only what was really running is paused; it is written to
   `<session dir>/gamemode-paused.txt` (`ai=gpu|cpu`; a `sunshine=<unit>` line left by an older version is only started again, never written). The voice AI is not used in Play.
-- Stop Play (`pimax vr stop`) starts exactly those again (`systemctl --user start`, `pimax-ai serve [--cpu]`, detached).
-- Crash recovery: the app, at start and when no monado-service/vrserver runs, runs `pimax vr gamemode restore` if the
+- Stop Play (`omarchyvr vr stop`) starts exactly those again (`systemctl --user start`, `omarchyvr-ai serve [--cpu]`, detached).
+- Crash recovery: the app, at start and when no monado-service/vrserver runs, runs `omarchyvr vr gamemode restore` if the
   state file is still there. `restore` refuses while a session runs.
 - It is an optional step: any failure is a plain line in the log ("game mode: the local AI could not be paused (VR goes on)").
   The session card shows "Paused for game mode: local AI".
-- CLI: `pimax vr gamemode [status|on|off|budget auto|6|8|restore]`; saved in `~/.config/pimax/gamemode.toml` (`pause_ai`, `comp_budget`;
+- CLI: `omarchyvr vr gamemode [status|on|off|budget auto|6|8|restore]`; saved in `~/.config/omarchyvr/gamemode.toml` (`pause_ai`, `comp_budget`;
   the old `game_mode` key is still read and means `pause_ai` only, so Sunshine is never paused).
 
 ## Compositor time budget
 **Display** > **Performance** > **Compositor budget**: Auto / 6 ms / 8 ms (`comp_budget` in gamemode.toml,
-`pimax vr gamemode budget auto|6|8`). It becomes `U_PACING_COMP_MIN_TIME_MS=6.0` / `8.0` for monado-service, set by the
+`omarchyvr vr gamemode budget auto|6|8`). It becomes `U_PACING_COMP_MIN_TIME_MS=6.0` / `8.0` for monado-service, set by the
 one env builder (`vr/config.rs build_env`; a value already in the caller's environment wins). Checked in Monado
 (`u_pacing_compositor_fake.c`: `DEBUG_GET_ONCE_FLOAT_OPTION(min_comp_time_ms, "U_PACING_COMP_MIN_TIME_MS", 3.0f)`):
 a float in milliseconds, default 3.0 (Auto = not set). It is the time the compositor reserves before the display time,
@@ -89,8 +89,8 @@ choice. Keep the one with fewer dropped frames first, then lower late %, and a g
 changes, leave Auto.
 
 ## Brightness
-**Display** > **Brightness**. Settings: `~/.config/pimax/display.toml`
-(`image = "standard|bright|brighter"`, `backlight = 20..100`); CLI `pimax vr display [status|image X|backlight N|apply]`.
+**Display** > **Brightness**. Settings: `~/.config/omarchyvr/display.toml`
+(`image = "standard|bright|brighter"`, `backlight = 20..100`); CLI `omarchyvr vr display [status|image X|backlight N|apply]`.
 
 * **Panel backlight** (default 100 %). Measured: the bridge log prints `nvt_set_bl_brightness: 255` at every Linux
   panel-on, so the backlight was already at the maximum; the 211 seen in Windows sessions is lower. The panel keeps the

@@ -11,7 +11,7 @@ pimax-cam broker                         # live camera (headset lock rules as fo
 pimax-cam broker --source X.pxcam --loop # a recording, real-time paced
 # clients: the source spec `broker` (default socket) or `broker:/path/to.sock`
 pimax-cam stats --source broker --seconds 10
-pimax-passthrough run --source broker
+omarchyvr-passthrough run --source broker
 PIMAX_CAM_SOURCE=broker  (Monado driver camera code, via pimax_cam::source::open)
 ```
 
@@ -23,7 +23,7 @@ exit. A second broker on the same socket is refused, and a stale socket file is 
 * Ring: a memfd with a 4 KiB header page plus N slots (default 8 = 160 ms at 50 fps). Each slot holds a 64 B header
   (seqlock, host ns, driver sequence, length, stride, frame index) and the full 2560x832 raw frame. Writer: lock = 2k+1,
   data, lock = 2k+2. Reader: check 2k+2, copy, re-check.
-* Socket `$XDG_RUNTIME_DIR/pimax-cam-broker.sock` (`SOCK_SEQPACKET`). On connect the server sends a hello datagram
+* Socket `$XDG_RUNTIME_DIR/omarchyvr-cam-broker.sock` (`SOCK_SEQPACKET`). On connect the server sends a hello datagram
   ("PXCB", version, layout, replay flag, source description) with the memfd attached (`SCM_RIGHTS`). After that it
   sends one 8-byte datagram (frame index) per frame.
 * Clients get every frame in order while they keep up. A client that falls more than the ring behind jumps to the

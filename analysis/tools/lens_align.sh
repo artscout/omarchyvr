@@ -8,7 +8,7 @@
 #   }  /  {     the same in coarse steps of 0.25 deg
 #   i  /  k     vertical offset between the eyes + / - 0.05 deg (+ : left up, right down)
 #   r           reset all offsets
-#   q           quit: prints the [left]/[right] center lines and a command writing ~/.config/pimax/lens-ipd/measured.conf
+#   q           quit: prints the [left]/[right] center lines and a command writing ~/.config/omarchyvr/lens-ipd/measured.conf
 # Controller (if PIMAX_CTRL_HANDS is not 0): stick left/right = vergence 0.05, stick up/down = vertical, trigger = reset.
 # Every change is also printed in the terminal (deg per eye, vertical, equivalent lens.conf center values).
 cd "$(dirname "$0")/../.." || exit 1

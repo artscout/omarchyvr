@@ -12,12 +12,12 @@
 #   NO_DEVICE  default 0 = the normal session (headset USB opened, panel on, like every working run). NO_DEVICE=1 does
 #              not open the USB; the one overnight run with it dumped 2 frames and then stalled (see analysis/overnight/lens.md)
 # Takes the headset lock once for both sessions (flock -o). Needs about 5 GB in OUTDIR (raw dumps, 109 MB each).
-# Both sessions use the same lens.conf (~/.config/pimax/lens.conf or --lens-conf FILE); with an old-format file the
+# Both sessions use the same lens.conf (~/.config/omarchyvr/lens.conf or --lens-conf FILE); with an old-format file the
 # two outputs must be IDENTICAL. Exit code 0 only if every dump pair is identical.
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
 if [ -z "${_LENS_LOCKED:-}" ]; then
-	_LENS_LOCKED=1 exec flock -o -w 3600 /tmp/pimax-headset.lock "$0" "$@"
+	_LENS_LOCKED=1 exec flock -o -w 3600 /tmp/omarchyvr-headset.lock "$0" "$@"
 fi
 OUT=${1:-/tmp/lens-ab}
 shift || true

@@ -164,11 +164,11 @@ a hypothesis; tests 3 and 4 below check it.
 
 Each stuck run cost a reboot so far. Test 1 should remove that cost; run everything after it on the flipsafe build.
 
-1. **Flipsafe build, normal use.** `PIMAX_MONADO_BUILD=~/src/monado-flipsafe/build pimax vr start`, worn, xr_room 60 s.
+1. **Flipsafe build, normal use.** `PIMAX_MONADO_BUILD=~/src/monado-flipsafe/build omarchyvr vr start`, worn, xr_room 60 s.
    On a freeze the log shows `giving up`, `GPU wedged (a presented image never finished flipping)` and
    `Released the NVIDIA modeset permission of connector 826 (DP-1, dpy 0x...) after a stuck flip (N s)`; the ioctl can
-   take up to ~8 s on the stock kernel (W2). Then `pimax vr stop --grace 30`: expect `skipping the Vulkan teardown`
-   and `Leaving with _exit` within a few seconds, no SIGKILL. Then `pimax vr start` again: if acquire works, W1 is
+   take up to ~8 s on the stock kernel (W2). Then `omarchyvr vr stop --grace 30`: expect `skipping the Vulkan teardown`
+   and `Leaving with _exit` within a few seconds, no SIGKILL. Then `omarchyvr vr start` again: if acquire works, W1 is
    confirmed and the reboot is avoided. If it still fails: `journalctl -k -b | tail -30`, then recovery 10.
 2. **No flips at all:** `XRT_COMPOSITOR_PRESENT_MODE=shared_continuous_refresh` (offered by the driver; the shared
    image is scanned out continuously, tearing expected), worn 60 s. No freeze = it is the flip path. Freeze = not

@@ -4,12 +4,12 @@ Goal: the Pimax Dream Air works on Linux like Pimax Play on Windows: **one app, 
 Read this before any work. It applies to the main thread and to every subagent.
 
 ## 1. GUI first: no command line for the user
-- The user does not use the command line. Everything is reachable from the Pimax app (`pimax-setup`, autostarts at login).
+- The user does not use the command line. Everything is reachable from the Pimax app (`omarchyvr-app`, autostarts at login).
 - Never answer the user with a command to run. Do it yourself, or add a button/toggle/page to the app.
 - Root steps (setcap) go through a GUI password prompt (pkexec) from the app, never "run sudo ..." in chat.
 - Guided tests (hand test, controller test, pairing) run from the app and talk to the user **in the headset**
   (voice/in-VR text). Desktop notifications are invisible while wearing the headset.
-- The CLI (`pimax`, `pimax-voice`, `pimax-record`, ...) stays as the engine behind the app and for agents/tests.
+- The CLI (`omarchyvr`, `omarchyvr-voice`, `omarchyvr-record`, ...) stays as the engine behind the app and for agents/tests.
 
 ## 2. Definition of done (a feature is not done until ALL are true)
 0. **A switch in the app** (on/off, plus its options) is the only way the user turns it on; the setting is saved and shared with the CLI.
@@ -17,8 +17,8 @@ Read this before any work. It applies to the main thread and to every subagent.
 2. **Verified build**: the Monado binary still has every marker (section 3). A build that loses one is a regression.
 3. **In the app**: a control (toggle, button, card or page), its status, and its errors shown in plain words.
 4. **In the session**: started/stopped by the app's Play button with the saved settings; recorded in start-argv.txt so restarts keep it.
-5. **Reliable**: a pimaxd component (leaf if optional). If it fails, VR keeps running with zero missed frames.
-6. **Tested**: cargo tests and goldens pass; the screenshot of its app page (`pimax-setup --screenshots DIR`) looked at.
+5. **Reliable**: a omarchyvrd component (leaf if optional). If it fails, VR keeps running with zero missed frames.
+6. **Tested**: cargo tests and goldens pass; the screenshot of its app page (`omarchyvr-app --screenshots DIR`) looked at.
 7. **Documented**: docs/<FEATURE>.md plus a line in the app's help.
 8. **Installed only between sessions** by the main thread from a clean build of committed HEAD.
 
@@ -34,7 +34,7 @@ Every change ends in a new complete build of the whole set (Monado + WayVR + all
     `XRT_BUILD_DRIVER_PIMAX=ON`, `PIMAX_CAM=ON`, `XRT_HAVE_SYSTEM_CJSON=OFF` (+ ONNX Runtime for hands).
   - Required markers in `monado-service` (check with `grep -ac`): `PIMAX_SLAM`, `PIMAX_ANCHOR`, `PIMAX_EYE`,
     `PIMAX_CTRL_TRACK`, `held from the tracker` (IMU gate), plus each new feature's marker. The app's preflight
-    (pimax-gui-core builds.rs / preflight.rs) refuses builds without them.
+    (omarchyvr-gui-core builds.rs / preflight.rs) refuses builds without them.
   - Lesson 2026-10-15: build-rec was configured from scratch with the Pimax driver OFF; the app blocked 6DoF.
     Always copy the cache options from the live build and check the markers before switching `~/src/monado-eye/build`.
   - Every relink drops cap_sys_nice: the app's Fix/Play button restores it (pkexec).

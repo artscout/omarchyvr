@@ -19,15 +19,15 @@ M=${M:-$HOME/src/monado-slam/build}
 T=$HOME/pimax-re/analysis/tools
 # The newest build that has every subcommand used here (an old ~/src/target-slam binary had no "stats").
 if [ -z "${SLAMTOOL:-}" ]; then
-	for c in $HOME/src/target-slam/release/pimax-slam $HOME/pimax-re/rust/target/release/pimax-slam; do
+	for c in $HOME/src/target-slam/release/omarchyvr-slam $HOME/pimax-re/rust/target/release/omarchyvr-slam; do
 		[ -x "$c" ] && "$c" stats 2>&1 | grep -q "unknown command" && continue
 		[ -x "$c" ] && { [ -z "${SLAMTOOL:-}" ] || [ "$c" -nt "$SLAMTOOL" ]; } && SLAMTOOL=$c
 	done
-	SLAMTOOL=${SLAMTOOL:-$HOME/pimax-re/rust/target/release/pimax-slam}
+	SLAMTOOL=${SLAMTOOL:-$HOME/pimax-re/rust/target/release/omarchyvr-slam}
 fi
 export VIT_SYSTEM_LIBRARY_PATH=${VIT_SYSTEM_LIBRARY_PATH:-$HOME/.local/lib/libbasalt.so}
 export PIMAX_LOG=${PIMAX_LOG:-info}
-RECROOT=$HOME/.local/share/pimax/slam-recordings
+RECROOT=$HOME/.local/share/omarchyvr/slam-recordings
 WINLOG=${WINLOG:-$HOME/pimax-re/pimax-data/windows-20261014/pimax-windows-dump-20261014-042415/pimax-poses.csv}
 
 replay_one() { # $1 = recording dir, $2 = camera offset ns; prints the result dir
@@ -52,7 +52,7 @@ replay_one() { # $1 = recording dir, $2 = camera offset ns; prints the result di
 
 service() { # $1 = seconds; runs monado-service in the background, log in $OUT
 	export XR_RUNTIME_JSON=$M/openxr_monado-dev.json
-	# Same compositor env as `pimax vr start` (rust/pimax-tools/src/vr/config.rs build_env). Without
+	# Same compositor env as `omarchyvr vr start` (rust/omarchyvr-tools/src/vr/config.rs build_env). Without
 	# XRT_COMPOSITOR_DESIRED_MODE and the connector the compositor picks another display mode and the headset
 	# stays black even though the app is FOCUSED. Override any of them from the caller's environment.
 	export XRT_COMPOSITOR_FORCE_WAYLAND_DIRECT=${XRT_COMPOSITOR_FORCE_WAYLAND_DIRECT:-1}

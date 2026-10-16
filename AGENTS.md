@@ -1,6 +1,6 @@
 # Agents: start here
 
-This repo makes a Pimax Dream Air work on Linux, with one app and one click (`pimax-setup`).
+This repo makes a Pimax Dream Air work on Linux, with one app and one click (`omarchyvr-app`).
 
 Everything an agent uses is in `ai/` (see `ai/README.md`). Before any work, read:
 

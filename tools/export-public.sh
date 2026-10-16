@@ -201,7 +201,7 @@ NOTICE = ("**omarchyvr is an unofficial community project. It is not affiliated 
           "Omarchy.** \"Pimax\" and \"Dream Air\" are trademarks of Pimax and are used only to say which hardware this "
           "works with. No warranty: the tools talk to the headset over USB and change system settings; use at your own "
           "risk. Licence: code MIT OR Apache-2.0, docs and data CC-BY-4.0 (see NOTICE, THIRD-PARTY.md).\n\n"
-          "Binary, crate and config names still use the `pimax` prefix (`pimax-setup`, `~/.config/pimax`); they will be "
+          "Binary, crate and config names still use the `omarchyvr` prefix (`omarchyvr-app`, `~/.config/omarchyvr`); they will be "
           "renamed later.\n")
 def readme(s):
     lines = s.split("\n", 1)
@@ -211,9 +211,9 @@ def agents(s):
     s = s.replace("`docs/AI-KNOWLEDGE.md`", "`ai/AI-KNOWLEDGE.md`").replace("`docs/LESSONS.md`", "`ai/LESSONS.md`")
     return s.replace("Before any work, read:", "Everything an agent uses is in `ai/` (see `ai/README.md`). Before any work, read:", 1)
 edit("AGENTS.md", agents)
-edit("rust/pimax-setup/src/window.rs", lambda s: s.replace('.with_title("Pimax")', '.with_title("omarchyvr")'))
-edit("rust/pimax-setup/src/app.rs", lambda s: s.replace('RichText::new("Pimax").size(21.0)', 'RichText::new("omarchyvr").size(21.0)'))
-edit("linux/pimax.desktop", lambda s: re.sub(r"(?m)^Name=Pimax$", "Name=omarchyvr", s).replace(
+edit("rust/omarchyvr-app/src/window.rs", lambda s: s.replace('.with_title("Pimax")', '.with_title("omarchyvr")'))
+edit("rust/omarchyvr-app/src/app.rs", lambda s: s.replace('RichText::new("Pimax").size(21.0)', 'RichText::new("omarchyvr").size(21.0)'))
+edit("linux/omarchyvr.desktop", lambda s: re.sub(r"(?m)^Name=Pimax$", "Name=omarchyvr", s).replace(
     "GenericName=Pimax Dream Air on Linux", "GenericName=VR headset app (Pimax Dream Air, unofficial)"))
 def pkg(s):
     s = s.replace("pkgname=pimax-linux-git", "pkgname=omarchyvr-git").replace("_pkgname=pimax-linux", "_pkgname=omarchyvr")
@@ -249,13 +249,14 @@ def ent(s):
     c = collections.Counter(s); n = len(s); return -sum(v / n * math.log2(v / n) for v in c.values())
 # machine values from the private config, compared by value, never printed
 private = []
-cfg = os.path.join(home, ".config/pimax")
-for f in ("ai.toml", "paths.toml"):
+cfgs = [os.path.join(home, ".config/omarchyvr"), os.path.join(home, ".config/pimax")]  # names:keep: new dir and the one before the rename
+for cfg in cfgs:
+  for f in ("ai.toml", "paths.toml"):
     p = os.path.join(cfg, f)
     if os.path.isfile(p):
         for m in re.finditer(r'(?m)^\s*(?:api_key|shared_drive_uuid)\s*=\s*"([^"]{8,})"', open(p, encoding="utf-8", errors="replace").read()):
             private.append(m.group(1).encode())
-for d in (cfg,):
+for d in cfgs:
     for n in os.listdir(d) if os.path.isdir(d) else []:
         if n.startswith("ai.toml"):
             for m in re.finditer(r'"((?:sk-|key-)[^"]{12,})"', open(os.path.join(d, n), encoding="utf-8", errors="replace").read()):

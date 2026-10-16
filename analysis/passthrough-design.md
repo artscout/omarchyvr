@@ -1,6 +1,6 @@
 # Camera passthrough for the Dream Air on Linux: design and first version (2026-10-14)
 
-**Status:** first version built and checked offline, not yet run on the headset. `rust/pimax-passthrough` (Rust
+**Status:** first version built and checked offline, not yet run on the headset. `rust/omarchyvr-passthrough` (Rust
 crate plus CLI) renders correct per-eye passthrough images from recorded frames. It also contains an OpenXR client
 that shows them in the headset with IMU rotation compensation. **Monado is unchanged.** No hardware was touched:
 no camera, HID, monado-service or OpenXR runtime. Live test commands are in section 7.
@@ -98,7 +98,7 @@ The client prints these as measured numbers: `capture->ready` and `capture->disp
 
 ## 5. Offline proof (recorded frames, no hardware)
 
-`analysis/passthrough/` was made with `pimax-passthrough render` from the morning2 tiles (lit room, headset still,
+`analysis/passthrough/` was made with `omarchyvr-passthrough render` from the morning2 tiles (lit room, headset still,
 08:08), at 888x960 per eye, pinhole images before lens distortion:
 
 * `morning2_depth{2,3,inf}/sbs.png`: left and right eye side by side. `left.png`, `right.png`.
@@ -127,19 +127,19 @@ extrinsics, the KB4 model, the eye geometry and the camera choice are right. The
 fixed exposure blows out a sunny room (no exposure control without HID `0x51`), and seams appear where cameras meet on
 near objects (fixed depth).
 
-Tests: `cargo test -p pimax-passthrough` gives 28 passed (25 unit, 3 integration). They cover: map vs direct
+Tests: `cargo test -p omarchyvr-passthrough` gives 28 passed (25 unit, 3 integration). They cover: map vs direct
 projection of world points at 0.5/2/∞ m (< 0.02 px), coverage and the mirror symmetry of the eyes, blend weights,
 bilinear/blend arithmetic, PNG decode, `.pxcam` replay to tracking frames, **golden eye images** from the real tiles
 (`tests/fixtures/golden_*.png`, re-bless with `PIMAX_PT_BLESS=1`), and the real-image overlap check above as a
 regression test. Also the camera thread on a `.pxcam` replay (publishes remapped images), pose-time clamping, XR pose/FOV conversion, the map-rebuild key and swapchain format choice.
-`cargo clippy -p pimax-passthrough --all-targets -- -D warnings` is clean. The OpenXR/Vulkan part compiles and reuses
+`cargo clippy -p omarchyvr-passthrough --all-targets -- -D warnings` is clean. The OpenXR/Vulkan part compiles and reuses
 lenstest's upload code, but it **has not run against a runtime**: that is the live test.
 
 ## 6. Implementation map
 
 | File | Content |
 |---|---|
-| `rust/pimax-passthrough/src/rig.rs` | calibration → `head_from_cam`, eye-centre offset, per-eye camera order |
+| `rust/omarchyvr-passthrough/src/rig.rs` | calibration → `head_from_cam`, eye-centre offset, per-eye camera order |
 | `view.rs` | eye views (pose, FOV, size), pixel ↔ ray |
 | `lut.rs` | per-eye map (12-byte taps, 2 samples + weight), multi-threaded build, coverage picture |
 | `remap.rs` | bilinear remap, tone curve, grey → RGBA |
@@ -154,14 +154,14 @@ lenstest's upload code, but it **has not run against a runtime**: that is the li
 Preconditions: the display freeze is under control well enough that a plain client (xr_room) runs, so use the
 current recommended env for worn sessions. The service must **not** use the camera (no `PIMAX_HANDS=mercury`, no
 `PIMAX_CAM=1`), which is the default. Build (already built, offline):
-`cd ~/src/pimax-re-passthrough/rust && CARGO_TARGET_DIR=~/src/target-passthrough cargo build --release -p pimax-passthrough`.
+`cd ~/src/pimax-re-passthrough/rust && CARGO_TARGET_DIR=~/src/target-passthrough cargo build --release -p omarchyvr-passthrough`.
 
 ```bash
-P=~/src/target-passthrough/release/pimax-passthrough
+P=~/src/target-passthrough/release/omarchyvr-passthrough
 export XR_RUNTIME_JSON=$HOME/src/monado/build/openxr_monado-dev.json IPC_IGNORE_VERSION=1
 
 # 0. service as usual (headset on the desk until the gyro is calibrated)
-pimax vr start
+omarchyvr vr start
 
 # 1. client path without the camera: replay of the lit evening clip (does not touch /dev/video0)
 $P run --source ~/src/cam-data/evening-20261013-1959.pxcam --seconds 60
@@ -180,7 +180,7 @@ $P run --off      # starts hidden, p shows it
 
 # 3. stop
 #    q in the client terminal, then
-pimax vr stop --grace 30
+omarchyvr vr stop --grace 30
 ```
 
 What to check and report:

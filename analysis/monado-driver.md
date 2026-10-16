@@ -1,6 +1,6 @@
 # Monado pimax driver (3DoF, windowed compositor) - 2026-10-13
 
-Tree: `~/src/monado`, local branch `pimax` (one commit on top of upstream master e686ba7). Build dir `~/src/monado/build`.
+Tree: `~/src/monado`, local branch `omarchyvr` (one commit on top of upstream master e686ba7). Build dir `~/src/monado/build`.
 
 ## Build
     sudo pacman -S --needed ninja eigen vulkan-headers vulkan-icd-loader openxr xcb-util-keysyms libxkbcommon-x11 cjson   # (others were present)
@@ -44,6 +44,6 @@ Scale 10 % keeps the render target small (3552x3840 x 1.4 default would be huge 
 - Window size is derived from the screen size (7104x3840 clamped by compositor); window appears on the current Hyprland workspace as a floating window.
 
 ## Recovery + re-test (2026-10-13, second session)
-- The previous session died mid-commit: `.git/objects/fd/bb6c...` was a 0-byte commit object and `analysis/tools/posecli.c` was empty. Moved the empty object aside, reset `pimax` to upstream e686ba7 (staged tree was intact) and recommitted as 1bd7d6d. `git fsck` still warns about the two reflog entries (harmless).
+- The previous session died mid-commit: `.git/objects/fd/bb6c...` was a 0-byte commit object and `analysis/tools/posecli.c` was empty. Moved the empty object aside, reset `omarchyvr` to upstream e686ba7 (staged tree was intact) and recommitted as 1bd7d6d. `git fsck` still warns about the two reflog entries (harmless).
 - posecli.c rewritten (XR_MND_headless + XR_KHR_convert_timespec_time); build: `gcc -o posecli analysis/tools/posecli.c -lopenxr_loader -lm`.
 - Re-test, 15 s still on desk: flags 0x7, yaw 0.03 deg, pitch -5.45, roll -0.82, stable (no visible drift in 15 s). keepalived stayed active, service stopped cleanly with SIGINT.

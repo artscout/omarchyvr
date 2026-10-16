@@ -21,7 +21,7 @@ detection as they were before this change.
     * 0-37 s: hands in use in front of the body (930 LED frames, "in-use");
     * 38-48 s: hands at the waist, no blobs;
     * 49-60 s: headset put down on the controllers (close range, not a use case).
-* **The three desk sessions** (`~/.local/share/pimax/ctrl-sessions/`) have the fuser logs (`ctrl-imu-*.csv`: gyro, every
+* **The three desk sessions** (`~/.local/share/omarchyvr/ctrl-sessions/`) have the fuser logs (`ctrl-imu-*.csv`: gyro, every
   optical fix with LED count and verdict, shown poses) and the tracker/Monado logs, but no LED frames. Today's
   session cannot be replayed frame by frame. Section 6 gives the recording step that fixes this.
 
@@ -155,7 +155,7 @@ it, today's 32 % can be replayed and the `undetected` class split into out-of-vi
 
 **What it touches.** It uses only the existing read-only paths:
 * the camera broker's client socket;
-* the fuser log that `pimax desk start --6dof --ctrl-track` already writes (`ctrl-imu-{left,right}.csv`, host
+* the fuser log that `omarchyvr desk start --6dof --ctrl-track` already writes (`ctrl-imu-{left,right}.csv`, host
   CLOCK_MONOTONIC like the broker frames).
 
 **Command.** Run it in a desk session that is already running with `--6dof --ctrl-track`:
@@ -178,7 +178,7 @@ it, today's 32 % can be replayed and the `undetected` class split into out-of-vi
   - [ ] 40-50 s: hands crossing and close together; one hand behind the other.
   - [ ] 50-60 s: one hand out of view (behind the back) and back in; repeat with the other hand.
 - [ ] **After the command:**
-  - [ ] Copy the session dir: `cp -r ~/.local/share/pimax/ctrl-sessions/<latest> ~/ctrl-lock-session/`.
+  - [ ] Copy the session dir: `cp -r ~/.local/share/omarchyvr/ctrl-sessions/<latest> ~/ctrl-lock-session/`.
   - [ ] Note the .pxcam name.
 - [ ] **Offline, no device:**
   - [ ] `pimax-ctrltrack lockrate ~/ctrl-lock-*.pxcam --oracle --csv /tmp/after.csv`

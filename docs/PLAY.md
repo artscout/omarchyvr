@@ -1,7 +1,7 @@
 # One click to VR: Play and Work, the Monado cap, start at login, the hand test
 
-Everything here is in the Pimax app (`pimax-setup`), Home page, the headset card. Code: `rust/pimax-gui-core/src/play.rs`,
-`rust/pimax-gui-core/src/handtest.rs`, UI in `rust/pimax-setup/src/pages/home.rs`.
+Everything here is in the Pimax app (`omarchyvr-app`), Home page, the headset card. Code: `rust/omarchyvr-gui-core/src/play.rs`,
+`rust/omarchyvr-gui-core/src/handtest.rs`, UI in `rust/omarchyvr-app/src/pages/home.rs`.
 
 ## Readiness line
 
@@ -12,20 +12,20 @@ sets it anyway) and the **last start** from the app (ok / failed, how long ago).
 ## Play and Work
 
 Three layers: the **base** Pimax services (Monado + driver, tracking, controllers, hands, recording, keepalive,
-pimaxd; their own switches, shared by both sides), **Play** and **Work**. Home's headset card has two big buttons:
+omarchyvrd; their own switches, shared by both sides), **Play** and **Work**. Home's headset card has two big buttons:
 
-- **Play**: games, like SteamVR. `pimax vr start` with the base switches (6DoF, controllers, hands, anchor, readout,
+- **Play**: games, like SteamVR. `omarchyvr vr start` with the base switches (6DoF, controllers, hands, anchor, readout,
   refresh rate) for Steam (xrizer) and OpenXR games; when the auto mode daemon runs it is told
   `set-mode game --runtime monado|steamvr`. It never starts WayVR or the desk AI. The VR home/launcher it will also
   start is still to be decided.
-- **Work**: the WayVR desk on top of the base: `pimax desk start` with the base + desk switches (screens,
+- **Work**: the WayVR desk on top of the base: `omarchyvr desk start` with the base + desk switches (screens,
   passthrough, voice, AI, captions, presets, eye tracking).
 - While our session runs, the button of the running side is **Stop Play** / **Stop Work** and the other is greyed out.
 - Same gate as before: the preflight must be ready (or "Start anyway" ticked for WayVR Xid 31 faults only).
 - The preflight refuses a Monado build that lacks any feature marker (PIMAX_SLAM, the IMU gate, PIMAX_EYE,
   PIMAX_CTRL_TRACK, PIMAX_ANCHOR, and PIMAX_HT_HZ when camera hands are on) and says which one in plain words.
   Setup > Builds lists each feature of the one build as ok / missing.
-- **One saved setting** per side: the app and the CLI share it. Every start (app, `pimax desk|vr start`, pimaxd, a restart)
+- **One saved setting** per side: the app and the CLI share it. Every start (app, `omarchyvr desk|vr start`, omarchyvrd, a restart)
   records its flags in `<session dir>/start-argv.txt`; the app takes a newer one over as its switches (a `vr` start changes
   only the base switches), so the next Play or Work repeats the last session. (The hand test's own start is not taken over.)
 - Fresh defaults are the normal setup: eye, 6DoF, optical controllers, passthrough, voice, room anchor, the wrist
@@ -47,7 +47,7 @@ says that the app can fix it.
 
 ## Start VR when I log in
 
-A switch under Play, **off** by default, saved in `~/.config/pimax/gui-state.toml` (`autostart`). When the app opens
+A switch under Play, **off** by default, saved in `~/.config/omarchyvr/gui-state.toml` (`autostart`). When the app opens
 (it autostarts at login) it starts the last side you used (Play or Work) by itself only if the headset is connected (it waits up to 40 s for it), the
 Monado cap is present (never a password window at login), and the preflight gate is clear (no reboot needed, no GPU
 errors, no consent needed). Otherwise Home says why ("Not started at login: ...").

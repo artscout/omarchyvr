@@ -16,22 +16,22 @@ Since pressure-vessel 0.20260925, Steam's game container shares Monado's socket 
 variable once for Steam covers every game.
 
 - **App:** Ready shows the check "Steam set up for VR games". Press Fix. The same fix also appears in the first-setup Fixes step.
-- **Engine:** `pimax vr steam-setup on|off|status`. It writes:
+- **Engine:** `omarchyvr vr steam-setup on|off|status`. It writes:
   - `~/.local/share/applications/steam.desktop`: a copy of Steam's own desktop entry. Each `Exec=` line starts with
     `env PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1`. Omarchy starts Steam from this entry (`gtk-launch`). Used from the next Steam start.
-  - `~/.config/environment.d/90-pimax-steam-vr.conf`: read by the systemd user manager at login, so after the next
+  - `~/.config/environment.d/90-omarchyvr-steam-vr.conf`: read by the systemd user manager at login, so after the next
     log-in every way of starting Steam has the variable (`steam://` links, game shortcuts).
   - `systemctl --user set-environment` as a best-effort extra.
 - **Once:** quit Steam (Steam menu > Exit) and start it again, or log out and back in. The check then turns green.
   It reads the running Steam's environment.
-- **Undo:** `off`, or Undo under Applied fixes. It removes only files that carry the marker `X-Pimax-Steam-VR=1`. A
+- **Undo:** `off`, or Undo under Applied fixes. It removes only files that carry the marker `X-Omarchyvr-Steam-VR=1`. A
   `steam.desktop` that is not ours is left alone.
-- **Fallback** for a Steam started some other way: the per-game launch option from `pimax vr steam-options`.
+- **Fallback** for a Steam started some other way: the per-game launch option from `omarchyvr vr steam-options`.
 
 ## 2. Games run with: Monado or SteamVR
 
-"Games" at the top of the app window is the switch. It is saved in `~/.config/pimax/games.toml` (`runtime = "monado"|"steamvr"`),
-which the app and the CLI share. Engine: `pimax vr games monado|steamvr|status`.
+"Games" at the top of the app window is the switch. It is saved in `~/.config/omarchyvr/games.toml` (`runtime = "monado"|"steamvr"`),
+which the app and the CLI share. Engine: `omarchyvr vr games monado|steamvr|status`.
 
 | | Monado (default) | SteamVR (experimental) |
 |---|---|---|
@@ -39,14 +39,14 @@ which the app and the CLI share. Engine: `pimax vr games monado|steamvr|status`.
 | SteamVR driver | unregistered | `<monado build>/steamvr-monado` in `external_drivers` |
 | OpenXR runtime | Monado (set by `vr start`) | never changed by the switch |
 | Play | monado-service + xrizer, as before | SteamVR's vrserver/vrcompositor with `driver_monado.so` |
-| Stop Play | `pimax vr stop` | `pimax vr stop`: SIGTERM to vrmonitor by pid, then vrserver/vrcompositor, SIGKILL after 10 s |
+| Stop Play | `omarchyvr vr stop` | `omarchyvr vr stop`: SIGTERM to vrmonitor by pid, then vrserver/vrcompositor, SIGKILL after 10 s |
 
-With SteamVR chosen, `pimax vr start`:
+With SteamVR chosen, `omarchyvr vr start`:
 
 1. Refuses while any monado-service runs. Both would open the headset (DP lease, video prepare, cameras, eye chip).
    It also refuses while a SteamVR it did not start is running.
 2. Writes the Pimax settings monado-service would get (FPS, 6DoF/SLAM, broker, anchor, hands, IPD, scale) to
-   `~/.config/pimax/steamvr-driver.env`. The driver reads that file in vrserver before it starts the Pimax driver
+   `~/.config/omarchyvr/steamvr-driver.env`. The driver reads that file in vrserver before it starts the Pimax driver
    (log marker `PIMAX_STEAMVR_ENV`).
 3. Hands the OpenVR file to SteamVR and registers the driver.
 4. With 6DoF: starts the camera broker (and ctrltrack once SteamVR is up), as on the Monado path.
@@ -59,7 +59,7 @@ With SteamVR chosen, `pimax vr start`:
 The `--runtime monado|steamvr` start option overrides the saved choice once.
 
 **Flip the default** after a good headset test: `pub const DEFAULT: Games = Games::Monado;` in
-`rust/pimax-tools/src/vr/steamvr.rs`. Change it to `Games::SteamVr`. The app and the CLI both read it.
+`rust/omarchyvr-tools/src/vr/steamvr.rs`. Change it to `Games::SteamVr`. The app and the CLI both read it.
 
 ### The driver (Monado, one build)
 
@@ -124,7 +124,7 @@ Will not work, or is different:
 - **Monado compositor safety.** There is no flipsafe and no bounded GPU wait: a stuck NVIDIA flip hangs vrcompositor
   instead of releasing the lease. After an Xid error, reboot, as always.
 - **Realtime priority.** There is no realtime thread priority unless SteamVR's own vrcompositor-launcher has it.
-- **Monado-service-only features.** The recorder tap (`pimax-record`), the wrist perf readout (`PIMAX_PERF_FILE`) and
+- **Monado-service-only features.** The recorder tap (`omarchyvr-record`), the wrist perf readout (`PIMAX_PERF_FILE`) and
   WayVR (Work) belong to monado-service. Work always uses Monado.
 - **Eye gaze.** The SteamVR driver has no eye-tracking component.
 - **Camera hands as controllers** (`PIMAX_HT_ROLES=hands`). The grip pose falls back to the head.
@@ -163,7 +163,7 @@ Do this when nothing else runs (no Play, no Work).
 4. In SteamVR's home, open the dashboard (menu button). Then start Dungeons of Eternity from Steam.
 5. Press **Stop Play** in the app. SteamVR closes.
 6. If anything failed: "Games" (top of the window) > **Monado** puts everything back. Help > Logs has
-   `~/.local/share/Steam/logs/vrserver.txt`, `vrcompositor.txt` and `/tmp/pimax-vr-session/steamvr-launch.log`.
+   `~/.local/share/Steam/logs/vrserver.txt`, `vrcompositor.txt` and `/tmp/omarchyvr-session/steamvr-launch.log`.
 7. If all of it worked: tell the main thread to flip `DEFAULT` (section 2).
 
 ## 5. Controllers in SteamVR (Monado commit "steamvr_drv: Pimax controllers as Oculus Touch", 2026-10-15)
@@ -230,7 +230,7 @@ Pimax Play's test pulse is `58 09 07 03 19 2c 01` (right, 25 %, 300 ms). Dungeon
 - Monado Pimax driver (`pimax_ctrl.c`, marker `PIMAX_HAPTICS`): `set_output` of `/output/haptic` calls it. OpenXR games
   (`xrApplyHapticFeedback`) and SteamVR games (through driver_monado, `/output/haptic`) both reach it. driver_monado now
   gives the vibration value its type (it was uninitialised) and logs only the first haptic event.
-- Test pulse: `pimax controllers buzz left|right [--amp 25] [--ms 300]` and the app's **Test vibration** button on each
+- Test pulse: `omarchyvr controllers buzz left|right [--amp 25] [--ms 300]` and the app's **Test vibration** button on each
   controller card. While Monado or SteamVR runs, the request goes through the session: `SLOT AMP MS` in
   `$XDG_RUNTIME_DIR/pimax-haptic-request`, taken by the driver within 100 ms (log `PIMAX_HAPTICS: test pulse on slot N`).
   If nobody takes it within 1 s the request is removed and the app says the build has no vibration support. With no
@@ -241,8 +241,8 @@ Eternity). monado.log / vrserver.txt show `PIMAX_HAPTICS: first vibration (...)`
 
 ## Live-test fixes (2026-10-15, SteamVR mode)
 
-- **OpenXR runtime follows the choice.** `pimax vr start` / `pimax vr games steamvr` point `~/.config/openxr/1/active_runtime.json` at SteamVR's `steamxr_linux64.json` (no monado-service runs, so native OpenXR games and Proton `-openxr` would otherwise find nothing); `pimax vr games monado` points it back at the build's `openxr_monado-dev.json`; a Monado start (Work / `desk start`) points it at its build only when Games run with: Monado (with SteamVR chosen it leaves the link alone: WayVR and the session's apps get `XR_RUNTIME_JSON` directly; games are played from Play; docs/GAMES-CHECK.md "Work mode"). A regular file is saved once as `active_runtime.json.pimax-backup`. `pimax vr steam-options` prints `PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1 %command%` in both modes (the container imports the host's OpenXR runtime either way).
-- **`pimax vr game-check` (and the app's Games check) follows the choice.** SteamVR mode: vrserver + vrcompositor running, OpenVR = SteamVR first with driver_monado in `external_drivers`, OpenXR = SteamVR's own, container test only once SteamVR runs.
+- **OpenXR runtime follows the choice.** `omarchyvr vr start` / `omarchyvr vr games steamvr` point `~/.config/openxr/1/active_runtime.json` at SteamVR's `steamxr_linux64.json` (no monado-service runs, so native OpenXR games and Proton `-openxr` would otherwise find nothing); `omarchyvr vr games monado` points it back at the build's `openxr_monado-dev.json`; a Monado start (Work / `desk start`) points it at its build only when Games run with: Monado (with SteamVR chosen it leaves the link alone: WayVR and the session's apps get `XR_RUNTIME_JSON` directly; games are played from Play; docs/GAMES-CHECK.md "Work mode"). A regular file is saved once as `active_runtime.json.pimax-backup`. `omarchyvr vr steam-options` prints `PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1 %command%` in both modes (the container imports the host's OpenXR runtime either way).
+- **`omarchyvr vr game-check` (and the app's Games check) follows the choice.** SteamVR mode: vrserver + vrcompositor running, OpenVR = SteamVR first with driver_monado in `external_drivers`, OpenXR = SteamVR's own, container test only once SteamVR runs.
 - **Display frequency.** vrcompositor overwrites `Prop_DisplayFrequency_Float` with 90 right after start although it selected the 72 Hz mode; driver_monado (Monado 38a0523) sets it back to PIMAX_FPS from RunFrame (log: "Display frequency was changed to ... set back"). The "recommended 3840x3552 90.0Hz" line is vrcompositor's own, read before the driver can correct it.
 - **Backlight.** In SteamVR mode vrserver owns the HID: at 100 % (the default, already what the panel has) nothing is sent and nothing is said; below 100 % a failure is explained in plain words.
 
@@ -265,7 +265,7 @@ for gameID 250820". Steam connected to vrserver at 10:52:35, SteamVR's shutdown 
 game then started (10:53:43) without VR and quit. Not the cause: `LD_PRELOAD` (the 32-bit Steam client cannot load the
 64-bit preload, "wrong ELF class: ignored"; in 64-bit helpers it only turns RLIMIT_RTTIME calls into no-ops).
 
-**Fix (`rust/pimax-tools/src/vr/steamvr.rs`).**
+**Fix (`rust/omarchyvr-tools/src/vr/steamvr.rs`).**
 - **Steam first.** Before SteamVR, Play checks for a Steam client (`~/.steam/steam.pid`, comm `steam`). None:
   it starts Steam through its desktop entry, `env -u … gtk-launch steam` (our `steam.desktop`, so Steam keeps
   `PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1`), and waits up to 60 s for Steam and its `steamwebhelper`. A steam://
@@ -274,10 +274,10 @@ game then started (10:53:43) without VR and quit. Not the cause: `LD_PRELOAD` (t
   failed with "Steam (pid 16972) was started from inside SteamVR ..."; it predated these shims, installed 18:06).
   The app (facts `steam_tainted`, read from `/proc/PID/environ`) opens its own dialog "Steam must restart for VR.
   Restart Steam now?" [Restart Steam] [Cancel], with a warning when a game (`reaper` process) or a download
-  (`steamapps/downloading`) seems to run. Only on yes, one job runs `pimax vr steam-restart`: `steam -shutdown`
+  (`steamapps/downloading`) seems to run. Only on yes, one job runs `omarchyvr vr steam-restart`: `steam -shutdown`
   through `env -u ...` (clean environment), waits up to 90 s for that pid to exit, then Play goes on and starts Steam
   the normal way. If Steam does not exit, the job stops with "did not close within ... Nothing was forced": never a
-  signal to Steam. A clean or absent Steam is never closed. Cancel starts nothing. The CLI `pimax vr start` still
+  signal to Steam. A clean or absent Steam is never closed. Cancel starts nothing. The CLI `omarchyvr vr start` still
   refuses in plain words; start at login does not start and says Play must be pressed once. No dialog in the
   headset: at that moment no session runs, so there is nothing in the headset to show it on.
   Tests: `restart_*`, `a_tainted_steam_is_found...`, `play_asks_before_closing_a_tainted_steam...`.
@@ -289,8 +289,8 @@ game then started (10:53:43) without VR and quit. Not the cause: `LD_PRELOAD` (t
   vrmonitor, vrserver, vrcompositor) gets `VALVE_SKIP_RUNTIME_SAFETY`, `QT_QPA_PLATFORM=xcb`, `LD_PRELOAD` (rttime
   preload), the Pimax driver variables and the shim `PATH`; Steam and everything opened from SteamVR get none of them.
   `PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES` is never removed.
-- **During the session.** Home (and `pimax vr status`, line `steamvr: …`) says in plain words when Steam restarted or
-  closed, when the running Steam came from inside SteamVR, or when SteamVR quit on its own. `pimax vr stop` with a
+- **During the session.** Home (and `omarchyvr vr status`, line `steamvr: …`) says in plain words when Steam restarted or
+  closed, when the running Steam came from inside SteamVR, or when SteamVR quit on its own. `omarchyvr vr stop` with a
   vrserver that is already gone closes the leftover vrmonitor/vrcompositor by pid and removes the pid files and shims.
 - Not covered: SteamVR's own "Restart SteamVR" goes through Steam (`steam://run/250820`), which starts SteamVR in
   its container without the Pimax driver's libraries; use Stop Play / Play instead.

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Long-running Monado (Wayland direct mode, Pimax Dream Air) for OpenVR games via xrizer. Ctrl-C to stop.
 # Usage: run_vr_session.sh [logdir]     (env: SCALE=100, XRT_COMPOSITOR_DESIRED_MODE=2)
-OUT=${1:-/tmp/pimax-vr-session}; mkdir -p "$OUT"
+OUT=${1:-/tmp/omarchyvr-session}; mkdir -p "$OUT"
 M=$HOME/src/monado/build
 if pgrep -x monado-service >/dev/null; then echo "monado-service already running; stop it first"; exit 1; fi
 export XRT_COMPOSITOR_FORCE_WAYLAND_DIRECT=1 XRT_COMPOSITOR_WAYLAND_CONNECTOR=DP-1

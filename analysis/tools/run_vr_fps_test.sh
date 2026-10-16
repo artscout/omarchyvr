@@ -1,7 +1,7 @@
 #!/bin/bash
 # Launcher + refresh-rate test (opens the headset and the display!).
-# `pimax vr start --fps N --debug --dump` -> OpenXR client for SECS seconds while the firmware log is tailed
-# -> `pimax vr status` -> `pimax vr stop` (SIGINT + kernel log check) -> numbers about the dumped frames.
+# `omarchyvr vr start --fps N --debug --dump` -> OpenXR client for SECS seconds while the firmware log is tailed
+# -> `omarchyvr vr status` -> `omarchyvr vr stop` (SIGINT + kernel log check) -> numbers about the dumped frames.
 #
 # Usage:  run_vr_fps_test.sh FPS OUTDIR [CLIENT]
 #   FPS     72 or 90
@@ -10,12 +10,12 @@
 # Env:    PIMAX_BIN (default: pimax), PIMAX_MONADO_BUILD (default ~/src/monado/build), SECS (20),
 #         DUMP_FRAMES (200,600), SCALE (XRT_COMPOSITOR_SCALE_PERCENTAGE, passed on)
 # Overnight rule: hold the headset lock while this runs:
-#   flock -w 3600 /tmp/pimax-headset.lock analysis/tools/run_vr_fps_test.sh 90 /tmp/pimax-fps-90
+#   flock -w 3600 /tmp/omarchyvr-headset.lock analysis/tools/run_vr_fps_test.sh 90 /tmp/pimax-fps-90
 set -u
 FPS=${1:?usage: run_vr_fps_test.sh FPS OUTDIR [CLIENT]}
 OUT=${2:?usage: run_vr_fps_test.sh FPS OUTDIR [CLIENT]}
 CLIENT=${3:-$HOME/pimax-re/analysis/tools/xr_room}
-PIMAX=${PIMAX_BIN:-pimax}
+PIMAX=${PIMAX_BIN:-omarchyvr}
 SECS=${SECS:-20}
 FRAMES=${DUMP_FRAMES:-200,600}
 BUILD=${PIMAX_MONADO_BUILD:-$HOME/src/monado/build}
@@ -40,7 +40,7 @@ say "kernel Xid/Idling lines before: $KERN0"
 timeout $((SECS + 45)) "$PIMAX" logtail $((SECS + 35)) >"$OUT/fwlog.txt" 2>&1 &
 TAIL_PID=$!
 
-say "pimax vr start --fps $FPS"
+say "omarchyvr vr start --fps $FPS"
 "$PIMAX" vr start --fps "$FPS" --debug --dump "$OUT/dump" --dump-frames "$FRAMES" >"$OUT/start.txt" 2>&1
 RC=$?
 cat "$OUT/start.txt"
@@ -72,8 +72,8 @@ KERN1=$(journalctl -k -b --no-pager | grep -cE "Xid|Idling")
 say "kernel Xid/Idling lines after: $KERN1 (before: $KERN0)"
 journalctl -k -b --no-pager | grep -E "Xid|Idling|nvidia-modeset" | tail -5 >"$OUT/kernel-tail.txt"
 
-"$PIMAX" vr status --no-notify --log /tmp/pimax-vr-session/monado.log >"$OUT/summary.txt" 2>&1
-cp /tmp/pimax-vr-session/monado.log "$OUT/monado.log" 2>/dev/null
+"$PIMAX" vr status --no-notify --log /tmp/omarchyvr-session/monado.log >"$OUT/summary.txt" 2>&1
+cp /tmp/omarchyvr-session/monado.log "$OUT/monado.log" 2>/dev/null
 say "--- monado log summary ---"
 tee -a "$OUT/test.log" <"$OUT/summary.txt"
 

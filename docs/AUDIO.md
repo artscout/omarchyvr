@@ -1,8 +1,8 @@
 # Sound and microphone in the headset
 
 App: Home > Sound: "Headset sound" (switch) + "Test sound", "Headset mic" (switch) + "Test microphone", "Input now:
-headset / other". Saved in `~/.config/pimax/audio.toml` (`headset_sound`, `headset_mic`, both default true).
-Engine: `pimax vr audio status|on|off|mic-on|mic-off|mic-test|speaker-test` (rust/pimax-tools/src/vr/audio.rs). Only
+headset / other". Saved in `~/.config/omarchyvr/audio.toml` (`headset_sound`, `headset_mic`, both default true).
+Engine: `omarchyvr vr audio status|on|off|mic-on|mic-off|mic-test|speaker-test` (rust/omarchyvr-tools/src/vr/audio.rs). Only
 `pactl`, `pw-record` and `pw-play` are used. Nothing is root-owned and nothing needs a password.
 
 ## Speakers: why they were silent, and the fix (2026-10-15)
@@ -32,7 +32,7 @@ higher priority). So the Pimax port never gets a sink, and even with one nothing
 Fix (user level, what Pimax Play does on Windows): at Play / Work / SteamVR start the app switches the NVIDIA card to the
 profile of the "Pimax" port (`output:hdmi-stereo-extra1` on this PC; found by name, not hard-coded), makes its sink the
 default output and saves the old profile and output in the session dir. The port appears a few seconds after the headset
-lights up (SteamVR: after its compositor starts), so a small helper (`pimax vr audio follow DIR`, log `audio.log` in the
+lights up (SteamVR: after its compositor starts), so a small helper (`omarchyvr vr audio follow DIR`, log `audio.log` in the
 session dir) waits up to 60 s for it. Stop puts the old profile and default output back. While VR runs the projector's
 sound is unavailable (one HDMI/DP profile at a time on this card); Sunshine is never touched. No EDID change, no NVIDIA
 parameter, no root step: nothing to approve.
@@ -46,7 +46,7 @@ USB audio class, ALSA card "Pimax Dream Air", PipeWire source
 `alsa_input.usb-Pimax_Corporation_Pimax_Dream_Air_<serial>-04.analog-stereo` (2 ch, 16 bit, 48 kHz, both channels the
 same). While VR runs it is the default input; Stop restores the previous one. Monitors and Sunshine are never chosen.
 It sends only zeros while the headset display is off (docs/LESSONS.md row 19), so the test needs VR running.
-`pimax-voice listen` captures the source matching "Pimax" by default (falls back to the default input with a note) and
+`omarchyvr-voice listen` captures the source matching "Pimax" by default (falls back to the default input with a note) and
 asks PipeWire for 1 ch 16 kHz, so PipeWire does the 48 kHz stereo -> 16 kHz mono conversion.
 
 ## Test plan (one session, all from the app)

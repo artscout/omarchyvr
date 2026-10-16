@@ -12,7 +12,7 @@ and the already-focused window) to confirm the dispatch syntax. Nothing was clos
 | `hyprctl -j activewindow` | the same object for the focused window, or `{}` when none |
 | `hyprctl -j workspaces` | `id`, `name`, `monitor`, `windows` (count), `lastwindow`, `lastwindowtitle`, `hasfullscreen` |
 
-Seen on this machine: workspace 2 only, 3 windows (two `foot` terminals and the `pimax` GUI), no group, no browser
+Seen on this machine: workspace 2 only, 3 windows (two `foot` terminals and the `omarchyvr` GUI), no group, no browser
 running. Titles are fully visible to anything that can run `hyprctl`, so they can be private (page titles, file names).
 
 Omarchy scripts in `/usr/share/omarchy/bin` that act on windows or workspaces:
@@ -75,9 +75,9 @@ therefore means a Hyprland group; for tmux, voice says "No tabs in foot" instead
 
 ## 6. What was built
 
-`rust/pimax-voice/src/windows.rs` (`@win` built-in), 11 intents in `voice-intents.toml` marked
+`rust/omarchyvr-voice/src/windows.rs` (`@win` built-in), 11 intents in `voice-intents.toml` marked
 `source = "user request 2026-10-15"` plus extended phrases for rows 11 and 16, an AI switch (`llm::LlmClient`,
-`llm::ChatClient` for anthropic / openai / openai-compatible reading `~/.config/pimax/ai.toml`), and ASR aliases
+`llm::ChatClient` for anthropic / openai / openai-compatible reading `~/.config/omarchyvr/ai.toml`), and ASR aliases
 ("work space", "tab to/for", "tap", "prev"). The AI switch sends the request plus, for each of the 40 most recent
 windows, `{id (address), class, title (80 chars), ws}` and accepts only `focus_window` with an address from that list.
 Tests use mocks only; there are no network calls.

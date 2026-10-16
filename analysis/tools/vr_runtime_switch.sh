@@ -32,7 +32,7 @@ J
   ln -sfn "$MONADO_JSON" "$XRP"
   echo "OpenVR -> xrizer ($XRIZER); OpenXR -> $MONADO_JSON" ;;
 steamvr)
-  # The app uses `pimax vr games steamvr` (same rules). Works without a backup, never touches the OpenXR runtime,
+  # The app uses `omarchyvr vr games steamvr` (same rules). Works without a backup, never touches the OpenXR runtime,
   # leaves the file writable: SteamVR 2.17 exits with "Saving Path Registry failed" on a read-only one.
   SVR=$HOME/.local/share/Steam/steamapps/common/SteamVR
   [ -e "$SVR/bin/linux64/vrclient.so" ] || { echo "SteamVR is not installed ($SVR): install it in Steam"; exit 1; }

@@ -1,17 +1,17 @@
 # Recording (basic)
 
-`pimax record` records what the headset shows into `~/Videos/pimax/pimax-YYYYmmdd-HHMMSS.mp4`. You can record one
+`omarchyvr record` records what the headset shows into `~/Videos/pimax/pimax-YYYYmmdd-HHMMSS.mp4`. You can record one
 eye (the default) or both eyes side by side, at 30, 60 or 72 fps, in low, medium or high quality. **Defaults
 (2026-10-16): 30 fps, high quality, with sound.**
 
 ```
-pimax record start [--eyes left|both] [--fps 30|60|72] [--quality low|medium|high]
+omarchyvr record start [--eyes left|both] [--fps 30|60|72] [--quality low|medium|high]
                    [--scale F] [--max-height N] [--codec h264|hevc] [--encoder auto|nvenc|cpu] [--dir DIR] [--save]
-pimax record stop        # finishes the file (always playable) and prints where it is
-pimax record status
+omarchyvr record stop        # finishes the file (always playable) and prints where it is
+omarchyvr record status
 ```
 
-- **Defaults** (30 fps, high, sound on, microphone off) come from `~/.config/pimax/record.toml`, a plain `key = value` file: `eyes`, `fps`, `quality`, `scale`,
+- **Defaults** (30 fps, high, sound on, microphone off) come from `~/.config/omarchyvr/record.toml`, a plain `key = value` file: `eyes`, `fps`, `quality`, `scale`,
   `max_height`, `codec`, `encoder`, `dir`, `audio` and `mic`. A file from before `audio` existed that says medium quality takes
   the new default (high) once; after that the file keeps what you chose. Use `--save` to write the given flags there; the app's Record card writes
   there too.
@@ -35,13 +35,13 @@ pimax record status
     recorded without sound; if only the mic cannot, the output sound is recorded alone. Either way a notice says so
     and VR is never affected. The first ~0.3 s of a recording with sound is not captured (ffmpeg opens the sound
     input first); the sound is padded with silence so it never cuts the video short.
-  - ffmpeg ends itself when the video ends (`-shortest`); `pimax record status` shows `sound: output` or `output+mic`.
+  - ffmpeg ends itself when the video ends (`-shortest`); `omarchyvr record status` shows `sound: output` or `output+mic`.
 - **Voice** (works in Work and Play; the same start and stop as the app's buttons, with the saved settings):
   "Max, start recording", "record this", "begin recording", "record the video" start it and answer **Recording**;
   "Max, stop recording", "stop the recording", "end the recording" stop it and answer **Saved: pimax-YYYYmmdd-HHMMSS.mp4**
   (or, in plain words, why nothing was saved). "Stop recording" never stops the VR session: that needs a stop verb plus
-  a VR word (`Actor::consent`), and any recording word blocks it. The voice commands are `pimax record start --brief`
-  and `pimax record stop --brief`. A failure (for example "no VR session") is spoken in plain words and VR keeps running.
+  a VR word (`Actor::consent`), and any recording word blocks it. The voice commands are `omarchyvr record start --brief`
+  and `omarchyvr record stop --brief`. A failure (for example "no VR session") is spoken in plain words and VR keeps running.
 
 ## Record card on the Recording tab (normal mode)
 
@@ -53,27 +53,27 @@ The Record cards have their own "Recording" page in the app's sidebar (they were
   Windows. It never writes into the session and never blocks VR: it only reads, at `nice 19`.
 
 ```
-pimax record tracking start [--scenario S] [--seconds N]   N = 0 or none: until stop
-pimax record tracking stop      # ends the camera file cleanly (SIGINT), copies the logs
-pimax record tracking status
+omarchyvr record tracking start [--scenario S] [--seconds N]   N = 0 or none: until stop
+omarchyvr record tracking stop      # ends the camera file cleanly (SIGINT), copies the logs
+omarchyvr record tracking status
 ```
 
 Scenarios: `on-desk`, `worn-still`, `look-around`, `walk-room`, `fast-turns`, `controllers-in-out`, `play-session`,
-`custom`. Takes go to `~/.local/share/pimax/tracking-recordings/YYYYmmdd-HHMMSS-<scenario>/`:
+`custom`. Takes go to `~/.local/share/omarchyvr/tracking-recordings/YYYYmmdd-HHMMSS-<scenario>/`:
 
 | File | What |
 |---|---|
 | `cameras.pxcam` | both cameras, every frame with its MCU timestamp (`pimax-cam record`, the `~/src/cam-data` format; replay with `run_slam.sh`/`pimax-cam broker --source`). From the camera broker when it runs; the free camera when no session runs; **not recorded** when a session holds the camera without a broker (`take.txt` says so). |
 | `monado.log`, `ctrltrack.log`, `ctrl-imu-{left,right}.csv` | only what the session wrote during the take (csv keeps its header and whole lines only) |
-| `head-imu.csv` | head IMU (1 kHz, as fed to the 6DoF tracker) + tracker pose times, written by a 6DoF session (`PIMAX_HEAD_IMU_LOG`, from 2026-10-16 builds). `pimax-slam take-euroc TAKE` turns cameras + this into a EuRoC dataset for `run_slam.sh replay` (Basalt offline); `pimax-slam take-head TAKE` works without it (head speed from the images). |
+| `head-imu.csv` | head IMU (1 kHz, as fed to the 6DoF tracker) + tracker pose times, written by a 6DoF session (`PIMAX_HEAD_IMU_LOG`, from 2026-10-16 builds). `omarchyvr-slam take-euroc TAKE` turns cameras + this into a EuRoC dataset for `run_slam.sh replay` (Basalt offline); `omarchyvr-slam take-head TAKE` works without it (head speed from the images). |
 | `session.txt`, `start-argv.txt`, `perf-start.txt`, `perf-end.txt` | session mode and flags, performance stats at both ends |
 | `take.txt` | scenario, times, what was and was not captured |
 
 A timed take finishes itself: the app (or `status`) collects the logs once the camera recorder has ended. State is
-`$XDG_RUNTIME_DIR/pimax-record-tracking.state`. Monado owns the headset's HID interface, so the head IMU comes from
+`$XDG_RUNTIME_DIR/omarchyvr-record-tracking.state`. Monado owns the headset's HID interface, so the head IMU comes from
 the session itself: its 6DoF output logs every IMU sample to `head-imu.csv` in the session dir (a writer thread,
 never blocks the IMU). The session's IMU logs (head and controllers) write for their first 10 minutes and then only
-while `$XDG_RUNTIME_DIR/pimax-imu-log.on` exists, which the recorder creates at the start of a take and removes when it
+while `$XDG_RUNTIME_DIR/omarchyvr-imu-log.on` exists, which the recorder creates at the start of a take and removes when it
 collects the logs, so a take late in a session still has them. Takes recorded before 2026-10-16 have no head IMU. The
 EuRoC SLAM recording (`PIMAX_SLAM_RECORD`) is set when Monado starts, so it cannot be switched on mid-session.
 
@@ -116,11 +116,11 @@ EuRoC SLAM recording (`PIMAX_SLAM_RECORD`) is set when Monado starts, so it cann
 - **Fast path:** while a recorder is attached, the one-projection-layer fast path is off, because the fast path skips
   the scratch images. This costs one extra layer-squash pass per frame, only while recording. Desk mode (passthrough
   plus WayVR) never uses the fast path anyway.
-- **Ring layout:** `comp_recorder_shm.h`, mirrored byte for byte by `rust/pimax-record/src/shm.rs` (tested offsets).
+- **Ring layout:** `comp_recorder_shm.h`, mirrored byte for byte by `rust/omarchyvr-record/src/shm.rs` (tested offsets).
   - A 4096-byte header, then 4 slots of RGBA8 frames.
   - The recorder fills in the request and renames the file into place, so the tap never maps a half-written header.
 
-### The recorder (`rust/pimax-record`, binary `pimax-record`, comm `pimax-record`)
+### The recorder (`rust/omarchyvr-record`, binary `omarchyvr-record`, comm `omarchyvr-record`)
 
 - **Startup:**
   - It sets nice 10 and the lowest best-effort I/O priority.
@@ -141,7 +141,7 @@ EuRoC SLAM recording (`PIMAX_SLAM_RECORD`) is set when Monado starts, so it cann
   frames (`dropped_ring`), and the compositor never notices. A separate thread keeps the heartbeat going while a write
   blocks. It kills a hung ffmpeg after 20 s with no progress, or after 5 s once a stop was requested.
 - **Every way out finishes the file and exits 0:**
-  - SIGINT or SIGTERM (`pimax record stop`, the launcher, pimaxd);
+  - SIGINT or SIGTERM (`omarchyvr record stop`, the launcher, omarchyvrd);
   - Monado gone (its heartbeat is 3 s old);
   - less than 1 GiB free;
   - an encoder error.
@@ -149,14 +149,14 @@ EuRoC SLAM recording (`PIMAX_SLAM_RECORD`) is set when Monado starts, so it cann
   On the way out, the recorder asks the tap to detach, closes ffmpeg's input (15 s grace, then SIGINT, then SIGKILL of
   ffmpeg only), removes the ring, and writes the status and an event.
 - **Status and events:**
-  - `<session dir>/record.status` (key=value) is read by `pimax record status`, the app and voice.
-  - `<session dir>/record.events` holds JSON lines in the pimaxd event shape.
+  - `<session dir>/record.status` (key=value) is read by `omarchyvr record status`, the app and voice.
+  - `<session dir>/record.events` holds JSON lines in the omarchyvrd event shape.
   - A desktop notification is shown for start, saved, and errors (`critical`).
   - Logs go to `<session dir>/record.log` and `record-ffmpeg.log`.
 
 ### Reliability (RESILIENCE-PLAN.md and PIMAXD.md)
 
-- **Component `record`:** it has a row in `rust/pimax-components/src/spec.rs`, plus `components/record.rs`. It is a
+- **Component `record`:** it has a row in `rust/omarchyvr-components/src/spec.rs`, plus `components/record.rs`. It is a
   leaf with these properties:
   - a hard dependency on `monado`;
   - the leaf budget (5 restarts per 10 min) with backoff;
@@ -164,11 +164,11 @@ EuRoC SLAM recording (`PIMAX_SLAM_RECORD`) is set when Monado starts, so it cann
   - `gpu: true`, because NVENC is a GPU client, so there is no automatic start while the gate is not ok;
   - the rule `on_demand`: it is never part of "everything on".
 
-  pimaxd adopts it once it has been seen running, and shows it in its snapshot and on the app's System page:
+  omarchyvrd adopts it once it has been seen running, and shows it in its snapshot and on the app's System page:
   - a crash is restarted from the captured argv, which carries the settings, into a new file;
   - a user stop or a clean self-stop (exit 0) turns it off for the session.
-- **Stop order:** `pimax desk stop` and `pimax vr stop` stop the recorder **first**, before any other client and while
-  Monado still runs: SIGINT by pid, checked by comm, never by name, waiting up to 25 s. pimaxd's ordered stop puts it
+- **Stop order:** `omarchyvr desk stop` and `omarchyvr vr stop` stop the recorder **first**, before any other client and while
+  Monado still runs: SIGINT by pid, checked by comm, never by name, waiting up to 25 s. omarchyvrd's ordered stop puts it
   before Monado through the graph.
 - **No effect on the session:** a crash or stop of the recorder never touches Monado, WayVR or passthrough. The tap
   only notices a stale heartbeat and detaches.
@@ -183,38 +183,38 @@ sudo setcap cap_sys_nice+ep ~/src/monado-eye/build-rec/src/xrt/targets/service/m
 getcap ~/src/monado-eye/build-rec/src/xrt/targets/service/monado-service
 
 # 2. The tools
-cd ~/pimax-re/rust && cargo build --release -p pimax-record -p pimax-tools -p pimax-autod -p pimax-setup
-install -m755 target/release/{pimax,pimax-record,pimax-autod,pimax-setup} ~/.local/bin/
-systemctl --user restart pimaxd 2>/dev/null || true   # only if pimaxd is installed; restarting it never stops a session
+cd ~/pimax-re/rust && cargo build --release -p omarchyvr-record -p omarchyvr-tools -p omarchyvr-autod -p omarchyvr-app
+install -m755 target/release/{pimax,omarchyvr-record,omarchyvr-autod,omarchyvr-app} ~/.local/bin/
+systemctl --user restart omarchyvrd 2>/dev/null || true   # only if omarchyvrd is installed; restarting it never stops a session
 
 # 3. Optional offline check (no headset, refuses while a session runs)
 ~/pimax-re/analysis/tools/record_offline_test.sh          # EYES=both ENCODER=nvenc to try those
 ```
 
 To roll back, run `ln -sfn build-p9 ~/src/monado-eye/build`. That build still has its capability. Without the tap,
-`pimax record start` reports "this monado-service has no recorder tap".
+`omarchyvr record start` reports "this monado-service has no recorder tap".
 
 ## Live checklist
 
-1. Start the session as usual. `/tmp/pimax-vr-session/monado.log` shows `recorder: tap ready`.
-2. `pimax record start`. Within about 1 s it prints `recording 0:00 to ~/Videos/pimax/pimax-....mp4 ...`, and
+1. Start the session as usual. `/tmp/omarchyvr-session/monado.log` shows `recorder: tap ready`.
+2. `omarchyvr record start`. Within about 1 s it prints `recording 0:00 to ~/Videos/pimax/pimax-....mp4 ...`, and
    `monado.log` shows `recorder: attached: 1 eye(s) 1168x1080 ...`.
 3. Watch the perf panel (or `PIMAX_PERF_FILE`) for 1 minute. It should show **no new missed or late compositor
-   frames** compared with before the start. `pimax record status` shows the dropped counts, which may be non-zero:
+   frames** compared with before the start. `omarchyvr record status` shows the dropped counts, which may be non-zero:
    frames dropped by the tap are fine, frames missed by the compositor are not.
-4. `pimax record stop`. It prints `saved ... (N s, M MB ...)`. Play the file with `mpv`.
+4. `omarchyvr record stop`. It prints `saved ... (N s, M MB ...)`. Play the file with `mpv`.
 5. Repeat with `--eyes both --fps 60 --quality high`, then with `--encoder cpu`.
-6. Start a recording and kill the recorder (`pkill -KILL -x pimax-record`). The session must not change, `monado.log`
+6. Start a recording and kill the recorder (`pkill -KILL -x omarchyvr-record`). The session must not change, `monado.log`
    must show `recorder: detaching (the recorder stopped answering)` after about 3 s, and the partial file must still
    play.
-7. Start a recording, then `pimax desk stop`. The recorder must stop first (its line comes before WayVR's), and the
+7. Start a recording, then `omarchyvr desk stop`. The recorder must stop first (its line comes before WayVR's), and the
    file must play.
 8. Optional: the app's Record card (start, stop, the red REC indicator), and the `record` row on the System page.
 
 ## Voice
 
 "Max, start recording", "Max, stop recording" and "Max, am I recording" (docs/VOICE.md, Recording). These are the
-entries in `rust/pimax-voice/voice-intents.toml`, with audit cases in `tests/fixtures/audit.tsv`:
+entries in `rust/omarchyvr-voice/voice-intents.toml`, with audit cases in `tests/fixtures/audit.tsv`:
 
 ```toml
 [[intent]]
@@ -252,5 +252,5 @@ output = true
   video path, either wallclock timestamps or NUT over the pipe, to stay in sync.
 - **Right eye only:** not offered. **A fixed display-time warp:** the recording is the squashed image the compositor
   produced, so it does not include the lens distortion or the final scanout timewarp.
-- **One tap per monado-service, one recorder at a time.** A second `pimax record start` is refused while one is
+- **One tap per monado-service, one recorder at a time.** A second `omarchyvr record start` is refused while one is
   running.

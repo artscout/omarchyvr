@@ -22,7 +22,7 @@ Earlier evaluation: `analysis/customheadsetopenvr.md`.
 
 Why not the alternatives:
 - **Pure (A), a standalone driver with pimax-capi**, means rewriting fusion, Basalt 6DoF, controller tracking and pose supervision in the OpenVR driver. That repeats months of verified Monado work, because pimax-capi only provides raw HID.
-- **(A) with IPC to a running monado-service** is not possible in practice. monado-service owns the compositor and the DP-1 lease, and SteamVR's vrcompositor needs that same lease. Two processes would also fight over `/tmp/pimax-headset.lock`, the eye chip and the camera broker. A headless Monado (null compositor) plus an OpenXR or libmonado client inside the driver is the fallback if in-process loading fails, but it adds a whole IPC layer.
+- **(A) with IPC to a running monado-service** is not possible in practice. monado-service owns the compositor and the DP-1 lease, and SteamVR's vrcompositor needs that same lease. Two processes would also fight over `/tmp/omarchyvr-headset.lock`, the eye chip and the camera broker. A headless Monado (null compositor) plus an OpenXR or libmonado client inside the driver is the fallback if in-process loading fails, but it adds a whole IPC layer.
 - **Pure (B), driver_monado.so alone**, cannot find the display (no EDID properties), has no controller buttons and no eye gaze. These can be fixed by patching ovrd (see 6). CHOVR already has the EDID, eye output, distortion profiles, hidden area and a JSON config that is re-read live. The hybrid uses CHOVR for those and keeps the Monado patch small: only the touch-controller bindings.
 
 Stage 1 (built now) is a **standalone CHOVR HMD with a static stub pose**. It tests the SteamVR display path (lease, EDID match, mode, distortion orientation, canting) on its own, with zero tracking code and zero HID access. Stage 2 adds driver_monado.so, and the same class switches to shim mode on its own (`linuxDreamAir.mode = "auto"`).
@@ -33,7 +33,7 @@ Stage 1 (built now) is a **standalone CHOVR HMD with a static stub pose**. It te
 - vrcompositor flips on the leased DP-1 through NVKMS like Monado does. The kernel-side fixes (`nvidia-2h1or-viewport`, `nvidia-2h1or-flip-fix` with `merged_head_sync=1`, `evo-makeroom-bounded-wait`) are in nvidia-modeset, so they apply to any lessee, SteamVR included. They were only proven with Monado's flip pattern.
 - What SteamVR lacks is Monado's userspace **flipsafe** (self-revoke and `_exit` on a stuck flip). A stuck flip in vrcompositor will just hang.
 - The same rules apply as for Monado: stop with SteamVR's own quit (the vrmonitor menu, or close the SteamVR window), never SIGKILL vrcompositor or vrserver, and reboot after any Xid or "Idling display engine".
-- `pimax vr start`'s preflight (keepalived, DP-1 connected, Xid check) does **not** run when SteamVR starts from Steam. Run `pimax-doctor` by hand first.
+- `omarchyvr vr start`'s preflight (keepalived, DP-1 connected, Xid check) does **not** run when SteamVR starts from Steam. Run `omarchyvr-doctor` by hand first.
 - Unknowns:
   - whether vrcompositor drives the 2H1OR 7104x3840 mode cleanly;
   - whether CHOVR's manifest flag `"redirectsDisplay": true` keeps SteamVR from direct mode on Linux (Monado's manifest lacks it; if direct mode does not engage, test with it set to false in the installed copy);
@@ -56,7 +56,7 @@ Stage 1 (built now) is a **standalone CHOVR HMD with a static stub pose**. It te
 - Stage 2 source: `pimax_eye_start/latest` from libpimax_capi (dlopen), with Monado's `PIMAX_EYE` left off so only one process opens the EyeChip. The alternative is to forward `XRT_INPUT_GENERIC_EYE_GAZE_POSE` from the Monado HMD.
 
 **Controllers and hands.**
-- driver_monado.so adds both pimax controllers with poses and an Oculus CV1 render model. Buttons need a small Monado patch: map the `XRT_INPUT_TOUCH_*` inputs to `/input/a|b|x|y|system|trigger|grip|joystick` in `ovrd_driver.cpp`, plus an input profile.
+- driver_monado.so adds both omarchyvr controllers with poses and an Oculus CV1 render model. Buttons need a small Monado patch: map the `XRT_INPUT_TOUCH_*` inputs to `/input/a|b|x|y|system|trigger|grip|joystick` in `ovrd_driver.cpp`, plus an input profile.
 - Hand skeletons exist in ovrd only for Index controllers. They are optional (pimax-hands could feed `AddSkeletonControl` later).
 
 **Windows-only parts.**
@@ -93,10 +93,10 @@ cd ~/src/CustomHeadsetOpenVR/CustomHeadsetOpenVR && cmake -S . -B build -DCMAKE_
 ```
 Preflight, every time:
 ```
-pimax-doctor                                     # 13/13 OK, merged_head_sync=1, no Xid this boot
+omarchyvr-doctor                                     # 13/13 OK, merged_head_sync=1, no Xid this boot
 journalctl -k -b | grep -E 'Xid|Idling display engine'   # must be empty; otherwise reboot first
-pimax vr stop --grace 30; pimax desk stop        # nothing else may hold DP-1, the lock or the eye chip
-systemctl --user is-active pimax-keepalived      # must be active (wake + keepalive)
+omarchyvr vr stop --grace 30; omarchyvr desk stop        # nothing else may hold DP-1, the lock or the eye chip
+systemctl --user is-active omarchyvr-keepalived      # must be active (wake + keepalive)
 analysis/tools/vr_runtime_switch.sh steamvr      # OpenVR runtime back to SteamVR (undo: ... xrizer)
 ```
 Stage 1 config (`~/.config/CustomHeadsetOpenVR/settings.json`):
@@ -111,7 +111,7 @@ Register, stage 1:
 VRP=~/.steam/steam/steamapps/common/SteamVR/bin/vrpathreg.sh
 $VRP adddriver ~/src/CustomHeadsetOpenVR/CustomHeadsetOpenVR/build/CustomHeadsetOpenVR
 $VRP show                                         # lists external drivers
-pimax video-on 72 40                              # wake the panel with our existing tool (bytes it already sends)
+omarchyvr video-on 72 40                              # wake the panel with our existing tool (bytes it already sends)
 ```
 Then start SteamVR from Steam and look at `~/.steam/steam/logs/vrserver.txt` and `vrcompositor.txt` for "PimaxDreamAirLinux", the EDID match and the lease. Expect a static, correctly distorted view.
 
@@ -119,7 +119,7 @@ Stage 2 (6DoF and controllers): also register Monado's plugin.
 ```
 $VRP adddriver ~/src/monado-eye/build/steamvr-monado
 ```
-Set `"mode": "auto"` (or `"shim"`), and `"distortionSource": "device"` to keep our pimax-lens LUT. Give vrserver the env our launcher sets: in SteamVR's Steam launch options use `PIMAX_FPS=72 PIMAX_SLAM=1 %command%`, plus the camera broker under the lock as in `pimax vr start --6dof`.
+Set `"mode": "auto"` (or `"shim"`), and `"distortionSource": "device"` to keep our pimax-lens LUT. Give vrserver the env our launcher sets: in SteamVR's Steam launch options use `PIMAX_FPS=72 PIMAX_SLAM=1 %command%`, plus the camera broker under the lock as in `omarchyvr vr start --6dof`.
 
 **Stop:** SteamVR's own quit only (vrmonitor menu > Exit, or close the SteamVR status window), then wait. Never `kill -9` vrserver or vrcompositor, and never kill by name. If the view freezes, SteamVR quit first. After any Xid, reboot before the next test.
 

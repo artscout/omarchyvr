@@ -43,7 +43,7 @@ Findings:
    Caveat: the container can't load Monado from a path outside $HOME/$XDG_RUNTIME_DIR; ours is under $HOME so it is visible. The OpenXR loader inside
    the container must be able to load libopenxr_monado.so (built against host libs; if it fails there, try Steam's "Steam Linux Runtime"-less
    launch, or install monado system-wide / build with the same runtime).
-   Do not start SteamVR itself. Logs: `~/.local/state/xrizer/xrizer.txt`, `/tmp/pimax-vr-session/monado.log`.
+   Do not start SteamVR itself. Logs: `~/.local/state/xrizer/xrizer.txt`, `/tmp/omarchyvr-session/monado.log`.
    Game windows: the game opens a flat mirror window; the headset shows the Monado compositor output.
 4. Tracking is 3DoF only (no positional tracking) and controllers are being worked on separately, so use seated, head-look games.
 

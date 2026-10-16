@@ -1,12 +1,14 @@
 # omarchyvr: Pimax Dream Air VR on Linux (Omarchy / Arch)
 
+Unofficial. Supports Pimax Dream Air. Not affiliated with Pimax or Omarchy.
+
 **omarchyvr is an unofficial community project. It is not affiliated with, made by, or endorsed by Pimax or Omarchy.** "Pimax" and "Dream Air" are trademarks of Pimax and are used only to say which hardware this works with. No warranty: the tools talk to the headset over USB and change system settings; use at your own risk. Licence: code MIT OR Apache-2.0, docs and data CC-BY-4.0 (see NOTICE, THIRD-PARTY.md).
 
-Binary, crate and config names still use the `pimax` prefix (`pimax-setup`, `~/.config/pimax`); they will be renamed later.
+Names: the app is `omarchyvr-app`, the command line tool `omarchyvr`, the daemon `omarchyvrd`, user data lives in `~/.config/omarchyvr` (and `~/.local/share|state|cache/omarchyvr`). Crates that name Pimax hardware keep their `pimax-` names. The full table is [docs/NAMES.md](docs/NAMES.md).
 
 Unofficial. This project makes the **Pimax Dream Air** work on Linux (Arch / Omarchy, Hyprland) the way Pimax Play does on Windows: **one app, one click, everything part of one whole.** It is not made or endorsed by Pimax. The protocol was reverse-engineered from Windows USB captures of our own headset.
 
-The user never needs a terminal: everything is reachable from the Pimax app (`pimax-setup`, starts at login). Play starts VR games, Work starts the VR desktop.
+The user never needs a terminal: everything is reachable from the omarchyvr app (`omarchyvr-app`, starts at login). Play starts VR games, Work starts the VR desktop.
 
 ![Architecture](docs/img/architecture.png)
 
@@ -64,7 +66,7 @@ One PC, one headset. Nothing here is tested on other hardware.
 - SteamVR, the Steam client and Steam's container (pressure-vessel), Proton.
 - Hyprland and Omarchy.
 
-What that means: a Steam or SteamVR update, a new NVIDIA release or a Hyprland change can break VR overnight. We cannot stop that, so the app has a Ready check, a game check and Autofix to find and repair the usual causes, and `pimaxd` restarts parts safely. Fixes still need a new build from us.
+What that means: a Steam or SteamVR update, a new NVIDIA release or a Hyprland change can break VR overnight. We cannot stop that, so the app has a Ready check, a game check and Autofix to find and repair the usual causes, and `omarchyvrd` restarts parts safely. Fixes still need a new build from us.
 
 ## Known problems and missing
 

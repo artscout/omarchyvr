@@ -9,25 +9,25 @@ It is not the desktop wallpaper (`Max, next wallpaper` is Omarchy's and unrelate
   **Download more** fetches the free pictures (resumable; progress shown).
 - **Voice**: "Max, set background flowers" (universe, ocean, hawaii, sunset, mountains, forest, desert, night sky,
   city night, snow, lake, underwater ...), "Max, next background", "Max, previous background", "Max, background off".
-  The voice names are `<theme>_<picture>` (`pimax-backgrounds list`); a theme word shows its first picture,
+  The voice names are `<theme>_<picture>` (`omarchyvr-backgrounds list`); a theme word shows its first picture,
   "next background" steps through all of them.
-- **Work start**: when a background is on, `pimax desk start` shows it once WayVR runs (over the preset's passthrough).
-- The choice is one file, `~/.config/pimax/background.toml` (`enabled`, `id`, `res`), shared by the app, voice and the
+- **Work start**: when a background is on, `omarchyvr desk start` shows it once WayVR runs (over the preset's passthrough).
+- The choice is one file, `~/.config/omarchyvr/background.toml` (`enabled`, `id`, `res`), shared by the app, voice and the
   desk start.
 
 ## How it works
 | | |
 |---|---|
-| Library | `~/.local/share/pimax/backgrounds/<theme>/` (never in git): `manifest.toml`, `thumbs/<name>.png`, `<name>_<8k\|4k\|2k>.dds` |
+| Library | `~/.local/share/omarchyvr/backgrounds/<theme>/` (never in git): `manifest.toml`, `thumbs/<name>.png`, `<name>_<8k\|4k\|2k>.dds` |
 | Format | equirectangular 2:1, DDS (WayVR's skybox reads DDS only; BC1/BC7 stay compressed on the GPU: 8K = 16 to 32 MB) |
 | WayVR | `wayvrctl skybox <path to .dds>` (the equirect layer of `skybox.rs`, `khr_composition_layer_equirect2`); the passthrough camera goes off after the picture is drawn |
 | Sizes | per picture 8K / 4K / 2K as far as the source goes (a 6000 px source has 4K and 2K) |
-| Source list | `rust/pimax-backgrounds/sources.toml` (URLs and licences; no images in the repo) |
-| Downloader | `pimax-backgrounds download`: official APIs only (Poly Haven, Wikimedia Commons), `curl -C -` resume, size and decode check, SHA-256 of every file in the manifest, 4 GB cap, 2 GB free-disk guard, `nice -n 19`; `pimax-backgrounds verify [--deep]` checks the library again |
+| Source list | `rust/omarchyvr-backgrounds/sources.toml` (URLs and licences; no images in the repo) |
+| Downloader | `omarchyvr-backgrounds download`: official APIs only (Poly Haven, Wikimedia Commons), `curl -C -` resume, size and decode check, SHA-256 of every file in the manifest, 4 GB cap, 2 GB free-disk guard, `nice -n 19`; `omarchyvr-backgrounds verify [--deep]` checks the library again |
 | Engine | `curl` and ImageMagick (`magick`) |
 | First set | the 16 pictures of WayVR's `skybox/` folder (`CREDITS.txt`, BC7) are linked into the library, not copied; sources.toml skips what they already cover |
 
-CLI (for agents): `pimax-backgrounds list|download|verify|set NAME|next|previous|off|res auto|8k|4k|2k|apply|status`.
+CLI (for agents): `omarchyvr-backgrounds list|download|verify|set NAME|next|previous|off|res auto|8k|4k|2k|apply|status`.
 
 ## Terms of the sources
 - **Poly Haven**: CC0. Official API (`api.polyhaven.com`) with a named User-Agent; the 8K tonemapped JPG is downloaded

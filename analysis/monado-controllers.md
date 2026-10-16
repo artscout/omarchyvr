@@ -1,6 +1,6 @@
 # Monado pimax driver: controllers (2026-10-13)
 
-Files (Monado tree, branch `pimax`): `src/xrt/drivers/pimax/pimax_ctrl.{c,h}`; hooks in `pimax_hmd.c` (callbacks on_controller, on_controller_status, on_state), `pimax_prober.c` (returns HMD + 2 controllers), `drivers/CMakeLists.txt`.
+Files (Monado tree, branch `omarchyvr`): `src/xrt/drivers/pimax/pimax_ctrl.{c,h}`; hooks in `pimax_hmd.c` (callbacks on_controller, on_controller_status, on_state), `pimax_prober.c` (returns HMD + 2 controllers), `drivers/CMakeLists.txt`.
 Client: `analysis/tools/ctrlcli.c` (`gcc -o ctrlcli analysis/tools/ctrlcli.c -lopenxr_loader -lm`, `./ctrlcli 20`; headless, touch profile, prints both hands 5x/s incl. aim pose).
 
 ## Design

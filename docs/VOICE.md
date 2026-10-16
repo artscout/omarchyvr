@@ -1,8 +1,8 @@
 # Voice control ("Max, ...")
 
 Everything in desk mode can be done by voice. The pipeline is:
-- speech goes to the headset mic and `pimax-voice listen` turns it into text, locally;
-- `pimax-voice act` turns the text into an intent (offline matcher, with an optional LLM fallback);
+- speech goes to the headset mic and `omarchyvr-voice listen` turns it into text, locally;
+- `omarchyvr-voice act` turns the text into an intent (offline matcher, with an optional LLM fallback);
 - the intent runs its action, and you see a short toast in the headset.
 
 Nothing leaves the machine unless you set up a remote LLM yourself.
@@ -13,7 +13,7 @@ Nothing leaves the machine unless you set up a remote LLM yourself.
   from "Pi"/"Hey"/"Ok" ("Hi Max", "B Max", "Five marks", "Time Max"). "Pimax" still works. It must come first
   (the "max" within the first 3 words), and the rest of the sentence must be a whole command. Normal talk, captions,
   and sentences that only contain a command or "max" ("set it to max", "I told Max to switch...") never trigger.
-- **Command-word mishearings** are fixed by an alias table (`ALIASES` in `rust/pimax-voice/src/command.rs`):
+- **Command-word mishearings** are fixed by an alias table (`ALIASES` in `rust/omarchyvr-voice/src/command.rs`):
   war/walk/wok/worth = work, tree/free = three, won = one, cinemas/sinema = cinema. "Time Max War Three" runs work-3.
 - **Close is good enough.** Beyond the alias table, a fuzzy, sound-aware matcher scores every phrase ("liz windows"
   and "leaks list windows" both run list windows); a clear winner runs at once, a plausible one is asked about ("Did
@@ -43,7 +43,7 @@ Nothing leaves the machine unless you set up a remote LLM yourself.
   ...". Info commands (battery, network, CPU) show their answer in the toast.
 - **Confirmation** (`voice_confirm` in ai.toml, the **Confirm** selector on the app's AI page):
   - `none` (the default): every command runs at once, lock, close window and typing into a terminal included.
-    Everything is logged (typed text in `~/.local/state/pimax/logs/typed.log`).
+    Everything is logged (typed text in `~/.local/state/omarchyvr/logs/typed.log`).
   - `dangerous`: lock, close window / app / tab, and typing or Enter into a terminal ask "...? Say yes" first.
   - `always`: every command asks.
 
@@ -54,11 +54,11 @@ Nothing leaves the machine unless you set up a remote LLM yourself.
 - **Help.** "Max, help" or "Max, what can I say" shows a short list.
 
 ## Presets (desk mode layouts)
-`pimax desk start` now uses **cinema by default**:
+`omarchyvr desk start` now uses **cinema by default**:
 - use `--preset work-3|work-1|assistant` to start in another preset;
 - use `--preset none` for no preset (the old default).
 
-You can switch live by voice, or with `pimax desk preset NAME` (add `--dry-run` to only print the steps). A live
+You can switch live by voice, or with `omarchyvr desk preset NAME` (add `--dry-run` to only print the steps). A live
 switch restarts nothing.
 
 | preset | screens | passthrough |
@@ -89,9 +89,9 @@ details are in [SCREENS.md](SCREENS.md).
 With one VR screen, work-3 makes up its side screens from **WayVR app panels**:
 - These are Wayland apps running inside WayVR's own compositor, started with `wayvrctl process-launch` and named
   `work-left` and `work-right`.
-- The defaults are a `foot` terminal on each side. Change them in `~/.config/pimax/work-panels.conf`:
+- The defaults are a `foot` terminal on each side. Change them in `~/.config/omarchyvr/work-panels.conf`:
   ```
-  # ~/.config/pimax/work-panels.conf
+  # ~/.config/omarchyvr/work-panels.conf
   left = foot
   right = nautilus --new-window
   ```
@@ -120,8 +120,8 @@ The **desktop wallpaper** is different: "Max, next wallpaper" or "Max, desktop b
 `omarchy-theme-bg-next` (row 37).
 
 ## Full phrase list
-Generated from `rust/pimax-voice/voice-intents.toml`; `pimax-voice intents` prints the live list, including your
-override. `@...` actions are built into `pimax-voice act`.
+Generated from `rust/omarchyvr-voice/voice-intents.toml`; `omarchyvr-voice intents` prints the live list, including your
+override. `@...` actions are built into `omarchyvr-voice act`.
 
 ### VR presets
 
@@ -240,9 +240,9 @@ left", "cycle windows", "float window" are now "app" phrases):
 | new tab / open a new tab | browser Ctrl+T; in a terminal a new terminal split (`omarchy-launch-terminal`); not in a group | win.tab.new |
 | list windows / show windows / what windows are open | the VR screens with their apps ("Main: foot, firefox \| Left: empty \| ..."), then apps no screen shows | win.list |
 | go to / switch to / find window where {text} (also "with", "about") | the AI switch (needs a provider) | win.ai.switch |
-| four screens / give me 4 screens / one screen (1 to 6) | shows that many VR screens: main, left, right, up, up-left, up-right (`pimax desk screens show N`) | vr.screens.count |
-| two more screens / add 2 screens / one more screen / another screen | N more than are shown now, up to 6 (`pimax desk screens more N`) | vr.screens.more, vr.screens.one_more |
-| a screen to the left / add a screen up there / a screen top right | shows that screen (`pimax desk screens add SIDE`) | vr.screens.add |
+| four screens / give me 4 screens / one screen (1 to 6) | shows that many VR screens: main, left, right, up, up-left, up-right (`omarchyvr desk screens show N`) | vr.screens.count |
+| two more screens / add 2 screens / one more screen / another screen | N more than are shown now, up to 6 (`omarchyvr desk screens more N`) | vr.screens.more, vr.screens.one_more |
+| a screen to the left / add a screen up there / a screen top right | shows that screen (`omarchyvr desk screens add SIDE`) | vr.screens.add |
 | open / focus / put YouTube in a new window, put Spotify on its own screen | that app on a free VR screen of its own, focused: a browser tab moves alone (its address opens in a new browser window there, the page reloads), another app moves whole, not open = it opens there | win.screen.open |
 | move all the terminals to one window / put all the browsers on one screen | every app of that kind joins the one in use; the other apps stay | win.screen.gather |
 | go to / focus (in) the main window | the main (middle) VR screen | win.screen.goto |
@@ -266,7 +266,7 @@ workspace without asking.
 ### Typing, keys and the browser (user request 2026-10-15)
 Typing and keys go to the **focused app** only: the virtual keyboard has no target, the compositor delivers to the
 focused surface. Since 2026-10-15 the voice process keeps **one** Wayland virtual keyboard open with one fixed keymap
-(ASCII, Latin-1 with the Spanish letters, the named keys; `rust/pimax-voice/src/vkbd.rs`) instead of a new `wtype`
+(ASCII, Latin-1 with the Spanish letters, the named keys; `rust/omarchyvr-voice/src/vkbd.rs`) instead of a new `wtype`
 per command: every new virtual keyboard made Hyprland switch keymaps and terminals lost or garbled the first
 character. After 1.5 s idle it taps Shift and waits 60 ms first, so Hyprland has switched to its keymap. If it cannot
 connect, the command falls back to `wtype`. Into a terminal (foot,
@@ -303,7 +303,7 @@ then lists every step's result ("2 of 2 steps: 1. Showing 6 screens | 2. google-
 | swap screens 1 and 2 | the apps of the two screens change places | win.screen.swap |
 | make screen 2 bigger / bring screen one closer / move screen 3 left | that screen in space: bigger, smaller, closer, farther, left, right, up, down | win.screen.adjust |
 | open YouTube on screen 3 / open https://... on screen 2 / open ~/Videos/x.mkv on screen 1 | that screen is focused, then the site (new browser window), address, file (its default app) or terminal / browser / files opens there | win.screen.open_n |
-| save this layout (as coding) / restore the (coding) layout | which app is on which screen, saved in `~/.local/state/pimax/voice-layouts.json`; restore moves the open apps back (by class, the closest title first), nothing opens or closes | win.layout.save(_as), win.layout.restore(_as) |
+| save this layout (as coding) / restore the (coding) layout | which app is on which screen, saved in `~/.local/state/omarchyvr/voice-layouts.json`; restore moves the open apps back (by class, the closest title first), nothing opens or closes | win.layout.save(_as), win.layout.restore(_as) |
 | show screen numbers / hide screen numbers / always show screen numbers | the number badge on each VR screen (`wayvrctl screen-numbers show|hide|always`). The numbers also flash by themselves for ~5 s when "Max" is heard alone or a command talks about screens, and after a move / send / go to / swap / open on screen N that screen's badge lights amber (`screen-numbers flash N`). An older WayVR without the command: nothing happens, nothing fails | vr.screens.numbers(_hide, _always) |
 | set the volume to 40 / volume 70 percent | the volume to N percent (`wpctl -l 1.0`: never above 100) | omarchy.volume.set |
 | play Dune / I want to watch Dune | the video whose file name has those words, in ~/Downloads, ~/Videos and the XDG videos folder only (3 folders deep, never the rest of home): the biggest match, then the newest ("Playing Dune.2021.mkv (the biggest of 2)"); fullscreen in mpv on the main screen (cinema mode shows that one). Not found: "No video called ..." and nothing else runs. Nothing is downloaded | media.play |
@@ -315,13 +315,13 @@ then lists every step's result ("2 of 2 steps: 1. Showing 6 screens | 2. google-
 
 | say "Max ..." | does | intent |
 |---|---|---|
-| close screen 2 / close down screen number two / remove screen number four and three / shut down screens 4 and 3 / hide screens 2, 3 and 5 / close window 2 / close this screen | those VR screens HIDE (`pimax desk screens hide 4,3`); their apps stay open and come back with the screen ("add a screen on the right", "4 screens"). Never closes an app | vr.screens.hide |
+| close screen 2 / close down screen number two / remove screen number four and three / shut down screens 4 and 3 / hide screens 2, 3 and 5 / close window 2 / close this screen | those VR screens HIDE (`omarchyvr desk screens hide 4,3`); their apps stay open and come back with the screen ("add a screen on the right", "4 screens"). Never closes an app | vr.screens.hide |
 | close everything / close the screens / close all the screens / close the other two screens | every screen but the main one hides; no app closes | vr.screens.hide_others |
 | make all these screens half the size / make all the screens double the size / all screens 75 percent / make screen 2 half the size | every VR screen (or the one named) scaled to that size (`wayvrctl screen-nudge --step`: half = 1/2, double = x2, a percent) | win.screen.scale |
 | move all the terminals to screen number three / put chrome on screen five | the apps of that kind or name to screen N (the screen number always reaches the action) | win.screen.put_n |
 | move this screen number one to the right | screen 1 itself moves right in space | win.screen.adjust |
 | move it in front of me (the screen) / bring the screen in front of me | the screens back in front of your head | vr.screens.reset |
-| stop the VR / shut down work VR / exit VR / close work / stop the session | stops Work / VR exactly like the app's Stop button (`pimax desk stop --grace 30`). **The one command that always asks "yes" first**, whatever `voice_confirm` says | vr.session.stop |
+| stop the VR / shut down work VR / exit VR / close work / stop the session | stops Work / VR exactly like the app's Stop button (`omarchyvr desk stop --grace 30`). **The one command that always asks "yes" first**, whatever `voice_confirm` says | vr.session.stop |
 
 These are decided by fixed rules (`rules.rs`) before the model is asked: a request that names a VR screen by number,
 stops the session or resizes screens never depends on the model. "Close window" (a workspace with its apps,
@@ -376,16 +376,16 @@ passthrough off), "Max, set up work: terminals left, browser middle, YouTube up-
 screens, the terminals on the left and Chrome on the right".
 
 **Cancel** (user decision 2026-10-16): "Max, cancel", "Max, cancel that", "Max, stop", or "cancel"/"stop" alone while a
-plan or a goal runs. `pimax-voice act`'s listener thread watches for these while a task runs (`Actor::task_busy`): the
+plan or a goal runs. `omarchyvr-voice act`'s listener thread watches for these while a task runs (`Actor::task_busy`): the
 task stops before its next step (a step already started finishes and is not undone) and says "Cancelled after step 1 of 3" (in a goal, M = the parts heard); the words never reach the planner as a new request.
 
 ### Recording (docs/RECORD.md)
 
 | say "Max ..." | does | intent |
 |---|---|---|
-| start recording / start a recording / record / record video / record this / start the recording / empieza a grabar / graba / grabar | `pimax record start` with the saved settings (the toast shows its answer) | vr.record.start |
-| stop recording / stop the recording / end recording / end the recording / finish recording / para de grabar / deja de grabar / termina la grabacion | `pimax record stop`: saves the file, the toast says where | vr.record.stop |
-| am i recording / are we recording / recording status / is it recording / estoy grabando | `pimax record status` | vr.record.status |
+| start recording / start a recording / record / record video / record this / start the recording / empieza a grabar / graba / grabar | `omarchyvr record start` with the saved settings (the toast shows its answer) | vr.record.start |
+| stop recording / stop the recording / end recording / end the recording / finish recording / para de grabar / deja de grabar / termina la grabacion | `omarchyvr record stop`: saves the file, the toast says where | vr.record.stop |
+| am i recording / are we recording / recording status / is it recording / estoy grabando | `omarchyvr record status` | vr.record.status |
 
 ### Not available by voice
 The user decided on 2026-10-15 not to approve these rows of
@@ -400,10 +400,10 @@ and closing an app, a tab or a window (= workspace) with a spoken "yes". Those r
 which can only focus, switch to or create workspaces, move apps between workspaces, cycle, pick or open tabs, list, and
 close apps (one, or all of one workspace); the loader refuses an `@win` close action without `confirm = true`. Shutdown, logout and Hyprland exit/kill stay impossible.
 
-## Checking every command (`pimax-voice audit`)
-The app's AI page has **Check all voice commands** (and **Open the last check**). It runs `pimax-voice audit` at
+## Checking every command (`omarchyvr-voice audit`)
+The app's AI page has **Check all voice commands** (and **Open the last check**). It runs `omarchyvr-voice audit` at
 nice 19: every intent's first phrase, the same phrase as the speech-to-text might mangle it ("work" -> "war",
-"list" -> "liz"), and ~200 natural phrasings (`rust/pimax-voice/tests/fixtures/audit.tsv`) go through the whole route
+"list" -> "liz"), and ~200 natural phrasings (`rust/omarchyvr-voice/tests/fixtures/audit.tsv`) go through the whole route
 (exact, fuzzy, model) in a **dry run**: nothing is executed, typed or opened. It pauses 1 s after each model request
 (`--pause-ms`) so the desktop stays responsive, and it refuses to start during a VR session (the live voice commands
 need the model). Results: [AI.md](AI.md) section 13 and `analysis/voice-audit.html`.
@@ -466,7 +466,7 @@ Dry-run audit (local Lara + Qwen3.5-4B on the GPU, `tests/fixtures/live-2026-10-
   state the user wants?" (`planner::system_prompt`).
 - A request about screens ("close screen 2") never sees `browser.search` or the app closers; an answer outside the
   offered tools is refused even without a grammar.
-- Each knob is a variant setting (`pimax-voice audit --state --variant FILE`, `tests/state/variants/*.toml`):
+- Each knob is a variant setting (`omarchyvr-voice audit --state --variant FILE`, `tests/state/variants/*.toml`):
   `tools.scope` = all (production for now) | category | category+hints | topk, `tools.top_k`, `prompt.blocks`,
   `prompt.target_line`, `prompt.template` (a file with another opening), plus the model, Lara and grammar knobs the
   runner applies. An experiment is a config change.
@@ -517,7 +517,7 @@ grammar, never a test phrase (`leak::tests` checks):
 | "close (down) screen number two" (x4) | win.ws.close on a gazed workspace; once "Close window 1 (2 apps)?" | the model's "close window" for a screen; the target was re-read at the yes | rule: hide the screen; close window never for a screen; pinned workspace |
 | "shut down work VR", "can you stop the VR" | nothing | no stop intent | vr.session.stop (asks yes) |
 | "close everything" (x2) | nothing | no intent | vr.screens.hide_others |
-| (all session) | Parakeet on the CPU | the GPU speech server (8082) had been stopped at 14:59 and nothing started it again: `ai.server`'s health only watches llama-server, and game mode's restore ran `pimax-ai serve` (the action model only) | Work start runs `pimax-ai up --wait 0` (detached) when Local AI is on; game mode restores with `pimax-ai up` |
+| (all session) | Parakeet on the CPU | the GPU speech server (8082) had been stopped at 14:59 and nothing started it again: `ai.server`'s health only watches llama-server, and game mode's restore ran `omarchyvr-ai serve` (the action model only) | Work start runs `omarchyvr-ai up --wait 0` (detached) when Local AI is on; game mode restores with `omarchyvr-ai up` |
 
 Audit (dry run, local Lara + Qwen3.5-4B on the GPU; the natural phrasings of each set, before 2068884 -> after
 7a3181e; "all" adds each version's own catalogue phrases, exact and ASR-mangled):
@@ -531,18 +531,18 @@ Audit (dry run, local Lara + Qwen3.5-4B on the GPU; the natural phrasings of eac
 | live 2026-10-16 morning | 52/53 | 51/53 | 314/317 | 319/325 |
 | aibench | 41/45 | 42/45 | 303/309 | 310/317 |
 
-The intent audit is now a smoke test: the measure of quality is the state audit (`pimax-voice audit --state`,
+The intent audit is now a smoke test: the measure of quality is the state audit (`omarchyvr-voice audit --state`,
 docs/VOICE-STATE-TESTS.md), which checks the end state of the desktop, not the intent name.
 
-## Your own changes: `~/.config/pimax/voice-intents.toml`
+## Your own changes: `~/.config/omarchyvr/voice-intents.toml`
 This file is optional and not created for you. It uses the same format as the built-in catalogue (the comments at the
-top of `rust/pimax-voice/voice-intents.toml` explain each key).
+top of `rust/omarchyvr-voice/voice-intents.toml` explain each key).
 - An `[[intent]]` with an existing `id` sets `enabled`, adds `phrases`, and can replace `run`, `slots` and `say`.
 - A new `id` adds a command.
 - `[wake]`, `[paths]`, `[backdrop]` and `[llm]` replace the defaults.
 
 ```toml
-# ~/.config/pimax/voice-intents.toml
+# ~/.config/omarchyvr/voice-intents.toml
 [[intent]]
 id = "omarchy.screenshot"
 enabled = false                      # turn one off
@@ -577,7 +577,7 @@ Configure it in the override file:
 backend = "auto"     # default: local ollama (127.0.0.1:11434) if it answers, else off
 # backend = "ollama"; model = "qwen2.5:3b"
 # backend = "openai"; url = "https://api.openai.com/v1/chat/completions"; model = "gpt-4o-mini"
-# api_key_file = "~/.config/pimax/llm.key"   (or api_key_env = "OPENAI_API_KEY"); never put a key in the repo
+# api_key_file = "~/.config/omarchyvr/llm.key"   (or api_key_env = "OPENAI_API_KEY"); never put a key in the repo
 # backend = "off"
 timeout_s = 6.0
 ```
@@ -585,24 +585,24 @@ Remote calls go through `curl -K -` (the key is on stdin, not on the command lin
 local ollama: `ollama pull qwen2.5:3b`.
 
 ## AI agent (voice_ai)
-With `voice_ai = "fallback"` or `"always"` in `~/.config/pimax/ai.toml` (the app's AI tab), a model with tools handles
+With `voice_ai = "fallback"` or `"always"` in `~/.config/omarchyvr/ai.toml` (the app's AI tab), a model with tools handles
 what the matcher does not understand, and deictic requests ("Max, close this", "the one I'm looking at") use the gaze.
 When the agent is on, it replaces the `[llm]` fallback and the AI switch below for those requests. The tools are the
 catalogue's own intents, so `confirm` intents still need "yes" and `never` rows are refused. Local model:
-`pimax-ai install` / `serve --cpu` (in VR). The local model gets a compact request (the intent list once, cached;
+`omarchyvr-ai install` / `serve --cpu` (in VR). The local model gets a compact request (the intent list once, cached;
 per command only the fuzzy hints, the words and a little context) and answers in about 1.3 s on the CPU.
-`pimax-voice aibench` measures it. Everything else is in [AI.md](AI.md).
+`omarchyvr-voice aibench` measures it. Everything else is in [AI.md](AI.md).
 
 ## AI switch (optional)
 For requests the offline matcher does not know ("Max, go to the window where I was reading about Monado"), or when no
 window matches the name you said, a model can pick the window.
-- **Setup:** a provider in `~/.config/pimax/ai.toml` (the GUI's AI tab writes it). No file or no provider = off.
-  `pimax-voice act` logs "AI switch: ..." at start. Interim format, read by `llm::ChatClient`:
+- **Setup:** a provider in `~/.config/omarchyvr/ai.toml` (the GUI's AI tab writes it). No file or no provider = off.
+  `omarchyvr-voice act` logs "AI switch: ..." at start. Interim format, read by `llm::ChatClient`:
   ```toml
   [switch]
   kind = "anthropic"                 # anthropic | openai | openai-compatible
   # model = "claude-haiku-5-5"       # default for anthropic; required for openai kinds
-  # api_key_file = "~/.config/pimax/anthropic.key"   (or api_key_env; default ANTHROPIC_API_KEY / OPENAI_API_KEY)
+  # api_key_file = "~/.config/omarchyvr/anthropic.key"   (or api_key_env; default ANTHROPIC_API_KEY / OPENAI_API_KEY)
   # url = "http://127.0.0.1:11434/v1"   # openai-compatible (ollama, llama-server); /chat/completions is appended
   # timeout_s = 8
   ```
@@ -616,19 +616,19 @@ window matches the name you said, a model can pick the window.
 - **Order:** catalogue phrases first; then the catalogue LLM fallback above; then the AI switch.
 
 ## Running it
-- **In desk mode:** `pimax desk start --voice` starts three processes.
-  - `pimax-voice listen` (mic to text) and `pimax-voice captions` (captions panel).
-  - **`pimax-voice act`** (commands): log `voiceact.log` in the session dir, undo state in
-    `$XDG_RUNTIME_DIR/pimax-voice-act.state`.
+- **In desk mode:** `omarchyvr desk start --voice` starts three processes.
+  - `omarchyvr-voice listen` (mic to text) and `omarchyvr-voice captions` (captions panel).
+  - **`omarchyvr-voice act`** (commands): log `voiceact.log` in the session dir, undo state in
+    `$XDG_RUNTIME_DIR/omarchyvr-voice-act.state`.
 - **Text instead of speech:**
-  - `pimax-voice do "pimax cinema mode" --dry-run` prints what would happen.
-  - `pimax-voice do "pimax lock the screen" "yes" --dry-run` tests a confirmation.
+  - `omarchyvr-voice do "pimax cinema mode" --dry-run` prints what would happen.
+  - `omarchyvr-voice do "pimax lock the screen" "yes" --dry-run` tests a confirmation.
   - `--no-wake` implies "Max".
-- **Listen without acting:** `pimax-voice act --dry-run` follows a running listener and prints the actions instead of
+- **Listen without acting:** `omarchyvr-voice act --dry-run` follows a running listener and prints the actions instead of
   doing them.
-- **List:** `pimax-voice intents [--all]`.
-- **Passthrough by hand:** `pimax-passthrough ctl on|off|dim|normal|brighter|darker|gain 0.5|status`.
-  - The control socket is `$XDG_RUNTIME_DIR/pimax-passthrough.sock`.
+- **List:** `omarchyvr-voice intents [--all]`.
+- **Passthrough by hand:** `omarchyvr-passthrough ctl on|off|dim|normal|brighter|darker|gain 0.5|status`.
+  - The control socket is `$XDG_RUNTIME_DIR/omarchyvr-passthrough.sock`.
 - **WayVR by hand:**
   - `wayvrctl desk-layout 3 --curvature 0 --width 1.6 --distance 2`;
   - `wayvrctl skybox off|default|skybox/NAME.dds`;
@@ -636,13 +636,13 @@ window matches the name you said, a model can pick the window.
 
 ### What needs a rebuild or restart (do it with desk mode stopped)
 ```sh
-pimax desk stop
-cd ~/pimax-re/rust && cargo build --release -p pimax-voice -p pimax-passthrough -p pimax-tools
-install -m755 target/release/pimax ~/.local/bin/pimax      # the launcher (desk preset, cinema default, voiceact)
+omarchyvr desk stop
+cd ~/pimax-re/rust && cargo build --release -p omarchyvr-voice -p omarchyvr-passthrough -p omarchyvr-tools
+install -m755 target/release/omarchyvr ~/.local/bin/omarchyvr      # the launcher (desk preset, cinema default, voiceact)
 cp ~/src/target-desk-test/release/wayvr ~/src/target-desk-test/release/wayvrctl ~/src/target-desk/release/
-pimax desk start --voice
+omarchyvr desk start --voice
 ```
-The launcher runs `pimax-voice` and `pimax-passthrough` from `~/pimax-re/rust/target/release`, so building them is
+The launcher runs `omarchyvr-voice` and `omarchyvr-passthrough` from `~/pimax-re/rust/target/release`, so building them is
 enough.
 Older parts keep working:
 - An older WayVR (before `aac483a`) has no `desk-layout` or `skybox`. Presets then only change the passthrough and
@@ -651,27 +651,27 @@ Older parts keep working:
 
 Live test steps: [analysis/voice-live-checklist.md](../analysis/voice-live-checklist.md).
 
-## GUI integration (for pimax-setup / pimax-gui-core; not done here)
+## GUI integration (for omarchyvr-app / omarchyvr-gui-core; not done here)
 A **Voice** settings row could have:
 - **Voice commands** on/off: start desk with `--voice`, or not.
-- **Wake word**: edit `[wake] words` in `~/.config/pimax/voice-intents.toml`. Show the active list from
-  `pimax-voice intents` (the "wake words:" line).
+- **Wake word**: edit `[wake] words` in `~/.config/omarchyvr/voice-intents.toml`. Show the active list from
+  `omarchyvr-voice intents` (the "wake words:" line).
 - **LLM backend**: off / auto (local ollama) / ollama model / OpenAI-compatible (url, model, key file). Write the
   `[llm]` table. Never store the key in the table itself; point `api_key_file` at a 0600 file.
 - **Intent list with toggles**:
-  - Fill it from `pimax-voice intents --all`, one line per intent: `id [safety, source, confirm] phrase | phrase`,
+  - Fill it from `omarchyvr-voice intents --all`, one line per intent: `id [safety, source, confirm] phrase | phrase`,
     with `(off)` in front when disabled.
   - A toggle writes `[[intent]] id = "..." enabled = true|false` to the override file.
   - Do not offer toggles for rows that are not approved: they are not in the list at all.
 - **Preset picker**: cinema (default) / work-3 / work-1 / assistant / none.
   - The GUI today omits `--preset` for "none". That now means **cinema**, so pass `--preset none` explicitly for no
     preset.
-  - While desk mode runs, "Apply now" runs `pimax desk preset NAME`.
-- **Work panels**: two text fields for `left =` / `right =` in `~/.config/pimax/work-panels.conf`.
+  - While desk mode runs, "Apply now" runs `omarchyvr desk preset NAME`.
+- **Work panels**: two text fields for `left =` / `right =` in `~/.config/omarchyvr/work-panels.conf`.
 
 ## Speech engine (2026-10-16)
 
-`pimax-voice listen` recognises speech with Parakeet TDT v3 on the processor (biased to words like Max, passthrough,
+`omarchyvr-voice listen` recognises speech with Parakeet TDT v3 on the processor (biased to words like Max, passthrough,
 screens, workspace, YouTube). This is the default (since 2026-10-16). Only when the switch "Speech on graphics card"
 on the Local AI page is On (`asr = "gpu"` in ai.toml, default Off) and the local models run (Work), it uses Whisper
 large-v3-turbo on the graphics card through `whisper-server` (port 8082); the GPU server shared the card with the AI

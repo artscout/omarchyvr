@@ -12,7 +12,7 @@ controllers unless we pick them up, in work vr".
 | In games | When picked up / Always / Off | Always (games expect controllers) |
 
 The choice is saved in the app state (`controllers_work`, `controllers_play`). The next start gets it as
-`pimax desk start --controllers when-held|always|off` (for Play: `pimax vr start --controllers ...`). The flag goes
+`omarchyvr desk start --controllers when-held|always|off` (for Play: `omarchyvr vr start --controllers ...`). The flag goes
 into `start-argv.txt`, so restarts keep it. A flag that is absent means the default of that side.
 
 While VR runs, each controller shows `in hand`, `put down` or `not in use` next to its battery. Changing the switch
@@ -21,7 +21,7 @@ during a session also changes the running session.
 Voice: "Max, controllers on" (always) and "Max, controllers off". They last until the session ends.
 
 CLI (the engine behind the app):
-`pimax controllers use when-held|always|off` (running session) and `pimax controllers status`.
+`omarchyvr controllers use when-held|always|off` (running session) and `omarchyvr controllers status`.
 
 ## How it works
 

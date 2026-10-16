@@ -6,20 +6,20 @@
 # 9 calibration dots (within ±15 deg / ±12 deg), then 10 different validation dots. If the head moves, the dot turns
 # amber and starts again. Results appear in the headset and here; then:
 #   A        live cursor (green = calibrated, grey = raw)
-#   menu / Y save to ~/.config/pimax/eye-calibration.toml (old file kept as .bak-<utc>)
+#   menu / Y save to ~/.config/omarchyvr/eye-calibration.toml (old file kept as .bak-<utc>)
 #   S        check through the runtime (what WayVR and other OpenXR apps get; the service applies the saved file)
 #   P        smooth pursuit (a moving dot)      B / R  start over      Q  quit
 #
 #   eye_calibrate.sh [--points 13] [--pursuit] [--recenter] [other pimax-eyecal options, see pimax-eyecal --help]
 #
 # Environment: MONADO_BUILD (default ~/src/monado-eye/build), MODE (default 2), LOGDIR (default
-# /tmp/pimax-eyecal), HEADSET_LOCK=1 (take /tmp/pimax-headset.lock for the run).
+# /tmp/pimax-eyecal), HEADSET_LOCK=1 (take /tmp/omarchyvr-headset.lock for the run).
 # Relinking the Monado eye build drops its file capability; restore it with:
 #   sudo setcap cap_sys_nice+ep ~/src/monado-eye/build/src/xrt/targets/service/monado-service
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
 if [ "${HEADSET_LOCK:-0}" = 1 ] && [ -z "${_EYECAL_LOCKED:-}" ]; then
-	_EYECAL_LOCKED=1 exec flock -o -w 3600 /tmp/pimax-headset.lock "$0" "$@"
+	_EYECAL_LOCKED=1 exec flock -o -w 3600 /tmp/omarchyvr-headset.lock "$0" "$@"
 fi
 M=${MONADO_BUILD:-$HOME/src/monado-eye/build}
 SVC=$M/src/xrt/targets/service/monado-service
@@ -30,7 +30,7 @@ mkdir -p "$LOGDIR"
 die() { echo "eye_calibrate: $*" >&2; exit 1; }
 [ -x "$SVC" ] || die "no monado-service at $SVC (set MONADO_BUILD)"
 [ -x "$APP" ] || die "pimax-eyecal not built: (cd ~/pimax-re/rust && cargo build --release -p pimax-eyecal)"
-pgrep -x monado-service >/dev/null && die "a monado-service is already running; stop it first (pimax vr stop / desk stop)"
+pgrep -x monado-service >/dev/null && die "a monado-service is already running; stop it first (omarchyvr vr stop / desk stop)"
 if command -v getcap >/dev/null && ! getcap "$SVC" | grep -q cap_sys_nice; then
 	echo "eye_calibrate: warning: $SVC has no cap_sys_nice (dropped by the relink); restore it with:" >&2
 	echo "  sudo setcap cap_sys_nice+ep $SVC" >&2
@@ -76,5 +76,5 @@ if [ "$XID1" -gt "$XID0" ]; then
 	echo "!!! NEW NVIDIA display errors in the kernel log: reboot before the next headset run"
 fi
 grep -E "pimax-eye" "$LOGDIR/monado.log" | tail -5
-echo "exit code $RC; results in ~/.local/share/pimax/eye-calibration/"
+echo "exit code $RC; results in ~/.local/share/omarchyvr/eye-calibration/"
 exit "$RC"

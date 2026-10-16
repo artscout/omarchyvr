@@ -11,7 +11,7 @@ It has been measured on recordings only. No live session has run it yet (see "Li
 * Driver code: `src/xrt/drivers/pimax/pimax_ht.{c,h}` (thread, rate limits, joints -> OpenXR),
   `pimax_ht_calib.{c,h}` (the factory XML -> Monado stereo calibration), `pimax_camera.c` (`setup_mercury`),
   `pimax_ht_bench.c` (offline bench).
-* Launcher: `rust/pimax-tools/src/vr/hands.rs`. pimaxd component `hands`: `rust/pimax-components/src/spec.rs`.
+* Launcher: `rust/omarchyvr-tools/src/vr/hands.rs`. omarchyvrd component `hands`: `rust/omarchyvr-components/src/spec.rs`.
 * Numbers and method: `analysis/research/hand-tracking-results.md`. Background: `analysis/research/hand-tracking-research.md`.
 
 ## Turning it on
@@ -21,8 +21,8 @@ greyed out (with the reason) while the build lacks `PIMAX_HT_HZ` or the models a
 Tracking > Tests > **Start the hand test** (docs/PLAY.md). The CLI below is the engine behind it.
 
 ```sh
-pimax desk start --6dof --hands                 # desk mode with camera hands
-pimax vr start --6dof --hands --hands-roles     # VR, the hands take the controller roles
+omarchyvr desk start --6dof --hands                 # desk mode with camera hands
+omarchyvr vr start --6dof --hands --hands-roles     # VR, the hands take the controller roles
 ```
 
 | flag | effect |
@@ -46,12 +46,12 @@ How the build is chosen (the simplest design that cannot break a start):
 4. Inside Monado, any failure (models, calibration, ONNX Runtime) only turns the hands off. Monado logs
    `VR continues without camera hands` and keeps running.
 
-**Restarts keep it.** The flags are written to `<session dir>/start-argv.txt` like every start flag. So `pimax desk
-restart`, `pimax vr restart`, the watchdog and pimaxd all start again with `--hands`.
+**Restarts keep it.** The flags are written to `<session dir>/start-argv.txt` like every start flag. So `omarchyvr desk
+restart`, `omarchyvr vr restart`, the watchdog and omarchyvrd all start again with `--hands`.
 
-**pimaxd.** `hands` is a leaf feature component (deps: monado, broker; nothing depends on it). It is never restarted
+**omarchyvrd.** `hands` is a leaf feature component (deps: monado, broker; nothing depends on it). It is never restarted
 on its own: a toggle applies at the next Monado start. It is up when `monado.log` says `hands: Mercury up`. The
-`pimaxd.toml` key is `[components] hands = false`. A start argv decides on its own: no `--hands` means off.
+`omarchyvrd.toml` key is `[components] hands = false`. A start argv decides on its own: no `--hands` means off.
 
 ## Hands only in Work (WayVR)
 
@@ -68,8 +68,8 @@ when no hand is tracked (the pointer is then simply absent).
   default, no controllers at all, never, unless toggled on"). Off: the controllers are ignored ENTIRELY (rays,
   buttons, triggers, sticks, grabs), also while no hand is tracked; there is no fallback. On: controllers work too, a
   tracked controller wins and a tracked camera hand fills in for a controller that is not tracked. It is saved in
-  `~/.config/pimax/wayvr-desk.conf` (`controllers_in_work`; the old `prefer_hands` key is read as its inverse);
-  `pimax desk start` writes it into WayVR's conf.d. The switch also applies at once to a running session.
+  `~/.config/omarchyvr/wayvr-desk.conf` (`controllers_in_work`; the old `prefer_hands` key is read as its inverse);
+  `omarchyvr desk start` writes it into WayVR's conf.d. The switch also applies at once to a running session.
 * Voice: "Max, use controllers" / "prioritize controllers" / "turn on controllers" (`vr.input.controllers`,
   `wayvrctl controllers on`) and "Max, hands only" / "prioritize hands" / "turn off controllers" (`vr.input.hands`,
   `wayvrctl controllers off`). The voice command lasts for the running session; the app switch decides the next
@@ -140,11 +140,11 @@ nice -n 19 ninja -C ~/src/monado-ht/build-ht -j8
 # 2. every relink drops the capability: the compositor needs it for its realtime priority
 sudo setcap cap_sys_nice+ep ~/src/monado-ht/build-ht/src/xrt/targets/service/monado-service
 getcap ~/src/monado-ht/build-ht/src/xrt/targets/service/monado-service   # must print cap_sys_nice=ep
-# 3. launcher (and pimaxd if you use it), installed only while nothing runs (docs/LESSONS.md row 8)
-cd ~/pimax-re/rust && nice -n 19 cargo build --release -j8 -p pimax-tools -p pimax-autod
-install -m755 target/release/pimax ~/.local/bin/pimax.new && mv -f ~/.local/bin/pimax.new ~/.local/bin/pimax
-install -m755 target/release/pimax-autod ~/.local/bin/pimax-autod
-pimax desk start --6dof --hands --dry-run   # must say "camera hands on ... Monado from .../build-ht"
+# 3. launcher (and omarchyvrd if you use it), installed only while nothing runs (docs/LESSONS.md row 8)
+cd ~/pimax-re/rust && nice -n 19 cargo build --release -j8 -p omarchyvr-tools -p omarchyvr-autod
+install -m755 target/release/omarchyvr ~/.local/bin/pimax.new && mv -f ~/.local/bin/pimax.new ~/.local/bin/omarchyvr
+install -m755 target/release/omarchyvr-autod ~/.local/bin/omarchyvr-autod
+omarchyvr desk start --6dof --hands --dry-run   # must say "camera hands on ... Monado from .../build-ht"
 ```
 
 Configure a fresh hands build like the desk build, plus
@@ -155,8 +155,8 @@ Configure a fresh hands build like the desk build, plus
 
 1. Start in VR mode so the test app is the only OpenXR app. Use a bright room and bare hands, and put the
    controllers down or turn them off:
-   `pimax vr start --6dof --hands`
-2. `grep -E "hands" /tmp/pimax-vr-session/monado.log | tail`: you want `hands: Mercury up`, then a stats line every
+   `omarchyvr vr start --6dof --hands`
+2. `grep -E "hands" /tmp/omarchyvr-session/monado.log | tail`: you want `hands: Mercury up`, then a stats line every
    5 s. Hold your hands in front of the headset, 25-50 cm away, and watch `left active` / `right active`.
 3. Joints: `XR_RUNTIME_JSON=~/src/monado-ht/build-ht/openxr_monado-dev.json ~/pimax-re/rust/target/release/xr-handtest --source any --no-grip-check --require any --min-valid 0.3 --seconds 30`
 4. Lit bare-hands recording, to measure detection offline (it reads the broker and does not open the camera):
@@ -164,12 +164,12 @@ Configure a fresh hands build like the desk build, plus
    During the recording, show each hand for about 10 s, then both, then open and close and pinch. Then:
    `nice -n 19 ~/src/monado-ht/build-ht/src/xrt/drivers/pimax_ht_bench ~/hands-lit.pxcam --tsv /tmp/hands-lit.tsv`
    The `detection:` line is the rate. Add `--dump /tmp/hands-dump` for images with the keypoints.
-5. Pinch as a controller: `pimax vr stop`, then `pimax vr start --6dof --hands --hands-roles`, then
+5. Pinch as a controller: `omarchyvr vr stop`, then `omarchyvr vr start --6dof --hands --hands-roles`, then
    `XR_RUNTIME_JSON=~/src/monado-ht/build-ht/openxr_monado-dev.json ~/pimax-re/rust/target/release/xr-pinchtest --seconds 20`.
    While it runs, pinch with each hand. The pinch value should rise above 0.
-6. Desk mode: `pimax desk start --6dof --hands`. WayVR then sees hands only if it uses hand tracking or the
+6. Desk mode: `omarchyvr desk start --6dof --hands`. WayVR then sees hands only if it uses hand tracking or the
    controller roles (`--hands-roles`).
-7. Stop with `pimax vr stop` or `pimax desk stop` as usual. The next start without `--hands` uses the desk build
+7. Stop with `omarchyvr vr stop` or `omarchyvr desk stop` as usual. The next start without `--hands` uses the desk build
    again.
 
 Offline check without the headset (does not touch a live session: its own runtime dir, null compositor, the pimax

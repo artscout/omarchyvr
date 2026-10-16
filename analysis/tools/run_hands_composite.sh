@@ -1,11 +1,11 @@
 #!/bin/bash
 # Offline desk-mode composite: what the compositor puts on the panel with the hands, with NO headset, NO window and NO
-# display. Glue only (the pieces are Monado, rust/pimax-passthrough, WayVR and rust/pimax-lenstest dump2png).
+# display. Glue only (the pieces are Monado, rust/omarchyvr-passthrough, WayVR and rust/pimax-lenstest dump2png).
 #
 #   monado-service   debug-image target (WAYLAND_DISPLAY points nowhere, DISPLAY unset, deferred targets off), so it can
 #                    neither lease DP-1 nor open a window; PIMAX_NO_DEVICE=1 (no USB) + PIMAX_CTRL_HANDS_DEMO=1 (scripted
 #                    hands, head pose identity = looking straight ahead); XRT_COMPOSITOR_DUMP_* writes panel frames
-#   pimax-passthrough  main OpenXR app on a .pxcam replay (the room view, as in `pimax desk start`)
+#   omarchyvr-passthrough  main OpenXR app on a .pxcam replay (the room view, as in `omarchyvr desk start`)
 #   wayvr --headless   XR_EXTX_overlay on top (no desktop access, so nothing on your desktop moves); config copied
 #
 #   run_hands_composite.sh                 3 dumps -> $OUT/png/*.png (both eyes side by side, upright)
@@ -18,7 +18,7 @@ M=${MONADO_BUILD:-$HOME/src/monado-eye/build}
 SVC=$M/src/xrt/targets/service/monado-service
 RT=$M/openxr_monado-dev.json
 WAYVR=${WAYVR:-$HOME/src/target-desk/release/wayvr}
-PT=${PASSTHROUGH:-$HERE/../../rust/target/release/pimax-passthrough}
+PT=${PASSTHROUGH:-$HERE/../../rust/target/release/omarchyvr-passthrough}
 LENSTEST=${LENSTEST:-$HERE/../../rust/target/release/pimax-lenstest}
 PXCAM=${PXCAM:-$HERE/../../rust/pimax-cam/tests/fixtures/evening2.pxcam}
 WAYVR_HOME_SRC=${WAYVR_HOME_SRC:-$HOME/src/desk-out/wayvr-home-am}

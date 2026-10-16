@@ -1,6 +1,6 @@
 #!/bin/bash
 # Direct-mode smoke test (max ~40 s). Usage: run_direct_test.sh [outdir]
-OUT=${1:-/tmp/pimax-direct-test}; mkdir -p "$OUT"
+OUT=${1:-/tmp/omarchyvr-direct-test}; mkdir -p "$OUT"
 M=$HOME/src/monado/build
 export XRT_COMPOSITOR_FORCE_WAYLAND_DIRECT=1 XRT_COMPOSITOR_WAYLAND_CONNECTOR=DP-1 XRT_COMPOSITOR_PRINT_MODES=1
 export XRT_COMPOSITOR_FORCE_NVIDIA=0 XRT_COMPOSITOR_DESIRED_MODE=${XRT_COMPOSITOR_DESIRED_MODE:--1}

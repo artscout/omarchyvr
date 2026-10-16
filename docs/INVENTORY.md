@@ -16,43 +16,43 @@ Status key: **working** = used live and passing; **experimental** = runs, limite
 
 | name | kind | path | what it does | status | command to run it |
 |---|---|---|---|---|---|
-| pimax (pimax-tools) | Rust binary | `rust/pimax-tools/`; installed copy `~/.local/bin/pimax` | Launcher and CLI: keepalived, probe, imu, controllers, calib, video-on, logtail, info, vr, desk, mount-shared | working | `pimax vr start` |
-| pimax-keepalived | user systemd service (Rust via drop-in) | `~/.config/systemd/user/pimax-keepalived.service` -> `linux/pimax-keepalived.service`; drop-in `~/.config/systemd/user/pimax-keepalived.service.d/rust.conf` | Wake + keepalive every 213 ms, drains IF1-IF3 | working (always on) | `systemctl --user status pimax-keepalived` |
-| pimax-doctor | Rust binary | `rust/pimax-doctor/` | Read-only health checks: USB/udev, keepalive, NVIDIA patches (ids viewport, flip-fix, bounded-wait), EDID connector, lease, setcap, kernel log. Fix plan only, never runs it | working (13/13 OK per HISTORY) | `pimax-doctor` |
-| pimax-setup ("Pimax" app) | Rust egui GUI + core lib | `rust/pimax-setup/` (UI), `rust/pimax-gui-core/` (state, LESSONS preflight, checklist, tools, safety); desktop entry `linux/pimax.desktop` | Desk mode start/stop with the LESSONS preflight and live status, setup checklist with fixes (pkexec for root), tools, logs and history, first-run wizard, profiles. See [GUI.md](GUI.md) | built and tested offline; desk start/stop from the app not yet exercised live | `cd ~/pimax-re/rust && cargo run --release -p pimax-setup` |
+| pimax (omarchyvr-tools) | Rust binary | `rust/omarchyvr-tools/`; installed copy `~/.local/bin/omarchyvr` | Launcher and CLI: keepalived, probe, imu, controllers, calib, video-on, logtail, info, vr, desk, mount-shared | working | `omarchyvr vr start` |
+| omarchyvr-keepalived | user systemd service (Rust via drop-in) | `~/.config/systemd/user/omarchyvr-keepalived.service` -> `linux/omarchyvr-keepalived.service`; drop-in `~/.config/systemd/user/omarchyvr-keepalived.service.d/rust.conf` | Wake + keepalive every 213 ms, drains IF1-IF3 | working (always on) | `systemctl --user status omarchyvr-keepalived` |
+| omarchyvr-doctor | Rust binary | `rust/omarchyvr-doctor/` | Read-only health checks: USB/udev, keepalive, NVIDIA patches (ids viewport, flip-fix, bounded-wait), EDID connector, lease, setcap, kernel log. Fix plan only, never runs it | working (13/13 OK per HISTORY) | `omarchyvr-doctor` |
+| omarchyvr-app ("Pimax" app) | Rust egui GUI + core lib | `rust/omarchyvr-app/` (UI), `rust/omarchyvr-gui-core/` (state, LESSONS preflight, checklist, tools, safety); desktop entry `linux/omarchyvr.desktop` | Desk mode start/stop with the LESSONS preflight and live status, setup checklist with fixes (pkexec for root), tools, logs and history, first-run wizard, profiles. See [GUI.md](GUI.md) | built and tested offline; desk start/stop from the app not yet exercised live | `cd ~/pimax-re/rust && cargo run --release -p omarchyvr-app` |
 | pimax-eye | Rust binary + lib | `rust/pimax-eye/` | Tobii EyeChip (2104:0561) TTP, replay, live tracker for Monado, watch view, IPD measure and motor, power-on, pcap decode | working for streaming (119 Hz, both eyes); accuracy not solved (8.8 deg raw) | `pimax-eye replay --skip-cal --skip-vendor-write` |
 | pimax-eyecal | Rust OpenXR/Vulkan app | `rust/pimax-eyecal/` | Eye calibration and validation app, pursuit, live cursor, runtime check | experimental, untested live (per analysis/eye-precision.md not yet run worn) | `analysis/tools/eye_calibrate.sh` |
-| pimax-ipd | Rust binary + lib | `rust/pimax-ipd/` | Guided IPD test shown in the headset (pimax-hud): countdown, eye-chip measurement, measured vs lens IPD. `--apply` moves the lenses (the approved IPD command) and refuses a measurement that looks wrong. `manual` picks the IPD by keys; `--simulate` writes the screens as PNG without a headset | built and tested offline (fake devices, `--simulate`); no live run recorded in the docs | `pimax-ipd --simulate` (no headset); `pimax-ipd` measures only |
-| pimax-hud | Rust lib (OpenXR/Vulkan) | `rust/pimax-hud/` | In-headset text panel with a progress bar: an OpenXR quad layer, head-locked or placed at start, optional `XR_EXTX_overlay` session, CPU-rendered with the built-in 5x7 font. Also renders to PNG without a headset | tested offline (rendering to PNG); used by pimax-ipd; no live run recorded in the docs | (library) |
-| pimax-cam | Rust binary + C ABI | `rust/pimax-cam/` (`include/pimax_cam.h`) | Camera capture (UVC 34a4:0014), tile split, metadata, KB4 calibration, recording, broker, SLAM pose output, AE controller | working (60 fps, 0 lost). AE: never sends unless `PIMAX_CAM_AE=1` and approved | `flock -w 3600 /tmp/pimax-headset.lock pimax-cam broker` |
-| pimax-passthrough | Rust OpenXR client | `rust/pimax-passthrough/` (built to `~/src/target-passthrough/release/` or `~/src/target-desk*/`) | Camera passthrough, KB4 fisheye to per-eye maps, timewarp does IMU rotation | working (25 fps, about 41 ms) | `~/src/target-passthrough/release/pimax-passthrough run` |
-| pimax-perf | Rust binary + lib | `rust/pimax-perf/` | Performance readout on the right wrist: reads the stats file Monado writes (`PIMAX_PERF_FILE`) and shows HMD fps, app fps, missed frames and app CPU/GPU ms on a WayVR panel over `wayvrctl batch`, coloured green, yellow or red. Pimax app: Display > Performance (developer mode) | experimental; on by default in `pimax desk start` (`--no-perf` turns it off); game mode `pimax vr start --perf` not yet tried with a real game (docs/WAYVR-CONTROLS.md) | `pimax-perf run` (the launcher starts it) |
-| pimax-slam | Rust offline tools | `rust/pimax-slam/` | Basalt export, EuRoC check, IMU noise, camera timing, ATE/RPE, loop drift, AE dry run | offline (6DoF live not yet done) | `pimax-slam export` |
-| pimax-room | Rust prototype | `rust/pimax-room/` | Room map, relocalisation, anchors | experimental, offline | `pimax-room demo` |
-| pimax-roommap | Rust binary + lib | `rust/pimax-roommap/` | Persistent room map without a tag: build a map of the room from a 6DoF session (ORB stereo keyframes, loop closure), recognise it in a later session and write the Monado world offset (the `PIMAX_ANCHOR` hook, `--anchor` in the launcher), so the world origin and the WayVR windows come back to the same real place. Pimax app: Room page | offline, untested live: validated on 6 recordings (no false positives, same-place error 15-81 mm median over 7 session pairs); live test pending (analysis/room-map.md sections 3 and 5) | `pimax-roommap build --source broker --seconds 90 --name home` |
-| pimax-anchor | Rust binary + lib | `rust/pimax-anchor/`; printable tag in `analysis/anchor/` | Room anchor with a printed AprilTag (tag36h11) on the desk: the headset cameras detect it and, with the head pose Monado reports (`PIMAX_ANCHOR` hook, `--anchor` in the launcher), the tool writes the Monado world offset that brings the VR windows back to the same real spot. Pimax app: Room page | built; tests use synthetic tags (analysis/anchor/README.md); no live run recorded in the docs | `pimax-anchor detect` |
-| pimax-selfcal | Rust offline tool | `rust/pimax-selfcal/` | Camera self-calibration, overlay `~/.config/pimax/cam-calib-overlay.json` with rollback | offline (merged; 1-minute lit recording still owed) | `pimax-selfcal selftest` |
-| pimax-voice | Rust binary | `rust/pimax-voice/` (`target-voice/release/`) | Local STT: PipeWire mic, Silero/energy VAD, Parakeet v3 via sherpa-onnx, JSON-lines socket, intents | experimental, untested in headset (mic sends zeros while the panel is off) | `pimax-voice listen` |
-| pimax-voice-hud | Rust OpenXR overlay | `rust/pimax-voicehud/` (`target-voicehud/release/pimax-voice-hud`) | Head-locked caption quad from the pimax-voice socket | experimental, untested live | `pimax-voice-hud` |
+| pimax-ipd | Rust binary + lib | `rust/pimax-ipd/` | Guided IPD test shown in the headset (omarchyvr-hud): countdown, eye-chip measurement, measured vs lens IPD. `--apply` moves the lenses (the approved IPD command) and refuses a measurement that looks wrong. `manual` picks the IPD by keys; `--simulate` writes the screens as PNG without a headset | built and tested offline (fake devices, `--simulate`); no live run recorded in the docs | `pimax-ipd --simulate` (no headset); `pimax-ipd` measures only |
+| omarchyvr-hud | Rust lib (OpenXR/Vulkan) | `rust/omarchyvr-hud/` | In-headset text panel with a progress bar: an OpenXR quad layer, head-locked or placed at start, optional `XR_EXTX_overlay` session, CPU-rendered with the built-in 5x7 font. Also renders to PNG without a headset | tested offline (rendering to PNG); used by pimax-ipd; no live run recorded in the docs | (library) |
+| pimax-cam | Rust binary + C ABI | `rust/pimax-cam/` (`include/pimax_cam.h`) | Camera capture (UVC 34a4:0014), tile split, metadata, KB4 calibration, recording, broker, SLAM pose output, AE controller | working (60 fps, 0 lost). AE: never sends unless `PIMAX_CAM_AE=1` and approved | `flock -w 3600 /tmp/omarchyvr-headset.lock pimax-cam broker` |
+| omarchyvr-passthrough | Rust OpenXR client | `rust/omarchyvr-passthrough/` (built to `~/src/target-passthrough/release/` or `~/src/target-desk*/`) | Camera passthrough, KB4 fisheye to per-eye maps, timewarp does IMU rotation | working (25 fps, about 41 ms) | `~/src/target-passthrough/release/omarchyvr-passthrough run` |
+| omarchyvr-perf | Rust binary + lib | `rust/omarchyvr-perf/` | Performance readout on the right wrist: reads the stats file Monado writes (`PIMAX_PERF_FILE`) and shows HMD fps, app fps, missed frames and app CPU/GPU ms on a WayVR panel over `wayvrctl batch`, coloured green, yellow or red. Pimax app: Display > Performance (developer mode) | experimental; on by default in `omarchyvr desk start` (`--no-perf` turns it off); game mode `omarchyvr vr start --perf` not yet tried with a real game (docs/WAYVR-CONTROLS.md) | `omarchyvr-perf run` (the launcher starts it) |
+| omarchyvr-slam | Rust offline tools | `rust/omarchyvr-slam/` | Basalt export, EuRoC check, IMU noise, camera timing, ATE/RPE, loop drift, AE dry run | offline (6DoF live not yet done) | `omarchyvr-slam export` |
+| omarchyvr-room | Rust prototype | `rust/omarchyvr-room/` | Room map, relocalisation, anchors | experimental, offline | `omarchyvr-room demo` |
+| omarchyvr-roommap | Rust binary + lib | `rust/omarchyvr-roommap/` | Persistent room map without a tag: build a map of the room from a 6DoF session (ORB stereo keyframes, loop closure), recognise it in a later session and write the Monado world offset (the `PIMAX_ANCHOR` hook, `--anchor` in the launcher), so the world origin and the WayVR windows come back to the same real place. Pimax app: Room page | offline, untested live: validated on 6 recordings (no false positives, same-place error 15-81 mm median over 7 session pairs); live test pending (analysis/room-map.md sections 3 and 5) | `omarchyvr-roommap build --source broker --seconds 90 --name home` |
+| omarchyvr-anchor | Rust binary + lib | `rust/omarchyvr-anchor/`; printable tag in `analysis/anchor/` | Room anchor with a printed AprilTag (tag36h11) on the desk: the headset cameras detect it and, with the head pose Monado reports (`PIMAX_ANCHOR` hook, `--anchor` in the launcher), the tool writes the Monado world offset that brings the VR windows back to the same real spot. Pimax app: Room page | built; tests use synthetic tags (analysis/anchor/README.md); no live run recorded in the docs | `omarchyvr-anchor detect` |
+| pimax-selfcal | Rust offline tool | `rust/pimax-selfcal/` | Camera self-calibration, overlay `~/.config/omarchyvr/cam-calib-overlay.json` with rollback | offline (merged; 1-minute lit recording still owed) | `pimax-selfcal selftest` |
+| omarchyvr-voice | Rust binary | `rust/omarchyvr-voice/` (`target-voice/release/`) | Local STT: PipeWire mic, Silero/energy VAD, Parakeet v3 via sherpa-onnx, JSON-lines socket, intents | experimental, untested in headset (mic sends zeros while the panel is off) | `omarchyvr-voice listen` |
+| omarchyvr-voice-hud | Rust OpenXR overlay | `rust/omarchyvr-voicehud/` (`target-voicehud/release/omarchyvr-voice-hud`) | Head-locked caption quad from the omarchyvr-voice socket | experimental, untested live | `omarchyvr-voice-hud` |
 | pimax-hands | Rust lib + C ABI | `rust/pimax-hands/` | Controller-driven hand poses, rest placement | working (xr-handtest PASS) | linked by Monado patch 0014 |
 | pimax-lens | Rust binary + staticlib | `rust/pimax-lens/` (`include/pimax_lens_rs.h`) | Lens model used by Monado, lens.conf, fit-pvr, LUT | working (default lens.conf = PVR fit) | `pimax-lens show` |
 | pimax-lenstest | Rust OpenXR/Vulkan client | `rust/pimax-lenstest/` | Test patterns, gaze accuracy pattern, captures | working | `pimax-lenstest list` (drive with `analysis/tools/run_lens_test.sh`) |
 | pimax-capi | cdylib + staticlib | `rust/pimax-capi/` (`libpimax_capi.so`, `.a`) | C ABI of libpimax (`include/pimax.h`) | working (Monado `PIMAX_USE_RUST_LIBPIMAX=ON`) | `cargo build --release` |
 | pimax-proto | no_std lib | `rust/pimax-proto/` | Framing and decoders | working | (library) |
 | pimax (lib) | Rust lib | `rust/pimax/` | hidraw I/O, session thread | working | (library) |
-| pimax-config | Rust lib | `rust/pimax-config/` | Per-serial profiles, atomic writes, backups, restore, diff, legacy import | working | used by pimax-setup |
-| xr-handtest, xr-gaze, xr-pinchtest | Rust OpenXR test clients | `rust/pimax-xrtest/` | Hand tracking check, gaze at 10 Hz, pinch check | working | `xr-handtest --source any` |
-| pimax-desktest | Rust offline analysis | `rust/pimax-desktest/` | Monado metrics, compositor dump analysis | offline | `pimax-desktest metrics FILE` |
-| pimax-voicebench | Rust CPU latency harness | `rust/pimax-voicebench/` | Parakeet/Kokoro latency via sherpa-onnx | offline | `pimax-voicebench bench` |
+| omarchyvr-config | Rust lib | `rust/omarchyvr-config/` | Per-serial profiles, atomic writes, backups, restore, diff, legacy import | working | used by omarchyvr-app |
+| xr-handtest, xr-gaze, xr-pinchtest | Rust OpenXR test clients | `rust/omarchyvr-xrtest/` | Hand tracking check, gaze at 10 Hz, pinch check | working | `xr-handtest --source any` |
+| omarchyvr-desktest | Rust offline analysis | `rust/omarchyvr-desktest/` | Monado metrics, compositor dump analysis | offline | `omarchyvr-desktest metrics FILE` |
+| omarchyvr-voicebench | Rust CPU latency harness | `rust/omarchyvr-voicebench/` | Parakeet/Kokoro latency via sherpa-onnx | offline | `omarchyvr-voicebench bench` |
 | pimax-difftest, pimax-lens-difftest | test-only | `rust/pimax-difftest/`, `rust/pimax-lens-difftest/` | Differential tests against the original C libpimax and C lens model | test-only | `cargo test --workspace` |
-| rust/systemd/pimax-keepalived-rust.service | systemd unit template | `rust/systemd/` | Rust keepalive unit, NOT installed (superseded by the drop-in) | superseded | none |
+| rust/systemd/omarchyvr-keepalived-rust.service | systemd unit template | `rust/systemd/` | Rust keepalive unit, NOT installed (superseded by the drop-in) | superseded | none |
 
 ### 1.2 Python tools, scripts and C test clients (repo, not installed)
 
 | name | kind | path | what it does | status | command |
 |---|---|---|---|---|---|
 | pimax_keepalived.py | Python | `linux/` | Original keepalive (its unit file still points here; the drop-in overrides ExecStart) | superseded | `python3 linux/pimax_keepalived.py` |
-| pimax_probe.py, pimax_imu_orient.py, pimax_controllers.py, pimax_calib.py, pimax_logtail.py, pimax_video_on.py, pimax_keepalive_test.py | Python | `linux/` | Original probes; each maps to a `pimax` subcommand (see README cheat sheet) | superseded, kept as references | `python3 linux/pimax_probe.py` |
+| pimax_probe.py, pimax_imu_orient.py, pimax_controllers.py, pimax_calib.py, pimax_logtail.py, pimax_video_on.py, pimax_keepalive_test.py | Python | `linux/` | Original probes; each maps to a `omarchyvr` subcommand (see README cheat sheet) | superseded, kept as references | `python3 linux/pimax_probe.py` |
 | make_hmd_edid.py | Python | `linux/` | Builds DisplayID 2.0 HMD EDIDs (dead end, non-desktop solved by VSDB) | reference | `python3 linux/make_hmd_edid.py` |
 | pimax_display_on.sh | bash (sudo for debugfs/sysfs) | `linux/` | Original MVP panel-on at 7104x1840 | superseded | do not use |
 | wait_and_probe.sh | bash (sudo) | `linux/` | Wait for 34a4:0044, then probe | superseded | `sudo linux/wait_and_probe.sh 25` (root) |
@@ -61,7 +61,7 @@ Status key: **working** = used live and passing; **experimental** = runs, limite
 | analysis/tools/*.sh (20 scripts) | bash glue | `analysis/tools/` | Session launchers, see 2.20 | experimental to working | see 2.20 |
 | analysis/tools/*.c, *.cpp, prebuilt binaries | C/C++ test clients | `analysis/tools/` (xr_room, xr_grid, xr_eyetest, xr_eyetest_srgb, vk_display_test, kms_lease_test, posecli, ovr_smoke, ctrlcli) | Vulkan/KMS/OpenXR tests, lease probes | test tools | built by hand, see headers |
 | linux/make_hmd_edid.py output | data | `linux/pimax-dp-edid-*.bin` | EDID variants (native, msvsdb, hmd, 1080p, tall, wide, dual) | see 3.5 | none |
-| linux/pimax_calib.py | Python | `linux/` | Reads the factory calibration XML (command 0x0a, 84 reads) | reference | `pimax calib` |
+| linux/pimax_calib.py | Python | `linux/` | Reads the factory calibration XML (command 0x0a, 84 reads) | reference | `omarchyvr calib` |
 | analysis/tools/run_*.sh (headset) | bash | `analysis/tools/` | Need the headset and the lock | experimental | see 2.20 |
 | analysis/tools/run_vr_color_test.sh | bash | `analysis/tools/` | Colour pipeline check (opens the display) | experimental | do not run unattended |
 
@@ -69,11 +69,11 @@ Status key: **working** = used live and passing; **experimental** = runs, limite
 
 | name | kind | path (repo) | installed path | what it does | status | command |
 |---|---|---|---|---|---|---|
-| pimax-keepalived.service | systemd user unit | `linux/pimax-keepalived.service` | `~/.config/systemd/user/` (symlink) + drop-in `rust.conf` | keepalive daemon, Restart=always | working | `systemctl --user restart pimax-keepalived` (do not stop by hand) |
+| omarchyvr-keepalived.service | systemd user unit | `linux/omarchyvr-keepalived.service` | `~/.config/systemd/user/` (symlink) + drop-in `rust.conf` | keepalive daemon, Restart=always | working | `systemctl --user restart omarchyvr-keepalived` (do not stop by hand) |
 | 70-pimax.rules | udev rule | `linux/70-pimax.rules` | `/etc/udev/rules.d/70-pimax.rules` (present) | hidraw and USB 34a4 and 2104:0561 get MODE 0660, uaccess | working | `sudo udevadm control --reload && sudo udevadm trigger` (root) |
-| 65-nvidia-pimax-patch.hook | pacman hook (PostTransaction, Install/Upgrade of nvidia-open-dkms) | `linux/nvidia-pimax-patch.hook` | `/etc/pacman.d/hooks/65-nvidia-pimax-patch.hook` (present) | runs `/usr/local/lib/pimax/nvidia-patch-reapply.sh --hook` before dkms builds | working (installed; untested by a real upgrade in this review) | root-installed |
+| 65-nvidia-pimax-patch.hook | pacman hook (PostTransaction, Install/Upgrade of nvidia-open-dkms) | `linux/nvidia-pimax-patch.hook` | `/etc/pacman.d/hooks/65-nvidia-pimax-patch.hook` (present) | runs `/usr/local/lib/omarchyvr/nvidia-patch-reapply.sh --hook` before dkms builds | working (installed; untested by a real upgrade in this review) | root-installed |
 | 75-nvidia-pimax-verify.hook | pacman hook (after dkms) | `linux/nvidia-pimax-verify.hook` | `/etc/pacman.d/hooks/75-nvidia-pimax-verify.hook` (present) | `--verify`: modinfo nvidia-modeset must list merged_head_sync | working | root-installed |
-| /usr/local/lib/pimax/ | root-owned copies | `linux/nvidia-patch-reapply.sh`, three `.patch` files | present | pacman runs the hooks as root, so the hook never points at a home directory | working | root |
+| /usr/local/lib/omarchyvr/ | root-owned copies | `linux/nvidia-patch-reapply.sh`, three `.patch` files | present | pacman runs the hooks as root, so the hook never points at a home directory | working | root |
 | nvidia-2h1or-viewport.patch | kernel module (out-of-tree NVIDIA) patch | `linux/` | applied to `/usr/src/nvidia-610.57.04` (backup `.orig`) | fixes nvEvoSetViewPorts x=0 on every merged head (upstream PR #1262) | working (verified 0f3d233) | via reapply script |
 | nvidia-2h1or-flip-fix.patch | kernel module patch | `linux/` | same tree; adds `merged_head_sync` param | sync objects on the primary merged head; fixes the freeze | working; root cause "most likely", not proven | via reapply script |
 | nvidia-evo-makeroom-bounded-wait.patch | kernel module patch | `linux/` | same tree | bounded wait in EVO make-room (stop-gap) | working | via reapply script |
@@ -84,11 +84,11 @@ Status key: **working** = used live and passing; **experimental** = runs, limite
 
 | name | kind | path | what it does | status | command |
 |---|---|---|---|---|---|
-| Monado `pimax` | Monado fork (C) | `~/src/monado`, branch `pimax`, build `~/src/monado/build/src/xrt/targets/service/monado-service` (cap_sys_nice set) | Pimax driver (3DoF, lens, controllers, cameras, hands, canting, flipsafe, gyro timeout). Patches 0001-0019 in `monado/` | working (direct mode, 72 Hz) | `pimax vr start` |
-| Monado `eye` | Monado fork | `~/src/monado-eye`, branch `eye`, build `~/src/monado-eye/build/...monado-service` (cap_sys_nice set) | pimax + eye gaze (XR_EXT_eye_gaze_interaction) behind `PIMAX_EYE=1` | working (gaze streams) | `pimax desk start --eye` |
-| Monado `slam` | Monado fork | `~/src/monado-slam`, branch `slam`, build `~/src/monado-slam/build/...monado-service` (NO cap_sys_nice) | 6DoF via Basalt behind `PIMAX_SLAM=1`, EuRoC recording | untested live (offline only) | `PIMAX_SLAM=1 PIMAX_MONADO_BUILD=~/src/monado-slam/build pimax vr start` (after setcap) |
-| Monado worktrees | branches | `~/src/monado-flipsafe`, `-hangfix`, `-lens-base`, `-passthrough`, `-cant`, `-hands`, `-cam`, `-lens`, `-polish` | older branch worktrees; `pimax` merged them | reference | none |
-| WayVR `eye-gaze` | WayVR fork (Rust) | `~/src/wayvr`, branch `eye-gaze` (checked out, WayVR 26.8.0 base), built to `~/src/target-desk/release/wayvr` and `wayvrctl` | overlay desktop with gaze pointer, hands from XR_EXT_hand_tracking, pinch click | experimental (hands and gaze not confirmed visible in the headset) | started by `pimax desk start` |
+| Monado `omarchyvr` | Monado fork (C) | `~/src/monado`, branch `omarchyvr`, build `~/src/monado/build/src/xrt/targets/service/monado-service` (cap_sys_nice set) | Pimax driver (3DoF, lens, controllers, cameras, hands, canting, flipsafe, gyro timeout). Patches 0001-0019 in `monado/` | working (direct mode, 72 Hz) | `omarchyvr vr start` |
+| Monado `eye` | Monado fork | `~/src/monado-eye`, branch `eye`, build `~/src/monado-eye/build/...monado-service` (cap_sys_nice set) | pimax + eye gaze (XR_EXT_eye_gaze_interaction) behind `PIMAX_EYE=1` | working (gaze streams) | `omarchyvr desk start --eye` |
+| Monado `slam` | Monado fork | `~/src/monado-slam`, branch `slam`, build `~/src/monado-slam/build/...monado-service` (NO cap_sys_nice) | 6DoF via Basalt behind `PIMAX_SLAM=1`, EuRoC recording | untested live (offline only) | `PIMAX_SLAM=1 PIMAX_MONADO_BUILD=~/src/monado-slam/build omarchyvr vr start` (after setcap) |
+| Monado worktrees | branches | `~/src/monado-flipsafe`, `-hangfix`, `-lens-base`, `-passthrough`, `-cant`, `-hands`, `-cam`, `-lens`, `-polish` | older branch worktrees; `omarchyvr` merged them | reference | none |
+| WayVR `eye-gaze` | WayVR fork (Rust) | `~/src/wayvr`, branch `eye-gaze` (checked out, WayVR 26.8.0 base), built to `~/src/target-desk/release/wayvr` and `wayvrctl` | overlay desktop with gaze pointer, hands from XR_EXT_hand_tracking, pinch click | experimental (hands and gaze not confirmed visible in the headset) | started by `omarchyvr desk start` |
 | xrizer | OpenVR-to-OpenXR layer | `~/src/xrizer` | SteamVR games (64-bit) | working (Dungeons of Eternity) | `vr_runtime_switch.sh xrizer` |
 | Basalt | VIO library | `~/src/basalt`, installed in `~/.local` | 6DoF back end for the slam branch | offline | (via Monado slam build) |
 | Monado tree mirror | patches | `monado/*.patch` in this repo | 19 numbered patches of the pimax branch | reference | `git am` onto upstream Monado |
@@ -97,7 +97,7 @@ Fork branch and commit state (checked 2026-10-14):
 
 | repo | branch checked out | last 5 commits |
 |---|---|---|
-| `~/src/monado` | `main` (branches: pimax*, slam, eye, cant, flipsafe, hangfix, polish, cam, lens, hands, lens-base) | `pimax` HEAD 4ec0348 Merge branch 'cant'; 7c3831a pimax: display canting; 02889c9 comp: survive a stuck NVIDIA flip (flipsafe); e64d487 comp_renderer: drop stuck state; be4d119 lazy controller-hands feed and bounded GPU waits |
+| `~/src/monado` | `main` (branches: pimax*, slam, eye, cant, flipsafe, hangfix, polish, cam, lens, hands, lens-base) | `omarchyvr` HEAD 4ec0348 Merge branch 'cant'; 7c3831a pimax: display canting; 02889c9 comp: survive a stuck NVIDIA flip (flipsafe); e64d487 comp_renderer: drop stuck state; be4d119 lazy controller-hands feed and bounded GPU waits |
 | `~/src/monado-eye` | `eye` | 43516a5 pimax: controller placement from pimax-hands; 99596a9 pimax: periodic eye gaze stats; 1025754 pimax: eye gaze (XR_EXT_eye_gaze_interaction) from the Rust EyeChip session; 4ec0348 Merge branch 'cant'; 7c3831a pimax: display canting |
 | `~/src/monado-slam` | `slam` | d3138d4 pimax: gate the IMU fed to the SLAM tracker so a camera gap cannot deadlock Basalt; 16701d4 tracker/recorder frame time at mid-exposure; 9dfbadc 6DoF head pose from Rust; cb9ff16 6DoF via Monado SLAM behind PIMAX_SLAM=1; 4ec0348 Merge branch 'cant' |
 | `~/src/wayvr` | `eye-gaze` | 36a2e27 Hands: opaque amber 6 mm strokes; 7d0ab4a Gaze: gaze_over_controllers; 88db4e0 Draw hands from XR_EXT_hand_tracking; a8a2469 Add eye-gaze pointer; cb3aa42 Release 26.8.0 |
@@ -111,32 +111,32 @@ Fork branch and commit state (checked 2026-10-14):
 | ~/models/kokoro-multi-lang-v1_0 | TTS model (voicebench) | `~/models/` | Kokoro-82M | present |
 | ~/models/whisper/ggml-*.bin, ~/models/faster-whisper, ~/models/streaming | optional STT | `~/models/` | whisper engine needs a build with the whisper feature | present |
 | ~/models/vad/silero_vad.onnx, ten-vad.onnx | VAD | `~/models/vad/` | default VAD is silero when silero_vad.onnx exists | present |
-| sherpa-onnx C API `.so` | runtime library | found under `~/src/venv-voice` site-packages; passed with `--lib` | used by pimax-voice and voicebench (dlopen) | present |
-| ~/.config/pimax/lens.conf | per-user lens config | `~/.config/pimax/` | default lens (PVR fit, cant_deg 2.0) read by Monado, lenstest | working |
-| ~/.config/pimax/lens.conf.bak-* | backups | `~/.config/pimax/` | older lens variants | reference |
-| ~/.config/pimax/lens-ipd/ | IPD and centre variants | `~/.config/pimax/lens-ipd/` | c0.0071.conf ... c0.0521.conf, pvr.conf, pvr-lut.conf | reference |
-| ~/.config/pimax/eye-calibration.toml | eye calibration (pimax-eyecal save) | not present yet | written by pimax-eyecal `y` (old file kept as .bak-<utc>) | not created |
-| ~/.config/pimax/eye-correction.toml | host-side gaze correction | not present | PIMAX_EYE_CORRECTION | not created |
-| ~/.config/pimax/ipd.env | last applied IPD | not present | written on quit of `pimax-eye ipd --watch` after an apply | not created |
-| ~/.config/pimax/cam-calib-overlay.json | selfcal overlay | not present | installed only by `pimax-selfcal estimate --write` | not created |
-| ~/.config/pimax/slam/, slam-imu.json | 6DoF export and IMU noise | not present | `pimax-slam export` and `imu-noise --write` | not created |
-| ~/.cache/pimax/gyro-bias | cached gyro bias | `~/.cache/pimax/` | 3 s timeout fallback in Monado patch 0018 | present |
-| ~/.local/share/pimax/eye-accuracy, eye-calibration, slam-recordings | outputs | `~/.local/share/pimax/` | results JSON, raw CSV, EuRoC recordings | present |
-| WayVR home `conf.d/10-am.yaml` | WayVR config (path from `--wayvr-home`) | written by `pimax desk start` if absent | `capture_method: screencopy` (avoids dmabuf Xid at exit) | present |
+| sherpa-onnx C API `.so` | runtime library | found under `~/src/venv-voice` site-packages; passed with `--lib` | used by omarchyvr-voice and voicebench (dlopen) | present |
+| ~/.config/omarchyvr/lens.conf | per-user lens config | `~/.config/omarchyvr/` | default lens (PVR fit, cant_deg 2.0) read by Monado, lenstest | working |
+| ~/.config/omarchyvr/lens.conf.bak-* | backups | `~/.config/omarchyvr/` | older lens variants | reference |
+| ~/.config/omarchyvr/lens-ipd/ | IPD and centre variants | `~/.config/omarchyvr/lens-ipd/` | c0.0071.conf ... c0.0521.conf, pvr.conf, pvr-lut.conf | reference |
+| ~/.config/omarchyvr/eye-calibration.toml | eye calibration (pimax-eyecal save) | not present yet | written by pimax-eyecal `y` (old file kept as .bak-<utc>) | not created |
+| ~/.config/omarchyvr/eye-correction.toml | host-side gaze correction | not present | PIMAX_EYE_CORRECTION | not created |
+| ~/.config/omarchyvr/ipd.env | last applied IPD | not present | written on quit of `pimax-eye ipd --watch` after an apply | not created |
+| ~/.config/omarchyvr/cam-calib-overlay.json | selfcal overlay | not present | installed only by `pimax-selfcal estimate --write` | not created |
+| ~/.config/omarchyvr/slam/, slam-imu.json | 6DoF export and IMU noise | not present | `omarchyvr-slam export` and `imu-noise --write` | not created |
+| ~/.cache/omarchyvr/gyro-bias | cached gyro bias | `~/.cache/omarchyvr/` | 3 s timeout fallback in Monado patch 0018 | present |
+| ~/.local/share/omarchyvr/eye-accuracy, eye-calibration, slam-recordings | outputs | `~/.local/share/omarchyvr/` | results JSON, raw CSV, EuRoC recordings | present |
+| WayVR home `conf.d/10-am.yaml` | WayVR config (path from `--wayvr-home`) | written by `omarchyvr desk start` if absent | `capture_method: screencopy` (avoids dmabuf Xid at exit) | present |
 | /etc/pimax/dp-edid.bin | boot EDID | `/etc/pimax/` (root) | identical to `linux/pimax-dp-edid-msvsdb.bin` (native modes, 8 bpc, HMD VSDB for non-desktop) | installed |
 | /etc/pimax/nvidia-modeset.conf | modeset override | `/etc/pimax/` (root) | `override.[0000:01:00.0].DP-0=/etc/pimax/dp-edid.bin` | installed |
 | /etc/mkinitcpio.conf.d/pimax.conf | initramfs | root | adds the two files to the initramfs | installed |
-| /tmp/pimax-headset.lock | headset lock | `/tmp` | flock for all device tools (the only claimant rule) | runtime |
-| /tmp/pimax-vr-session/ | launcher session dir | `/tmp` (PIMAX_VR_SESSION_DIR) | monado.log, passthrough.log, wayvr.log, voice logs | runtime |
-| $XDG_RUNTIME_DIR/pimax-voice.sock | voice socket | runtime | JSON lines to the HUD | runtime |
+| /tmp/omarchyvr-headset.lock | headset lock | `/tmp` | flock for all device tools (the only claimant rule) | runtime |
+| /tmp/omarchyvr-session/ | launcher session dir | `/tmp` (PIMAX_VR_SESSION_DIR) | monado.log, passthrough.log, wayvr.log, voice logs | runtime |
+| $XDG_RUNTIME_DIR/omarchyvr-voice.sock | voice socket | runtime | JSON lines to the HUD | runtime |
 
 ---
 
 ## 2. User-facing commands
 
-Flags are taken from the usage text and argument parsing in the source. Device commands must run under the lock: `flock -w 3600 /tmp/pimax-headset.lock <cmd>`.
+Flags are taken from the usage text and argument parsing in the source. Device commands must run under the lock: `flock -w 3600 /tmp/omarchyvr-headset.lock <cmd>`.
 
-### 2.1 `pimax` (rust/pimax-tools, installed at `~/.local/bin/pimax`)
+### 2.1 `omarchyvr` (rust/omarchyvr-tools, installed at `~/.local/bin/omarchyvr`)
 
 | subcommand | flags (from source) | what | headset? |
 |---|---|---|---|
@@ -155,24 +155,24 @@ Flags are taken from the usage text and argument parsing in the source. Device c
 | `vr steam-options` | none | prints the Steam launch options line | no |
 | `vr dump-stats` | `FILE.raw... [--step N] [--probe X,Y]... [--ppm OUT]` | colour stats of compositor dumps | no |
 | `vr dump-diff` | `A.raw B.raw` | pixel diff of two dumps | no |
-| `desk start` | `[--no-passthrough] [--eye] [--voice] [--settle SECS] [--passthrough-bin P] [--wayvr-bin P] [--wayvr-home DIR] [--voice-bin P] [--voice-hud-bin P]` + all `vr start` options | monado-service, then pimax-passthrough run, then WayVR overlay. `--eye` uses `~/src/monado-eye/build` and PIMAX_EYE=1. `--voice` = live captions on a WayVR panel under the main screen (pimax-voice listen + `pimax-voice captions`; `--voice-hud` adds the head-locked HUD); the WayVR keyboard is always hidden | yes |
+| `desk start` | `[--no-passthrough] [--eye] [--voice] [--settle SECS] [--passthrough-bin P] [--wayvr-bin P] [--wayvr-home DIR] [--voice-bin P] [--voice-hud-bin P]` + all `vr start` options | monado-service, then omarchyvr-passthrough run, then WayVR overlay. `--eye` uses `~/src/monado-eye/build` and PIMAX_EYE=1. `--voice` = live captions on a WayVR panel under the main screen (omarchyvr-voice listen + `omarchyvr-voice captions`; `--voice-hud` adds the head-locked HUD); the WayVR keyboard is always hidden | yes |
 | `desk stop` | `[--grace SECS]` (default 30) | SIGINT voice HUD, listener, WayVR, passthrough (10 s each), then Monado | yes |
 | `desk status` | none | pids and `vr status` | read |
-| `mount-shared` | none | prints the mount command for the NTFS drive (UUID from `shared_drive_uuid` in `~/.config/pimax/paths.toml`) and says if mounted | no (the mount itself is root) |
+| `mount-shared` | none | prints the mount command for the NTFS drive (UUID from `shared_drive_uuid` in `~/.config/omarchyvr/paths.toml`) and says if mounted | no (the mount itself is root) |
 | env (vr/desk) | `PIMAX_MONADO_BUILD` (default `~/src/monado/build`), `PIMAX_VR_SESSION_DIR`, `PIMAX_NO_NOTIFY=1`, `XRT_COMPOSITOR_LOG`, `PIMAX_LOG`, `SCALE`, `XRT_COMPOSITOR_SCALE_PERCENTAGE` | | |
 
 Environment variables the launcher and Monado read include `PIMAX_FPS`, `PIMAX_AXIS_MODE`, `PIMAX_ROT_LEFT/RIGHT`, `PIMAX_CANT_DEG`, `PIMAX_LENS_CONF`, `PIMAX_EYE`, `PIMAX_EYE_FLIP_X/Y/Z`, `PIMAX_EYE_CALIBRATION`, `PIMAX_EYE_FILTER`, `PIMAX_EYE_POWER_ON=0`, `PIMAX_EYE_USB_RESET=0`, `PIMAX_SLAM`, `PIMAX_CAM_AE` (default off), `PIMAX_CTRL_HANDS`, `PIMAX_CTRL_AIM=head|level`, `PIMAX_CTRL_REST`, `PIMAX_BIAS_TIMEOUT_MS`, `PIMAX_DEBUG_PTRACE=1`, `PIMAX_PT_HEAD_OFFSET`, `PIMAX_VOICE_SOCKET`, `CLIENT_VK_DEFER_SWAPCHAIN_FREE=0`, `XRT_COMPOSITOR_FORCE_WAYLAND_DIRECT=1`, `XRT_COMPOSITOR_DESIRED_MODE=2`.
 
-### 2.2 `pimax-doctor` (read-only)
+### 2.2 `omarchyvr-doctor` (read-only)
 
 | invocation | flags | what |
 |---|---|---|
-| `pimax-doctor` | `--json`, `--fix-plan` (prints fix commands, never runs them), `--no-pager` | health checks: USB/udev, keepalive, NVIDIA patches (viewport, flip-fix, bounded-wait ids), EDID connector, lease protocol, setcap, kernel log |
-| `pimax-doctor info` | `--json` (always JSON) | headset, GPU, connector, profile description |
+| `omarchyvr-doctor` | `--json`, `--fix-plan` (prints fix commands, never runs them), `--no-pager` | health checks: USB/udev, keepalive, NVIDIA patches (viewport, flip-fix, bounded-wait ids), EDID connector, lease protocol, setcap, kernel log |
+| `omarchyvr-doctor info` | `--json` (always JSON) | headset, GPU, connector, profile description |
 
-### 2.3 `pimax-setup` (GUI)
+### 2.3 `omarchyvr-app` (GUI)
 
-`pimax-setup [--self-test] [--screenshots DIR [--real]]`: the "Pimax" app (desk mode, setup checklist, tools, logs and history, first-run wizard, profiles), see [GUI.md](GUI.md). `--self-test` collects everything once (read-only) and prints a summary plus the items that need attention; `--screenshots` renders every page to PNGs on the CPU (demo data, or `--real` for this machine). Runs without root; root fixes go through a confirmed pkexec.
+`omarchyvr-app [--self-test] [--screenshots DIR [--real]]`: the "Pimax" app (desk mode, setup checklist, tools, logs and history, first-run wizard, profiles), see [GUI.md](GUI.md). `--self-test` collects everything once (read-only) and prints a summary plus the items that need attention; `--screenshots` renders every page to PNGs on the CPU (demo data, or `--real` for this machine). Runs without root; root fixes go through a confirmed pkexec.
 
 ### 2.4 `pimax-eye` (Tobii EyeChip)
 
@@ -192,7 +192,7 @@ Exit codes: 0 ok, 1 usage, 2 USB or device error, 3 replay refused or failed, 4 
 
 ### 2.5 `pimax-eyecal` (OpenXR app, needs the eye build)
 
-`pimax-eyecal [--points 9\|13] [--pursuit] [--recenter] [--flip-x 0\|1] [--flip-y 0\|1] [--head-limit DEG] [--res-div N] [--calibration PATH] [--no-raw-log]`; `pimax-eyecal --simulate [--seed N] [--points 9\|13] [--pursuit] [--calibration PATH]`. Keys: space/a next, r redo, y save, p pursuit, c cursor, s runtime check, q quit. Writes `~/.config/pimax/eye-calibration.toml` (old kept as .bak-<utc>) and `~/.local/share/pimax/eye-calibration/eyecal-<utc>.json`. Opens the chip directly: stop WayVR or desk mode first.
+`pimax-eyecal [--points 9\|13] [--pursuit] [--recenter] [--flip-x 0\|1] [--flip-y 0\|1] [--head-limit DEG] [--res-div N] [--calibration PATH] [--no-raw-log]`; `pimax-eyecal --simulate [--seed N] [--points 9\|13] [--pursuit] [--calibration PATH]`. Keys: space/a next, r redo, y save, p pursuit, c cursor, s runtime check, q quit. Writes `~/.config/omarchyvr/eye-calibration.toml` (old kept as .bak-<utc>) and `~/.local/share/omarchyvr/eye-calibration/eyecal-<utc>.json`. Opens the chip directly: stop WayVR or desk mode first.
 
 ### 2.6 `pimax-cam`
 
@@ -213,7 +213,7 @@ Run as `pimax-cam <cmd>`; live sources need the headset lock.
 
 SRC: empty or `auto` (live), `/dev/videoN`, `broker[:SOCKET]`, or a `.pxcam` file. `--overlay F` applies the selfcal overlay (`default` = the cam-calib-overlay.json).
 
-### 2.7 `pimax-passthrough`
+### 2.7 `omarchyvr-passthrough`
 
 | subcommand | flags | what |
 |---|---|---|
@@ -221,19 +221,19 @@ SRC: empty or `auto` (live), `/dev/videoN`, `broker[:SOCKET]`, or a `.pxcam` fil
 | `run` | `[--source SRC] [--depth M\|inf] [--res-div N] [--cam-delay-ms D] [--gamma G] [--gain K] [--seconds S] [--off] [--head-offset X,Y,Z] [--calib XML] [--stats S] [--overlay FILE\|default]` | live OpenXR client. Needs monado-service and the camera free (no PIMAX_CAM, no PIMAX_HANDS=mercury). Keys: p on/off, +/- depth, [ ] camera delay, g gamma, f freeze, q quit |
 | `rig` | `[--calib XML] [--overlay FILE\|default] [--head-offset X,Y,Z]` | camera geometry in the head frame |
 
-### 2.8 `pimax-slam` (offline 6DoF tools)
+### 2.8 `omarchyvr-slam` (offline 6DoF tools)
 
-`export [--out DIR] [--calib XML] [--cams 0,1] [--imu F] [--base CONFIG.json] [--gui] [--cam-offset-ns N]` (writes Basalt calib, VIO config, SLAM_CONFIG toml into `~/.config/pimax/slam`); `check DATASET [--no-files]`; `imu-noise DATASET [--window S] [--inflate K] [--write F]`; `timing REC.pxcam [--frames N]`; `ate EST.csv REF.csv [--est-format euroc\|pimax-windows] [--ref-format ..] [--max-gap-ms M] [--rpe-s D]`; `loop EST.csv`; `stats TRAJ.csv [--format F] [--vs TRAJ2 [--vs-format F]]`; `simulate TRUTH.csv [--format pimax-windows] [--noise-mm 2] [--latency-ms 25] [--tau-ms 150] [--dropout A:B]`; `ae REC.pxcam [--frames N]` (dry run, sends nothing); `shift DATASET OUT --cam-offset-ns N`; `smoke-euroc REC.pxcam OUT [--cams 0,1] [--seconds S]`.
+`export [--out DIR] [--calib XML] [--cams 0,1] [--imu F] [--base CONFIG.json] [--gui] [--cam-offset-ns N]` (writes Basalt calib, VIO config, SLAM_CONFIG toml into `~/.config/omarchyvr/slam`); `check DATASET [--no-files]`; `imu-noise DATASET [--window S] [--inflate K] [--write F]`; `timing REC.pxcam [--frames N]`; `ate EST.csv REF.csv [--est-format euroc\|pimax-windows] [--ref-format ..] [--max-gap-ms M] [--rpe-s D]`; `loop EST.csv`; `stats TRAJ.csv [--format F] [--vs TRAJ2 [--vs-format F]]`; `simulate TRUTH.csv [--format pimax-windows] [--noise-mm 2] [--latency-ms 25] [--tau-ms 150] [--dropout A:B]`; `ae REC.pxcam [--frames N]` (dry run, sends nothing); `shift DATASET OUT --cam-offset-ns N`; `smoke-euroc REC.pxcam OUT [--cams 0,1] [--seconds S]`.
 
-### 2.9 `pimax-room` (offline room memory)
+### 2.9 `omarchyvr-room` (offline room memory)
 
 `build DATASET TRACKING.csv OUT_DIR [--calib XML] [--every N]`; `reloc MAP_DIR DATASET TRACKING.csv [--calib XML] [--every N] [--save]`; `info MAP_DIR`; `anchor MAP_DIR list \| set NAME X Y Z [YAW_DEG] \| rm NAME`; `demo`.
 
-### 2.10 `pimax-voice` and `pimax-voice-hud`
+### 2.10 `omarchyvr-voice` and `omarchyvr-voice-hud`
 
-`pimax-voice listen [--device NAME\|default] [--input FILE.wav\|-] [--fast] [--socket PATH\|none] [--json] [--levels] [--threads N (2)] [--model DIR] [--lib PATH] [--vad silero\|silero-gate\|energy] [--vad-model PATH] [--vad-threshold 0.5] [--endpoint-ms 480] [--partial-ms 640] [--max-s 20] [--intents FILE\|none] [--engine parakeet\|whisper] [--whisper-model FILE] [--gpu] [--lang en]`; `transcribe FILE.wav... [--json]`; `devices`; `tail [--json]`; `pause \| resume \| ping`; `bench [--clips DIR] [--threads 1,2,4] [--partial-ms ..] [--out FILE.md] [--gap 1.5] [--noise 0.002]`; `vad FILE.wav [--vad silero\|energy]`; `info`. Socket: `PIMAX_VOICE_SOCKET` or `$XDG_RUNTIME_DIR/pimax-voice.sock`.
+`omarchyvr-voice listen [--device NAME\|default] [--input FILE.wav\|-] [--fast] [--socket PATH\|none] [--json] [--levels] [--threads N (2)] [--model DIR] [--lib PATH] [--vad silero\|silero-gate\|energy] [--vad-model PATH] [--vad-threshold 0.5] [--endpoint-ms 480] [--partial-ms 640] [--max-s 20] [--intents FILE\|none] [--engine parakeet\|whisper] [--whisper-model FILE] [--gpu] [--lang en]`; `transcribe FILE.wav... [--json]`; `devices`; `tail [--json]`; `pause \| resume \| ping`; `bench [--clips DIR] [--threads 1,2,4] [--partial-ms ..] [--out FILE.md] [--gap 1.5] [--noise 0.002]`; `vad FILE.wav [--vad silero\|energy]`; `info`. Socket: `PIMAX_VOICE_SOCKET` or `$XDG_RUNTIME_DIR/omarchyvr-voice.sock`.
 
-`pimax-voice-hud [run] [--socket PATH] [--distance M] [--width M] [--down-deg DEG] [--lines N] [--keep N] [--timeout SECS] [--font PATH] [--font-size PX] [--placement N] [--idle-dot] [--format srgb\|unorm] [--demo] [--once]`; `preview OUT.png [--text T] [--partial T] [--status S --detail T] [--speech] [--level DB] [--backdrop RRGGBB]`; `dump [--seconds S] [--raw]`.
+`omarchyvr-voice-hud [run] [--socket PATH] [--distance M] [--width M] [--down-deg DEG] [--lines N] [--keep N] [--timeout SECS] [--font PATH] [--font-size PX] [--placement N] [--idle-dot] [--format srgb\|unorm] [--demo] [--once]`; `preview OUT.png [--text T] [--partial T] [--status S --detail T] [--speech] [--level DB] [--backdrop RRGGBB]`; `dump [--seconds S] [--raw]`.
 
 ### 2.11 `pimax-lens` and `pimax-lenstest`
 
@@ -257,11 +257,11 @@ Patterns: grid, rings, channels, fov-edge, square100, square25, corners, align, 
 | `xr-gaze` | none needed | prints the eye gaze pose at 10 Hz |
 | `xr-pinchtest` | `--demo` | headless check that controllers work as XR_EXT_hand_interaction pinch |
 
-### 2.14 `pimax-desktest`, `pimax-voicebench`
+### 2.14 `omarchyvr-desktest`, `omarchyvr-voicebench`
 
-`pimax-desktest metrics FILE [--trim S] [--window T0,T1]`; `info RAW`; `png RAW OUT.png [--crop x,y,w,h] [--eye left\|right] [--down N] [--up N]`; `black RAW --crop ..`; `edge RAW --crop .. [--chan g]`; `ladder RAW --crop .. --period P [--kmin 0.8] [--kmax 2.0]`. `pimax-voicebench bench [--lib PATH] [--models DIR] [--threads 4] [--reps 5] [--warmup 1] [--pad 0.3] [--out DIR] [--no-tts-es] [--skip-stt]`; `idle`; `resample IN.wav OUT.wav RATE`; `info`.
+`omarchyvr-desktest metrics FILE [--trim S] [--window T0,T1]`; `info RAW`; `png RAW OUT.png [--crop x,y,w,h] [--eye left\|right] [--down N] [--up N]`; `black RAW --crop ..`; `edge RAW --crop .. [--chan g]`; `ladder RAW --crop .. --period P [--kmin 0.8] [--kmax 2.0]`. `omarchyvr-voicebench bench [--lib PATH] [--models DIR] [--threads 4] [--reps 5] [--warmup 1] [--pad 0.3] [--out DIR] [--no-tts-es] [--skip-stt]`; `idle`; `resample IN.wav OUT.wav RATE`; `info`.
 
-### 2.15 `pimax-roommap` (persistent room map)
+### 2.15 `omarchyvr-roommap` (persistent room map)
 
 Maps the room from a 6DoF session, recognises it in a later session and writes the Monado world offset, so the world origin and the WayVR windows come back to the same real place without a printed tag. Basalt (the VIO in Monado) starts a new world at every start and cannot save a map, so this tool keeps its own: stereo ORB keyframes in room coordinates. Design, numbers and failure modes: `analysis/room-map.md`. Nothing is sent to the headset.
 
@@ -276,13 +276,13 @@ Maps the room from a 6DoF session, recognises it in a later session and writes t
 
 Common: `--calib XML` (default: the headset calibration) for `build`, `relocalize` and `eval`; `--name` defaults to `home`; `--threads N` defaults to 8; `--every N` uses every Nth frame set.
 
-Input. Offline: a recording of `analysis/tools/run_slam.sh live\|record` and its Basalt trajectory (`run_slam.sh replay DIR` writes `DIR/replay-*/tracking.csv`; the newest is used). Live: `pimax-cam broker` frames and Monado's head ring. The ring needs 6DoF and the anchor hook (2.16), for example `pimax desk start --6dof --anchor`.
+Input. Offline: a recording of `analysis/tools/run_slam.sh live\|record` and its Basalt trajectory (`run_slam.sh replay DIR` writes `DIR/replay-*/tracking.csv`; the newest is used). Live: `pimax-cam broker` frames and Monado's head ring. The ring needs 6DoF and the anchor hook (2.16), for example `omarchyvr desk start --6dof --anchor`.
 
-Output. The map directory `~/.local/share/pimax/roommap/<name>/` (`PIMAX_ROOMMAP_DIR` changes the base): `map.bin`, `roommap.toml`, `correction.csv`, `reloc-<source>.toml`, `last-reloc.toml`. `apply` and `relocalize --apply` write `$XDG_RUNTIME_DIR/pimax-anchor.offset`, the file Monado reads.
+Output. The map directory `~/.local/share/omarchyvr/roommap/<name>/` (`PIMAX_ROOMMAP_DIR` changes the base): `map.bin`, `roommap.toml`, `correction.csv`, `reloc-<source>.toml`, `last-reloc.toml`. `apply` and `relocalize --apply` write `$XDG_RUNTIME_DIR/pimax-anchor.offset`, the file Monado reads.
 
-Use. Map once (live, about 60-90 s). After each 6DoF start run `relocalize --source broker --name home --apply` and look around for a few seconds (the first fix came after 3-7 s in the offline tests). A map built offline has the Basalt replay world of its recording as its room frame, so after the first `apply` place the WayVR windows once by hand. From then on they come back. Pimax app: Room page, developer mode (Map my room runs `build --source broker --seconds N --name NAME`, default 90 s and `home`; Recognise room runs `relocalize --source broker --name NAME --apply`). Auto mode (`pimax-autod`) runs the same relocalize after a 6DoF start when the map `home` exists.
+Use. Map once (live, about 60-90 s). After each 6DoF start run `relocalize --source broker --name home --apply` and look around for a few seconds (the first fix came after 3-7 s in the offline tests). A map built offline has the Basalt replay world of its recording as its room frame, so after the first `apply` place the WayVR windows once by hand. From then on they come back. Pimax app: Room page, developer mode (Map my room runs `build --source broker --seconds N --name NAME`, default 90 s and `home`; Recognise room runs `relocalize --source broker --name NAME --apply`). Auto mode (`omarchyvr-autod`) runs the same relocalize after a 6DoF start when the map `home` exists.
 
-### 2.16 `pimax-anchor` (AprilTag room anchor)
+### 2.16 `omarchyvr-anchor` (AprilTag room anchor)
 
 A printed AprilTag (tag36h11) on the desk is a fixed reference that brings the VR windows back to the same real spot every session. The tool finds the tag in the fisheye tiles of `pimax-cam broker`, refines its pose on the KB4 reprojection error over all cameras that see it, and combines it with the head pose Monado reports at the same instant. Print `analysis/anchor/tag36h11-id0-150mm.pdf` (A4, 100 %, the black square must measure 150 mm), glue it flat on a board, put it on the desk 40-70 cm in front of you in good light and do not move it. Details: `analysis/anchor/README.md`.
 
@@ -290,44 +290,44 @@ A printed AprilTag (tag36h11) on the desk is a fixed reference that brings the V
 |---|---|---|
 | `tag` | `[--id 0] [--size-mm 150] [--out-dir DIR]` | write the printable SVG + PDF (`tag36h11-id<N>-<size>mm.svg` and `.pdf`) |
 | `detect` | `[opts]` | tag pose in the head frame (and in the Monado world when Monado runs with `PIMAX_ANCHOR=1`) |
-| `calibrate` | `[opts] [--window NAME=px,py,pz,qx,qy,qz,qw ...]` | save the reference (tag pose in the app world) to `~/.config/pimax/anchor.toml`. Run it once with the windows where you want them, headset held still, tag in view for 4 s. `--window` also records a window pose relative to the tag |
+| `calibrate` | `[opts] [--window NAME=px,py,pz,qx,qy,qz,qw ...]` | save the reference (tag pose in the app world) to `~/.config/omarchyvr/anchor.toml`. Run it once with the windows where you want them, headset held still, tag in view for 4 s. `--window` also records a window pose relative to the tag |
 | `apply` | `[opts] [--full] [--dry-run]` | measure the tag now and write the Monado world offset. Yaw + translation only by default (the SLAM world is gravity aligned); `--full` also corrects roll/pitch; `--dry-run` writes nothing |
 | `status` | none | config, head ring, offset file |
 | `clear` | none | remove the offset (identity) |
 
 Common options: `--source broker\|FILE` (default broker), `--seconds N` (default 4), `--cams 0,1,2,3`, `--size-mm N` (default: config or 150), `--id N`, `--calib XML`, `--extrinsics JSON` or `--factory`, `--png OUT` (debug mosaic of the last frame). `calibrate` and `apply` refuse (nothing saved or written) when the tag is not seen with a head pose from Monado, or when the samples are too few or too scattered. `apply` also refuses an offset over 6 m. Use: `calibrate` once; in every later session, after the headset tracks (6DoF), look at the tag and run `apply`.
 
-Files. Reads: `pimax-cam broker` frames (or a recording with `--source FILE`), the camera calibration, `~/.config/pimax/ctrl-cam-extrinsics.json` (unless `--factory`), `~/.config/pimax/anchor.toml` (`PIMAX_ANCHOR_CONFIG` changes the path) and Monado's head ring. Writes: `anchor.toml` (`calibrate`), `$XDG_RUNTIME_DIR/pimax-anchor.offset` (`apply`; `clear` removes it), the SVG and PDF (`tag`), the debug PNG (`--png`).
+Files. Reads: `pimax-cam broker` frames (or a recording with `--source FILE`), the camera calibration, `~/.config/omarchyvr/ctrl-cam-extrinsics.json` (unless `--factory`), `~/.config/omarchyvr/anchor.toml` (`PIMAX_ANCHOR_CONFIG` changes the path) and Monado's head ring. Writes: `anchor.toml` (`calibrate`), `$XDG_RUNTIME_DIR/pimax-anchor.offset` (`apply`; `clear` removes it), the SVG and PDF (`tag`), the debug PNG (`--png`).
 
-The anchor hook (shared with `pimax-roommap`, 2.15). Start Monado with `pimax desk start --anchor` or `pimax vr start --anchor`: the launcher then sets `PIMAX_ANCHOR=1`. This needs the `desk` Monado build with the hook (branch `desk` in `~/src/monado-eye`; `setcap` again after the relink). Monado then writes its raw head poses (before the offset) to the ring `$XDG_RUNTIME_DIR/pimax-anchor.head`. It applies the offset file `$XDG_RUNTIME_DIR/pimax-anchor.offset` to the head pose (`app_from_slam = offset * slam`), so controllers, gaze and the WayVR stage with its windows follow. The offset file is text: `pimax-anchor-offset 1`, `pid N`, `pose px py pz qx qy qz qw`. It is per Monado run: Monado deletes it at start and ignores one with another pid. `PIMAX_ANCHOR_HEAD_FILE` and `PIMAX_ANCHOR_FILE` override the two paths.
+The anchor hook (shared with `omarchyvr-roommap`, 2.15). Start Monado with `omarchyvr desk start --anchor` or `omarchyvr vr start --anchor`: the launcher then sets `PIMAX_ANCHOR=1`. This needs the `desk` Monado build with the hook (branch `desk` in `~/src/monado-eye`; `setcap` again after the relink). Monado then writes its raw head poses (before the offset) to the ring `$XDG_RUNTIME_DIR/pimax-anchor.head`. It applies the offset file `$XDG_RUNTIME_DIR/pimax-anchor.offset` to the head pose (`app_from_slam = offset * slam`), so controllers, gaze and the WayVR stage with its windows follow. The offset file is text: `pimax-anchor-offset 1`, `pid N`, `pose px py pz qx qy qz qw`. It is per Monado run: Monado deletes it at start and ignores one with another pid. `PIMAX_ANCHOR_HEAD_FILE` and `PIMAX_ANCHOR_FILE` override the two paths.
 
-One writer per session. Only one of `pimax-roommap` and `pimax-anchor` should write the offset in a Monado session; the two CLIs do not enforce it. The Pimax app records the writer in `$XDG_RUNTIME_DIR/pimax-anchor.offset.owner` (`roommap <pid>` or `anchor <pid>`) and refuses the other one until the offset is cleared. Auto mode only uses `pimax-roommap`. Pimax app: the Room page (developer mode) has the hook switch (`--anchor` at the next start), Room map (Map my room, Recognise room) and AprilTag (Calibrate, Apply, Clear offset, Printable tag).
+One writer per session. Only one of `omarchyvr-roommap` and `omarchyvr-anchor` should write the offset in a Monado session; the two CLIs do not enforce it. The Pimax app records the writer in `$XDG_RUNTIME_DIR/omarchyvr-anchor.offset.owner` (`roommap <pid>` or `anchor <pid>`) and refuses the other one until the offset is cleared. Auto mode only uses `omarchyvr-roommap`. Pimax app: the Room page (developer mode) has the hook switch (`--anchor` at the next start), Room map (Map my room, Recognise room) and AprilTag (Calibrate, Apply, Clear offset, Printable tag).
 
-### 2.17 `pimax-perf` (wrist performance readout)
+### 2.17 `omarchyvr-perf` (wrist performance readout)
 
-`pimax-perf run [--file F] [--wayvrctl P] [--overlay NAME] [--interval-ms N]`. F defaults to `$PIMAX_PERF_FILE`, else `$XDG_RUNTIME_DIR/pimax-perf.stats`; Monado must run with `PIMAX_PERF_FILE=F`. Other defaults: `--wayvrctl ~/src/target-desk/release/wayvrctl`, `--overlay perf`, `--interval-ms 500` (100-5000). It runs until stopped.
+`omarchyvr-perf run [--file F] [--wayvrctl P] [--overlay NAME] [--interval-ms N]`. F defaults to `$PIMAX_PERF_FILE`, else `$XDG_RUNTIME_DIR/omarchyvr-perf.stats`; Monado must run with `PIMAX_PERF_FILE=F`. Other defaults: `--wayvrctl ~/src/target-desk/release/wayvrctl`, `--overlay perf`, `--interval-ms 500` (100-5000). It runs until stopped.
 
 It reads the key=value stats file that Monado (`~/src/monado-eye`, branch `desk`, `comp_multi_system.c`) writes every 0.5 s. It sets text and colour of the four labels of the WayVR panel `perf` (defined by the launcher's `gui/perf.xml`; on the back of the right wrist, not grabbable) through a long-running `wayvrctl batch`. Lines: `HMD 72/72` (compositor fps against the 72/90 target), `APP 71/72` (main app fps), `miss N /5s` (late or skipped compositor frames in the last 5 s), `cpu x gpu y` (app CPU and GPU ms). Rates are green from 95 % of the target, yellow under 95 %, red under 85 %. Times are green under 80 % of the frame period, yellow under 100 %, red beyond. The panel is grey (`perf: no data`) when the file is missing or older than 2.5 s. Lines are re-sent on change and at least every 2 s. The tool reads the stats file and writes no files. Every 5 s it also writes a frame-health line to stderr (the session's `perf.log`): `perf: unix=.. mono_ms=.. fps=.. frames+N dropped+N late+N app_fps=.. app_gpu_ms=..` (docs/RENDER-QUALITY.md, "Shaky desk screens").
 
-Launcher. `pimax desk start` runs it by default and sets `PIMAX_PERF_FILE` for Monado (a value you set wins); `--no-perf` turns it off and `--perf-bin P` picks the binary. `pimax vr start --perf` does the same for games, with a second minimal WayVR (`--openxr --headless`: an `XR_EXTX_overlay` session without screens, watch or keyboard; config home `~/src/desk-out/wayvr-home-perf`); `pimax vr stop` stops them first. Needs the `desk` Monado build with the stats patch (`setcap` again after the relink) and WayVR `b26591a` or later. Game mode is not yet tried with a real game (docs/WAYVR-CONTROLS.md). Pimax app: Display > Performance, switch "Wrist readout" (developer mode; applies at the next start).
+Launcher. `omarchyvr desk start` runs it by default and sets `PIMAX_PERF_FILE` for Monado (a value you set wins); `--no-perf` turns it off and `--perf-bin P` picks the binary. `omarchyvr vr start --perf` does the same for games, with a second minimal WayVR (`--openxr --headless`: an `XR_EXTX_overlay` session without screens, watch or keyboard; config home `~/src/desk-out/wayvr-home-perf`); `omarchyvr vr stop` stops them first. Needs the `desk` Monado build with the stats patch (`setcap` again after the relink) and WayVR `b26591a` or later. Game mode is not yet tried with a real game (docs/WAYVR-CONTROLS.md). Pimax app: Display > Performance, switch "Wrist readout" (developer mode; applies at the next start).
 
 ### 2.18 `pimax-ipd` (guided IPD test in the headset)
 
-Guided IPD test with a screen in the headset (`pimax-hud`, 2.19). The default mode opens the eye chip itself; both modes read the live lens IPD from the headset info reports (HID interface 2). The only HID write is the approved IPD motor command (`58 06 5c 05 01 <mm*100 LE>`, 58-72 mm): once with `--apply`, paced by the key presses in `manual`.
+Guided IPD test with a screen in the headset (`omarchyvr-hud`, 2.19). The default mode opens the eye chip itself; both modes read the live lens IPD from the headset info reports (HID interface 2). The only HID write is the approved IPD motor command (`58 06 5c 05 01 <mm*100 LE>`, 58-72 mm): once with `--apply`, paced by the key presses in `manual`.
 
 | invocation | flags | what |
 |---|---|---|
 | `pimax-ipd` | `[--seconds S] [--apply [--mm X]] [--overlay] [--placed] [--distance M] [--usb-device PATH] [--no-hud]` | shows 'Look straight ahead', a 3-2-1 countdown, the measurement (default 5 s) with a progress bar, then measured IPD, lens IPD and the difference. With `--apply` the lenses move and the result is shown; without it nothing is sent. The result screen stays 5 s (Enter ends it) |
-| `pimax-ipd manual` | `[--overlay] [--placed] [--distance M] [--no-hud] [--simulate [--png-dir DIR] [--sim-lens MM]]` | pick the sharpest IPD by hand. The panel shows a sharpness test pattern, the target IPD, the live lens IPD and a status. A/D -/+0.5 mm, W/S +/-1 mm (58-72; arrows work too), Enter saves the lens IPD to `~/.config/pimax/ipd.env` and exits, q exits (Esc does nothing). Keys only change the target; the motor command goes out 700 ms after the last key, never during a move (it waits until the lens is within 0.3 mm or 6 s) and at least 1.5 s after the previous one. No eye tracking: the eye chip is not opened |
+| `pimax-ipd manual` | `[--overlay] [--placed] [--distance M] [--no-hud] [--simulate [--png-dir DIR] [--sim-lens MM]]` | pick the sharpest IPD by hand. The panel shows a sharpness test pattern, the target IPD, the live lens IPD and a status. A/D -/+0.5 mm, W/S +/-1 mm (58-72; arrows work too), Enter saves the lens IPD to `~/.config/omarchyvr/ipd.env` and exits, q exits (Esc does nothing). Keys only change the target; the motor command goes out 700 ms after the last key, never during a move (it waits until the lens is within 0.3 mm or 6 s) and at least 1.5 s after the previous one. No eye tracking: the eye chip is not opened |
 | `pimax-ipd --simulate` | `[--png-dir DIR] [--sim-field34 MM] [--sim-origin MM] [--sim-lens MM] [--apply [--mm X]]` | no headset: fake measurement, screens written as PNG files (default DIR `/tmp/pimax-ipd-sim`; `manual --simulate`: `/tmp/pimax-ipd-manual-sim`) |
 
 Options: `--overlay` = `XR_EXTX_overlay` session on top of a running main app (WayVR, desk mode), default is a main app; `--placed` = fix the panel in the room where you looked at start (default: head-locked); `--distance M` = panel distance in metres (default 1.5); `--no-hud` = terminal only; `--usb-device PATH` = usbfs node of the eye chip.
 
 `--apply` REFUSES (nothing sent, 'Measurement looks wrong') when the measurement is outside 58-72 mm or more than 4 mm from the current lens IPD, unless `--mm X` gives the value. The shared rules in `pimax-eye` also refuse it with fewer than 100 good samples, or when IPD field 34 and the origin distance differ by more than 3 mm. Exit codes: 0 ok, 2 refused, failed or usage error, 3 the lenses did not arrive (not within 0.5 mm of the target after 5 s).
 
-Needs. The eye chip can be opened by one process only, so start Monado without eye tracking (`pimax vr start --force` with `PIMAX_MONADO_BUILD=~/src/monado-eye/build`, or `pimax desk start --force` without `--eye`) and run with `XR_RUNTIME_JSON=~/src/monado-eye/build/openxr_monado-dev.json` (for the panel; `--no-hud` is terminal only). Device tool: see the lock rule at the top of this section. Writes `~/.config/pimax/ipd.env` (`OXR_DEBUG_IPD_MM=<mm>`; Monado reads the value once at session start) after a verified `--apply` and on Enter in `manual`. The Pimax app does not call it; its IPD tool runs `pimax-eye ipd --watch`.
+Needs. The eye chip can be opened by one process only, so start Monado without eye tracking (`omarchyvr vr start --force` with `PIMAX_MONADO_BUILD=~/src/monado-eye/build`, or `omarchyvr desk start --force` without `--eye`) and run with `XR_RUNTIME_JSON=~/src/monado-eye/build/openxr_monado-dev.json` (for the panel; `--no-hud` is terminal only). Device tool: see the lock rule at the top of this section. Writes `~/.config/omarchyvr/ipd.env` (`OXR_DEBUG_IPD_MM=<mm>`; Monado reads the value once at session start) after a verified `--apply` and on Enter in `manual`. The Pimax app does not call it; its IPD tool runs `pimax-eye ipd --watch`.
 
-### 2.19 `pimax-hud` (in-headset panel library)
+### 2.19 `omarchyvr-hud` (in-headset panel library)
 
 Library only, no command. It shows large text lines and a progress bar on a panel a short distance in front of the wearer: an OpenXR (Vulkan) quad layer, CPU-rendered with the built-in 5x7 font on a 1536x768 texture (1 mm per pixel). In main-app mode the panel is the only layer (the rest is black). With `Opts::overlay` it is an `XR_EXTX_overlay` session on top of a running main app (WayVR, desk mode); only one main OpenXR app can own the display.
 
@@ -374,16 +374,16 @@ Tick "root" when a step needs sudo. A GUI must ask for each root step separately
 
 | step | command | root | output |
 |---|---|---|---|
-| Rust workspace | `cd ~/pimax-re/rust && cargo build --release` | no | `rust/target/release/` (pimax, pimax-doctor, pimax-setup, pimax-eye, pimax-lenstest, pimax-passthrough, xr-handtest, xr-gaze, ...) |
+| Rust workspace | `cd ~/pimax-re/rust && cargo build --release` | no | `rust/target/release/` (pimax, omarchyvr-doctor, omarchyvr-app, pimax-eye, pimax-lenstest, omarchyvr-passthrough, xr-handtest, xr-gaze, ...) |
 | Tests | `cargo test --workspace`, `cargo clippy --workspace --all-targets` | no | 62+ tests, no hardware |
-| Install CLI | `install -Dm755 rust/target/release/pimax ~/.local/bin/pimax` | no | `~/.local/bin/pimax` |
+| Install CLI | `install -Dm755 rust/target/release/omarchyvr ~/.local/bin/omarchyvr` | no | `~/.local/bin/omarchyvr` |
 | Monado pimax | `cd ~/src/monado && meson setup build && ninja -C build` (or the project's build recipe); `PIMAX_USE_RUST_LIBPIMAX=ON` needs `libpimax_capi` | no | `build/src/xrt/targets/service/monado-service` |
 | Monado eye | same in `~/src/monado-eye` (branch eye) | no | `~/src/monado-eye/build/...monado-service` |
 | Monado slam | same in `~/src/monado-slam` (branch slam, needs Basalt in `~/.local`) | no | `~/src/monado-slam/build/...monado-service` |
 | WayVR | `cargo build --release` in `~/src/wayvr` (eye-gaze branch) with target dir `~/src/target-desk` | no | `~/src/target-desk/release/wayvr`, `wayvrctl` |
-| pimax-perf | `cargo build --release -p pimax-perf` in `rust/` | no | `rust/target/release/pimax-perf` (wrist readout, see docs/WAYVR-CONTROLS.md; needs Monado `PIMAX_PERF_FILE`) |
-| Passthrough | `cargo build --release -p pimax-passthrough` (target dir `~/src/target-passthrough`) | no | `pimax-passthrough` |
-| Voice | `cargo build --release -p pimax-voice -p pimax-voice-hud` (target-voice, target-voicehud) | no | `pimax-voice`, `pimax-voice-hud` |
+| omarchyvr-perf | `cargo build --release -p omarchyvr-perf` in `rust/` | no | `rust/target/release/omarchyvr-perf` (wrist readout, see docs/WAYVR-CONTROLS.md; needs Monado `PIMAX_PERF_FILE`) |
+| Passthrough | `cargo build --release -p omarchyvr-passthrough` (target dir `~/src/target-passthrough`) | no | `omarchyvr-passthrough` |
+| Voice | `cargo build --release -p omarchyvr-voice -p omarchyvr-voice-hud` (target-voice, target-voicehud) | no | `omarchyvr-voice`, `omarchyvr-voice-hud` |
 | Basalt | built in `~/src/basalt`, installed to `~/.local` | no | libraries |
 | xrizer | built from `~/src/xrizer` | no | OpenVR-to-OpenXR layer |
 | C test clients | built by hand from `analysis/tools/*.c` (see headers) | no | binaries |
@@ -394,16 +394,16 @@ Tick "root" when a step needs sudo. A GUI must ask for each root step separately
 |---|---|---|
 | GPU priority for the service | `sudo setcap cap_sys_nice+ep <monado-service path>` (do it for `~/src/monado` and `~/src/monado-eye`; monado-slam has NO cap today) | **root** |
 
-Every relink drops the capability. `pimax vr start` warns and prints this line when it is missing. Check with `getcap <path>`.
+Every relink drops the capability. `omarchyvr vr start` warns and prints this line when it is missing. Check with `getcap <path>`.
 
 ### 3.3 Headset access
 
 | step | how | root |
 |---|---|---|
 | udev rule | `sudo install -Dm644 linux/70-pimax.rules /etc/udev/rules.d/70-pimax.rules && sudo udevadm control --reload && sudo udevadm trigger` (installed on this machine) | **root** |
-| user keepalive | `ln -s ~/pimax-re/linux/pimax-keepalived.service ~/.config/systemd/user/` then `systemctl --user daemon-reload && systemctl --user enable --now pimax-keepalived` | no |
-| drop-in (Rust) | `~/.config/systemd/user/pimax-keepalived.service.d/rust.conf` with `ExecStart=` (clear) and `ExecStart=%h/.local/bin/pimax keepalived` | no |
-| Rust unit template | `rust/systemd/pimax-keepalived-rust.service` (not installed; superseded) | — |
+| user keepalive | `ln -s ~/pimax-re/linux/omarchyvr-keepalived.service ~/.config/systemd/user/` then `systemctl --user daemon-reload && systemctl --user enable --now omarchyvr-keepalived` | no |
+| drop-in (Rust) | `~/.config/systemd/user/omarchyvr-keepalived.service.d/rust.conf` with `ExecStart=` (clear) and `ExecStart=%h/.local/bin/omarchyvr keepalived` | no |
+| Rust unit template | `rust/systemd/omarchyvr-keepalived-rust.service` (not installed; superseded) | — |
 | eye chip USB reset | done by the tool via usbfs, no sudo (uaccess via udev) | no |
 
 ### 3.4 NVIDIA display path
@@ -415,8 +415,8 @@ Every relink drops the capability. `pimax vr start` warns and prints this line w
 | modprobe | `echo 'options nvidia-modeset config_file=/etc/pimax/nvidia-modeset.conf' \| sudo tee /etc/modprobe.d/nvidia-pimax.conf` (installed) | **root** |
 | initramfs | `echo 'FILES+=(/etc/pimax/nvidia-modeset.conf /etc/pimax/dp-edid.bin)' \| sudo tee /etc/mkinitcpio.conf.d/pimax.conf` and `sudo mkinitcpio -P` (installed; on Omarchy use `limine-mkinitcpio`), then reboot | **root** |
 | NVIDIA patches | `linux/nvidia-patch-reapply.sh --check` (no root). Apply and rebuild: `sudo linux/nvidia-patch-reapply.sh --rebuild` (patches `/usr/src/nvidia-<ver>`, dkms build, boot image, verify) | **root** |
-| Pacman hooks | `sudo env L=$HOME/pimax-re/linux bash -c 'install -Dm755 $L/nvidia-patch-reapply.sh /usr/local/lib/pimax/nvidia-patch-reapply.sh && for p in nvidia-2h1or-viewport nvidia-2h1or-flip-fix nvidia-evo-makeroom-bounded-wait; do install -Dm644 $L/$p.patch /usr/local/lib/pimax/$p.patch; done && install -Dm644 $L/nvidia-pimax-patch.hook /etc/pacman.d/hooks/65-nvidia-pimax-patch.hook && install -Dm644 $L/nvidia-pimax-verify.hook /etc/pacman.d/hooks/75-nvidia-pimax-verify.hook'` (installed on this machine) | **root** |
-| Undo hooks | `sudo rm /etc/pacman.d/hooks/65-nvidia-pimax-patch.hook /etc/pacman.d/hooks/75-nvidia-pimax-verify.hook; sudo rm -r /usr/local/lib/pimax` | **root** |
+| Pacman hooks | `sudo env L=$HOME/pimax-re/linux bash -c 'install -Dm755 $L/nvidia-patch-reapply.sh /usr/local/lib/omarchyvr/nvidia-patch-reapply.sh && for p in nvidia-2h1or-viewport nvidia-2h1or-flip-fix nvidia-evo-makeroom-bounded-wait; do install -Dm644 $L/$p.patch /usr/local/lib/omarchyvr/$p.patch; done && install -Dm644 $L/nvidia-pimax-patch.hook /etc/pacman.d/hooks/65-nvidia-pimax-patch.hook && install -Dm644 $L/nvidia-pimax-verify.hook /etc/pacman.d/hooks/75-nvidia-pimax-verify.hook'` (installed on this machine) | **root** |
+| Undo hooks | `sudo rm /etc/pacman.d/hooks/65-nvidia-pimax-patch.hook /etc/pacman.d/hooks/75-nvidia-pimax-verify.hook; sudo rm -r /usr/local/lib/omarchyvr` | **root** |
 | Check | `cat /sys/module/nvidia_modeset/parameters/merged_head_sync` must print `1` (it does now) | no |
 
 The patches must be re-applied after every nvidia-open-dkms upgrade (the pacman hook does this when installed).
@@ -427,11 +427,11 @@ The patches must be re-applied after every nvidia-open-dkms upgrade (the pacman 
 
 ### 3.6 Lens, eye, camera and voice config files
 
-Created by the tools on demand; see 1.5 for paths. No root needed for any of them. `~/.config/pimax/` is per user.
+Created by the tools on demand; see 1.5 for paths. No root needed for any of them. `~/.config/omarchyvr/` is per user.
 
 ### 3.7 Desktop entry
 
-`linux/pimax-vr.desktop` (template with `@PIMAX@` placeholder): entries "Pimax VR" (`pimax vr start --wait`), "Start Pimax VR at 90 Hz", "Stop Pimax VR", "Pimax VR status". Replace `@PIMAX@` with the path to `pimax` (e.g. `~/.local/bin/pimax`) when installing into `~/.local/share/applications/`. Root: no.
+`linux/omarchyvr-vr.desktop` (template with `@OMARCHYVR@` placeholder): entries "Pimax VR" (`omarchyvr vr start --wait`), "Start Pimax VR at 90 Hz", "Stop Pimax VR", "Pimax VR status". Replace `@OMARCHYVR@` with the path to `omarchyvr` (e.g. `~/.local/bin/omarchyvr`) when installing into `~/.local/share/applications/`. Root: no.
 
 ### 3.8 Voice models
 
@@ -439,13 +439,13 @@ Download the Parakeet, VAD and optional Whisper models into `~/models/` (no root
 
 ### 3.9 Shared drive
 
-`pimax mount-shared` prints the mount command for the NTFS drive by UUID `<shared_drive_uuid>` (`shared_drive_uuid` in `~/.config/pimax/paths.toml`). Mounting is root. Never mount by device name (NVMe names swap between boots).
+`omarchyvr mount-shared` prints the mount command for the NTFS drive by UUID `<shared_drive_uuid>` (`shared_drive_uuid` in `~/.config/omarchyvr/paths.toml`). Mounting is root. Never mount by device name (NVMe names swap between boots).
 
 ### 3.10 Summary: root needed?
 
 | step | root |
 |---|---|
-| Rust build, test, `~/.local/bin/pimax` install | no |
+| Rust build, test, `~/.local/bin/omarchyvr` install | no |
 | Monado, WayVR, Basalt, xrizer, voice builds | no |
 | setcap on monado-service | **yes** |
 | udev rule | **yes** |
@@ -454,8 +454,8 @@ Download the Parakeet, VAD and optional Whisper models into `~/models/` (no root
 | NVIDIA patch apply, dkms, boot image | **yes** |
 | pacman hooks | **yes** |
 | mount NTFS drive | **yes** |
-| `pimax vr start/stop/status/desk`, `pimax-doctor`, `pimax-eye` tools | no (device access by uaccess) |
-| `pimax vr reset-headset` | no (does not clear NVIDIA) |
+| `omarchyvr vr start/stop/status/desk`, `omarchyvr-doctor`, `pimax-eye` tools | no (device access by uaccess) |
+| `omarchyvr vr reset-headset` | no (does not clear NVIDIA) |
 
 ---
 
@@ -488,7 +488,7 @@ Dates are local; "n/a" = no separate commit in this repo (the fix lived in the M
 | 2026-10-14 06:25 | worn session froze after ~20 s | gyro calibration never finished when worn, so the head pose stayed frozen | 3 s timeout `PIMAX_BIAS_TIMEOUT_MS`, cached bias | d9bab46, Monado d544d3a (patch 0018) |
 | 2026-10-14 07:00 | freeze with hands on, then off | lazy hands feed and unbounded GPU waits | lazy controller-hands feed and bounded compositor GPU waits (diagnostic, not the root cause) | be4d119, e64d487 (Monado) |
 | 2026-10-14 07:00-09:00 | display freeze: flip never completes (render stuck in vkQueueWaitIdle) | NVKMS applies one flip's acquire/release semaphores to both merged heads (2H1OR); latch splits (most likely) | `linux/nvidia-2h1or-flip-fix.patch` (`merged_head_sync=1`) plus Monado flipsafe (self-revoke and `_exit` on a stuck flip) | ea21a4a, Monado 02889c9; analysis 9825511 |
-| 2026-10-14 06:25-09:00 | freeze again after SIGKILL | SIGKILL during stuck flip skips postclose revoke (interruptible) | SIGINT and wait; run_lens_test.sh 15 s grace; `pimax vr stop` saves stacks before SIGKILL | 4641b89, e611580 |
+| 2026-10-14 06:25-09:00 | freeze again after SIGKILL | SIGKILL during stuck flip skips postclose revoke (interruptible) | SIGINT and wait; run_lens_test.sh 15 s grace; `omarchyvr vr stop` saves stacks before SIGKILL | 4641b89, e611580 |
 | 2026-10-14 ~11:00 | display freeze fixed | (verified) | 60 s and 300 s worn runs, no freeze | flip-fix + flipsafe (see above) |
 | 2026-10-14 ~11:15 | double far lines, single near lines | display canting 2 deg per eye | `cant_deg` in lens.conf (Monado `cant`), default 2.0 | 7c3831a, e09d81d, 4ec0348 |
 | 2026-10-14 08:00-09:00 | centre mismatch: double red cross | lens centres not matched | `lens_align.sh`, align pattern; centre 0.1060 was wrong (cut FOV) and was dropped | 9b38563, 33efd16 (obsolete) |
@@ -534,7 +534,7 @@ Dates are local; "n/a" = no separate commit in this repo (the fix lived in the M
 | 7 | Long game session | not done | play a long session |
 | 8 | Lens LUT | exact LUT looked worse; fit kept | re-judge in games |
 | 9 | 90 Hz | new: the start commands (`1a 05 [02 5a]`, `1a 05 [05]`, keepalive `39 00 5a`) match the Windows capture 2026-10-15 take 6 byte for byte (pimax-proto test); app shows "90 Hz (new)" | user confirms the picture in the headset |
-| 10 | Voice-to-text (EN + ES) | experimental; mic zeros when panel off; not tested in headset | `pimax-voice listen` live test, then `desk start --voice` |
+| 10 | Voice-to-text (EN + ES) | experimental; mic zeros when panel off; not tested in headset | `omarchyvr-voice listen` live test, then `desk start --voice` |
 | 11 | Optical controller tracking | not started | research |
 | 12 | Vocabulary `voc_GEN_8X4.dbow` | not copied from Windows | copy from Pimax runtime folder |
 | 13 | NVIDIA PR #1262 comment | draft, not posted | user review |
@@ -590,7 +590,7 @@ Source: HISTORY.md "Hard-won rules" and STATUS.md. A GUI must enforce these, not
 | Activation blobs 0x55/0x56/0x5b | | | not needed; never send |
 | Firmware | | | never flash; read-only analysis only |
 
-- Only one process may claim the headset: the lock `/tmp/pimax-headset.lock` (`flock -w 3600`).
+- Only one process may claim the headset: the lock `/tmp/omarchyvr-headset.lock` (`flock -w 3600`).
 - Keepalive: IF1-IF3 hidraw must stay open and drained, or the headset detaches every ~5.4 s.
 - Do not run the headset while the eye chip is claimed by a stuck tool.
 
@@ -598,19 +598,19 @@ Source: HISTORY.md "Hard-won rules" and STATUS.md. A GUI must enforce these, not
 
 - NEVER force a DRM hotplug (`echo off/detect > /sys/class/drm/.../status`). It desyncs Hyprland and wedges DP-1. Forbidden also as a "recovery".
 - Keep DP-1 non-desktop (the EDID). Do not put it into the Hyprland desktop. Do not touch Hyprland or `monitors.lua` unasked.
-- NEVER SIGKILL Monado, and never while a flip may be stuck. SIGINT first, then wait: `pimax vr stop --grace 30`, `pimax desk stop` (default grace 30). Kill by PID only, never by name pattern. The lens test script waits 15 s before SIGKILL.
+- NEVER SIGKILL Monado, and never while a flip may be stuck. SIGINT first, then wait: `omarchyvr vr stop --grace 30`, `omarchyvr desk stop` (default grace 30). Kill by PID only, never by name pattern. The lens test script waits 15 s before SIGKILL.
 - After any Xid (for example 31) or "Idling display engine timed out": reboot before any further headset test. A SIGKILL during a stuck flip wedges the display until reboot.
-- Xid preflight: `pimax vr start` refuses to start if this boot's kernel log has an NVIDIA Xid or "Idling display engine" (preflight.rs). `pimax vr stop` checks the log after stopping.
+- Xid preflight: `omarchyvr vr start` refuses to start if this boot's kernel log has an NVIDIA Xid or "Idling display engine" (preflight.rs). `omarchyvr vr stop` checks the log after stopping.
 - Do not SIGINT WayVR while other agents run; use the screencopy capture config (`capture_method: screencopy`) so WayVR does not use dmabuf capture at exit.
 - After every `monado-service` relink: `sudo setcap cap_sys_nice+ep <path>` (GPU priority). Check with `getcap`.
 - Re-apply the NVIDIA patches after every nvidia-open-dkms update; keep `merged_head_sync=1`. Check: `cat /sys/module/nvidia_modeset/parameters/merged_head_sync` prints 1.
-- `pimax vr reset-headset` does not clear a stuck NVIDIA display. Only a PC reboot does.
+- `omarchyvr vr reset-headset` does not clear a stuck NVIDIA display. Only a PC reboot does.
 
 ### 6.3 Install and system
 
 - Root steps are shown and confirmed one by one (3.10). No auto-elevating commands: passwordless sudo exists on this machine, and a `limine-mkinitcpio` run once happened by accident.
 - Do not install system files silently (EDID, modprobe, mkinitcpio, dkms, hooks, udev).
-- Mount the shared NTFS drive by UUID `<shared_drive_uuid>` (`shared_drive_uuid` in `~/.config/pimax/paths.toml`) only. Never by device name.
+- Mount the shared NTFS drive by UUID `<shared_drive_uuid>` (`shared_drive_uuid` in `~/.config/omarchyvr/paths.toml`) only. Never by device name.
 - Do not push to the Monado origin (upstream freedesktop). Keep the repo private: it contains serials and factory calibration.
 - Do not post to NVIDIA PR #1262 without the user's OK.
 - Do not upload backups to a remote host without asking.
@@ -619,15 +619,15 @@ Source: HISTORY.md "Hard-won rules" and STATUS.md. A GUI must enforce these, not
 ### 6.4 Eye and camera
 
 - Eye: use `--skip-cal --skip-vendor-write` for replay. Calibration ops stay refused. `--with-cal` only with approval.
-- Camera AE: dry run only (`pimax-slam ae`) until approved.
+- Camera AE: dry run only (`omarchyvr-slam ae`) until approved.
 - Camera and eye tools open live devices: check that no other process has them (`pimax-eye watch` and `pimax-eyecal` need WayVR or desk mode stopped).
 
 ### 6.5 Recovery
 
 | symptom | action |
 |---|---|
-| headset detached every ~5 s | keepalive service running? `systemctl --user status pimax-keepalived` |
-| panel black, Monado ok | `pimax vr status`; check `merged_head_sync`; do not hotplug |
+| headset detached every ~5 s | keepalive service running? `systemctl --user status omarchyvr-keepalived` |
+| panel black, Monado ok | `omarchyvr vr status`; check `merged_head_sync`; do not hotplug |
 | Xid or Idling in log | stop cleanly if possible; reboot before the next test |
 | frozen display after SIGKILL | reboot |
 | eye chip silent after a power cycle | `pimax-eye power-on` (under the lock) |

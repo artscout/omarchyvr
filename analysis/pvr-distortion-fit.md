@@ -1,7 +1,7 @@
 # Pimax PVR distortion dump: findings and fit (2026-10-14)
 
 Data: `pimax-data/windows-20261014/.../pimax-distortion-P511X0X000000000001.json` (Dream Air, PVR 1.33.1). Fitter: `pimax-lens fit-pvr`
-(`rust/pimax-lens/src/pvrfit.rs`). Variant written to `~/.config/pimax/lens-ipd/pvr.conf` (lens.conf untouched).
+(`rust/pimax-lens/src/pvrfit.rs`). Variant written to `~/.config/omarchyvr/lens-ipd/pvr.conf` (lens.conf untouched).
 
 ## 1. The data
 
@@ -73,7 +73,7 @@ radial fit's edge samples land at image UV 1.003 / 1.005 (a ~0.3 deg misfit), so
 
 ## 5. Pimax curve vs our tuned default (0..60 deg, green, radius in half-heights; "mag" = dr/dtheta relative to the centre, 1 = no distortion)
 
-Tuned = `~/.config/pimax/lens.conf` (base 0.65307, scale 1.035, k .33692 -.36351 .48055 -.03315 -.02408). Pimax data covers up to ~52 deg (outer) / 44 deg (up/down); rows above are the polynomial extrapolation.
+Tuned = `~/.config/omarchyvr/lens.conf` (base 0.65307, scale 1.035, k .33692 -.36351 .48055 -.03315 -.02408). Pimax data covers up to ~52 deg (outer) / 44 deg (up/down); rows above are the polynomial extrapolation.
 
 | angle | r Pimax | r tuned | tuned vs Pimax | mag Pimax | mag tuned |
 |---|---|---|---|---|---|
@@ -106,7 +106,7 @@ residual (centre-weighted) would be the more principled path.
 The radial model leaves rms 0.4 deg because Pimax's mapping has a 1.5% y/x aspect and a vertical tangent offset it cannot express. LUT mode skips the model and
 samples Pimax's own dump.
 
-- Build: `pimax-lens make-lut <pimax-distortion-*.json> --out ~/.config/pimax/lens-ipd/pvr-lut.bin` (800 KB, `rust/pimax-lens/src/lut.rs`). Binary, little
+- Build: `pimax-lens make-lut <pimax-distortion-*.json> --out ~/.config/omarchyvr/lens-ipd/pvr-lut.bin` (800 KB, `rust/pimax-lens/src/lut.rs`). Binary, little
   endian, versioned, CRC32: header (version, serial, grid 129, per-eye orientation index into `pvrfit::ORIENTS`, panel size, FOV port tangents), then per eye and
   R/G/B the 129x129 grid of render **tangents** (x right, y up), in the dump's panel order, so a FOV change never invalidates it. Loading resamples (exact node
   permutation) into the user-display grid with the eye's orientation (left 3: user x = panel v, user y = -panel u; right 1: mirrored).
@@ -119,5 +119,5 @@ samples Pimax's own dump.
   0.0071 / max 0.096. Both maxima sit within 2.5% of the line end, right at the visible-area edge where the data has a kink; the lines also run along grid rows,
   so this tests only 1-D interpolation. A 2-D proxy (half resolution 65x65 LUT against the 129 nodes): bilinear rms 0.021, bicubic 0.014-0.018 deg, so at 129
   the 2-D interpolation error is about 0.005 deg rms. Bilinear exceeds 0.02 deg at the edge, so bicubic is the default; the difference is not visible.
-- Variant: `~/.config/pimax/lens-ipd/pvr-lut.conf`. Tests: `cargo test -p pimax-lens lut` (round trip, corruption, orientation of both eyes, node-exact `compute`,
+- Variant: `~/.config/omarchyvr/lens-ipd/pvr-lut.conf`. Tests: `cargo test -p pimax-lens lut` (round trip, corruption, orientation of both eyes, node-exact `compute`,
   margin, per-eye `none`, fallback, CLI).

@@ -57,7 +57,7 @@ Our model is already a per-channel 3-term radial polynomial (Vive-style) with a 
 5. **Visibility / sampling at the corners.** The rendered FOV is 50 x 44.5 deg (tangent-space clamp). Any ray beyond the rendered FOV samples outside the texture. If the sampler wraps or the border colour is not black, the edge shows streaks or wrap artefacts that look like reflections. This is a driver/compositor question: check the sampler address mode and whether `tx`/`ty` outside [0,1] are clamped. Not yet verified in code.
 6. **No FOV-edge masking.** A "hidden area" or visibility mask (what the panel can really see through the lens) is not used. Pimax's own pipeline uses a hidden-area mesh from PVR.
 7. **No calibration source.** Everything is from a third-party table. No measurement of our headset exists.
-8. **Compute vs mesh.** The vronlinux guide says Monado's Pimax path uses precalculated meshes (`PIMAX_MESHES_PATH`, default `~/.config/pimax/meshes`, `PIMAX_MESH_NAME`) exported from Pimax's runtime; our branch computes the mesh instead. These two paths should be compared on the same grid if we ever dump a Windows mesh; the dumped mesh is the best reference we can get.
+8. **Compute vs mesh.** The vronlinux guide says Monado's Pimax path uses precalculated meshes (`PIMAX_MESHES_PATH`, default `~/.config/omarchyvr/meshes`, `PIMAX_MESH_NAME`) exported from Pimax's runtime; our branch computes the mesh instead. These two paths should be compared on the same grid if we ever dump a Windows mesh; the dumped mesh is the best reference we can get.
 
 ## 5. Causes of "edge reflections" or ghosting (to tell apart)
 

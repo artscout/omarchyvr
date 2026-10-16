@@ -13,7 +13,7 @@ nothing is written to the headset, controllers or Pimax settings. Pimax Play fil
   `START name (snaplen N)`, `MARK name: text`, `STOP name`, local ISO time. Snaplen 512 for HID/settings takes (HID is 64 B, so whole),
   65535 for camera/tracking takes (USBPcap still cuts camera iso URBs at about 64 KB, enough for frame counter and timestamp rows).
 - Where they went: `captures/`, `captures2/` (git-ignored), then `pimax-data/windows-20261014/usb-captures/` via the shared NTFS drive
-  (UUID set as `shared_drive_uuid` in `~/.config/pimax/paths.toml`, `pimax mount-shared`). The new session writes `pimax-win-session-<date>\usb-captures\` plus `notes.txt`, `info\`,
+  (UUID set as `shared_drive_uuid` in `~/.config/omarchyvr/paths.toml`, `omarchyvr mount-shared`). The new session writes `pimax-win-session-<date>\usb-captures\` plus `notes.txt`, `info\`,
   `pimax-play-logs\`, `pimax-play-install-files\` and one `...-poses\` folder per tracking take.
 - Cold starts were done by stopping Pimax services (`PiServiceLauncher`, Tobii runtime) first. Scenario 2 does the same on request.
 
@@ -39,7 +39,7 @@ nothing is written to the headset, controllers or Pimax settings. Pimax Play fil
 
 ## Before (on Linux, 10 min)
 
-1. Charge headset and both controllers. Copy `windows/` to the shared NTFS drive (`pimax mount-shared`). Make sure 20 GB are free there
+1. Charge headset and both controllers. Copy `windows/` to the shared NTFS drive (`omarchyvr mount-shared`). Make sure 20 GB are free there
    (tracking takes with snaplen 65535 are 0.2-0.7 GB each; the whole session is about 6-8 GB).
 2. Windows needs: **USBPcap** (already installed, 1.5.4). Wireshark is optional (only for `-Pcapng`). Nothing else.
 3. Linux recordings for the same scenarios (see "Linux side" below) are made at **another time** on Linux with the same movements;
@@ -76,10 +76,10 @@ Totals: capture about 55 min, setup/menus/pauses about 25 min, info/log/install-
 
 ## After
 
-Shut down Windows, boot Linux, `pimax mount-shared`, move the session folder to `~/pimax-re/pimax-data/windows-<date>/` (git-ignored).
+Shut down Windows, boot Linux, `omarchyvr mount-shared`, move the session folder to `~/pimax-re/pimax-data/windows-<date>/` (git-ignored).
 Agents then: (1) decode haptic/pair/audio/refresh commands with `analysis/tools/usbp.py` and update `analysis/controller-activation.md`,
 `init-sequence.md`, `windows-linux-command-diff.md`; (2) align pose logs (UTC FILETIME) with the pcaps and compare to Linux SLAM with
-`pimax-slam ate`/`corrections`; (3) read camera mode/exposure/frame rate from the camera hub traffic and from the new install files;
+`omarchyvr-slam ate`/`corrections`; (3) read camera mode/exposure/frame rate from the camera hub traffic and from the new install files;
 (4) extract controller LED model and sync from the install files; (5) add anything found to the Monado driver and rerun goldens.
 
 ## Linux side: matching recordings
@@ -88,11 +88,11 @@ Make these on Linux with the same movement (the app must offer them; another age
 
 | Windows scenario | Linux recording | Tool |
 |---|---|---|
-| 8, 9, 10, 11, 12 | camera + IMU recording of the same motion | `pimax-cam record OUT.pxcam --seconds N` (IMU is embedded; also SLAM recording of the run for `pimax-slam ate/corrections`) |
+| 8, 9, 10, 11, 12 | camera + IMU recording of the same motion | `pimax-cam record OUT.pxcam --seconds N` (IMU is embedded; also SLAM recording of the run for `omarchyvr-slam ate/corrections`) |
 | 13 | controller IMU csv + optical tracking log while waving in/out of view | controller IMU csv from the controller recorder, plus `pxcam` for the LED frames |
-| 3, 4, 5, 6, 7 | raw HID listening (no commands) of the same actions | `pimax controllers --raw` style capture, usbmon/pimax-device log |
-| 2, 16 | power-on and off log of our init | `pimax` start/stop with the session log |
-| 15 | what is seen in the headset (video) | `pimax-record` (`pimax record start`) |
+| 3, 4, 5, 6, 7 | raw HID listening (no commands) of the same actions | `omarchyvr controllers --raw` style capture, usbmon/pimax-device log |
+| 2, 16 | power-on and off log of our init | `omarchyvr` start/stop with the session log |
+| 15 | what is seen in the headset (video) | `omarchyvr-record` (`omarchyvr record start`) |
 
 **Record card needs:** (1) one "Scenario recording" button that starts camera+IMU, SLAM log and controller csv together and names them
 `YYYYMMDD-HHMMSS-<scenario>` like the Windows files; (2) a scenario list matching the table above with spoken instructions in the headset;
@@ -110,5 +110,5 @@ the controllers talk to the headset radio. Take 16 stays "Play exit + panels off
 - Pre-check before 5 and 13 (and 15): both controllers connected (latest controller lines from the Pimax Play logs, then a spoken check + Enter; `w` wakes them and asks again, `s` starts anyway).
 - Marker prompts at key moments (`m <text>`): untimed takes speak the next marker after each one; timed takes speak a marker moment at even intervals.
 - Pose logger: flushes at least once per second and when stopped; the session ends it with `stop.flag` (killed only after 8 s); a failed PVR read (game start) no longer ends the log. The old CSVs were exact 1 MiB multiples and lost 2-4 s, the game take stopped after 28 s.
-- Unpair seen in take 13: `58 03 05 03` (right). The redo take 3 captured the left one too (`58 03 05 02`, reply `4c 04 05 02 01 07`), so the app now unpairs both hands. Linux side: `pimax controllers unpair left|right` (refused while Monado or SteamVR runs) and the Unpair button on each card.
+- Unpair seen in take 13: `58 03 05 03` (right). The redo take 3 captured the left one too (`58 03 05 02`, reply `4c 04 05 02 01 07`), so the app now unpairs both hands. Linux side: `omarchyvr controllers unpair left|right` (refused while Monado or SteamVR runs) and the Unpair button on each card.
 - Scripts copied to the shared disk folder `New Volume/pimax-linux/windows/` too.

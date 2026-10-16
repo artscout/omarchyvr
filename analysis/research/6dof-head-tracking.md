@@ -1,7 +1,7 @@
 # 6DoF head tracking for the Dream Air on Linux: design and phase 1 (2026-10-14)
 
 Status: phase 1 implemented and tested offline (no headset run yet). Monado worktree `~/src/monado-slam`, branch
-`slam`; Rust in `rust/pimax-cam` (module `slam`, C ABI `capi_slam`) and the new tool crate `rust/pimax-slam`;
+`slam`; Rust in `rust/pimax-cam` (module `slam`, C ABI `capi_slam`) and the new tool crate `rust/omarchyvr-slam`;
 launcher `analysis/tools/run_slam.sh`. Basalt is built in `~/src/basalt` and installed in `~/.local`.
 
 ## 0. Short answer
@@ -29,7 +29,7 @@ launcher `analysis/tools/run_slam.sh`. Basalt is built in `~/src/basalt` and ins
 | Item | Value | Source |
 |---|---|---|
 | Cameras | 4x OV7251 mono 640x480, KB4 fisheye (fx ~232), one UVC stream 2560x832 grey | camera-frames.md, calibration XML |
-| Frame pattern | 50.03 fps total, strictly alternating **T**racking / **L**ED exposure | `pimax-slam timing` |
+| Frame pattern | 50.03 fps total, strictly alternating **T**racking / **L**ED exposure | `omarchyvr-slam timing` |
 | Tracking rate | **25.02 Hz** per camera (39.976 ms); all four tiles share one timestamp | timing, clip 2026-10-14 00:14 |
 | LED frames | exposure/gain 40/62: dark, controller LEDs only, useless for SLAM | timing |
 | Tracking exposure on Linux | **fixed 10410/449** on all tiles, no AE | timing (all three recordings) |
@@ -92,14 +92,14 @@ HMD get_tracked_pose(t) -> 3DoF relation -> pimax_camera_head_relation:
 * **Calibration hand-over.** Two ways, same numbers:
   1. driver -> `t_slam_calibration` (KB4 intrinsics, `T_imu_cam`, 25 Hz, IMU noise) when `SLAM_CONFIG` is unset;
      Basalt then uses its built-in VIO defaults;
-  2. `pimax-slam export` -> `pimax-basalt-calib.json` (Basalt cereal, `camera_type: kb4`) +
+  2. `omarchyvr-slam export` -> `pimax-basalt-calib.json` (Basalt cereal, `camera_type: kb4`) +
      `pimax-basalt-config.json` (Basalt's EuRoC config, detection grid 50 -> 40 for 640x480) +
      `pimax-basalt.toml` (SLAM_CONFIG, absolute paths, GUI off). `run_slam.sh live` uses this, so live and
      offline runs use identical settings.
 * **IMU noise.** The factory values are 0. Defaults (`pimax_cam::slam::ImuNoise`): accel 4e-3 m/s²/√Hz,
   gyro 4e-4 rad/s/√Hz, bias walk 1e-3 / 1e-4. That is datasheet consumer-MEMS density x4-5, the same order as
-  Monado's hard-coded Rift S numbers. `pimax-slam imu-noise <recording>` measures the white noise in the stillest
-  2 s window (inflated x3) and writes `~/.config/pimax/slam-imu.json`, which both the driver and the exporter pick
+  Monado's hard-coded Rift S numbers. `omarchyvr-slam imu-noise <recording>` measures the white noise in the stillest
+  2 s window (inflated x3) and writes `~/.config/omarchyvr/slam-imu.json`, which both the driver and the exporter pick
   up. Bias random walk needs minutes of still data (Allan deviation), so it stays at the defaults for now.
 * **Head offset.** The tracker reports the IMU pose. The head origin is put between the two tracking cameras,
   5 cm behind them (the same estimate as the Mercury hand attachment; `PIMAX_HT_HEAD_OFFSET` overrides it). The
@@ -132,7 +132,7 @@ that our LED frames carry, so the field layout is very likely right. Plan:
    with a cap on exposure (motion blur) before raising gain. Send `0x51` through libpimax at <= 12.5 Hz; the
    frame metadata echoes exposure/gain, so the loop can be closed and checked offline.
 2. Keep all four exposures equal per pair (stereo matching), LED pair unchanged.
-3. Test offline first: record with AE, check that `pimax-slam timing` shows changing values and the images look
+3. Test offline first: record with AE, check that `omarchyvr-slam timing` shows changing values and the images look
    right, then replay through Basalt.
 
 This sends a command Windows sends all the time, so the risk is low, but it is a headset command: it goes in only
@@ -176,7 +176,7 @@ after review and with an off switch (`PIMAX_CAM_AE=0`).
 Basalt's VIT build starts a new world every session and has no map save/load. The plan from
 `selfcal-roommap.md` §5.2 fits on top of the supervisor, which already owns a `world_from_slam` transform:
 
-1. Rust room map per room (`~/.local/share/pimax/rooms/<uuid>/`): keyframes (pose + binary descriptors from all
+1. Rust room map per room (`~/.local/share/omarchyvr/rooms/<uuid>/`): keyframes (pose + binary descriptors from all
    four cameras), landmarks, gravity-aligned room frame, floor, boundary.
 2. At session start (and after a long loss), place recognition plus a multi-camera PnP with gravity known. The
    result `room_from_slam` replaces the supervisor's yaw-only alignment, so the room stays put across sessions
@@ -188,11 +188,11 @@ Until then, every session starts at the origin facing the initial 3DoF heading (
 ## 9. Test plan
 
 **Offline (no headset):**
-1. `pimax-slam check <rec>`: rates (25 Hz / 1 kHz), gaps, monotonic stamps, cam0/cam1 sharing every timestamp,
+1. `omarchyvr-slam check <rec>`: rates (25 Hz / 1 kHz), gaps, monotonic stamps, cam0/cam1 sharing every timestamp,
    all frames inside the IMU span, |accel| ~ 9.81. Unit-tested on synthetic data.
 2. `run_slam.sh replay <rec>`: Basalt through `monado-cli slambatch` in real time (`EUROC_MAX_SPEED=false`; at
    max speed the player outruns the tracker and Basalt drops everything). Output `tracking.csv`, `timing.csv`.
-3. Metrics (`pimax-slam`):
+3. Metrics (`omarchyvr-slam`):
    * `loop`: end-start distance for a run that ends where it started (headset put back on the same marked
      spot). Target < 1 % of the path, < 5 cm for a 5 m loop;
    * `ate EST REF`: rigid (Horn) alignment, ATE RMSE/median/max, RPE over 1 s. For runs with a known reference
@@ -202,14 +202,14 @@ Until then, every session starts at the origin facing the initial 3DoF heading (
    * known distance: slide the headset 1.00 m along a table edge; the tracker should report 1.00 +- 0.02 m.
 4. Sweeps on the same recording: camera offset (`CAM_OFFSET_NS`), IMU noise (default vs measured), 2 vs 4
    cameras, detection grid. Same data each time, so differences are real.
-5. Already done: pipeline smoke test (`pimax-slam smoke-euroc` from the dark 00:14 clip with a synthetic still
+5. Already done: pipeline smoke test (`omarchyvr-slam smoke-euroc` from the dark 00:14 clip with a synthetic still
    IMU): Basalt loads the calibration, initialises and writes 365 poses for 367 frames. The poses drift away
    because the images are sensor noise and the IMU is fake, which is expected. This proves the plumbing only.
 
 **Live (user), in order:**
 1. *Recording, 90 s, lit room* (`run_slam.sh record`): 5 s still on the desk, then hold or wear it, look
    around slowly, walk a 3-5 m loop, near and far views, back to the **marked start spot**, 5 s still. Then
-   `run_slam.sh replay <dir>` and `pimax-slam imu-noise <dir>`. This gives accuracy numbers, the IMU noise, and
+   `run_slam.sh replay <dir>` and `omarchyvr-slam imu-noise <dir>`. This gives accuracy numbers, the IMU noise, and
    the dataset for every later sweep. A second recording with fast head turns gives the robustness case.
 2. *Live headless* (`run_slam.sh live 60`): `posecli` prints the position. Move the headset by hand 30 cm left,
    right, up and down; `p=` must follow with the `6dof` flag, then put it back. The log shows `6DoF: tracking`,
@@ -227,7 +227,7 @@ Until then, every session starts at the origin facing the initial 3DoF heading (
 | Driver glue (C, thin) | `~/src/monado-slam` branch `slam`: `pimax_camera.c/.h`, `pimax_hmd.c`; `t_tracker_slam.cpp/t_tracking.h` (latest pose, reset) |
 | Build | `~/src/monado-slam/build` (`-DPIMAX_CAM=ON`, Mercury on, `PIMAX_RUST_TARGET_DIR=~/src/target-slam/release`) |
 | Rust: calibration export, IMU model, supervisor + C ABI | `rust/pimax-cam/src/slam.rs`, `capi_slam.rs`, `include/pimax_cam.h` |
-| Rust tools | `rust/pimax-slam` (`export`, `check`, `imu-noise`, `timing`, `ate`, `loop`, `smoke-euroc`) |
+| Rust tools | `rust/omarchyvr-slam` (`export`, `check`, `imu-noise`, `timing`, `ate`, `loop`, `smoke-euroc`) |
 | Launcher | `analysis/tools/run_slam.sh record / live / replay` |
 
 Env switches (all default off): `PIMAX_SLAM=1`, `PIMAX_SLAM_RECORD=<dir>|1`, `PIMAX_SLAM_CAMS`,
@@ -237,13 +237,13 @@ Env switches (all default off): `PIMAX_SLAM=1`, `PIMAX_SLAM_RECORD=<dir>|1`, `PI
 there, and `PIMAX_SLAM` would only print a warning).
 
 Not done in phase 1: `basalt_vio`/GUI tools (they need Boost headers: `sudo pacman -S boost` would allow it, not
-required), auto-exposure, relocalisation, a translation-showing test client, a merge into `pimax`.
+required), auto-exposure, relocalisation, a translation-showing test client, a merge into `omarchyvr`.
 
 ## 11. Next steps
 
 1. User: lit 90 s recording -> replay -> numbers (section 9, live 1). Then live headless test (live 2).
 2. Auto-exposure in Rust (section 5); camera offset sweep; 2 vs 4 cameras.
-3. Merge `slam` into `pimax` once live 2 passes (default stays off), then make 6DoF the default when worn tests
+3. Merge `slam` into `omarchyvr` once live 2 passes (default stays off), then make 6DoF the default when worn tests
    pass.
 4. Room map / relocalisation layer (section 8).
 
@@ -264,17 +264,17 @@ diverging by 54 deg (little stereo overlap).
 * Head pose output in Rust (`pimax-cam/src/headpose.rs`, used by the driver for `PIMAX_SLAM=1`): IMU-rate
   rotation and position prediction from the newest tracker pose (gyro bias learned from the tracker), every
   correction blended (decay 150/100 ms, rate limit 0.1 m/s + half the head speed), and room re-snap after a loss
-  in the same tracker world. On the real Windows head motion (`pimax-slam simulate`): frame-to-frame error
+  in the same tracker world. On the real Windows head motion (`omarchyvr-slam simulate`): frame-to-frame error
   2.66 -> 0.38 mm RMS (max 13.8 -> 1.5 mm), absolute error p95 5.6 -> 3.0 mm; a 1.5 s dropout restores the room;
   a 3 s one triggers a tracker reset and needs room memory.
 * Recenter that keeps the room: use Monado's own `monado-ctl -c` (moves LOCAL only, STAGE/room stays). The
   driver's debug button still re-anchors the whole room (debug only).
-* Room memory (`rust/pimax-room`, offline prototype, no driver hook yet): Basalt has no map/loop closure/reloc
+* Room memory (`rust/omarchyvr-room`, offline prototype, no driver hook yet): Basalt has no map/loop closure/reloc
   (checked in its VIT build), ORB-SLAM3 is GPLv3 (benchmark only), so our own Rust layer: ORB on a common upright
-  virtual pinhole view, sub-pixel stereo, keyframes in room coordinates (`~/.local/share/pimax/rooms/<name>/`),
+  virtual pinhole view, sub-pixel stereo, keyframes in room coordinates (`~/.local/share/omarchyvr/rooms/<name>/`),
   gravity-aware 4-DoF PnP relocalisation, anchors in room coordinates. Synthetic room through the real
   calibration: second session relocalises on its 2nd frame, 0.8 mm / 0.01 deg; a different room is rejected.
-* Validation: `pimax-slam stats` (still/HF noise, drift per metre, `--vs` Windows log), `simulate`, `shift` +
+* Validation: `omarchyvr-slam stats` (still/HF noise, drift per metre, `--vs` Windows log), `simulate`, `shift` +
   `run_slam.sh sweep` (Basalt ignores `cam_time_offset_ns`, so offsets shift the data). Windows log reference:
   664 Hz, still noise 1.3 mm, HF 0.45 mm p50, two tracking gaps (0.6 s, 3.0 s) = its two SLAM resets.
 * 4 cameras: Basalt takes N cameras (cam0 is the hub, other cameras also detect in their non-overlapping areas;
@@ -283,12 +283,12 @@ diverging by 54 deg (little stereo overlap).
 
 **Live tests, in order:** (a) `run_slam.sh record 90` in a lit room: 5 s still on a marked spot, 3-5 m loop,
 back to the spot, 5 s still. (b) `run_slam.sh replay DIR` (loop drift, stats vs Windows), `run_slam.sh sweep DIR`
-(best offset ~0 confirms mid-exposure), `pimax-slam imu-noise DIR`; two recordings -> `pimax-room build` +
-`pimax-room reloc` (time to first fix, alignment spread). (c) `run_slam.sh live` then worn with a static object
+(best offset ~0 confirms mid-exposure), `omarchyvr-slam imu-noise DIR`; two recordings -> `omarchyvr-room build` +
+`omarchyvr-room reloc` (time to first fix, alignment spread). (c) `run_slam.sh live` then worn with a static object
 (WayVR panel at ~1 m, or a near-geometry scene): leaning 20 cm and stepping must leave the panel fixed on the
 desk (no swimming, at most a slow mm slide after a correction); covering the cameras 1-2 s holds the view, and
 on uncovering the panel slides back to its spot within ~1 s. After AE approval: repeat (a) with `PIMAX_CAM_AE=1`.
 
-**Next:** AE approval + recording; driver hook for `pimax-room` (worker thread at ~5 Hz, load/save per room,
+**Next:** AE approval + recording; driver hook for `omarchyvr-room` (worker thread at ~5 Hz, load/save per room,
 `Supervisor` alignment from relocalisation); descriptors on Basalt's own landmarks (VIT pose-features
 extension) for better map depth.

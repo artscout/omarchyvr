@@ -7,7 +7,7 @@
 # dot until it jumps to the next (0.6 s settle, 1 s measured). Then a live ring shows where the tracker thinks you look
 # (grey = raw, green = with the fitted correction).
 #
-# Keys (this terminal):  space or a  start / next      r  restart      y  accept: write ~/.config/pimax/eye-correction.toml
+# Keys (this terminal):  space or a  start / next      r  restart      y  accept: write ~/.config/omarchyvr/eye-correction.toml
 #                        (backup of an existing file kept)      q  quit
 # Results: printed, and saved as JSON (path printed; --gaze-out PATH|DIR changes it). Options of the client go through:
 #   --gaze-points 13|17   --gaze-out PATH   --seconds S

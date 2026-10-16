@@ -1,6 +1,6 @@
 # 6DoF drift on the 2026-10-14 walk: root cause and fix
 
-Recording `~/.local/share/pimax/slam-recordings/20261014-152215-live` (94 s, AE off). Live: 2.2 m drift in the
+Recording `~/.local/share/omarchyvr/slam-recordings/20261014-152215-live` (94 s, AE off). Live: 2.2 m drift in the
 first 5 s "standing still", 6.5 m loop error (23 %). Offline only (Basalt via `monado-cli slambatch`,
 deterministic, max speed gives the same tracks as real time).
 
@@ -15,7 +15,7 @@ deterministic, max speed gives the same tracks as real time).
    nothing (SIFT: 1 of 31 stereo matches passes the epipolar gate at the start; `vio_debug`: `num_lms 0` for
    the first 55 frames). So Basalt integrates the IMU alone.
 3. **Gyro bias not seeded.** Basalt starts its gyro bias at 0; the real bias is (-0.23, +0.73, -0.41) deg/s
-   (body), stable across sessions (driver cache `~/.cache/pimax/gyro-bias`, 151524, imu-orientation.md). In the
+   (body), stable across sessions (driver cache `~/.cache/omarchyvr/gyro-bias`, 151524, imu-orientation.md). In the
    landmark-free first ~1.5 s the attitude turns by bias x time (Basalt's orientation at 1 s = exactly the raw
    bias: -0.20, +0.75, -0.42 deg). Pitch/roll stay wrong (0.38 deg about body z) once landmarks lock that pose,
    and gravity leaks into position: 9.81 x sin(0.39 deg) = 0.067 m/s², fitted 0.071 m/s² -> 3.6 m at 10 s,
@@ -35,7 +35,7 @@ Checked and **not** the cause:
 | Extrinsics from the Windows ProgramData XML | byte-identical to `analysis/headset-calibration.xml`. The older ProgramFiles XML (other rig, different `tbc`/`ombc`) is wrong for this headset: loop 35 %, walk 45 % |
 | Stereo baseline / intrinsics | baseline 111.6 mm; cam1 rotation off by ~0.3-0.6 deg (selfcal agrees), refitting it changed the walk 1.3 -> 1.3 %; epipolar gate 0.005 -> 0.01: no change while still |
 | Frame time (mid-exposure) | offset sweep above is centred on 0 |
-| The old 0.38 mm jitter | that was `pimax-slam simulate` (head pose output on the Windows trajectory with a synthetic tracker), not a Basalt run |
+| The old 0.38 mm jitter | that was `omarchyvr-slam simulate` (head pose output on the Windows trajectory with a synthetic tracker), not a Basalt run |
 
 ## Numbers (152215, offline)
 
@@ -56,7 +56,7 @@ real. The emulation re-runs Basalt from each reset time (`trimstart` + slambatch
 ## Changes
 
 * `pimax-cam` `SlamSetup.gyro_bias` -> Basalt `calib_gyro_bias`; driver-written recording calibrations use
-  the driver's bias cache. `pimax-slam export --gyro-bias X,Y,Z|none --bias-from DATASET` (default: the
+  the driver's bias cache. `omarchyvr-slam export --gyro-bias X,Y,Z|none --bias-from DATASET` (default: the
   driver's cache, raw dps converted to body rad/s). `run_slam.sh replay` seeds from the recording's first still
   second.
 * `ImuNoise::default()` = Pimax's stationary densities (gyro 0.001974, accel 0.081686); bias walks unchanged.
@@ -65,7 +65,7 @@ real. The emulation re-runs Basalt from each reset time (`trimstart` + slambatch
   room alignment, VIO velocity zeroed for the predictor) and a tracker that drifts 3 cm meanwhile is reset
   (fresh start with zero velocity and the right attitude), at most once per second. `PIMAX_SLAM_STILL=0`
   turns it off, `=N` sets the reset distance in cm. Monado logs the reset reason.
-* `run_slam.sh` picks the newest pimax-slam build that has `stats` (the old `~/src/target-slam` one did not).
+* `run_slam.sh` picks the newest omarchyvr-slam build that has `stats` (the old `~/src/target-slam` one did not).
 
 ## Rest -> wear (Windows drifts too)
 
@@ -105,7 +105,7 @@ accel), which the still rule above already does whenever the headset lies still 
 
 ## Still gate: re-zero instead of a dropout (2026-10-15)
 
-Live Play session 17:15 (`/tmp/pimax-vr-session/monado.log`, ~3 min): 43 x `6DoF: lost (tracker drifting while
+Live Play session 17:15 (`/tmp/omarchyvr-session/monado.log`, ~3 min): 43 x `6DoF: lost (tracker drifting while
 still)`, then `tracking (re-aligned)`, rotation corrections up to 2.8 deg. All 43 fired while the headset lay
 still, none while it was worn: 8 in the first 13 s (headset on the desk, gyro calibration window, Basalt's first
 `T_w_i` has the start attitude) and 35 after the game closed (`Client 5 disconnected`, then `T_w_i` with up =
@@ -126,7 +126,7 @@ the same: 3 at the start, none during play.
   `6DoF: tracker re-zeroed while still (position held, no dropout; reset N)` at INFO; the status line says
   `6DoF tracking (re-zeroing while still, position held)`; the app counts it as a reset, not a loss.
   `PIMAX_SLAM_STILL_REZERO=0` restores the old drop for A/B.
-* **Offline** (`pimax-slam stillgate DIR`: the driver's HeadTracker on the recording's IMU + its Basalt run,
+* **Offline** (`omarchyvr-slam stillgate DIR`: the driver's HeadTracker on the recording's IMU + its Basalt run,
   tracker resets emulated as a fresh zero-velocity world, 90 Hz queries), old -> new:
 
 | Recording | still | gate fired | 6DoF lost | time without 6DoF |
@@ -157,7 +157,7 @@ prediction starts at the newest pose with the tracker's newest velocity, so the 
 position and its noisy newest velocity (x 45-85 ms of latency + prediction) arrive as steps; most big steps
 come in head motion (0.7 m/s mean), 13 of 100 at under 0.25 m/s (the visible ones), 20 % mostly vertical.
 
-`pimax-slam corrections DIR [--central-vel]` replays a recording through the output with every correction
+`omarchyvr-slam corrections DIR [--central-vel]` replays a recording through the output with every correction
 logged and measures: steps >= 20 mm (vertical / at < 0.25 m/s), largest pending offset, jitter while worn and
 quiet (position minus its 0.5 s / 2 s average, vertical), sliding at rest (speed of the decaying offset while
 the head moves < 0.25 m/s, time above 2 cm/s), and the error against the hindsight tracker trajectory.

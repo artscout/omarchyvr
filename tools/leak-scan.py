@@ -7,7 +7,7 @@
 
 Same patterns as tools/export-public.sh: device serials (ASCII and UTF-16LE), provider API keys, private keys, JWTs,
 e-mail addresses (except noreply and the public ones in public-manifest.txt "~ email"), the home path, the login name,
-Windows user paths, machine values from ~/.config/pimax (compared by value, never printed), eye-chip cold-start bytes
+Windows user paths, machine values from ~/.config/omarchyvr (compared by value, never printed), eye-chip cold-start bytes
 (compared with the private frame list when it is present), denied file types, and any path under .claude/ or a
 private lab path. Only added lines of text files are scanned; binary and .gz files are scanned whole.
 Prints the kind of hit and the path, never the value. Exit 1 on any hit.
@@ -25,7 +25,7 @@ def git(*a, text=False):
 
 
 PRIVATE_PATHS = [".claude/**", "CLAUDE.local.md", "**/*.local.md", "analysis/headset-calibration*.xml",
-                 "rust/pimax-cam/tests/fixtures/evening2.pxcam", "rust/pimax-passthrough/tests/fixtures/*.png",
+                 "rust/pimax-cam/tests/fixtures/evening2.pxcam", "rust/omarchyvr-passthrough/tests/fixtures/*.png",
                  "rust/fixtures/if0_replies_coldstart.rec.gz", "rust/pimax-eye/fixtures/*.usbpcap.gz",
                  "rust/pimax-eye/fixtures/*.golden.gz", "calib/**", "pimax-data/**", "captures*/**",
                  "**/ai.toml", "**/.env", "**/*.key", "**/*.pem"]
@@ -59,12 +59,13 @@ def allowed_mail():
 
 def private_values():
     vals = []
-    cfg = os.path.join(HOME, ".config/pimax")
-    for n in os.listdir(cfg) if os.path.isdir(cfg) else []:
-        if n.startswith("ai.toml") or n == "paths.toml":
-            t = open(os.path.join(cfg, n), encoding="utf-8", errors="replace").read()
-            vals += [m.group(1).encode() for m in re.finditer(r'(?m)^\s*(?:api_key|shared_drive_uuid|token)\s*=\s*"([^"]{8,})"', t)]
-            vals += [m.group(1).encode() for m in re.finditer(r'"((?:sk-|key-)[^"]{12,})"', t)]
+    # the new dir and the one used before the rename (a machine may still have both)
+    for cfg in (os.path.join(HOME, ".config/omarchyvr"), os.path.join(HOME, ".config/pimax")):  # names:keep
+        for n in os.listdir(cfg) if os.path.isdir(cfg) else []:
+            if n.startswith("ai.toml") or n == "paths.toml":
+                t = open(os.path.join(cfg, n), encoding="utf-8", errors="replace").read()
+                vals += [m.group(1).encode() for m in re.finditer(r'(?m)^\s*(?:api_key|shared_drive_uuid|token)\s*=\s*"([^"]{8,})"', t)]
+                vals += [m.group(1).encode() for m in re.finditer(r'"((?:sk-|key-)[^"]{12,})"', t)]
     return vals
 
 

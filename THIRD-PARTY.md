@@ -2,7 +2,7 @@
 
 omarchyvr's own code (the Rust workspace in `rust/`, `libpimax/`, the scripts in `linux/`, `tools/`, `windows/`,
 `packaging/`) is licensed **MIT OR Apache-2.0** (`LICENSE-MIT`, `LICENSE-APACHE`). Documentation and data
-(`docs/`, `analysis/`, `hw/`, fixtures and golden files, the app's line art in `rust/pimax-setup/assets/art/`, drawn
+(`docs/`, `analysis/`, `hw/`, fixtures and golden files, the app's line art in `rust/omarchyvr-app/assets/art/`, drawn
 for this project) are **CC-BY-4.0** (`LICENSE-CC-BY-4.0`).
 
 The stack runs together with these projects. None of them is vendored in this repository unless the table says so;

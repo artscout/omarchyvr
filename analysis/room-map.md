@@ -3,7 +3,7 @@
 Goal: the world origin of 6DoF tracking (and with it every WayVR window, controller and gaze ray) comes back to
 the same real place each session, **without a printed tag**. Windows Pimax does this with an ORB map of the room
 plus a DBoW vocabulary (`platMap_orborb_K8L4.bin`, `voc_GEN_8X4.dbow`: "load map to reloc, and save map").
-Code: `rust/pimax-roommap` (on top of `rust/pimax-room`). Everything here ran offline on recordings. Nothing
+Code: `rust/omarchyvr-roommap` (on top of `rust/omarchyvr-room`). Everything here ran offline on recordings. Nothing
 touched Monado, the broker or the headset.
 
 ## 1. Options
@@ -12,12 +12,12 @@ touched Monado, the broker or the headset.
 |---|---|
 | **Basalt map save/load** | **Not available.** Our Basalt is the Monado VIT fork (`~/src/basalt`, mateosss df6e970, VIT 2.0.1). It is a sliding-window VIO. The only map-related pieces are `--marg-data` (dumps marginalisation data) and the offline `basalt_mapper` (`NfrMapper`: non-linear factor recovery + `HashBow` loop closure, Pangolin GUI). Nothing loads a map into the running estimator or relocalises against one, and VIT has no API for it. Adding it means deep C++ changes in Basalt, VIT and Monado's `t_tracker_slam`. Rejected. |
 | **ORB-SLAM3 Atlas** (save/load, DBoW2 reloc) | Does exactly this, but it is GPLv3 and would be a second full SLAM next to Basalt. Reference only. |
-| **Our own keyframe + ORB place-recognition database, PnP against saved 3D points, result written to the `PIMAX_ANCHOR` offset hook** | **Chosen.** Runs beside Basalt, read-only on the camera broker and the Monado head ring. The Monado side already exists: the AprilTag anchor's offset file (`app_from_slam = offset * slam`). Monado itself needs no change. Pure Rust, no new dependencies, reuses `pimax-room` (ORB, stereo, gravity-aware 4-DoF PnP). |
+| **Our own keyframe + ORB place-recognition database, PnP against saved 3D points, result written to the `PIMAX_ANCHOR` offset hook** | **Chosen.** Runs beside Basalt, read-only on the camera broker and the Monado head ring. The Monado side already exists: the AprilTag anchor's offset file (`app_from_slam = offset * slam`). Monado itself needs no change. Pure Rust, no new dependencies, reuses `omarchyvr-room` (ORB, stereo, gravity-aware 4-DoF PnP). |
 | DBoW2 / DBoW3 / fbow vocabulary | **Not needed at room scale.** Place recognition ranks keyframes by brute-force descriptor hits. With ~100 keyframes per room that takes milliseconds (about 25 ms CPU per frame including ORB on both cameras; 784 frames of a 94 s recording in 2.5 s on 8 threads). DBoW only pays off at thousands of keyframes. Pimax's `voc_GEN_8X4.dbow` is not on Linux, and its format and licence are unknown. The DBoW2/fbow C++ libs (BSD-like) would add a C++ build for no gain here. Revisit for multi-room maps. |
-| AprilTag anchor (`pimax-anchor`) | Exists; mm accuracy. But it needs a printed tag in view. Keep it as the precise fallback and the ground truth for the live test. |
+| AprilTag anchor (`omarchyvr-anchor`) | Exists; mm accuracy. But it needs a printed tag in view. Keep it as the precise fallback and the ground truth for the live test. |
 | Learned features (XFeat, SuperPoint + LightGlue) / global descriptors (NetVLAD) | Better under lighting changes. Heavier (GPU or a lot of CPU) and a model to ship. A later swap of the per-frame matcher; the rest stays the same. |
 
-## 2. Design (`pimax-roommap`)
+## 2. Design (`omarchyvr-roommap`)
 
 1. **build**: a mapping session (an offline recording + its Basalt trajectory, or live from `pimax-cam broker` +
    Monado's head ring).
@@ -30,7 +30,7 @@ touched Monado, the broker or the headset.
      Keyframes and points move with their node. The first keyframe stays fixed, so the room frame is the mapping
      session's world.
    * Optional (`--refine`): multi-view re-triangulation of the points along the corrected trajectory.
-   * Output: `~/.local/share/pimax/roommap/<name>/`: `map.bin` (pimax-room format), `roommap.toml`,
+   * Output: `~/.local/share/omarchyvr/roommap/<name>/`: `map.bin` (omarchyvr-room format), `roommap.toml`,
      `correction.csv` (trajectory correction from the loop closure).
 2. **relocalize**: every frame is ORB-matched against the map and gives a per-frame 4-DoF RANSAC hypothesis. Then
    one transform `room_from_slam` (yaw + translation) is **fitted jointly over all correspondences of all frames
@@ -51,7 +51,7 @@ frame is the Basalt replay world of its recording, which is not that session's l
 
 ## 3. Offline results
 
-Recordings (`~/.local/share/pimax/slam-recordings/20261014-*-live`, Basalt replays via `run_slam.sh replay`, all
+Recordings (`~/.local/share/omarchyvr/slam-recordings/20261014-*-live`, Basalt replays via `run_slam.sh replay`, all
 on 14 Oct):
 
 | rec | length | path | Basalt end-start | content |
@@ -74,7 +74,7 @@ recording starts with the headset lying face-down on the cushion: the cameras se
 sessions A and B, each with its own map. For each 3 s window of B relocalised in map A, take the window of A at
 the same place (within 0.5 m, view within 30 deg) relocalised in map B, and compose the two fits. A perfect system
 gives identity (A's own loop correction there). The error is measured at the place, so it is what the user would
-see. It is about sqrt(2) x a single relocalisation's error. `pimax-roommap eval`:
+see. It is about sqrt(2) x a single relocalisation's error. `omarchyvr-roommap eval`:
 
 | pair (windows) | no loop closure: median / p90 | **with loop closure**: median / p90 | yaw median / p90 (loops) |
 |---|---|---|---|
@@ -127,11 +127,11 @@ see. It is about sqrt(2) x a single relocalisation's error. `pimax-roommap eval`
 
 1. **Live test (needs the user, Monado `desk` with `PIMAX_ANCHOR=1` and 6DoF, broker running):** live `build`
    and `relocalize --source broker`. The code path is written and smoke-tested on a `.pxcam` without a ring, but
-   it has never run against a real head ring. Ground truth: the AprilTag (`pimax-anchor detect` before and after a
+   it has never run against a real head ring. Ground truth: the AprilTag (`omarchyvr-anchor detect` before and after a
    roommap `apply`; the tag should land on the same world spot to within a few cm).
 2. Continuous mode: re-relocalise every few seconds while tracking, blend the offset change (the
-   `pimax-room` session already has the refine/agree logic), and redo the fix after a tracker reset.
-3. Launcher/GUI: `pimax desk start` -> `pimax-roommap relocalize --source broker --apply` once tracking runs; a
+   `omarchyvr-room` session already has the refine/agree logic), and redo the fix after a tracker reset.
+3. Launcher/GUI: `omarchyvr desk start` -> `omarchyvr-roommap relocalize --source broker --apply` once tracking runs; a
    "Map my room" button.
 4. Merge sessions into the map (lighting variants, moved things), plus a staleness score per keyframe.
 5. Cams 2/3 (upper pair) for more coverage once their calibration is fixed (selfcal); DBoW only if maps grow
@@ -142,22 +142,22 @@ see. It is about sqrt(2) x a single relocalisation's error. `pimax-roommap eval`
 ```sh
 # Map the room (live, ~60-90 s): walk slowly through the room, look at every wall, the desk and the floor near
 # you, and come back past your starting point at the end (that closes the loop).
-pimax-roommap build --source broker --seconds 90 --name home
-# or offline: analysis/tools/run_slam.sh record 90 ; run_slam.sh replay DIR ; pimax-roommap build --rec DIR --name home
+omarchyvr-roommap build --source broker --seconds 90 --name home
+# or offline: analysis/tools/run_slam.sh record 90 ; run_slam.sh replay DIR ; omarchyvr-roommap build --rec DIR --name home
 
 # Every later session, once 6DoF tracks: look around for a few seconds
-pimax-roommap relocalize --source broker --name home --apply      # or relocalize, then: pimax-roommap apply --name home
-pimax-roommap info --name home
+omarchyvr-roommap relocalize --source broker --name home --apply      # or relocalize, then: omarchyvr-roommap apply --name home
+omarchyvr-roommap info --name home
 # the first time after mapping: place the WayVR windows; from then on they come back.
 
 # Floor (analysis/floor.md): build stores it; relocalize --apply / apply put it on Monado's STAGE floor
-pimax-roommap floor detect --name home --save | floor touch --name home --save | floor show --name home
+omarchyvr-roommap floor detect --name home --save | floor touch --name home --save | floor show --name home
 # Offline validation
-pimax-roommap relocalize --rec REC_DIR --name home                  # first fix, whole session, per-window spread
-pimax-roommap eval --map-a A --rec-a DIR_A --map-b B --rec-b DIR_B  # same-place cycle test
+omarchyvr-roommap relocalize --rec REC_DIR --name home                  # first fix, whole session, per-window spread
+omarchyvr-roommap eval --map-a A --rec-a DIR_A --map-b B --rec-b DIR_B  # same-place cycle test
 ```
 
-Tests: `cargo test --release -p pimax-roommap` (6 tests: the joint fit with noise and 20 % outliers recovers
+Tests: `cargo test --release -p omarchyvr-roommap` (6 tests: the joint fit with noise and 20 % outliers recovers
 the transform to < 5 mm / 0.05 deg; the pose graph removes injected drift; result/offset file round trip in the
 Monado format; synthetic room through the real calibration: a second session relocalises to < 1 cm and another
 room is rejected; synthetic drifting mapping session: loop closure pulls the end back to < 4 cm).

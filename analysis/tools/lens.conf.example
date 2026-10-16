@@ -1,5 +1,5 @@
 # Pimax Dream Air lens model for the Monado pimax driver.
-# Install:  mkdir -p ~/.config/pimax && cp lens.conf.example ~/.config/pimax/lens.conf
+# Install:  mkdir -p ~/.config/omarchyvr && cp lens.conf.example ~/.config/omarchyvr/lens.conf
 # Path override: PIMAX_LENS_CONF=/path/to/file.   Read once when monado-service starts: restart it after editing.
 # Forced off for one run:  PIMAX_LENS_OFF=1.
 #

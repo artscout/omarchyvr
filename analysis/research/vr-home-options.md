@@ -32,7 +32,7 @@ Question: what can serve as a "VR home" (land here when the headset goes on, lau
 
 ## Recommendation
 
-Use **WayVR's dashboard as the VR home** and add a **Play** button that lands the user in it: the desk session already starts WayVR, so the home is already on screen when the headset goes on. Make Play open the Games tab (or a Play entry point) and call `steam://rungameid/<appid>` through the same code as `steam_utils::launch`, with the per-game launch options from `pimax vr steam-options` for OpenXR or OpenVR. Verify first: that `steam://` launches from inside a WayVR session pass the launch options and reach xrizer or Monado; and that a game started this way does not stop the desk session (`docs/AUTO-MODE.md:33`). Skip SteamVR Home (no Linux driver for the Dream Air) and Stardust/Overte (wrong scope or too heavy for this step).
+Use **WayVR's dashboard as the VR home** and add a **Play** button that lands the user in it: the desk session already starts WayVR, so the home is already on screen when the headset goes on. Make Play open the Games tab (or a Play entry point) and call `steam://rungameid/<appid>` through the same code as `steam_utils::launch`, with the per-game launch options from `omarchyvr vr steam-options` for OpenXR or OpenVR. Verify first: that `steam://` launches from inside a WayVR session pass the launch options and reach xrizer or Monado; and that a game started this way does not stop the desk session (`docs/AUTO-MODE.md:33`). Skip SteamVR Home (no Linux driver for the Dream Air) and Stardust/Overte (wrong scope or too heavy for this step).
 
 ## Gaps
 

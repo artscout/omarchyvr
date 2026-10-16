@@ -1,13 +1,13 @@
 # Eye tracking in desk mode
 
 The Dream Air's eye tracker runs in the Monado fork (`~/src/monado-eye`, branch `desk`, `PIMAX_EYE=1`) with the
-host-side per-eye calibration in `~/.config/pimax/eye-calibration.toml` (v1: accuracy 3.08° mean, 0.54° precision).
+host-side per-eye calibration in `~/.config/omarchyvr/eye-calibration.toml` (v1: accuracy 3.08° mean, 0.54° precision).
 Monado exposes `XR_EXT_eye_gaze_interaction`; WayVR (`~/src/wayvr`, branch `eye-gaze`) reads it.
 Background: `analysis/eye-gaze-full.md`, `analysis/eye-precision.md`, `analysis/wayvr-gaze.md`.
 
 ## Eye tracking: always on, visual only (user decision 2026-10-16)
 
-Eye tracking is on in every session when the eye build and `~/.config/pimax/eye-calibration.toml` exist. If it is not
+Eye tracking is on in every session when the eye build and `~/.config/omarchyvr/eye-calibration.toml` exist. If it is not
 calibrated it simply does not run (the app says "Not calibrated"); if it cannot start, VR keeps running without it.
 
 **It is only a visual effect.** You see a small, dim dot where your eyes land on the WayVR screens (Work). The gaze is
@@ -16,15 +16,15 @@ in Play/SteamVR (no overlay there); Monado just runs the tracker (`PIMAX_EYE=1`)
 
 App: the Pimax app Home, row "Eye tracking (visual only)": the switch (saved, `--no-eye` in the start arguments when
 off), a plain status line (Off / Running / Not calibrated / Not available / Not running) and "Show the gaze dot in Work"
-(`dot=` in `~/.config/pimax/eye.conf`, default on). Developer mode adds "gaze may target windows for voice"
-(`targeting=on`, default off: then `gaze_target: true` is written and `wayvrctl gaze` / `pimax-voice gaze` work as below)
-and the old gaze pointer toggle (only with `pimax desk start --eye`).
+(`dot=` in `~/.config/omarchyvr/eye.conf`, default on). Developer mode adds "gaze may target windows for voice"
+(`targeting=on`, default off: then `gaze_target: true` is written and `wayvrctl gaze` / `omarchyvr-voice gaze` work as below)
+and the old gaze pointer toggle (only with `omarchyvr desk start --eye`).
 In WayVR, `wayvrctl gaze` answers `tracking: false` unless `gaze_target` or `gaze_pointer` is on, so the dot alone never
 feeds voice targeting.
 
 The text below describes the developer path (targeting on).
 
-### Modes (`pimax desk start`; `pimax vr start` also takes `--no-eye` and sets `PIMAX_EYE=1` the same way)
+### Modes (`omarchyvr desk start`; `omarchyvr vr start` also takes `--no-eye` and sets `PIMAX_EYE=1` the same way)
 
 | flags | when | Monado | WayVR (`conf.d/55-eye.yaml`) |
 |---|---|---|---|
@@ -36,7 +36,7 @@ The text below describes the developer path (targeting on).
 `55-eye.yaml` sorts after the app's `50-pimax-app.yaml`, so in silent mode it wins over the app's `gaze_pointer`.
 WayVR ignores keys it does not know: an older WayVR binary just has no laser and no gaze API.
 Nothing is sent to the headset. The device-side calibration (`PIMAX_EYE_CAL`) is never set.
-Code: `rust/pimax-tools/src/vr/eye_desk.rs`.
+Code: `rust/omarchyvr-tools/src/vr/eye_desk.rs`.
 
 ### WayVR settings
 
@@ -80,12 +80,12 @@ Code: `wayvr/src/backend/gaze_target.rs` (unit tested).
 * `valid` is false while there is no fresh gaze sample (a blink, or lost tracking).
 * The command fails (exit code 1) if WayVR does not know the request; an older WayVR then drops the connection.
 
-### `pimax-voice gaze` and the Rust API
+### `omarchyvr-voice gaze` and the Rust API
 
-Code: `rust/pimax-voice/src/gaze.rs`. It is read-only and goes through the `act::Runner` trait.
+Code: `rust/omarchyvr-voice/src/gaze.rs`. It is read-only and goes through the `act::Runner` trait.
 
 ```rust
-use pimax_voice::gaze;
+use omarchyvr_voice::gaze;
 // live: wayvrctl gaze + hyprctl -j monitors + hyprctl -j clients
 let t: Option<gaze::GazeTarget> = gaze::resolve(&mut runner, wayvrctl, Some(utterance_start_unix_ms))?;
 // offline: gaze::resolve_from(&report, &monitors, &windows, at_ms)
@@ -119,7 +119,7 @@ if let Some(t) = t {
     window.
   * Only the screen overlays map to windows.
 
-CLI: `pimax-voice gaze [--wayvrctl BIN] [--at UNIX_MS] [--input saved-gaze.json] [--json]`.
+CLI: `omarchyvr-voice gaze [--wayvrctl BIN] [--at UNIX_MS] [--input saved-gaze.json] [--json]`.
 
 ### Install and restart
 
@@ -128,11 +128,11 @@ Done by the user, from a stopped desk session:
 1. Build WayVR:
    `cd ~/src/wayvr && CARGO_TARGET_DIR=~/src/target-desk-test cargo build --release -p wayvr -p wayvrctl --no-default-features --features openxr,osc,wayland,x11`.
    It is already built at `~/src/target-desk-test/release/`.
-2. `pimax desk stop`, then copy the binaries:
+2. `omarchyvr desk stop`, then copy the binaries:
    `mkdir -p ~/src/target-desk/release/backup && cp ~/src/target-desk/release/wayvr{,ctl} ~/src/target-desk/release/backup/`, then
    `cp ~/src/target-desk-test/release/wayvr{,ctl} ~/src/target-desk/release/`.
-3. `cd ~/pimax-re/rust && cargo build --release -p pimax-tools -p pimax-voice`, then install as usual.
-4. `pimax desk start` (with your usual flags, without `--eye`). The output says
+3. `cd ~/pimax-re/rust && cargo build --release -p omarchyvr-tools -p omarchyvr-voice`, then install as usual.
+4. `omarchyvr desk start` (with your usual flags, without `--eye`). The output says
    `eye tracking silently on: a dim gaze dot ...`.
 
 ### Live test checklist
@@ -145,12 +145,12 @@ Done by the user, from a stopped desk session:
 4. `wayvrctl gaze-laser off`: the dot disappears. Then run `wayvrctl gaze-laser on`.
 5. Look at a window for 1 s and run `~/src/target-desk/release/wayvrctl gaze --pretty`. `current.overlay` is
    `SUNSHINE`, `px` is inside that window, and `confidence` is 0.7 or more.
-6. Look at a window, then look away, and within 2 s run `pimax-voice gaze`. The target is the first window
+6. Look at a window, then look away, and within 2 s run `omarchyvr-voice gaze`. The target is the first window
    (`last_stable`).
 7. Check the edges: look at a window border and at the top bar. The target may be the neighbour, and `edge_px`
    is small.
 8. Look at the tab strip of a browser: `tab` is `browser`, with an index guess. Look at the groupbar of a Hyprland
    group: `tab` is `group`, with the exact member.
-9. Run `pimax desk start --no-eye`: no dot and `55-eye.yaml` is gone. `wayvrctl gaze` gives `"valid":false` and no
+9. Run `omarchyvr desk start --no-eye`: no dot and `55-eye.yaml` is gone. `wayvrctl gaze` gives `"valid":false` and no
    `current`; `tracking` stays true only if a `gaze_pointer: true` from `20-gaze.yaml` is still in conf.d.
-10. Run `pimax desk start --eye`: the old gaze pointer behaviour comes back, and `wayvrctl gaze` still works.
+10. Run `omarchyvr desk start --eye`: the old gaze pointer behaviour comes back, and `wayvrctl gaze` still works.

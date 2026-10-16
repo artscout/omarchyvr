@@ -3,7 +3,7 @@
 Date: 2026-10-15. Status: **a plan for the user to approve. Nothing was published, deleted or rewritten.**
 
 **Update 2026-10-16 (P0 + first private export):** name **omarchyvr**, repo `github.com/laughtt/omarchyvr` (PRIVATE),
-identity `laughtt` (GitHub noreply). Done here: per-unit/personal values out of the code (`~/.config/pimax/paths.toml`:
+identity `laughtt` (GitHub noreply). Done here: per-unit/personal values out of the code (`~/.config/omarchyvr/paths.toml`:
 `src_dir`, `shared_drive_uuid` without default; controller models without serials; fake test serials and keys;
 controller serials in the redactor), LICENSE-MIT/-APACHE/-CC-BY-4.0, THIRD-PARTY.md, NOTICE, `public-manifest.txt` +
 `tools/export-public.sh` (allow-list, scrub, scanners, `cargo test --workspace` on the copy, known failures in
@@ -44,7 +44,7 @@ Related files (written by other agents, referenced here, not duplicated):
 2. **Hardware support is data.** Headsets, GPUs/drivers, compositors and distros each get a small TOML manifest. A
    new machine is "supported" when its combination is covered by manifests plus test reports. Code is only added where
    data cannot say it (a Monado driver, a protocol encoder, a compositor adapter).
-3. **One probe, one report.** `pimax-doctor --report` (exists in part: doctor + gui-core bundle + redactor) produces an
+3. **One probe, one report.** `omarchyvr-doctor --report` (exists in part: doctor + gui-core bundle + redactor) produces an
    allow-listed, redacted TOML that names the exact combination and what failed. It is the input for everything else:
    the compatibility matrix, GitHub issues, and Claude.
 4. **Install = packages + a wizard.** Own signed pacman repo first (then AUR, Omarchy optional entry); the app's
@@ -92,24 +92,24 @@ addresses, home paths, Windows user paths, the NTFS volume UUID.
 
 | Finding | Where | Verdict |
 |---|---|---|
-| **No real API key, token or password in the tree or in history.** | all | The user's real keys live in `~/.config/pimax/ai.toml` (and a `.bak-1550` copy), both mode 0600, outside the repo. Checked: neither value nor its first 20 characters appears anywhere in `git log -p --all`. |
-| Key-shaped **test strings** | `rust/pimax-voice/src/agent.rs` (test `OR_KEY`: an `sk-or-v1-` + 48 hex string), `rust/pimax-gui-core/src/{ai,autofix,redact}.rs`, `rust/pimax-config/src/ai.rs` (`sk-ant-...` test values), one `Bearer` in an agent.rs test | Fake (not equal to the real keys), but the `OR_KEY` one has a realistic format: GitHub push protection or partner secret scanning may flag it. Replace with obviously fake values (`sk-or-v1-TEST-NOT-A-KEY...`) before publishing. |
+| **No real API key, token or password in the tree or in history.** | all | The user's real keys live in `~/.config/omarchyvr/ai.toml` (and a `.bak-1550` copy), both mode 0600, outside the repo. Checked: neither value nor its first 20 characters appears anywhere in `git log -p --all`. |
+| Key-shaped **test strings** | `rust/omarchyvr-voice/src/agent.rs` (test `OR_KEY`: an `sk-or-v1-` + 48 hex string), `rust/omarchyvr-gui-core/src/{ai,autofix,redact}.rs`, `rust/omarchyvr-config/src/ai.rs` (`sk-ant-...` test values), one `Bearer` in an agent.rs test | Fake (not equal to the real keys), but the `OR_KEY` one has a realistic format: GitHub push protection or partner secret scanning may flag it. Replace with obviously fake values (`sk-or-v1-TEST-NOT-A-KEY...`) before publishing. |
 | Credential-handling scripts | `tools/make-transfer-stick.ps1`, `tools/restore-claude-omarchy.sh` (copy/restore the Claude login credential file) | No credential values inside (patterns did not match), but personal helpers that handle login files: **drop from the public tree.** |
-| **Redactor gap (must fix before any report leaves a machine)** | `rust/pimax-gui-core/src/redact.rs:37` catches only `sk-ant-...` | An OpenRouter (`sk-or-...`), OpenAI or other key in a log would pass into the problem report. `pimax-voice`'s `redact()` (agent.rs:1082) is broader (any `sk-`/`sk_` token and long mixed tokens). Unify: one redactor crate used by the bundle, the voice agent and the doctor report, with the broad rules plus `Bearer`, `ghp_`/`github_pat_`, `hf_`, `AKIA`, JWTs and PEM blocks; test it with each kind. |
+| **Redactor gap (must fix before any report leaves a machine)** | `rust/omarchyvr-gui-core/src/redact.rs:37` catches only `sk-ant-...` | An OpenRouter (`sk-or-...`), OpenAI or other key in a log would pass into the problem report. `omarchyvr-voice`'s `redact()` (agent.rs:1082) is broader (any `sk-`/`sk_` token and long mixed tokens). Unify: one redactor crate used by the bundle, the voice agent and the doctor report, with the broad rules plus `Bearer`, `ghp_`/`github_pat_`, `hf_`, `AKIA`, JWTs and PEM blocks; test it with each kind. |
 
 ### 1.2 Personal data
 
 | Kind | Tracked now | In history | Notes |
 |---|---|---|---|
-| Headset serial `P511****` | 67 hits, 44 files | 69 hits, 23 commits, 45 files | docs (HISTORY, STATUS, NEXT-STEPS, vm-test-plan), `analysis/*` (init-sequence, windows-6dof-params, cold-start-fwlog, device-map, eye-*), **code**: `rust/pimax-config/src/store.rs`, `rust/pimax-lens/src/lut.rs`; file name `calib/device_calibration_P511****.xml` |
+| Headset serial `P511****` | 67 hits, 44 files | 69 hits, 23 commits, 45 files | docs (HISTORY, STATUS, NEXT-STEPS, vm-test-plan), `analysis/*` (init-sequence, windows-6dof-params, cold-start-fwlog, device-map, eye-*), **code**: `rust/omarchyvr-config/src/store.rs`, `rust/pimax-lens/src/lut.rs`; file name `calib/device_calibration_P511****.xml` |
 | Controller serials `H301****` | 21 hits, 6 files | same | `analysis/windows-controller-info.md`, `controllers-*.md`, `init-sequence.md`, `windows-capture-20261015.md`, **code**: `rust/pimax-ctrltrack/src/model.rs` (default path under `pimax-data/.../H301****/`); file names in `calib/` |
 | Serials inside binary fixtures | `rust/fixtures/if0_replies_coldstart.rec.gz` (4), `rust/pimax-eye/fixtures/eye_coldstart_init.usbpcap.gz` (1 ASCII + 8 UTF-16, the USB string descriptors), `rust/pimax-cam/tests/fixtures/headset-calibration.xml` (1) | same | Rewrite with same-length masks, re-run the replay tests |
 | E-mail addresses | 24 files (19 Monado `From:` patch headers, `analysis/overnight/srgb-target.patch`, research notes) | **every commit's author/committer metadata** (two personal Gmail addresses; 368 + 1 commits); 57 Monado-fork commits | Fixed only by a fresh history with a public identity (GitHub `noreply` address) |
 | Home path `/home/<user>` | 77 hits, 40 files | 25 commits | logs (`analysis/incidents/wayvr-exit-spin-20261015/*.prev`, 2.5 MB), `analysis/selfcal/lens.txt`, Monado patches, ROADMAP, PKGBUILD comment; 5 in Rust sources (most in tests of the redactor itself, fine) |
-| Machine paths `~/src/...` | 63 hits in 41 Rust files | | `pimax-gui-core/src/paths.rs` etc. Not secret, but a portability blocker (ROADMAP 3.3) |
+| Machine paths `~/src/...` | 63 hits in 41 Rust files | | `omarchyvr-gui-core/src/paths.rs` etc. Not secret, but a portability blocker (ROADMAP 3.3) |
 | Windows user paths `C:\Users\<name>` | 24 hits, 22 files | 26 hits, 23 files | `analysis/a*.py`, `analysis/scripts/imu_*.py`, `tools/*.ps1`, notes |
-| NTFS volume UUID of the user's shared drive | 16 hits, 11 files, **incl. code** (`pimax-tools/src/mount_shared.rs`, `pimax-gui-core/src/{checklist,safety}.rs`, `pimax-tools/tests/vr_cli.rs`) | 17 hits | The "mount shared drive" feature is personal: make it a setting with no default, or keep it private |
-| Room imagery (camera frames of the user's home) | `analysis/frames/*.pgm/png`, `analysis/frames/monado/*.png`, `analysis/overnight/cam/**.png`, `analysis/passthrough/**`, `analysis/hands-desk/*.jpg`, `analysis/controller-6dof/*.jpg`, `rust/pimax-cam/tests/fixtures/evening2.pxcam`, `rust/pimax-passthrough/tests/fixtures/*.png` | same | Not secret, but private. Drop from the public tree; tests use a consented, neutral recording (a blank wall or a lab) or synthetic frames |
+| NTFS volume UUID of the user's shared drive | 16 hits, 11 files, **incl. code** (`omarchyvr-tools/src/mount_shared.rs`, `omarchyvr-gui-core/src/{checklist,safety}.rs`, `omarchyvr-tools/tests/vr_cli.rs`) | 17 hits | The "mount shared drive" feature is personal: make it a setting with no default, or keep it private |
+| Room imagery (camera frames of the user's home) | `analysis/frames/*.pgm/png`, `analysis/frames/monado/*.png`, `analysis/overnight/cam/**.png`, `analysis/passthrough/**`, `analysis/hands-desk/*.jpg`, `analysis/controller-6dof/*.jpg`, `rust/pimax-cam/tests/fixtures/evening2.pxcam`, `rust/omarchyvr-passthrough/tests/fixtures/*.png` | same | Not secret, but private. Drop from the public tree; tests use a consented, neutral recording (a blank wall or a lab) or synthetic frames |
 | Chat / agent logs | none tracked (no `.jsonl` transcripts) | none | `.claude/CLAUDE.md` is project rules, fine to publish (generalised, section 5). `analysis/eye-coldstart/*-tobii-transcript.txt` are USB transcripts, not chats (see 1.3) |
 | Keyboard input | raw pcaps are git-ignored (`*.pcap`, `captures*/`, `pimax-data/`); tracked `*.rec.gz` fixtures are per-report HID records of the headset only | none tracked | **The USB keyboard shares hub2 with the headset**: every Windows capture records key presses (`analysis/windows-capture-20261015.md` note 4). Any capture that leaves the user's machine must first be filtered to the headset's device addresses (VID 34a4 / 2104) by a tool, never by hand |
 
@@ -117,22 +117,22 @@ addresses, home paths, Windows user paths, the NTFS volume UUID.
 
 | Material | Where | Action |
 |---|---|---|
-| Pimax per-unit factory calibration | `calib/device_calibration_P511****.xml`, `calib/controller_params_H301****.json` (2), `calib/pimax_runtime_profile.json`, `analysis/headset-calibration.xml`, `analysis/headset-calibration-linux.xml`, `rust/pimax-cam/tests/fixtures/headset-calibration.xml` | Remove. Code that reads them (`pimax-tools/src/calib_cmd.rs`, `imu.rs`) reads the headset (`pimax calib`, USB READ_DOC) or `~/.config` instead; tests use a synthetic or masked fixture |
+| Pimax per-unit factory calibration | `calib/device_calibration_P511****.xml`, `calib/controller_params_H301****.json` (2), `calib/pimax_runtime_profile.json`, `analysis/headset-calibration.xml`, `analysis/headset-calibration-linux.xml`, `rust/pimax-cam/tests/fixtures/headset-calibration.xml` | Remove. Code that reads them (`omarchyvr-tools/src/calib_cmd.rs`, `imu.rs`) reads the headset (`omarchyvr calib`, USB READ_DOC) or `~/.config` instead; tests use a synthetic or masked fixture |
 | Pimax Play install files, DLL dumps, crash dumps, firmware updater logs, SteamVR driver resources | `pimax-data/` (2.9 GB, git-ignored; never in history: no dll/exe/sys/dmp/firmware blob ever tracked) | Keep out. Add a CI check that refuses these extensions |
 | Firmware | none in the repo | Keep it that way; "never flash" stays a hard rule |
 | Tobii eye-chip protocol transcripts and the eye-auth analysis | `analysis/eye-coldstart/*-tobii-transcript.txt`, `*.msgs`, `analysis/eye-auth-feasibility.md`, eye-auth parts of `analysis/eye-coldstart.md` | **Keep private.** Anti-circumvention is the highest legal risk in the repo. The public eye code says only what it sends and why no authentication step is needed |
 | Mercury hand models (no licence) | not in the repo (fetched into `~/src`) | Never bundle. The app's "Download hand models" button fetches them on the user's machine from upstream, with a "personal use, no licence" note |
 | Opaque pickles | `analysis/p82.pkl`, `analysis/p83.pkl` (5.9 MB; loading a pickle runs code) | Drop; the `.rec.gz` replays cover them |
 | Raw kernel/firmware logs | `analysis/logs-hang-*/{fw,kern}.log`, `analysis/overnight/polish-data/*/fwlog.txt`, `analysis/logs-xid31-*.txt`, the incident logs | Drop; keep the findings in the `.md` files |
-| Personal helper features | `pimax mount-shared`, the transfer-stick and restore scripts | Private, or a setting without the user's values |
+| Personal helper features | `omarchyvr mount-shared`, the transfer-stick and restore scripts | Private, or a setting without the user's values |
 
 ### 1.4 Trademark
 
 "Pimax", "Dream Air", "Crystal" are Pimax trademarks. Use them only to say what the software works with ("for Pimax
 headsets"). No logos, no "Pimax" in the project, package or app name, a "not made or endorsed by Pimax" line in the
-README, the app's About page and the package description. Today the app is `pimax-setup` and the packages are
+README, the app's About page and the package description. Today the app is `omarchyvr-app` and the packages are
 `pimax-linux*`: rename the user-facing names before the first public release (decision D2). Binary names can keep a
-neutral prefix; config paths (`~/.config/pimax`) can migrate later with a one-time move (a migration, section 3.4).
+neutral prefix; config paths (`~/.config/omarchyvr`) can migrate later with a one-time move (a migration, section 3.4).
 
 ### 1.5 Licences
 
@@ -170,7 +170,7 @@ the project rule "one whole build" (one version of everything) without vendoring
   windows/                 capture tools (read-only collectors; filter to headset devices before export)
   bench/corpus.toml        list + hashes of the golden recordings (stored as release assets / LFS, CC-BY-4.0)
   .github/                 workflows, issue forms, CODEOWNERS, rulesets
-<project>-monado            public fork of Monado, branch `pimax` rebased on upstream as a clean patch series
+<project>-monado            public fork of Monado, branch `omarchyvr` rebased on upstream as a clean patch series
 <project>-wayvr             public fork of WayVR, branch with the gaze/screens patches
 private lab repo (this one) captures, raw logs, eye-auth notes, calibration, analysis drafts
 ```
@@ -198,7 +198,7 @@ is developed**; this repo shrinks to the private lab (decision D1). No two-way s
 |---|---|---|
 | 1 | Name, public identity (GitHub org/user, `noreply` e-mail) and licence decided (D1-D4) | user |
 | 2 | `public-manifest.txt` reviewed: every top-level path is either in or out; `analysis/` only the protocol/display/tracking findings, no eye-auth, no raw logs, no frames | user + agent |
-| 3 | Code de-personalised: serial paths in `pimax-ctrltrack/src/model.rs`, `pimax-lens/src/lut.rs`, `pimax-config/src/store.rs`; NTFS UUID code; `~/src` paths read from one config | agent |
+| 3 | Code de-personalised: serial paths in `pimax-ctrltrack/src/model.rs`, `pimax-lens/src/lut.rs`, `omarchyvr-config/src/store.rs`; NTFS UUID code; `~/src` paths read from one config | agent |
 | 4 | Binary fixtures re-masked (`if0_replies_coldstart.rec.gz`, `eye_coldstart_init.usbpcap.gz`, cam calibration fixture); `cargo test --workspace` green on the export | agent |
 | 5 | Calibration files, pickles, raw logs, room images, transfer/restore scripts absent from the export | agent, user looks at the file list |
 | 6 | Test key strings replaced with obviously fake ones; redactor unified and tested (1.1) | agent |
@@ -268,10 +268,10 @@ Support levels, computed, not hand-written: **0 untested** (manifest only), **1 
 **2 replay-covered** (golden recordings from that combination run in CI), **3 rig** (a hardware-in-the-loop runner
 with that combination). The compatibility page and the app's "Your setup" card are generated from `hw/` + `reports/`.
 
-### 2.3 Capability probing: `pimax-doctor --report`
+### 2.3 Capability probing: `omarchyvr-doctor --report`
 
-Builds on what exists: `pimax-doctor` (13 read-only checks, Host/FakeHost), `pimax-device` (detect, checks, Fix
-catalogue), `pimax-gui-core` `facts.rs`, `bundle.rs`, `redact.rs`. Output is one TOML with **allow-listed fields
+Builds on what exists: `omarchyvr-doctor` (13 read-only checks, Host/FakeHost), `pimax-device` (detect, checks, Fix
+catalogue), `omarchyvr-gui-core` `facts.rs`, `bundle.rs`, `redact.rs`. Output is one TOML with **allow-listed fields
 only** (never the environment, never free-form file dumps):
 
 | Section | Fields |
@@ -372,7 +372,7 @@ notifications are invisible while wearing it). Each step records pass/fail plus 
 | Controllers | link, battery, every button/stick/touch seen, haptic pulse acknowledged | press what the headset shows |
 | Hands / eye (if present) | detection rate; eye validation error (deg) | look at targets |
 | Audio / mic | sink found, mic level | say "Max, test" |
-| Games path | `pimax vr game-check` result | none |
+| Games path | `omarchyvr vr game-check` result | none |
 
 Recording during the test is **IMU + poses + logs + perf stats only**; camera frames are never recorded by the test.
 
@@ -415,7 +415,7 @@ Guardrails for every route (also in AGENTS.md):
 |---|---|---|---|
 | 1. Fast checks | GitHub-hosted | every PR (incl. forks) | `cargo fmt`, `clippy -D warnings`, `cargo test --workspace`, goldens (`vr start/stop --dry-run` argv, app screenshots), manifest lint (load + validate every `hw/**` file, `source` present, mocks have no `[[hid]]`), `allowlist_replay` (every host→device report in the fixtures passes the allowlist), redactor tests, gitleaks + serial/home/UUID/e-mail scan on the diff, extension deny-list, `cargo-deny` (licences, advisories), docs link check |
 | 2. Builds | GitHub-hosted (container, ccache) | every PR touching `components.lock` or packaging; nightly | Monado fork build with the required CMake options + marker check (`PIMAX_SLAM`, `PIMAX_ANCHOR`, `PIMAX_EYE`, `PIMAX_CTRL_TRACK`, `held from the tracker`, ...), WayVR build, all PKGBUILDs in a clean chroot, `namcap` |
-| 3. Replay benches | GitHub-hosted (CPU) | every PR touching tracking/timing code; nightly on `main` | golden corpus through `pimax-slam bench-windows`, `bench-basalt`, `stillgate`, `corrections`, `ate`, `timing`; eye replays (`pimax-eye` goldens); `pimax-voicebench`. Results posted as a PR comment against `main` with thresholds (4.5) |
+| 3. Replay benches | GitHub-hosted (CPU) | every PR touching tracking/timing code; nightly on `main` | golden corpus through `omarchyvr-slam bench-windows`, `bench-basalt`, `stillgate`, `corrections`, `ate`, `timing`; eye replays (`pimax-eye` goldens); `omarchyvr-voicebench`. Results posted as a PR comment against `main` with thresholds (4.5) |
 | 4. Hardware in the loop | self-hosted rigs (opt-in volunteers, a headset on a stand) | `main` after merge, nightly, or `workflow_dispatch` by a maintainer; **never fork PRs, never `pull_request_target` with checkout of PR code** | the headless HIL script: start session, 60 s of frames (missed, late, GPU ms), IMU/camera/controller rates, static 6DoF drift, controller link, stop clean (no leftover `monado-service`, cap still set). Runner is ephemeral (JIT), has no secrets, runs as a separate user, refuses if a user session is active, and uses the same allowlist Gate (it cannot send anything the app cannot) |
 
 Results of tiers 3-4 go to a time series (Bencher or `github-action-benchmark` on a `gh-pages` branch), keyed by
@@ -425,11 +425,11 @@ the combination (headset, GPU, driver, kernel, compositor).
 
 | Area | Metric | Reference |
 |---|---|---|
-| Head tracking | ATE/RPE vs the Pimax pose log, lag, jitter, 6DoF losses per minute, still-gate firings, correction steps ≥ 20 mm | Windows capture takes (`pimax-slam bench-windows`, `analysis/tracking-vs-windows.md`) and our recordings (`stillgate`, `corrections`) |
+| Head tracking | ATE/RPE vs the Pimax pose log, lag, jitter, 6DoF losses per minute, still-gate firings, correction steps ≥ 20 mm | Windows capture takes (`omarchyvr-slam bench-windows`, `analysis/tracking-vs-windows.md`) and our recordings (`stillgate`, `corrections`) |
 | Frame timing | missed frames per minute (`comp_skipped`), late %, GPU ms vs budget, time to picture | HIL rigs + perf files (`PIMAX_PERF_FILE`) |
 | Controllers | optical tracking error vs IMU/pose log, haptic latency | recorded takes |
 | Eye | validation error (deg) per eye | `pimax-eyecal --refit` runs |
-| Voice | intent accuracy, WER, latency | `pimax-voicebench`, `pimax-voice audit` |
+| Voice | intent accuracy, WER, latency | `omarchyvr-voicebench`, `omarchyvr-voice audit` |
 | Install | wizard completion, steps failed per report | accepted test reports |
 
 Rules:
@@ -483,7 +483,7 @@ Effort is agent working days (A) plus user time (U). Phases P0-P2 are the path t
 | **P0 Clean and decide** | decisions D1-D8; unify the redactor; fake test keys; de-personalise code paths (serials, UUID, `~/src` from one config); synthetic/masked fixtures; LICENSE + THIRD-PARTY; `public-manifest.txt` + `export-public.sh` + scanners; fix the 4 failing tests (ROADMAP 3.4) | export passes scanners and `cargo test --workspace` | A 4-6 d, U 2 h |
 | **P1 Publish** | fresh repo (private first), forks as public repos with clean patch series, rulesets, CODEOWNERS, issue forms, AGENTS.md/CONTRIBUTING/SECURITY, CI tiers 1-2 | user flips public after a look | A 3-4 d, U 1 h |
 | **P2 Packages + wizard** | all PKGBUILDs, clean-chroot CI, signed pacman repo, root helper + polkit, migrations, wizard extended | a fresh Omarchy install reaches a green Play after one reboot (VM or second disk) | A 8-12 d, U 2 h (test) |
-| **P3 Hardware as data** | `hw/` manifests (gpus, compositors, distros), `driver = "monado:<name>"` path, `pimax-doctor --report`, compat matrix page, support tiers | a report from this PC generates the matrix row; a Vive/Index manifest passes lint | A 5-7 d |
+| **P3 Hardware as data** | `hw/` manifests (gpus, compositors, distros), `driver = "monado:<name>"` path, `omarchyvr-doctor --report`, compat matrix page, support tiers | a report from this PC generates the matrix row; a Vive/Index manifest passes lint | A 5-7 d |
 | **P4 Test my setup** | guided in-headset test, test-report.toml, bundle levels L0-L2, issue form prefill | the user runs it once and the report needs no editing | A 6-8 d, U 1 h |
 | **P5 Claude loop** | route A button + worktree + prompt; route B workflow (label-gated, pinned, scoped); `hid-approved` check; protected paths | a staged failure (e.g. missing udev rule on a FakeHost) becomes a correct draft PR via both routes | A 4-6 d |
 | **P6 Benches + dashboard** | frozen corpus (consented, no private rooms), tier-3 CI with thresholds, time series | a deliberate regression in a replay fails a PR | A 6-9 d, U 1 h (consent, corpus pick) |
@@ -514,5 +514,5 @@ Effort is agent working days (A) plus user time (U). Phases P0-P2 are the path t
 - Tree: every `git ls-files` path, decoded as UTF-8 with replacement, pattern counts per file.
 - History: `git log -p --all --text -U0`, added lines only, counts per (commit, file) and pattern.
 - Binary fixtures: `zcat` then ASCII and UTF-16LE serial patterns.
-- Real keys: compared by value (never printed) with the keys in `~/.config/pimax/ai.toml*`.
+- Real keys: compared by value (never printed) with the keys in `~/.config/omarchyvr/ai.toml*`.
 - Re-run before publishing on the **export**, plus gitleaks; the CI scan keeps it clean afterwards.

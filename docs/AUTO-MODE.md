@@ -1,11 +1,11 @@
-# Auto mode (`pimax-autod`)
+# Auto mode (`omarchyvr-autod`)
 
 Put the headset on and the session starts. Leave it and the session stops. A small user daemon does this:
 - it is ~700 KB stripped and uses ~2 MB RSS;
 - it uses no CPU at idle (no headset);
-- it has no async runtime and only `pimax`, `pimax-proto` and `libc` as dependencies.
+- it has no async runtime and only `omarchyvr`, `pimax-proto` and `libc` as dependencies.
 
-**It runs in dry-run mode until you set `dry_run = false` in `~/.config/pimax/auto.toml`.** In dry-run it logs the
+**It runs in dry-run mode until you set `dry_run = false` in `~/.config/omarchyvr/auto.toml`.** In dry-run it logs the
 commands it would run and changes nothing.
 
 Background and signal list: [analysis/auto-mode.md](../analysis/auto-mode.md). Live test:
@@ -20,15 +20,15 @@ Unplugged -> Plugged -> Worn (start) -> Active(desk|game) -> IdleDim -> Sleep (s
 - **Worn:** the IMU shows a head's micro-motion for 4 s continuously. A pick-up-and-put-down does not start anything.
   Controller input also counts as wear evidence.
 - **Start**, from config:
-  - default `pimax desk start --6dof --ctrl-track --no-notify`, with the perf readout on (it is the desk default);
+  - default `omarchyvr desk start --6dof --ctrl-track --no-notify`, with the perf readout on (it is the desk default);
   - optional `--preset`;
-  - in game mode `pimax vr start --6dof --ctrl-track --perf`.
+  - in game mode `omarchyvr vr start --6dof --ctrl-track --perf`.
   - If the room map `home` exists, Monado gets `PIMAX_ANCHOR=1`, followed by
-    `pimax-roommap relocalize --source broker --name home --apply`.
-  - The IPD from `~/.config/pimax/ipd.env` reaches Monado through the launcher, which now reads it itself.
+    `omarchyvr-roommap relocalize --source broker --name home --apply`.
+  - The IPD from `~/.config/omarchyvr/ipd.env` reaches Monado through the launcher, which now reads it itself.
 - **IdleDim:** the headset is not worn (IMU still) for 60 s. You get a notification. Wearing it again for 4 s returns
   to Active.
-- **Sleep:** IdleDim lasts another 600 s, then auto mode runs `pimax desk stop --grace 30` (or `pimax vr stop --grace
+- **Sleep:** IdleDim lasts another 600 s, then auto mode runs `omarchyvr desk stop --grace 30` (or `omarchyvr vr stop --grace
   30`). The launcher stops processes by pid. Displays and DRM are never touched.
 - **Games are never stopped** while a Steam game (`SteamLaunch AppId=`), SteamVR or a main OpenXR app in a non-desk
   session runs, unless `sleep_games = true`.
@@ -43,16 +43,16 @@ Unplugged -> Plugged -> Worn (start) -> Active(desk|game) -> IdleDim -> Sleep (s
 
 ## Setup
 ```sh
-cd ~/pimax-re/rust && cargo build --release -p pimax-autod -p pimax-tools
-cp ../packaging/auto.toml.example ~/.config/pimax/auto.toml         # defaults; dry_run = true
-target/release/pimax-autod config                                    # effective settings + warnings
-target/release/pimax-autod run                                       # foreground, log on stderr
+cd ~/pimax-re/rust && cargo build --release -p omarchyvr-autod -p omarchyvr-tools
+cp ../packaging/auto.toml.example ~/.config/omarchyvr/auto.toml         # defaults; dry_run = true
+target/release/omarchyvr-autod config                                    # effective settings + warnings
+target/release/omarchyvr-autod run                                       # foreground, log on stderr
 # later, as a user service (not installed by anything):
-install -Dm644 ../packaging/systemd/pimax-autod.service ~/.config/systemd/user/pimax-autod.service
+install -Dm644 ../packaging/systemd/omarchyvr-autod.service ~/.config/systemd/user/omarchyvr-autod.service
 ```
-Install `pimax` (with `--preset` and `pimax auto`) only while nothing runs (docs/LESSONS.md row 8).
+Install `omarchyvr` (with `--preset` and `omarchyvr auto`) only while nothing runs (docs/LESSONS.md row 8).
 
-## Config (`~/.config/pimax/auto.toml`)
+## Config (`~/.config/omarchyvr/auto.toml`)
 All keys and defaults are listed in [packaging/auto.toml.example](../packaging/auto.toml.example). The main ones:
 
 | key | default | meaning |
@@ -60,7 +60,7 @@ All keys and defaults are listed in [packaging/auto.toml.example](../packaging/a
 | `dry_run` | true | log only |
 | `auto_start` | true | start on put-on |
 | `mode` | desk | desk or game |
-| `game_runtime` | monado | monado (Monado + xrizer) or steamvr. **SteamVR is phase 1 (static):** auto mode starts nothing for it, notifies once and keeps out of its way. `pimax vr steam-options` prints `%command%` for steamvr. |
+| `game_runtime` | monado | monado (Monado + xrizer) or steamvr. **SteamVR is phase 1 (static):** auto mode starts nothing for it, notifies once and keeps out of its way. `omarchyvr vr steam-options` prints `%command%` for steamvr. |
 | `preset` | none | none (= the launcher default, cinema), cinema, work-3, work-1, assistant (below) |
 | `sixdof`, `ctrl_track`, `perf` | true | session flags |
 | `relocalize`, `room_map` | true, home | room relocalisation after a start (when the map exists) |
@@ -69,11 +69,11 @@ All keys and defaults are listed in [packaging/auto.toml.example](../packaging/a
 | `still_dps`, `worn_dps` | 0.2, 0.3 | IMU gyro std thresholds (hysteresis between) |
 | `imu` | true | read IF2/IF1 read-only for 0.4 s every `poll_s` while plugged |
 
-## Desk presets (`pimax desk start --preset NAME`, also usable without auto mode)
-`pimax desk start` uses **cinema** unless `--preset` says otherwise; `--preset none` removes the preset file. Each start
+## Desk presets (`omarchyvr desk start --preset NAME`, also usable without auto mode)
+`omarchyvr desk start` uses **cinema** unless `--preset` says otherwise; `--preset none` removes the preset file. Each start
 writes `<wayvr home>/config/wayvr/conf.d/60-preset.yaml`. It sorts after the launcher's files and the app's
 `50-pimax-app.yaml`, so the preset wins. Once WayVR runs, the preset's screen layout is applied over `wayvrctl`. Switch
-live with `pimax desk preset NAME` or by voice ([VOICE.md](VOICE.md)).
+live with `omarchyvr desk preset NAME` or by voice ([VOICE.md](VOICE.md)).
 
 | preset | screens (live layout) | conf.d | launcher |
 |---|---|---|---|
@@ -82,25 +82,25 @@ live with `pimax desk preset NAME` or by voice ([VOICE.md](VOICE.md)).
 | work-1 | 1 flat | same as work-3 | - |
 | assistant | all, slightly curved | `default_curvature: 0.15` | `--voice` (captions + commands) |
 
-## Control: `pimax auto ...` / `pimax-autod ...`
+## Control: `omarchyvr auto ...` / `omarchyvr-autod ...`
 ```
-pimax auto status                  one JSON line
-pimax auto events                  stream (status first, then transitions and actions)
-pimax auto pause | resume          pause: no starts/stops; states are still tracked
-pimax auto wake                    "I'm wearing it": wear evidence for wear_on_s (start without IMU)
-pimax auto sleep                   stop now (own, non-game session)
-pimax auto set-mode game --runtime monado      restarts our own session to apply (never a running game)
-pimax auto set-mode --preset cinema
+omarchyvr auto status                  one JSON line
+omarchyvr auto events                  stream (status first, then transitions and actions)
+omarchyvr auto pause | resume          pause: no starts/stops; states are still tracked
+omarchyvr auto wake                    "I'm wearing it": wear evidence for wear_on_s (start without IMU)
+omarchyvr auto sleep                   stop now (own, non-game session)
+omarchyvr auto set-mode game --runtime monado      restarts our own session to apply (never a running game)
+omarchyvr auto set-mode --preset cinema
 ```
 `set-mode` changes are not written back to auto.toml; they last until the daemon restarts.
 
-## GUI integration (for pimax-setup / pimax-gui-core)
-The GUI does not link the daemon. It talks to the socket, or calls `pimax auto`. Rust code may use
-`pimax_autod::client::{request, events, request_line}` and `pimax_autod::ipc::socket_path()`.
+## GUI integration (for omarchyvr-app / omarchyvr-gui-core)
+The GUI does not link the daemon. It talks to the socket, or calls `omarchyvr auto`. Rust code may use
+`omarchyvr_autod::client::{request, events, request_line}` and `omarchyvr_autod::ipc::socket_path()`.
 
-- **Socket:** `$PIMAX_AUTOD_SOCKET`, else `$XDG_RUNTIME_DIR/pimax-autod.sock`. It is a stream socket carrying one JSON
+- **Socket:** `$PIMAX_AUTOD_SOCKET`, else `$XDG_RUNTIME_DIR/omarchyvr-autod.sock`. It is a stream socket carrying one JSON
   object per line. Send a request line and read one reply line. If the socket is missing or the connect fails, the
-  daemon is not running: offer `systemctl --user start pimax-autod`, or show the run command.
+  daemon is not running: offer `systemctl --user start omarchyvr-autod`, or show the run command.
 - **Requests:** `{"cmd":"status"}`, `{"cmd":"pause"}`, `{"cmd":"resume"}`, `{"cmd":"wake"}`, `{"cmd":"sleep"}`,
   `{"cmd":"set-mode","mode":"desk|game","runtime":"monado|steamvr","preset":"none|cinema|work|assistant"}` (any
   subset of the last three), `{"cmd":"events"}`, `{"cmd":"pair","side":"left|right"}`.
@@ -140,27 +140,27 @@ The GUI does not link the daemon. It talks to the socket, or calls `pimax auto`.
     `paired`, `timeout` and `failed` are final. Exactly one StartPair is sent per click and it is never retried; the
     user presses the button again to retry. The send is the IPD-motor path (write-only IF0 write, coexists with a
     running Monado); a paired controller is attached by Monado's attach thread within about 2 s. Works in dry run too
-    (it is an explicit user action). The CLI is `pimax-autod pair left|right` / `pimax auto pair left|right`
+    (it is an explicit user action). The CLI is `omarchyvr-autod pair left|right` / `omarchyvr auto pair left|right`
     (exit 1 unless paired; works without the daemon too).
-- **Stopping sessions:** the GUI keeps its own buttons, which run the same `pimax desk|vr stop`. Auto mode adopts the
+- **Stopping sessions:** the GUI keeps its own buttons, which run the same `omarchyvr desk|vr stop`. Auto mode adopts the
   result: it sees the session gone, and does not restart until the headset is taken off and put on again.
 
 ## Simulator and replays (offline)
 ```sh
-pimax-autod sim rust/pimax-autod/sim/*.sim     # put-on, take-off, idle-sleep, game-running, unplug, failed-start
-pimax-autod replay-imu ~/.local/share/pimax/slam-recordings/<stamp>-live/euroc_*/mav0/imu0/data.csv
+omarchyvr-autod sim rust/omarchyvr-autod/sim/*.sim     # put-on, take-off, idle-sleep, game-running, unplug, failed-start
+omarchyvr-autod replay-imu ~/.local/share/omarchyvr/slam-recordings/<stamp>-live/euroc_*/mav0/imu0/data.csv
 ```
-The format of a sim script is described at the top of `rust/pimax-autod/src/sim.rs`. The `expect T STATE` lines are
-checked, and `cargo test -p pimax-autod` runs all the shipped scripts.
+The format of a sim script is described at the top of `rust/omarchyvr-autod/src/sim.rs`. The `expect T STATE` lines are
+checked, and `cargo test -p omarchyvr-autod` runs all the shipped scripts.
 
 ## Not done / needs approval
-- **Visor 0x2c:** `pimax-autod visor-probe` only. It sends the exact Windows read and is used for the live test. The
+- **Visor 0x2c:** `omarchyvr-autod visor-probe` only. It sends the exact Windows read and is used for the live test. The
   daemon never sends it, and the reply has been constant in every capture.
 - **Pairing send:** compiled out, needs approval.
 - **Panel off on idle (0x29):** not sent; it is not approved.
 
 ## Unpair (controllers)
-`pimax controllers unpair left|right` sends the one captured command `58 03 05 SS` (SS 2 left, 3 right). Both hands are
+`omarchyvr controllers unpair left|right` sends the one captured command `58 03 05 SS` (SS 2 left, 3 right). Both hands are
 captured: right in the Windows capture 2026-10-15 take 13, left and right again in the redo take 3
 (`58 03 05 02` / `58 03 05 03`, replies `4c 04 05 SS 01 07`, the controller stream stops 20 ms later; analysis/windows-capture-20261015.md, Redo).
 Write-only on the command interface, one write per request, refused while a pairing runs. The app has an Unpair button next to
