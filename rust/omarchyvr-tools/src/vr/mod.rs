@@ -30,6 +30,7 @@ macro_rules! verr {
 pub mod audio;
 pub mod display;
 pub mod gamemode;
+pub mod gameruntime;
 pub mod captions;
 pub mod config;
 pub mod daemon;
@@ -72,7 +73,7 @@ use std::time::Duration;
 
 /// Usage text of the `vr` subcommands.
 pub const USAGE: &str = "usage: omarchyvr vr <command> [options]
-  start [--fps 72|90] [--6dof [--ctrl-track] [--hands [--hands-roles]]] [--controllers always|when-held|off] [--no-eye] [--perf] [--anchor] [--dump DIR [--dump-frames 100,300]] [--wait] [--dry-run] [--force] [--debug] [--no-set-runtime]
+  start [--fps 72|90] [--6dof [--ctrl-track] [--hands [--hands-roles]]] [--controllers always|when-held|off] [--no-eye] [--perf] [--anchor] [--light|--no-light] [--game APPID] [--dump DIR [--dump-frames 100,300]] [--wait] [--dry-run] [--force] [--debug] [--no-set-runtime]
         [--no-notify] [--monado-build DIR] [--connector NAME] [--mode N] [--timeout SECS]
       the connector is found by the headset's EDID (PVR 0xD242 / product 0x1019) unless --connector is given; the
       preflight also warns when monado-service lacks cap_sys_nice and prints the setcap line for its path.
@@ -80,6 +81,11 @@ pub const USAGE: &str = "usage: omarchyvr vr <command> [options]
       rate or Monado's order, so it is not derived from the EDID.
       preflight checks, then monado-service detached (log /tmp/omarchyvr-session/monado.log); returns when
       the gyro calibration is done. --wait stays in the foreground until the service exits (desktop entry).
+      --light (default: the saved switch, on): light game mode, only what a game needs: no eye tracking, wrist readout
+      (--perf), room anchor or room search; Monado, head 6DoF, controllers (and camera hands if chosen) stay. --no-light
+      keeps them. The launcher records the choice in start-argv. docs/GAME-MODE.md.
+      --game APPID: the Steam game this session is for; a game that crashes with xrizer (Half-Life: Alyx and the games the
+      app found crashing, `omarchyvr vr game-runtime list`) starts the session with SteamVR for this start only.
       --anchor: PIMAX_ANCHOR=1 for Monado: its head-pose ring and the world offset file that `omarchyvr-anchor apply`
       (AprilTag) and `omarchyvr-roommap relocalize --apply` (room map) write; needs the `desk` Monado build with the hook.
       --ctrl-track (with --6dof): optical 6DoF controllers, same as `desk start --ctrl-track`: `pimax-ctrltrack live
@@ -143,7 +149,9 @@ pub const USAGE: &str = "usage: omarchyvr vr <command> [options]
       (recognise the room, put floor + centre + forward in place; state in $XDG_RUNTIME_DIR/omarchyvr-room.status);
       steamvr on: before SteamVR starts, its room setup (chaperone_info.vrchap, universe 2 of driver_monado) gets the
       play area and walls of the room setup. docs/ROOM-SETUP.md.
-  gamemode [status|on|off|budget auto|6|8|restore]   (GUI: Game mode, Compositor time budget)
+  game-runtime [list|set APPID steamvr|xrizer|default [NAME]|next APPID|none|archive|check APPID SINCE_UNIX]   (GUI: Play > Games that need SteamVR)
+      per-game OpenVR runtime and xrizer crash evidence (xrizer's log is kept per game run); docs/GAME-MODE.md.
+  gamemode [status|on|off|light on|off|budget auto|6|8|restore]   (GUI: Game mode, Light game mode, Compositor time budget)
       on (default): `vr start` pauses the local AI (omarchyvr-ai stop); Sunshine is never stopped or paused;
       Stop (or `restore`) starts exactly what was paused again. budget: U_PACING_COMP_MIN_TIME_MS for the next start (auto = Monado's 3 ms).
   display [status|image standard|bright|brighter|backlight 20..100|apply]   (GUI: Brightness)
@@ -349,12 +357,29 @@ pub fn run(mut a: Args) -> CliResult {
     }
     match first.as_str() {
         "start" => {
-            let argv0 = a.0.clone();
+            let mut argv0 = a.0.clone();
+            let home = PathBuf::from(real_env("HOME").unwrap_or_else(|| "/root".into()));
+            // light game mode: --light / --no-light, else the saved switch (default on); the resolved choice is recorded in
+            // start-argv so every restart keeps it
+            let (light_flag, no_light_flag) = (a.flag("--light"), a.flag("--no-light"));
+            let light = gamemode::resolve_light(light_flag, no_light_flag, &gamemode::load(&home)).map_err(CliError::usage)?;
+            if !light_flag && !no_light_flag {
+                argv0.push(if light { "--light" } else { "--no-light" }.into());
+            }
+            let game = a.opt("--game")?;
+            if let Some(g) = &game {
+                if !g.bytes().all(|b| b.is_ascii_digit()) || g.is_empty() {
+                    return Err(CliError::usage("--game wants a Steam app id (digits)"));
+                }
+            }
             let mut opts = parse_options(&mut a, &real_env)?;
+            if light {
+                // the room anchor hook is the one thing parse_options turned on by itself
+                opts.extra_env.retain(|(k, _)| k != "PIMAX_ANCHOR");
+            }
             // argv0: parse_options has already taken --monado-build out of `a`
             let build_given = argv0.iter().any(|x| x == "--monado-build" || x.starts_with("--monado-build="))
                 || real_env("PIMAX_MONADO_BUILD").is_some_and(|v| !v.is_empty());
-            let home = PathBuf::from(real_env("HOME").unwrap_or_else(|| "/root".into()));
             // --6dof: camera broker + SLAM; needs the merged build (default ~/src/monado-eye/build)
             let sixdof = sixdof::parse(&mut a, &real_env, &mut opts, &home, build_given, Some(omarchyvr_config::paths::monado_build(&home)));
             // --ctrl-track: optical controllers (needs --6dof); shared with `desk start`
@@ -363,11 +388,12 @@ pub fn run(mut a: Args) -> CliResult {
             let _controllers = sixdof::parse_controllers(&mut a, &real_env, &mut opts, omarchyvr_config::ctrl_inhand::CtrlMode::Always)?;
             // eye tracking, visual only (default on when the eye build and calibration exist; --no-eye): PIMAX_EYE=1
             let eye_build = omarchyvr_config::paths::monado_build(&home);
-            let (eye_mode, eye_note) = eye_desk::parse(a.flag("--eye"), a.flag("--no-eye"), &mut opts, &eye_build, build_given, &real_env);
+            let (eye_mode, eye_note) = eye_desk::parse(a.flag("--eye") && !light, a.flag("--no-eye") || light, &mut opts, &eye_build, build_given, &real_env);
             // --hands: camera hands (Mercury); may move the Monado build to the hands build (docs/HANDS.md)
             let hands_opt = hands::parse(&mut a, &real_env, &mut opts, &home, build_given, sixdof.is_some())?;
             // --perf: wrist readout (minimal WayVR overlay without screens + omarchyvr-perf); Monado gets PIMAX_PERF_FILE
-            let perf_opts = if a.flag("--perf") {
+            let perf_wanted = a.flag("--perf");
+            let perf_opts = if perf_wanted && !light {
                 let wayvr = a.opt("--wayvr-bin")?.map(PathBuf::from).unwrap_or_else(|| omarchyvr_config::paths::wayvr_bin(&home));
                 let ctl = a.opt("--wayvrctl-bin")?.map(PathBuf::from).unwrap_or_else(|| wayvr.with_file_name("wayvrctl"));
                 Some(perf::parse(&mut a, &real_env, &mut opts, &home, &wayvr, &ctl)?)
@@ -380,7 +406,15 @@ pub fn run(mut a: Args) -> CliResult {
             // Games run with (the app's switch, ~/.config/omarchyvr/games.toml); --runtime overrides it for this start
             let games = match a.opt("--runtime")? {
                 Some(r) => steamvr::Games::parse(&r).ok_or_else(|| CliError::usage("--runtime must be monado or steamvr"))?,
-                None => steamvr::games_runtime(&real_env),
+                None => {
+                    // a game that crashes with xrizer starts this session with SteamVR (per start; docs/GAME-MODE.md)
+                    let global = steamvr::games_runtime(&real_env);
+                    let r = gameruntime::resolve(&gameruntime::Store::load(&home), game.as_deref(), global);
+                    if r != global {
+                        verr!("omarchyvr vr: game {} runs with {} (game-runtime list), for this start only", game.as_deref().unwrap_or("?"), r.name());
+                    }
+                    r
+                }
             };
             reject_leftovers(&a)?;
             hands::print_note(&hands_opt, "omarchyvr vr");
@@ -392,6 +426,10 @@ pub fn run(mut a: Args) -> CliResult {
             }
             auto_connector(&mut opts);
             if !opts.dry_run {
+                // keep the last game's xrizer log before the next game truncates it
+                if let Ok(Some(p)) = gameruntime::archive_log(&home, "pre-start", gameruntime::now_unix()) {
+                    vout!("omarchyvr vr: xrizer log of the last game kept: {}", p.display());
+                }
                 if let Err(e) = supervise::record_argv(&opts.session_dir, "vr", &daemon::argv_for_record(&argv0)) {
                     verr!("omarchyvr vr: WARNING: cannot record the start arguments for restart: {e}");
                 }
@@ -412,7 +450,7 @@ pub fn run(mut a: Args) -> CliResult {
                         if let Some(l) = display::on_start_steamvr(&home) {
                             vout!("omarchyvr vr: {l}");
                         }
-                        if let Some(l) = room::on_start(&home, &opts.session_dir) {
+                        if let Some(l) = (!light).then(|| room::on_start(&home, &opts.session_dir)).flatten() {
                             vout!("omarchyvr vr: {l}");
                         }
                     }
@@ -433,7 +471,7 @@ pub fn run(mut a: Args) -> CliResult {
                         if let Some(l) = display::on_start(&home) {
                             vout!("omarchyvr vr: {l}");
                         }
-                        if let Some(l) = room::on_start(&home, &opts.session_dir) {
+                        if let Some(l) = (!light).then(|| room::on_start(&home, &opts.session_dir)).flatten() {
                             vout!("omarchyvr vr: {l}");
                         }
                 }
@@ -469,7 +507,7 @@ pub fn run(mut a: Args) -> CliResult {
                         if let Some(l) = display::on_start(&home) {
                             vout!("omarchyvr vr: {l}");
                         }
-                        if let Some(l) = room::on_start(&home, &opts.session_dir) {
+                        if let Some(l) = (!light).then(|| room::on_start(&home, &opts.session_dir)).flatten() {
                             vout!("omarchyvr vr: {l}");
                         }
             }
@@ -636,6 +674,11 @@ pub fn run(mut a: Args) -> CliResult {
             let home = PathBuf::from(real_env("HOME").unwrap_or_default());
             let rt = PathBuf::from(real_env("XDG_RUNTIME_DIR").unwrap_or_else(|| "/tmp".into()));
             room::cli(&what, &home, &rt).map_err(CliError::new)
+        }
+        "game-runtime" => {
+            let what = std::mem::take(&mut a.0);
+            let home = PathBuf::from(real_env("HOME").unwrap_or_default());
+            gameruntime::cli(&what, &home).map_err(CliError::new)
         }
         "gamemode" => {
             let mut opts = parse_options(&mut a, &real_env)?;

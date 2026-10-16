@@ -209,6 +209,16 @@ fn session(ui: &mut Ui, app: &mut PimaxApp) {
     if let Some(n) = &app.core.live.steam_note {
         widgets::status(ui, n, p.warn);
     }
+    // an xrizer crash of the last game, and a listed game that runs under xrizer now (docs/GAME-MODE.md)
+    if let Some(n) = app.core.game_watch.crash_note.clone() {
+        widgets::status(ui, &n, p.warn);
+        if ui.small_button("Got it").clicked() {
+            app.core.game_watch.crash_note = None;
+        }
+    }
+    if let Some(e) = app.core.game_needs_steamvr_now() {
+        widgets::status(ui, &format!("{} crashes with xrizer. Stop VR and press Play again: the session will start with SteamVR for it (Ready check > VR games).", e.name), p.warn);
+    }
     match phase {
         DeskPhase::Running => {
             let vr = app.core.running_side() == Some(true);
@@ -443,6 +453,10 @@ fn quick_settings(ui: &mut Ui, app: &mut PimaxApp) {
     let mut gm = app.core.facts.game_mode;
     if switch_row(ui, &mut gm, "Game mode", Some("Play pauses the local AI (it uses the graphics card); Stop starts it again."), !busy).changed() {
         app.core.game_mode(gm);
+    }
+    let mut light = app.core.light_game();
+    if switch_row(ui, &mut light, "Light game mode", Some("On (default): Play runs only what a game needs: Monado, head tracking, controllers. No wrist readout, eye tracking or room search, and the local AI is paused. Off: Play also runs the wrist readout, eye tracking and the room anchor. Applies to the next Play."), !busy).changed() {
+        app.core.set_light_game(light);
     }
     let mut auto = app.core.state.autostart;
     if switch_row(ui, &mut auto, "Start at login", Some("When the app opens at login, the side you used last (Play or Work) starts by itself if the headset is connected, the Monado cap is set and the checks are clear. Never asks for a password."), true).changed() {
