@@ -1,7 +1,7 @@
 //! Ready check > "Check VR games": one button, the result in plain words, the one fix per failure (docs/GAMES-CHECK.md).
 use crate::app::PimaxApp;
 use crate::theme::icon;
-use crate::widgets::{self, chip, note, pal, spinner, title};
+use crate::widgets::{self, chip, note, pal, spinner};
 use eframe::egui::{RichText, Ui};
 use pimax_gui_core::gamecheck::Status;
 
@@ -12,11 +12,13 @@ pub fn show(ui: &mut Ui, app: &mut PimaxApp) {
     }
     let busy = app.core.game_check_busy();
     let (ok, warn, fail) = app.core.gamecheck.counts();
-    ui.add_space(8.0);
-    widgets::card(ui, |ui| {
-        ui.horizontal_wrapped(|ui| {
-            title(ui, "VR games");
-            if app.core.gamecheck.checks.is_some() {
+    let has = app.core.gamecheck.checks.is_some();
+    widgets::section_with(
+        ui,
+        "VR games",
+        Some("Why a Steam game shows nothing in the headset: checks the OpenXR and OpenVR runtime files, Monado, Steam's game container (a small test program runs inside it), Steam's VR setting and the game's last log. Start VR first for the full test."),
+        |ui| {
+            if has {
                 chip(ui, &format!("{ok} ok"), pal(ui).ok);
                 if warn > 0 {
                     chip(ui, &format!("{warn} to look at"), pal(ui).warn);
@@ -25,8 +27,8 @@ pub fn show(ui: &mut Ui, app: &mut PimaxApp) {
                     chip(ui, &format!("{fail} failing"), pal(ui).fail);
                 }
             }
-        });
-        note(ui, "Why a Steam game shows nothing in the headset: checks the OpenXR and OpenVR runtime files, Monado, Steam's game container (a small test program runs inside it), Steam's VR setting and the game's last log. Start VR first for the full test.");
+        },
+        |ui| {
         ui.horizontal_wrapped(|ui| {
             if widgets::ibutton(ui, icon::ARROWS_CLOCKWISE, "Check VR games", !busy).on_hover_text("pimax vr game-check: takes a few seconds").clicked() {
                 app.core.game_check();
@@ -57,5 +59,6 @@ pub fn show(ui: &mut Ui, app: &mut PimaxApp) {
             }
             ui.add_space(2.0);
         }
-    });
+        },
+    );
 }

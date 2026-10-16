@@ -128,7 +128,7 @@ pub fn keepalive_fix(p: &Paths, link_unit: bool) -> UserFix {
 }
 
 /// The auto mode unit (MANUAL-STEPS 3.5): build the daemon where the unit runs it, install the unit and a dry-run
-/// config. Nothing is started: Home > Auto mode starts it on request.
+/// config. Nothing is started: Developer > Auto mode starts it on request.
 pub fn autod_fix(p: &Paths, f: &ManualFacts) -> UserFix {
     let s = |x: &Path| x.display().to_string();
     let mut steps = Vec::new();
@@ -143,7 +143,7 @@ pub fn autod_fix(p: &Paths, f: &ManualFacts) -> UserFix {
     }
     steps.push(Cmd::new("systemctl", &["--user", "daemon-reload"]));
     UserFix {
-        why: "Build pimax-autod, install its user unit and ~/.config/pimax/auto.toml (dry run until you set dry_run = false). Nothing starts: Home > Auto mode starts it when you ask.".into(),
+        why: "Build pimax-autod, install its user unit and ~/.config/pimax/auto.toml (dry run until you set dry_run = false). Nothing starts: Developer > Auto mode starts it when you ask.".into(),
         steps,
         follow_up: None,
         needs_idle: false,
@@ -187,7 +187,7 @@ pub fn items(facts: &Facts, p: &Paths) -> Vec<Item> {
         .filter_map(|(m, n)| m.then_some(n))
         .collect();
     v.push(if missing.is_empty() {
-        Item::new("auto-mode", Group::App, "Auto mode daemon", Level::Ok, "built, unit and config installed (Home > Auto mode starts it)", None, Fix::None)
+        Item::new("auto-mode", Group::App, "Auto mode daemon", Level::Ok, "built, unit and config installed (Developer > Auto mode starts it)", None, Fix::None)
     } else {
         Item::new("auto-mode", Group::App, "Auto mode daemon", Level::Info, format!("optional; missing: {}", missing.join(", ")), None, Fix::User(autod_fix(p, f)))
     });

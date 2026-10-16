@@ -41,15 +41,13 @@ pub fn show(ui: &mut Ui, app: &mut PimaxApp) {
 fn draw(ui: &mut Ui, app: &mut PimaxApp, click: &mut Option<Click>) {
     let m = &mut app.core.profiles;
     let p = pal(ui);
-    card(ui, |ui| {
-        ui.label(RichText::new("Profiles & backups").size(24.0).strong());
-        note(ui, "Per-headset lens.conf, eye correction and camera overlay, with a backup before every write.");
-        ui.label(format!("Connected headset serial: {}", m.serial.as_deref().unwrap_or("none")));
+    crate::widgets::section(ui, "Profiles & backups", Some("Per-headset lens.conf, eye correction and camera overlay, with a backup before every write."), |ui| {
+        note(ui, &format!("Connected headset serial: {}", m.serial.as_deref().unwrap_or("none")));
         ui.horizontal(|ui| {
-            if ui.button("Import current ~/.config/pimax files").clicked() {
+            if crate::widgets::tbutton(ui, "Import current ~/.config/pimax files", true).clicked() {
                 *click = Some(Click::Import);
             }
-            if ui.button("Reload").clicked() {
+            if crate::widgets::tbutton(ui, "Reload", true).clicked() {
                 *click = Some(Click::Reload);
             }
         });
@@ -57,7 +55,6 @@ fn draw(ui: &mut Ui, app: &mut PimaxApp, click: &mut Option<Click>) {
             ui.label(RichText::new(&m.message).color(p.muted));
         }
     });
-    ui.add_space(8.0);
     if m.rows.is_empty() {
         card(ui, |ui| note(ui, "No profiles yet. Import creates <serial>/default from lens.conf, eye-correction.toml and cam-calib-overlay.json; the old files stay in place."));
         return;
@@ -81,7 +78,6 @@ fn draw(ui: &mut Ui, app: &mut PimaxApp, click: &mut Option<Click>) {
         }
     });
     let Some(sel) = m.selected.clone() else { return };
-    ui.add_space(8.0);
     card(ui, |ui| {
         ui.horizontal_wrapped(|ui| {
             if m.rows.iter().any(|r| r.id == sel && r.serial == SerialCheck::Mismatch) {

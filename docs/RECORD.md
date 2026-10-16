@@ -1,7 +1,8 @@
 # Recording (basic)
 
 `pimax record` records what the headset shows into `~/Videos/pimax/pimax-YYYYmmdd-HHMMSS.mp4`. You can record one
-eye (the default) or both eyes side by side, at 30, 60 or 72 fps, in low, medium or high quality.
+eye (the default) or both eyes side by side, at 30, 60 or 72 fps, in low, medium or high quality. **Defaults
+(2026-10-16): 30 fps, high quality, with sound.**
 
 ```
 pimax record start [--eyes left|both] [--fps 30|60|72] [--quality low|medium|high]
@@ -10,8 +11,9 @@ pimax record stop        # finishes the file (always playable) and prints where 
 pimax record status
 ```
 
-- **Defaults** come from `~/.config/pimax/record.toml`, a plain `key = value` file: `eyes`, `fps`, `quality`, `scale`,
-  `max_height`, `codec`, `encoder` and `dir`. Use `--save` to write the given flags there; the app's Record card writes
+- **Defaults** (30 fps, high, sound on, microphone off) come from `~/.config/pimax/record.toml`, a plain `key = value` file: `eyes`, `fps`, `quality`, `scale`,
+  `max_height`, `codec`, `encoder`, `dir`, `audio` and `mic`. A file from before `audio` existed that says medium quality takes
+  the new default (high) once; after that the file keeps what you chose. Use `--save` to write the given flags there; the app's Record card writes
   there too.
 - **Eyes:**
   - `left` records the left eye after layer composition and before the lens distortion. It is "what you see", without
@@ -19,19 +21,34 @@ pimax record status
   - `both` puts the two eyes side by side.
 - **Size:** each eye is fit into `max_height` (default 1080), keeping its aspect ratio. `scale` (0.1 to 1.0) takes a
   fraction of the eye's own resolution instead; `max_height` still caps it.
-- **Quality:** NVENC uses `-cq` 30, 25 or 20 for low, medium and high (HEVC: 32, 27, 22) with a bitrate ceiling. The
+- **Quality** (default high): NVENC uses `-cq` 30, 25 or 20 for low, medium and high (HEVC: 32, 27, 22) with a bitrate ceiling. The
   CPU encoder (x264, or x265 for HEVC) uses `-crf` 28, 23 or 19 (HEVC: 30, 26, 22).
 - **Encoder:** `auto` uses NVENC (`h264_nvenc` or `hevc_nvenc`) when ffmpeg has it and the GPU gate is ok. Otherwise
   it uses libx264 on the CPU. If NVENC dies within 5 s of starting, the recorder falls back to the CPU encoder and
   keeps the same file name.
-- **Audio:** none in the basic version. See "Later" below.
+- **Sound** (`--audio on|off`, default on; the app's "Sound" switch): what you hear in the headset, which is the monitor of the
+  default PulseAudio/PipeWire output (`@DEFAULT_MONITOR@`), mixed down to AAC 160 kbit/s, 48 kHz stereo in the same mp4.
+  - **Microphone** (`--mic on|off`, default off; the "Microphone" switch): the default input (`@DEFAULT_SOURCE@`) is
+    mixed in with the output at full level (`amix`). Off by default so a recording never carries your voice unless you
+    choose it.
+  - Both sources are test-read for 0.3 s before the recording starts. If the output cannot be read, the video is
+    recorded without sound; if only the mic cannot, the output sound is recorded alone. Either way a notice says so
+    and VR is never affected. The first ~0.3 s of a recording with sound is not captured (ffmpeg opens the sound
+    input first); the sound is padded with silence so it never cuts the video short.
+  - ffmpeg ends itself when the video ends (`-shortest`); `pimax record status` shows `sound: output` or `output+mic`.
+- **Voice** (works in Work and Play; the same start and stop as the app's buttons, with the saved settings):
+  "Max, start recording", "record this", "begin recording", "record the video" start it and answer **Recording**;
+  "Max, stop recording", "stop the recording", "end the recording" stop it and answer **Saved: pimax-YYYYmmdd-HHMMSS.mp4**
+  (or, in plain words, why nothing was saved). "Stop recording" never stops the VR session: that needs a stop verb plus
+  a VR word (`Actor::consent`), and any recording word blocks it. The voice commands are `pimax record start --brief`
+  and `pimax record stop --brief`. A failure (for example "no VR session") is spoken in plain words and VR keeps running.
 
-## Record card on Home (normal mode)
+## Record card on the Recording tab (normal mode)
 
-The Record card is on Home in normal mode (it was developer-only after the cleanup in 516c350). The separate
+The Record cards have their own "Recording" page in the app's sidebar (they were on Home before 2026-10-16). The separate
 "Video recording ... coming soon" placeholder row stays hidden: it was only a stub, and this card is the real thing.
 
-- **Video** (Eyes, FPS, Quality, Start/Stop recording): the section above. Needs a running session.
+- **Video** (Eyes, FPS, Quality, Sound, Microphone, Start/Stop recording): the section above. Needs a running session.
 - **Record tracking** (Scenario, Length, Record tracking / Stop, Open folder): one folder per take for comparing with
   Windows. It never writes into the session and never blocks VR: it only reads, at `nice 19`.
 
@@ -231,7 +248,7 @@ output = true
 
 - **Downscaling** is one bilinear sample per output pixel, which can shimmer when a 3.5x reduction shows fine text. A
   mip or box-filter pass can be added later in the tap.
-- **Audio** (a mic, or the desktop through PipeWire) is not in the basic version. It needs real timestamps on the
+- **Audio** is in since 2026-10-16 (see Sound above; wall-clock timestamps, so a little drift on very long takes is possible). The old note: it needs real timestamps on the
   video path, either wallclock timestamps or NUT over the pipe, to stay in sync.
 - **Right eye only:** not offered. **A fixed display-time warp:** the recording is the squashed image the compositor
   produced, so it does not include the lens distortion or the final scanout timewarp.

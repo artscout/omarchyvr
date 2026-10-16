@@ -1,6 +1,20 @@
 # Open-source plan: publish, install anywhere, test, and let Claude fix it
 
 Date: 2026-10-15. Status: **a plan for the user to approve. Nothing was published, deleted or rewritten.**
+
+**Update 2026-10-16 (P0 + first private export):** name **omarchyvr**, repo `github.com/laughtt/omarchyvr` (PRIVATE),
+identity `laughtt` (GitHub noreply). Done here: per-unit/personal values out of the code (`~/.config/pimax/paths.toml`:
+`src_dir`, `shared_drive_uuid` without default; controller models without serials; fake test serials and keys;
+controller serials in the redactor), LICENSE-MIT/-APACHE/-CC-BY-4.0, THIRD-PARTY.md, NOTICE, `public-manifest.txt` +
+`tools/export-public.sh` (allow-list, scrub, scanners, `cargo test --workspace` on the copy, known failures in
+`tools/known-test-failures.txt`), `cfg(lab_data)` for the tests that replay private data (synthetic calibration and an
+empty eye frame list stand in for them in the export). Open: crate/binary rename, eye frame list loaded at runtime,
+forks (P1), CI, gitleaks in CI.
+**Sync log (lab commit -> omarchyvr):** `8d09d9b` -> omarchyvr `f375aca` (2026-10-16, first export). Next: the 2026-10-16
+evening export (ai/ folder, patches/nvidia, forks `github.com/laughtt/monado` and `github.com/laughtt/wayvr`, both
+PRIVATE, branch `omarchyvr`, `main` = upstream base: Monado `e686ba77e5` + 60 commits, WayVR tag v26.8.0 `cb3aa42` + 30
+commits, our commits rewritten to the laughtt noreply identity and scrubbed of home paths and the login name). Next
+export: recording plus speech on the CPU.
 The audit in section 1 was read-only (pattern scans over the tracked tree and `git log -p --all`); no secret value is
 written here, only the file, the commit count and the kind of hit.
 

@@ -4,7 +4,7 @@
 //!   Linux x64, which also runs on the CPU) and the pinned models (Hugging Face, unsloth's GGUF quantisations of
 //!   Qwen3.5) into `~/.local/share/pimax/ai/`, resuming partial downloads (`curl -C -`) and checking each file's
 //!   SHA-256 against the value published by GitHub (release asset digest) or Hugging Face (LFS oid).
-//! * `serve`: `llama-server` on 127.0.0.1 only, `nice 19` + idle I/O class + low thread priority, one slot, 8k
+//! * `serve`: `llama-server` on 127.0.0.1 only, `nice 19` + the lowest best-effort I/O + low thread priority, one slot, 8k
 //!   context, tool calling through the model's own chat template (`--jinja`), thinking off. GPU layers are an
 //!   option (`all` by default, `0` = CPU only with the small CPU model).
 //! * `status`, `stop` (the PID in `~/.local/state/pimax/ai/llama-server.pid`, checked to be a llama-server).
@@ -14,6 +14,11 @@
 //! The CPU fallback (Qwen3.5-2B Q4_K_M, 1.2 GiB in RAM) uses no GPU memory at all (`--device none`).
 //!
 //! Everything goes through small helpers over `curl`, `tar`, `sha256sum`, `nice`, `ionice` (no network crates).
+//!
+//! The two-stage mode (a router "Lara" on port 8081, the action model on port 8080 fitted to the free VRAM):
+//! [`twostage`].
+
+pub mod twostage;
 
 use std::io::{Read, Write};
 use std::net::TcpStream;
@@ -99,8 +104,90 @@ pub const MODEL_CPU: Asset = Asset {
     label: "Qwen3.5-2B Q4_K_M, 1.2 GiB (CPU fallback)",
 };
 
+/// The two-stage router as a small LLM: Qwen3.5-0.8B, Q4_K_M (unsloth GGUF, revision 6ab4614), CPU.
+pub const MODEL_ROUTER_08B: Asset = Asset {
+    id: "qwen3.5-0.8b",
+    kind: AssetKind::Model,
+    file: "Qwen3.5-0.8B-Q4_K_M.gguf",
+    url: "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/6ab461498e2023f6e3c1baea90a8f0fe38ab64d0/Qwen3.5-0.8B-Q4_K_M.gguf",
+    sha256: "bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517",
+    size: 532_517_120,
+    label: "Qwen3.5-0.8B Q4_K_M, 508 MiB (two-stage router, CPU)",
+};
+
+/// The larger two-stage action model: Qwen3.5-9B, IQ4_XS (unsloth GGUF, revision 3885219): 4.8 GiB on disk, 4.7 GiB
+/// of VRAM measured with the 8k context (Q4_K_M: 5.3 GiB of weights).
+pub const MODEL_ACTION_9B: Asset = Asset {
+    id: "qwen3.5-9b",
+    kind: AssetKind::Model,
+    file: "Qwen3.5-9B-IQ4_XS.gguf",
+    url: "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/3885219b6810b007914f3a7950a8d1b469d598a5/Qwen3.5-9B-IQ4_XS.gguf",
+    sha256: "7e918aeca06c52bcb528ea6b04b4ec957e75ee8c0a73138854c0dfcf371ea429",
+    size: 5_168_653_536,
+    label: "Qwen3.5-9B IQ4_XS, 4.8 GiB (two-stage action model, GPU)",
+};
+
+/// The agent-mode model (docs/AI.md section 18): Qwen3.6-27B, Q4_K_M (unsloth GGUF, revision 82d411a), 15.66 GiB on
+/// disk, in its own folder. An option, never a default: only agent-mode plans use it (port 8083).
+pub const MODEL_AGENT_27B: Asset = Asset {
+    id: "qwen3.6-27b",
+    kind: AssetKind::Model,
+    file: "Qwen3.6-27B/Qwen3.6-27B-Q4_K_M.gguf",
+    url: "https://huggingface.co/unsloth/Qwen3.6-27B-GGUF/resolve/82d411acf4a06cfb8d9b073a5211bf410bfc29bf/Qwen3.6-27B-Q4_K_M.gguf",
+    sha256: "5ed60d0af4650a854b1755bd392f9aef4872643dc25a254bc68043fa638392a0",
+    size: 16_817_244_384,
+    label: "Qwen3.6-27B Q4_K_M, 15.7 GiB (agent-mode model, GPU, optional)",
+};
+
 /// Every known asset.
-pub const ASSETS: [Asset; 4] = [RUNTIME_VULKAN, RUNTIME_CPU, MODEL_GPU, MODEL_CPU];
+pub const ASSETS: [Asset; 7] = [RUNTIME_VULKAN, RUNTIME_CPU, MODEL_GPU, MODEL_CPU, MODEL_ROUTER_08B, MODEL_ACTION_9B, MODEL_AGENT_27B];
+
+/// The GGUF file of a model id of `pimax_config::ai::{ROUTER_MODELS, ACTION_MODELS}` (`qwen3.5-4b` is the simple
+/// mode's 4B).
+pub fn model_asset(id: &str) -> Option<Asset> {
+    match id {
+        "qwen3.5-4b" => Some(MODEL_GPU),
+        "qwen3.5-2b" => Some(MODEL_CPU),
+        "qwen3.5-0.8b" => Some(MODEL_ROUTER_08B),
+        "qwen3.5-9b" => Some(MODEL_ACTION_9B),
+        "qwen3.6-27b" => Some(MODEL_AGENT_27B),
+        _ => None,
+    }
+}
+
+/// A server slot: the main model (port 8080: the simple mode's model, or the two-stage action model) or the
+/// two-stage router (port 8081).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Slot {
+    Main,
+    Router,
+    /// whisper-server (port 8082): the large speech recognition model on the GPU (docs/AI.md section 17).
+    Asr,
+    /// The optional agent-mode model (port 8083, `[local_two_stage] agent`): multi-step plans only.
+    Agent,
+}
+
+impl Slot {
+    pub fn port(self) -> u16 {
+        match self {
+            Slot::Main => DEFAULT_PORT,
+            Slot::Router => ROUTER_PORT,
+            Slot::Asr => pimax_config::ai::ASR_PORT,
+            Slot::Agent => pimax_config::ai::AGENT_PORT,
+        }
+    }
+    pub fn id(self) -> &'static str {
+        match self {
+            Slot::Main => "main",
+            Slot::Router => "router",
+            Slot::Asr => "asr",
+            Slot::Agent => "agent",
+        }
+    }
+}
+
+/// The two-stage router's port (`pimax_config::ai::ROUTER_BASE`).
+pub const ROUTER_PORT: u16 = 8081;
 
 /// Where things live.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -138,10 +225,32 @@ impl Dirs {
         self.data.join("runtime").join(format!("{}-{LLAMA_TAG}", a.id))
     }
     pub fn pid_file(&self) -> PathBuf {
-        self.state.join("llama-server.pid")
+        self.slot_pid(Slot::Main)
     }
     pub fn server_log(&self) -> PathBuf {
-        self.logs.join("llama-server.log")
+        self.slot_log(Slot::Main)
+    }
+    /// The pid file of a server slot (`llama-server.pid`, `router.pid`).
+    pub fn slot_pid(&self, s: Slot) -> PathBuf {
+        self.state.join(match s {
+            Slot::Main => "llama-server.pid",
+            Slot::Router => "router.pid",
+            Slot::Asr => "asr.pid",
+            Slot::Agent => "agent.pid",
+        })
+    }
+    /// The log of a server slot.
+    pub fn slot_log(&self, s: Slot) -> PathBuf {
+        self.logs.join(match s {
+            Slot::Main => "llama-server.log",
+            Slot::Router => "ai-router.log",
+            Slot::Asr => "ai-asr.log",
+            Slot::Agent => "ai-agent.log",
+        })
+    }
+    /// Laya (the two-stage router "Lara"): `laya/venv` and its Hugging Face cache `laya/hf`.
+    pub fn laya(&self) -> PathBuf {
+        self.data.join("laya")
     }
     pub fn model_path(&self, a: &Asset) -> PathBuf {
         self.models().join(a.file)
@@ -330,11 +439,14 @@ pub struct ServeOpts {
     pub threads: u32,
     /// A model file instead of the default for the mode.
     pub model: Option<PathBuf>,
+    /// llama.cpp's own fit instead of a layer count: as many layers on the GPU as leave this many MiB free
+    /// (`--fit on --fit-target M`; the VRAM fit of the two-stage mode).
+    pub fit_margin: Option<u32>,
 }
 
 impl Default for ServeOpts {
     fn default() -> Self {
-        ServeOpts { gpu_layers: None, port: DEFAULT_PORT, ctx: DEFAULT_CTX, threads: default_threads(), model: None }
+        ServeOpts { gpu_layers: None, port: DEFAULT_PORT, ctx: DEFAULT_CTX, threads: default_threads(), model: None, fit_margin: None }
     }
 }
 
@@ -371,9 +483,11 @@ pub fn pick_model(o: &ServeOpts, dirs: &Dirs) -> Result<PathBuf, String> {
         .ok_or_else(|| "no model installed: run `pimax-ai install`".into())
 }
 
-/// The full command line: `nice -n 19 ionice -c 3 llama-server ...` (localhost only).
+/// The full command line: `nice -n 19 ionice -c 2 -n 7 llama-server ...` (localhost only). Best-effort I/O at the
+/// lowest level, not the idle class: under steady disk load (builds, a game loading) the idle class held a model load
+/// for minutes (measured 2026-10-16).
 pub fn serve_argv(server: &Path, model: &Path, o: &ServeOpts) -> Vec<String> {
-    let mut v: Vec<String> = vec!["nice".into(), "-n".into(), "19".into(), "ionice".into(), "-c".into(), "3".into()];
+    let mut v: Vec<String> = vec!["nice".into(), "-n".into(), "19".into(), "ionice".into(), "-c".into(), "2".into(), "-n".into(), "7".into()];
     v.push(server.to_string_lossy().into_owned());
     let s = |x: &str| x.to_string();
     v.extend([s("-m"), model.to_string_lossy().into_owned()]);
@@ -385,6 +499,9 @@ pub fn serve_argv(server: &Path, model: &Path, o: &ServeOpts) -> Vec<String> {
     v.extend([s("--prio"), s("-1")]);
     if o.cpu() {
         v.extend([s("-ngl"), s("0"), s("--device"), s("none"), s("-t"), o.threads.to_string()]);
+    } else if let Some(m) = o.fit_margin {
+        // part on the GPU: llama.cpp counts the layers that fit; the CPU threads do the rest
+        v.extend([s("--fit"), s("on"), s("--fit-target"), m.to_string(), s("-t"), o.threads.to_string()]);
     } else {
         let n = o.gpu_layers.unwrap_or(999);
         v.extend([s("-ngl"), n.to_string(), s("-t"), o.threads.min(4).to_string()]);
@@ -421,22 +538,31 @@ impl PidInfo {
     }
 }
 
-/// The process is alive and is a llama-server (by its command line).
+/// The process is alive and is a llama-server, the Laya router or the whisper-server (by its command line).
 pub fn is_server(pid: i32) -> bool {
-    std::fs::read(format!("/proc/{pid}/cmdline")).map(|c| String::from_utf8_lossy(&c).contains("llama-server")).unwrap_or(false)
+    std::fs::read(format!("/proc/{pid}/cmdline")).map(|c| { let c = String::from_utf8_lossy(&c); c.contains("llama-server") || c.contains("laya-serve") || c.contains("whisper-server") }).unwrap_or(false)
 }
 
 /// The pid file, when it names a live llama-server.
 pub fn running(dirs: &Dirs) -> Option<PidInfo> {
-    let p = PidInfo::parse(&std::fs::read_to_string(dirs.pid_file()).ok()?)?;
+    running_slot(dirs, Slot::Main)
+}
+
+/// A slot's pid file, when it names a live server.
+pub fn running_slot(dirs: &Dirs, s: Slot) -> Option<PidInfo> {
+    let p = PidInfo::parse(&std::fs::read_to_string(dirs.slot_pid(s)).ok()?)?;
     is_server(p.pid).then_some(p)
 }
 
 /// Start the server. `foreground`: replace this process (systemd); else detach (new session), log to the server
 /// log, write the pid file and return its info.
 pub fn serve(o: &ServeOpts, dirs: &Dirs, foreground: bool) -> Result<PidInfo, String> {
-    use std::os::unix::process::CommandExt;
-    if let Some(p) = running(dirs) {
+    serve_slot(o, dirs, foreground, Slot::Main)
+}
+
+/// Start a llama-server in a slot (the router slot with a small GGUF model, or the main slot).
+pub fn serve_slot(o: &ServeOpts, dirs: &Dirs, foreground: bool, slot: Slot) -> Result<PidInfo, String> {
+    if let Some(p) = running_slot(dirs, slot) {
         return Err(format!("already running (pid {}, port {})", p.pid, p.port));
     }
     let server = installed_server(dirs).ok_or("llama-server is not installed: run `pimax-ai install`")?;
@@ -449,19 +575,32 @@ pub fn serve(o: &ServeOpts, dirs: &Dirs, foreground: bool) -> Result<PidInfo, St
         // no GPU at all in CPU mode
         cmd.env("GGML_VK_VISIBLE_DEVICES", "");
     }
-    let mode = if o.cpu() { "cpu".to_string() } else { format!("gpu ({} layers)", o.gpu_layers.map(|n| n.to_string()).unwrap_or("all".into())) };
-    let info = |pid: i32| PidInfo { pid, port: o.port, mode: mode.clone(), model: model.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default() };
+    let mode = if o.cpu() {
+        "cpu".to_string()
+    } else if o.fit_margin.is_some() {
+        "gpu (fitted)".to_string()
+    } else {
+        format!("gpu ({} layers)", o.gpu_layers.map(|n| n.to_string()).unwrap_or("all".into()))
+    };
+    let file = model.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default();
+    spawn_slot(cmd, dirs, foreground, slot, PidInfo { pid: 0, port: o.port, mode, model: file })
+}
+
+/// Run a server command in a slot: detached (own session, the slot's log and pid file) or exec'd in place.
+pub fn spawn_slot(mut cmd: Command, dirs: &Dirs, foreground: bool, slot: Slot, info: PidInfo) -> Result<PidInfo, String> {
+    use std::os::unix::process::CommandExt;
+    let info = |pid: i32| PidInfo { pid, ..info.clone() };
     std::fs::create_dir_all(&dirs.state).map_err(|e| e.to_string())?;
     if foreground {
         // the pid stays the same across exec
         let me = std::process::id() as i32;
-        std::fs::write(dirs.pid_file(), info(me).to_text()).map_err(|e| e.to_string())?;
+        std::fs::write(dirs.slot_pid(slot), info(me).to_text()).map_err(|e| e.to_string())?;
         let e = cmd.exec();
-        let _ = std::fs::remove_file(dirs.pid_file());
-        return Err(format!("exec {}: {e}", argv[0]));
+        let _ = std::fs::remove_file(dirs.slot_pid(slot));
+        return Err(format!("exec {:?}: {e}", cmd.get_program()));
     }
     std::fs::create_dir_all(&dirs.logs).map_err(|e| e.to_string())?;
-    let log = std::fs::OpenOptions::new().create(true).append(true).open(dirs.server_log()).map_err(|e| e.to_string())?;
+    let log = std::fs::OpenOptions::new().create(true).append(true).open(dirs.slot_log(slot)).map_err(|e| e.to_string())?;
     let log2 = log.try_clone().map_err(|e| e.to_string())?;
     cmd.stdout(log).stderr(log2);
     // SAFETY: setsid is async-signal-safe; it detaches the server from our terminal session.
@@ -471,19 +610,24 @@ pub fn serve(o: &ServeOpts, dirs: &Dirs, foreground: bool) -> Result<PidInfo, St
             Ok(())
         });
     }
-    let child = cmd.spawn().map_err(|e| format!("{}: {e}", argv[0]))?;
+    let child = cmd.spawn().map_err(|e| format!("{:?}: {e}", cmd.get_program()))?;
     let p = info(child.id() as i32);
-    std::fs::write(dirs.pid_file(), p.to_text()).map_err(|e| e.to_string())?;
+    std::fs::write(dirs.slot_pid(slot), p.to_text()).map_err(|e| e.to_string())?;
     Ok(p)
 }
 
 /// Stop the server named by the pid file (SIGTERM, then SIGKILL after 5 s). `Ok(None)` = nothing was running.
 pub fn stop(dirs: &Dirs) -> Result<Option<i32>, String> {
-    let Some(p) = std::fs::read_to_string(dirs.pid_file()).ok().and_then(|t| PidInfo::parse(&t)) else {
+    stop_slot(dirs, Slot::Main)
+}
+
+/// Stop a slot's server.
+pub fn stop_slot(dirs: &Dirs, slot: Slot) -> Result<Option<i32>, String> {
+    let Some(p) = std::fs::read_to_string(dirs.slot_pid(slot)).ok().and_then(|t| PidInfo::parse(&t)) else {
         return Ok(None);
     };
     if !is_server(p.pid) {
-        let _ = std::fs::remove_file(dirs.pid_file());
+        let _ = std::fs::remove_file(dirs.slot_pid(slot));
         return Ok(None);
     }
     // SAFETY: plain kill(2) on a pid we verified to be a llama-server.
@@ -498,7 +642,7 @@ pub fn stop(dirs: &Dirs) -> Result<Option<i32>, String> {
         // SAFETY: as above.
         unsafe { libc::kill(p.pid, libc::SIGKILL) };
     }
-    let _ = std::fs::remove_file(dirs.pid_file());
+    let _ = std::fs::remove_file(dirs.slot_pid(slot));
     Ok(Some(p.pid))
 }
 
@@ -538,6 +682,21 @@ pub struct Status {
     /// `/health` answered 200 (the model is loaded).
     pub ready: bool,
     pub gpu_mib: Option<u32>,
+    /// The two-stage router (port 8081), its health, and whether Laya is installed.
+    pub router: Option<PidInfo>,
+    pub router_ready: bool,
+    pub laya: bool,
+    /// Lara (the tuned checkpoint) is there; its tuning runs.
+    pub lara: bool,
+    pub lara_tuning: bool,
+    /// Free and total VRAM (MiB) and the session next to the AI.
+    pub vram: Option<(u32, u32)>,
+    pub session: Option<twostage::Session>,
+    /// The speech server (whisper-server, port 8082), its health, VRAM, and whether it can start (built + model).
+    pub asr: Option<PidInfo>,
+    pub asr_ready: bool,
+    pub asr_gpu_mib: Option<u32>,
+    pub asr_missing: Option<String>,
 }
 
 impl Status {
@@ -545,12 +704,28 @@ impl Status {
         let running = running(dirs);
         let ready = running.as_ref().is_some_and(|p| http_get(p.port, "/health", Duration::from_millis(500)).is_ok_and(|(c, _)| c == 200));
         let gpu = running.as_ref().and_then(|p| gpu_mib(p.pid));
+        let router = running_slot(dirs, Slot::Router);
+        let router_ready = router.as_ref().is_some_and(|p| http_get(p.port, "/health", Duration::from_millis(800)).is_ok_and(|(c, _)| c == 200));
+        let asr = running_slot(dirs, Slot::Asr);
+        let asr_ready = asr.as_ref().is_some_and(|p| http_get(p.port, "/health", Duration::from_millis(500)).is_ok_and(|(c, _)| c == 200));
+        let asr_gpu_mib = asr.as_ref().and_then(|p| gpu_mib(p.pid));
         Status {
+            asr,
+            asr_ready,
+            asr_gpu_mib,
+            asr_missing: twostage::asr_missing(&twostage::asr_server_bin(), &twostage::asr_model_file()),
             runtime: installed_server(dirs),
-            models: [MODEL_GPU, MODEL_CPU].iter().map(|a| (*a, file_size(&dirs.model_path(a)) == Some(a.size))).collect(),
+            models: [MODEL_GPU, MODEL_CPU, MODEL_ROUTER_08B, MODEL_ACTION_9B].iter().map(|a| (*a, file_size(&dirs.model_path(a)) == Some(a.size))).collect(),
             running,
             ready,
             gpu_mib: gpu,
+            router,
+            router_ready,
+            laya: twostage::laya_installed(dirs),
+            lara: twostage::lara_installed(dirs),
+            lara_tuning: twostage::tuning(dirs).is_some(),
+            vram: twostage::gpu_free_mib(),
+            session: Some(twostage::detect_session(Path::new("/proc"))),
         }
     }
 
@@ -569,14 +744,28 @@ impl Status {
             ),
             None => "null".into(),
         };
+        let router = match &self.router {
+            Some(p) => format!("{{\"pid\":{},\"port\":{},\"model\":{},\"ready\":{}}}", p.pid, p.port, q(&p.model), self.router_ready),
+            None => "null".into(),
+        };
+        let asr = match &self.asr {
+            Some(p) => format!("{{\"pid\":{},\"port\":{},\"ready\":{},\"gpu_mib\":{}}}", p.pid, p.port, self.asr_ready, self.asr_gpu_mib.map(|m| m.to_string()).unwrap_or("null".into())),
+            None => "null".into(),
+        };
+        let asr_missing = self.asr_missing.as_deref().map(q).unwrap_or("null".into());
+        let (free, total) = self.vram.map(|(f, t)| (f.to_string(), t.to_string())).unwrap_or(("null".into(), "null".into()));
         format!(
-            "{{\"installed\":{},\"runtime\":{},\"models\":[{}],\"running\":{run},\"ready\":{},\"gpu_mib\":{},\"gpu_budget_mib\":{GPU_BUDGET_MIB},\"model_alias\":{}}}",
+            "{{\"installed\":{},\"runtime\":{},\"models\":[{}],\"running\":{run},\"ready\":{},\"gpu_mib\":{},\"gpu_budget_mib\":{GPU_BUDGET_MIB},\"model_alias\":{},\"router\":{router},\"laya\":{},\"lara\":{},\"lara_tuning\":{},\"vram_free_mib\":{free},\"vram_total_mib\":{total},\"session\":{},\"asr\":{asr},\"asr_missing\":{asr_missing}}}",
             self.runtime.is_some() && self.models.iter().any(|(_, ok)| *ok),
             self.runtime.as_ref().map(|p| q(&p.to_string_lossy())).unwrap_or("null".into()),
             models.join(","),
             self.ready,
             self.gpu_mib.map(|m| m.to_string()).unwrap_or("null".into()),
-            q(MODEL_ALIAS)
+            q(MODEL_ALIAS),
+            self.laya,
+            self.lara,
+            self.lara_tuning,
+            self.session.map(|s| q(s.label())).unwrap_or("null".into())
         )
     }
 }
@@ -609,7 +798,8 @@ mod tests {
     fn assets_are_pinned_official_and_small() {
         for a in ASSETS {
             assert!(a.url.starts_with("https://github.com/ggml-org/llama.cpp/releases/download/") || a.url.starts_with("https://huggingface.co/unsloth/"));
-            assert!(a.url.ends_with(a.file));
+            assert!(!a.url.contains("/resolve/main/"), "{}: a pinned revision", a.id);
+            assert!(a.url.ends_with(a.file.rsplit('/').next().unwrap()));
             assert_eq!(a.sha256.len(), 64);
             assert!(a.sha256.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
         }
@@ -621,7 +811,7 @@ mod tests {
     fn serve_command_is_local_and_low_priority() {
         let o = ServeOpts::default();
         let v = serve_argv(Path::new("/x/llama-server"), Path::new("/m/q.gguf"), &o);
-        assert_eq!(&v[..6], ["nice", "-n", "19", "ionice", "-c", "3"]);
+        assert_eq!(&v[..8], ["nice", "-n", "19", "ionice", "-c", "2", "-n", "7"]);
         let s = v.join(" ");
         assert!(s.contains("--host 127.0.0.1 --port 8080"));
         assert!(s.contains("--jinja") && s.contains("enable_thinking\":false"));
@@ -656,10 +846,11 @@ mod tests {
 
     #[test]
     fn status_json_shape() {
-        let s = Status { runtime: None, models: vec![(MODEL_GPU, true), (MODEL_CPU, false)], running: None, ready: false, gpu_mib: None };
+        let s = Status { runtime: None, models: vec![(MODEL_GPU, true), (MODEL_CPU, false)], running: None, ready: false, gpu_mib: None, router: None, router_ready: false, laya: false, lara: false, lara_tuning: false, vram: Some((20000, 24564)), session: None, asr: None, asr_ready: false, asr_gpu_mib: None, asr_missing: None };
         let j = s.to_json();
         assert!(j.starts_with("{\"installed\":false,\"runtime\":null,"));
         assert!(j.contains("\"running\":null") && j.contains("\"gpu_budget_mib\":4096"));
+        assert!(j.contains("\"router\":null") && j.contains("\"vram_free_mib\":20000") && j.contains("\"laya\":false"));
         let s2 = Status { runtime: Some("/r/llama-server".into()), running: Some(PidInfo { pid: 7, port: 8080, mode: "cpu".into(), model: "m".into() }), ready: true, ..s };
         assert!(s2.to_json().contains("\"url\":\"http://127.0.0.1:8080/v1\""));
     }

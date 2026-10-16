@@ -1,4 +1,4 @@
-//! Render quality: the Quality / Balanced / Performance presets of the Home page's "Quality / Performance" row, the
+//! Render quality: the Quality / Balanced / Performance presets of the Display page, the
 //! render resolution they give in plain words, and the frame health of the running session (Monado's
 //! `pimax-perf.stats`).
 //!

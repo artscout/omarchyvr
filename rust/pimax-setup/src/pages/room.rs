@@ -1,19 +1,18 @@
-//! The Room row, a guided room setup: the anchor hook of the next start, (1) map the room once, (2) recognise it at
-//! every start, (3) the floor (found in the mapping walk, refined with a controller on the floor, or typed in), the
-//! floor grid in VR, a top-down preview of the map with the floor and where you are, the saved rooms, and the
-//! printed AprilTag. Only one of the room map and the tag places the world per Monado session.
-//!
-//! On top (normal mode): Room setup (docs/ROOM-SETUP.md): Fast setup / Full setup guided in the headset, the room's
-//! status line, and the switches "Put my room in place at every Play and Work" and "Tell SteamVR my play area". The
-//! by-hand steps (map, recognise, floor, AprilTag) are shown in developer mode.
+//! The Room page, a guided room setup: Fast / Full setup guided in the headset (docs/ROOM-SETUP.md), the room's
+//! status, the switches "Room at every start" and "Share with SteamVR", a top-down preview of the map with the play
+//! area and where you are, and the saved rooms. Developer mode adds the by-hand steps: the anchor hook of the next
+//! start, (1) map the room, (2) recognise it, (3) the floor (found in the map, a controller on the floor, or typed
+//! in), the floor grid in VR, and the printed AprilTag. Only one of the room map and the tag places the world per
+//! Monado session.
 use crate::app::PimaxApp;
+use crate::pages::two_columns;
 use crate::theme::{self, icon};
-use crate::widgets::{self, caption, chip, inset, note, toggle};
+use crate::widgets::{self, chip, section, switch_row};
 use eframe::egui::{self, Pos2, Rect, RichText, Sense, Stroke, Ui};
 use pimax_gui_core::app::{DeskPhase, RoomAction};
 use pimax_gui_core::room::{self, FloorAction, Preview, SetupInfo};
 
-/// The row summary.
+/// One line about the room (Home's tracking card).
 pub fn summary(app: &PimaxApp) -> String {
     let st = &app.core.room.state;
     let map = if st.maps.is_empty() { "no map".to_string() } else { format!("map {}", st.maps.join(", ")) };
@@ -26,15 +25,9 @@ pub fn summary(app: &PimaxApp) -> String {
         .setups
         .iter()
         .find(|(n, _)| *n == app.core.room.map_name)
-        .map(|(_, s)| format!("play area {:.1} x {:.1} m", s.play_cm[0] as f64 / 100.0, s.play_cm[1] as f64 / 100.0))
+        .map(|(_, s)| format!("{:.1} x {:.1} m", s.play_cm[0] as f64 / 100.0, s.play_cm[1] as f64 / 100.0))
         .unwrap_or_default();
-    let every = if st.prefs.auto { "at every start" } else { "" };
-    if !app.core.state.dev_mode {
-        return [map.as_str(), area.as_str(), floor, every].iter().filter(|s| !s.is_empty()).copied().collect::<Vec<_>>().join(" | ");
-    }
-    let tag = if st.tag_calibrated { "tag calibrated" } else { "tag -" };
-    let hook = if app.core.toggles.anchor { "hook on" } else { "hook off" };
-    [map.as_str(), area.as_str(), floor, tag, hook].iter().filter(|s| !s.is_empty()).copied().collect::<Vec<_>>().join(" | ")
+    [map.as_str(), area.as_str(), floor].iter().filter(|s| !s.is_empty()).copied().collect::<Vec<_>>().join(" | ")
 }
 
 fn action(ui: &mut Ui, app: &mut PimaxApp, a: RoomAction, ic: &str, label: &str) {
@@ -97,71 +90,74 @@ fn setup_button(ui: &mut Ui, app: &mut PimaxApp, full: bool, ic: &str, label: &s
 /// Room setup: status, Fast / Full setup, the switches.
 fn setup_section(ui: &mut Ui, app: &mut PimaxApp, setup: Option<&SetupInfo>) {
     let p = theme::pal(ui);
-    caption(ui, "Room setup");
-    inset(ui, |ui| {
-        let line = pimax_gui_core::roomsetup::status_line(&app.core);
-        let ok = setup.is_some();
-        ui.horizontal_wrapped(|ui| {
-            chip(ui, if ok { "set up" } else { "not set up" }, if ok { p.ok } else { p.warn });
-            ui.label(RichText::new(line).color(p.dim));
-        });
-        if let Some(s) = setup {
-            note(ui, &format!("Saved: {}.", s.describe()));
-        }
-        ui.horizontal(|ui| {
-            ui.label(RichText::new("Room name").color(p.dim));
-            ui.add(egui::TextEdit::singleline(&mut app.core.room.map_name).desired_width(120.0));
-        });
-        ui.horizontal_wrapped(|ui| {
-            setup_button(
-                ui,
-                app,
-                false,
-                icon::LIGHTNING,
-                "Fast setup (30 s)",
-                "Stand in the middle of your play space and look around. Floor and play area are found by themselves; look forward and pull a trigger (or hold still) to set forward.",
-            );
-            setup_button(
-                ui,
-                app,
-                true,
-                icon::MAP_TRIFOLD,
-                "Full setup (about 3 min)",
-                "Walk the room, lay a controller on the floor, trace your play area holding a trigger, then set the centre and forward.",
-            );
-        });
-        note(ui, "The steps are shown in the headset. Work starts by itself if it is not running. Run it again any time, e.g. after moving furniture. Turn the room lights on: at night the cameras see too little, and the headset says so (points in view, brightness).");
-        let pr = app.core.room.state.prefs.clone();
-        let mut auto = pr.auto;
-        if toggle(ui, &mut auto, "Put my room in place at every Play and Work", !app.core.busy()).changed() {
-            app.core.room_pref(&[if auto { "on" } else { "off" }]);
-            if auto && pr.room != app.core.room.map_name && room::valid_name(&app.core.room.map_name) {
-                let n = app.core.room.map_name.clone();
-                app.core.room_pref(&["name", &n]);
+    let ok = setup.is_some();
+    widgets::section_with(
+        ui,
+        "Room setup",
+        Some("The steps show in the headset; Work starts by itself if it is not running. Run it again any time, e.g. after moving furniture. Turn the room lights on: at night the cameras see too little, and the headset says so."),
+        |ui| chip(ui, if ok { "set up" } else { "not set up" }, if ok { p.ok } else { p.warn }),
+        |ui| {
+            let line = pimax_gui_core::roomsetup::status_line(&app.core);
+            widgets::status(ui, &line, p.dim);
+            if let Some(s) = setup {
+                widgets::status(ui, &format!("Saved: {}.", s.describe()), p.faint);
             }
-        }
-        note(ui, &format!("The room \"{}\" is recognised a few seconds after each start: the floor, the centre and forward are the same every session.", pr.room));
-        let mut steam = pr.steamvr;
-        if toggle(ui, &mut steam, "Tell SteamVR my play area and floor", !app.core.busy() && pr.auto).changed() {
-            app.core.room_pref(&["steamvr", if steam { "on" } else { "off" }]);
-        }
-        note(ui, "Before SteamVR starts, its room setup gets this play area and boundary (SteamVR's own setup is kept as a backup).");
-        if pr.room != app.core.room.map_name && room::valid_name(&app.core.room.map_name) && app.core.room.state.maps.contains(&app.core.room.map_name) {
+            widgets::setting(ui, "Room name", None, |ui| {
+                ui.add(egui::TextEdit::singleline(&mut app.core.room.map_name).desired_width(140.0));
+            });
             ui.horizontal_wrapped(|ui| {
-                ui.label(RichText::new(format!("Every start uses the room \"{}\".", pr.room)).color(p.dim));
-                if widgets::ibutton(ui, icon::CHECK_CIRCLE, &format!("Use \"{}\" instead", app.core.room.map_name), !app.core.busy()).clicked() {
+                setup_button(
+                    ui,
+                    app,
+                    false,
+                    icon::LIGHTNING,
+                    "Fast setup (30 s)",
+                    "Stand in the middle of your play space and look around. Floor and play area are found by themselves; look forward and pull a trigger (or hold still) to set forward.",
+                );
+                setup_button(
+                    ui,
+                    app,
+                    true,
+                    icon::MAP_TRIFOLD,
+                    "Full setup (about 3 min)",
+                    "Walk the room, lay a controller on the floor, trace your play area holding a trigger, then set the centre and forward.",
+                );
+            });
+            let pr = app.core.room.state.prefs.clone();
+            let mut auto = pr.auto;
+            let help = format!("The room \"{}\" is recognised a few seconds after each start (Play and Work): the floor, the centre and forward are the same every session.", pr.room);
+            if switch_row(ui, &mut auto, "Room at every start", Some(&help), !app.core.busy()).changed() {
+                app.core.room_pref(&[if auto { "on" } else { "off" }]);
+                if auto && pr.room != app.core.room.map_name && room::valid_name(&app.core.room.map_name) {
                     let n = app.core.room.map_name.clone();
                     app.core.room_pref(&["name", &n]);
                 }
-            });
-        }
-    });
+            }
+            let mut steam = pr.steamvr;
+            if switch_row(ui, &mut steam, "Share with SteamVR", Some("Before SteamVR starts, its room setup gets this play area and floor (SteamVR's own setup is kept as a backup)."), !app.core.busy() && pr.auto).changed() {
+                app.core.room_pref(&["steamvr", if steam { "on" } else { "off" }]);
+            }
+            if pr.room != app.core.room.map_name && room::valid_name(&app.core.room.map_name) && app.core.room.state.maps.contains(&app.core.room.map_name) {
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(RichText::new(format!("Every start uses the room \"{}\".", pr.room)).size(12.0).color(p.dim));
+                    if widgets::ibutton(ui, icon::CHECK_CIRCLE, &format!("Use \"{}\" instead", app.core.room.map_name), !app.core.busy()).clicked() {
+                        let n = app.core.room.map_name.clone();
+                        app.core.room_pref(&["name", &n]);
+                    }
+                });
+            }
+        },
+    );
 }
 
-/// The row body.
+/// The page.
+pub fn show(ui: &mut Ui, app: &mut PimaxApp) {
+    body(ui, app);
+}
+
+/// The page's content.
 pub fn body(ui: &mut Ui, app: &mut PimaxApp) {
     app.core.want_room();
-    let p = theme::pal(ui);
     let dev = app.core.state.dev_mode;
     let setup: Option<SetupInfo> = app
         .core
@@ -172,40 +168,27 @@ pub fn body(ui: &mut Ui, app: &mut PimaxApp) {
         .find(|(n, _)| *n == app.core.room.map_name)
         .map(|(_, s)| s.clone())
         .or_else(|| app.core.demo.then(demo_setup));
-    setup_section(ui, app, setup.as_ref());
-    if !dev {
-        preview_section(ui, app, setup.as_ref());
-        saved_rooms(ui, app);
-        return;
+    two_columns(ui, 380.0, |i, ui| {
+        if i == 0 {
+            setup_section(ui, app, setup.as_ref());
+            saved_rooms(ui, app);
+        } else {
+            preview_section(ui, app, setup.as_ref());
+        }
+    });
+    if dev {
+        by_hand(ui, app);
     }
+}
+
+/// Developer mode: the anchor hook, map, recognise, floor, AprilTag.
+fn by_hand(ui: &mut Ui, app: &mut PimaxApp) {
+    let p = theme::pal(ui);
     let editable = matches!(app.core.phase(), DeskPhase::Idle | DeskPhase::Foreign) && !app.core.busy();
     let caps_anchor = app.core.facts.caps.anchor;
     let on = app.core.toggles.anchor;
-    let mut t = on;
-    let r = toggle(ui, &mut t, "Room anchor hook at the next start (--anchor, PIMAX_ANCHOR=1)", editable && (caps_anchor || on));
-    if !caps_anchor {
-        r.on_hover_text("The installed launcher has no --anchor: install the current build (Setup)");
-    }
-    if t != on {
-        app.core.toggles.anchor = t;
-        app.core.save_state();
-        app.ui.pf = None;
-    }
-    note(ui, "Monado then keeps its head poses for the room tools and applies the world offset they write: the windows and the floor come back to the same real place.");
-    if let Some(s) = &app.core.live.service {
-        ui.horizontal_wrapped(|ui| {
-            chip(ui, if s.anchor { "hook on in this session" } else { "hook off in this session" }, if s.anchor { p.ok } else { p.faint });
-            let st = &app.core.room.state;
-            match (st.offset_pid, st.owner) {
-                (Some(op), Some((w, wp))) if op == s.pid && wp == s.pid => chip(ui, &format!("offset from {}", w.title()), p.accent),
-                (Some(op), _) if op == s.pid => chip(ui, "offset from outside the app", p.warn),
-                _ => chip(ui, "no offset", p.faint),
-            }
-        });
-    }
-
     let name = app.core.room.map_name.clone();
-    // a clone of a few thousand small points per frame while the row is open: microseconds
+    // a clone of a few thousand small points per frame while the page is open: microseconds
     let preview: Option<Preview> = match app.core.room.state.previews.iter().find(|(n, _)| *n == name) {
         Some((_, pv)) => Some(pv.clone()),
         None if app.core.demo => Some(room::demo_preview()),
@@ -216,106 +199,116 @@ pub fn body(ui: &mut Ui, app: &mut PimaxApp) {
         // demo mode: the synthetic room's floor
         (app.core.demo && preview.is_some()).then(|| room::FloorInfo { y_mm: -1420, source: "points".into(), confidence: 93, sigma_tenth_mm: 9, head_above_mm: 1430 })
     });
-
-    caption(ui, "1  Map the room");
-    inset(ui, |ui| {
-        ui.horizontal(|ui| {
-            ui.label(RichText::new("Name").color(p.dim));
-            ui.add(egui::TextEdit::singleline(&mut app.core.room.map_name).desired_width(120.0));
-            ui.label(RichText::new("Walk").color(p.dim));
-            ui.add(egui::DragValue::new(&mut app.core.room.seconds).range(30..=300).suffix(" s"));
-        });
-        note(ui, "Walk slowly through the room, look at walls, shelves, the desk and the floor around you, turn around and come back past where you started (that closes the loop). Keep the usual lights on; a second map helps for day and night.");
-        ui.horizontal_wrapped(|ui| {
-            action(ui, app, RoomAction::MapRoom, icon::MAP_TRIFOLD, "Map my room");
-            if preview.is_some() {
-                let (q, c) = match keyframes {
-                    0..=39 => ("weak map: walk more of the room", p.warn),
-                    40..=99 => ("usable map", p.accent),
-                    _ => ("good map", p.ok),
-                };
-                chip(ui, &format!("{keyframes} keyframes, {q}"), c);
-            }
-            action(ui, app, RoomAction::ViewMap, icon::EYE, "View room map");
-        });
-    });
-
-    caption(ui, "2  Recognise the room");
-    inset(ui, |ui| {
-        note(ui, "At every start, once 6DoF tracks: look around for a few seconds. The world origin, the windows and the floor come back to where they were.");
-        ui.horizontal_wrapped(|ui| {
-            action(ui, app, RoomAction::Recognise, icon::SCAN, "Recognise room");
-            let fixed = app.core.live.service.as_ref().is_some_and(|s| app.core.room.state.fixes.iter().any(|(n, pid)| *n == name && *pid == s.pid));
-            if fixed {
-                chip(ui, "recognised in this session", p.ok);
-            }
-        });
-    });
-
-    caption(ui, "3  Floor");
-    inset(ui, |ui| {
-        match &floor {
-            Some(f) => {
-                let c = if f.confidence >= 80 { p.ok } else if f.confidence >= 50 { p.accent } else { p.warn };
-                ui.horizontal_wrapped(|ui| {
-                    chip(ui, &format!("{} % sure", f.confidence), c);
-                    ui.label(RichText::new(f.describe()).color(p.dim));
+    two_columns(ui, 380.0, |i, ui| {
+        if i == 0 {
+            section(ui, "Anchor", Some("Monado keeps its head poses for the room tools and applies the world offset they write: the windows and the floor come back to the same real place. Only one of the room map and the AprilTag places the world per session: the other one is refused until Clear offset."), |ui| {
+                let mut t = on;
+                let r = switch_row(ui, &mut t, "Anchor hook", Some("At the next start (--anchor, PIMAX_ANCHOR=1)."), editable && (caps_anchor || on));
+                if !caps_anchor {
+                    r.on_hover_text("The installed launcher has no --anchor: install the current build (Setup)");
+                }
+                if t != on {
+                    app.core.toggles.anchor = t;
+                    app.ui.pf = None;
+                }
+                if let Some(s) = &app.core.live.service {
+                    ui.horizontal_wrapped(|ui| {
+                        chip(ui, if s.anchor { "hook on in this session" } else { "hook off in this session" }, if s.anchor { p.ok } else { p.faint });
+                        let st = &app.core.room.state;
+                        match (st.offset_pid, st.owner) {
+                            (Some(op), Some((w, wp))) if op == s.pid && wp == s.pid => chip(ui, &format!("offset from {}", w.title()), p.accent),
+                            (Some(op), _) if op == s.pid => chip(ui, "offset from outside the app", p.warn),
+                            _ => chip(ui, "no offset", p.faint),
+                        }
+                    });
+                }
+            });
+            section(ui, "1  Map the room", Some("Walk slowly through the room, look at walls, shelves, the desk and the floor around you, turn around and come back past where you started (that closes the loop). Keep the usual lights on; a second map helps for day and night."), |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Name").color(p.dim));
+                    ui.add(egui::TextEdit::singleline(&mut app.core.room.map_name).desired_width(120.0));
+                    ui.label(RichText::new("Walk").color(p.dim));
+                    ui.add(egui::DragValue::new(&mut app.core.room.seconds).range(30..=300).suffix(" s"));
                 });
-            }
-            None => note(ui, "No floor for this map yet. Find it in the map, or lay a controller on the floor."),
+                ui.horizontal_wrapped(|ui| {
+                    action(ui, app, RoomAction::MapRoom, icon::MAP_TRIFOLD, "Map my room");
+                    if preview.is_some() {
+                        let (q, c) = match keyframes {
+                            0..=39 => ("weak map: walk more of the room", p.warn),
+                            40..=99 => ("usable map", p.accent),
+                            _ => ("good map", p.ok),
+                        };
+                        chip(ui, &format!("{keyframes} keyframes, {q}"), c);
+                    }
+                    action(ui, app, RoomAction::ViewMap, icon::EYE, "View room map");
+                });
+            });
+            section(ui, "2  Recognise the room", Some("At every start, once 6DoF tracks: look around for a few seconds. The world origin, the windows and the floor come back to where they were."), |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    action(ui, app, RoomAction::Recognise, icon::SCAN, "Recognise room");
+                    let fixed = app.core.live.service.as_ref().is_some_and(|s| app.core.room.state.fixes.iter().any(|(n, pid)| *n == name && *pid == s.pid));
+                    if fixed {
+                        chip(ui, "recognised in this session", p.ok);
+                    }
+                });
+            });
+        } else {
+            section(ui, "3  Floor", Some("Recognise room puts this floor on Monado's floor (STAGE / LOCAL_FLOOR), so you stand on the real floor instead of under it."), |ui| {
+                match &floor {
+                    Some(f) => {
+                        let c = if f.confidence >= 80 { p.ok } else if f.confidence >= 50 { p.accent } else { p.warn };
+                        ui.horizontal_wrapped(|ui| {
+                            chip(ui, &format!("{} % sure", f.confidence), c);
+                            ui.label(RichText::new(f.describe()).size(12.0).color(p.dim));
+                        });
+                    }
+                    None => widgets::status(ui, "No floor for this map yet. Find it in the map, or lay a controller on the floor.", p.dim),
+                }
+                let id = ui.id().with("room-floor-inputs");
+                let mut inp: Inputs = ui.data_mut(|d| *d.get_temp_mut_or_default::<Inputs>(id));
+                ui.horizontal_wrapped(|ui| {
+                    floor_button(ui, app, FloorAction::Detect, icon::CROSSHAIR, "Find floor in the map", "From the map's points: the lowest large level surface below you (tables and desks are skipped).");
+                    let hand = if inp.left { "left" } else { "right" };
+                    floor_button(ui, app, FloorAction::Touch(hand), icon::GAME_CONTROLLER, "Touch floor with controller", "Lay the controller flat on the floor where the headset sees it and let go: one second still is enough. Corrects the found floor.");
+                    if ui.selectable_label(inp.left, "left").clicked() {
+                        inp.left = true;
+                    }
+                    if ui.selectable_label(!inp.left, "right").clicked() {
+                        inp.left = false;
+                    }
+                });
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(RichText::new("Standing eye height").color(p.dim));
+                    ui.add(egui::DragValue::new(&mut inp.eye_height).range(1.0..=2.3).speed(0.005).suffix(" m").fixed_decimals(2));
+                    floor_button(ui, app, FloorAction::Standing(inp.eye_height), icon::SLIDERS, "Set from my height", "Stand upright, then press: the floor goes this far below your eyes.");
+                });
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(RichText::new("Floor in the map").color(p.dim));
+                    ui.add(egui::DragValue::new(&mut inp.floor_y).range(-3.0..=1.0).speed(0.005).suffix(" m").fixed_decimals(3));
+                    floor_button(ui, app, FloorAction::Set(inp.floor_y), icon::SLIDERS, "Set", "Type the floor height in the map's frame (pimax-roommap floor show prints it).");
+                });
+                ui.data_mut(|d| d.insert_temp(id, inp));
+                let mut grid = app.core.room.state.grid_on;
+                if switch_row(ui, &mut grid, "Floor grid", Some("A faint grid on the floor around you in VR, fading with distance (pimax-passthrough); the passthrough window's o key toggles it too."), !app.core.busy()).changed() {
+                    app.core.set_floor_grid(grid);
+                }
+            });
+            section(ui, "AprilTag", Some("Printed, mm-accurate. Print tag36h11-id0-150mm.pdf at 100 % (the black square measures 150 mm), glue it flat on the desk 40-70 cm in front of you. Calibrate once with the windows where you like them; apply in every later session after tracking runs."), |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    action(ui, app, RoomAction::TagCalibrate, icon::QR_CODE, "Calibrate");
+                    action(ui, app, RoomAction::TagApply, icon::ANCHOR, "Apply");
+                    action(ui, app, RoomAction::Clear, icon::X_CIRCLE, "Clear offset");
+                    if widgets::ibutton(ui, icon::FILE_TEXT, "Printable tag", true).clicked() {
+                        let f = app.core.room_paths.tag_pdf.clone();
+                        app.core.open_folder(&f);
+                    }
+                });
+                if app.core.room.state.tag_calibrated {
+                    widgets::status(ui, &format!("{} calibrated (~/.config/pimax/anchor.toml)", icon::CHECK_CIRCLE), p.ok);
+                }
+            });
         }
-        note(ui, "Recognise room puts this floor on Monado's floor (STAGE / LOCAL_FLOOR), so you stand on the real floor instead of under it.");
-        let id = ui.id().with("room-floor-inputs");
-        let mut inp: Inputs = ui.data_mut(|d| *d.get_temp_mut_or_default::<Inputs>(id));
-        ui.horizontal_wrapped(|ui| {
-            floor_button(ui, app, FloorAction::Detect, icon::CROSSHAIR, "Find floor in the map", "From the map's points: the lowest large level surface below you (tables and desks are skipped).");
-            let hand = if inp.left { "left" } else { "right" };
-            floor_button(ui, app, FloorAction::Touch(hand), icon::GAME_CONTROLLER, "Touch floor with controller", "Lay the controller flat on the floor where the headset sees it and let go: one second still is enough. Corrects the found floor.");
-            if ui.selectable_label(inp.left, "left").clicked() {
-                inp.left = true;
-            }
-            if ui.selectable_label(!inp.left, "right").clicked() {
-                inp.left = false;
-            }
-        });
-        ui.horizontal_wrapped(|ui| {
-            ui.label(RichText::new("Standing eye height").color(p.dim));
-            ui.add(egui::DragValue::new(&mut inp.eye_height).range(1.0..=2.3).speed(0.005).suffix(" m").fixed_decimals(2));
-            floor_button(ui, app, FloorAction::Standing(inp.eye_height), icon::SLIDERS, "Set from my height", "Stand upright, then press: the floor goes this far below your eyes.");
-        });
-        ui.horizontal_wrapped(|ui| {
-            ui.label(RichText::new("Floor in the map").color(p.dim));
-            ui.add(egui::DragValue::new(&mut inp.floor_y).range(-3.0..=1.0).speed(0.005).suffix(" m").fixed_decimals(3));
-            floor_button(ui, app, FloorAction::Set(inp.floor_y), icon::SLIDERS, "Set", "Type the floor height in the map's frame (pimax-roommap floor show prints it).");
-        });
-        ui.data_mut(|d| d.insert_temp(id, inp));
-        let mut grid = app.core.room.state.grid_on;
-        if toggle(ui, &mut grid, "Floor grid in VR (pimax-passthrough)", !app.core.busy()).changed() {
-            app.core.set_floor_grid(grid);
-        }
-        note(ui, "A faint grid on the floor around you, fading with distance; the passthrough window's o key toggles it too.");
     });
-
-    preview_section(ui, app, setup.as_ref());
-    saved_rooms(ui, app);
-
-    caption(ui, "AprilTag (printed, mm-accurate)");
-    inset(ui, |ui| {
-        note(ui, "Print tag36h11-id0-150mm.pdf at 100 % (the black square measures 150 mm), glue it flat on the desk 40-70 cm in front of you. Calibrate once with the windows where you like them; apply in every later session after tracking runs.");
-        ui.horizontal_wrapped(|ui| {
-            action(ui, app, RoomAction::TagCalibrate, icon::QR_CODE, "Calibrate");
-            action(ui, app, RoomAction::TagApply, icon::ANCHOR, "Apply");
-            action(ui, app, RoomAction::Clear, icon::X_CIRCLE, "Clear offset");
-            if widgets::ibutton(ui, icon::FILE_TEXT, "Printable tag", true).clicked() {
-                let f = app.core.room_paths.tag_pdf.clone();
-                app.core.open_folder(&f);
-            }
-        });
-        if app.core.room.state.tag_calibrated {
-            ui.label(RichText::new(format!("{} calibrated (~/.config/pimax/anchor.toml)", icon::CHECK_CIRCLE)).size(12.5).color(p.ok));
-        }
-    });
-    note(ui, "Only one of the room map and the AprilTag places the world per session: the other one is refused until Clear offset.");
 }
 
 /// The map preview with the play area (boundary, centre, forward) when the room is set up.
@@ -327,30 +320,22 @@ fn preview_section(ui: &mut Ui, app: &mut PimaxApp, setup: Option<&SetupInfo>) {
         None => None,
     };
     let floor_cm = app.core.room.state.floors.iter().find(|(n, _)| *n == name).map(|(_, f)| f.y_mm / 10).or(app.core.demo.then_some(-142));
-    caption(ui, "Map preview");
-    inset(ui, |ui| match &preview {
-        Some(pv) => {
-            let head = app.core.room.state.head.as_ref().filter(|(n, _)| *n == name).map(|(_, h)| *h).or(app.core.demo.then_some([40, -30, 2]));
-            draw_preview(ui, pv, floor_cm.or(pv.floor_cm), head, setup);
-            let area = if setup.is_some() { " The green frame is the play area, the arrow points forward." } else { "" };
-            note(ui, &format!(
-                "{}{area}",
-                if head.is_some() {
-                    "Top: from above (floor points tinted, red = below the floor). Bottom: from the side. The dot is you."
-                } else {
-                    "Top: from above (floor points tinted, red = below the floor). Bottom: from the side. The ring marks the end of the mapping walk."
-                }
-            ));
-        }
-        None => note(ui, "No map of this room yet: Fast setup makes one."),
+    let head = app.core.room.state.head.as_ref().filter(|(n, _)| *n == name).map(|(_, h)| *h).or(app.core.demo.then_some([40, -30, 2]));
+    let mut help = String::from("Top: from above (floor points tinted, red = below the floor). Bottom: from the side. ");
+    help += if head.is_some() { "The dot is you." } else { "The ring marks the end of the mapping walk." };
+    if setup.is_some() {
+        help += " The green frame is the play area, the arrow points forward.";
+    }
+    section(ui, "Map", Some(&help), |ui| match &preview {
+        Some(pv) => draw_preview(ui, pv, floor_cm.or(pv.floor_cm), head, setup),
+        None => widgets::status(ui, "No map of this room yet: Fast setup makes one.", theme::pal(ui).dim),
     });
 }
 
 /// The saved rooms (pick one by name).
 fn saved_rooms(ui: &mut Ui, app: &mut PimaxApp) {
-    let p = theme::pal(ui);
-    caption(ui, "Saved rooms");
-    inset(ui, |ui| {
+    section(ui, "Saved rooms", None, |ui| {
+        let p = theme::pal(ui);
         let st = &app.core.room.state;
         type Row = (String, Option<usize>, Option<String>, Option<String>);
         let rows: Vec<Row> = st
@@ -364,7 +349,7 @@ fn saved_rooms(ui: &mut Ui, app: &mut PimaxApp) {
             })
             .collect();
         if rows.is_empty() {
-            note(ui, "No rooms yet (~/.local/share/pimax/roommap).");
+            widgets::status(ui, "No rooms yet (~/.local/share/pimax/roommap).", p.dim);
         }
         for (m, kf, fl, pa) in rows {
             ui.horizontal_wrapped(|ui| {
@@ -372,15 +357,15 @@ fn saved_rooms(ui: &mut Ui, app: &mut PimaxApp) {
                     app.core.room.map_name = m.clone();
                 }
                 if let Some(k) = kf {
-                    ui.label(RichText::new(format!("{k} keyframes")).color(p.dim));
+                    ui.label(RichText::new(format!("{k} keyframes")).size(12.0).color(p.dim));
                 }
                 match fl {
-                    Some(f) => ui.label(RichText::new(f).color(p.dim)),
-                    None => ui.label(RichText::new("no floor").color(p.faint)),
+                    Some(f) => ui.label(RichText::new(f).size(12.0).color(p.dim)),
+                    None => ui.label(RichText::new("no floor").size(12.0).color(p.faint)),
                 };
                 match pa {
-                    Some(a) => ui.label(RichText::new(a).color(p.dim)),
-                    None => ui.label(RichText::new("no play area").color(p.faint)),
+                    Some(a) => ui.label(RichText::new(a).size(12.0).color(p.dim)),
+                    None => ui.label(RichText::new("no play area").size(12.0).color(p.faint)),
                 };
             });
         }
@@ -388,7 +373,7 @@ fn saved_rooms(ui: &mut Ui, app: &mut PimaxApp) {
 }
 
 /// Top-down view and side view of a map: points (floor level tinted, below the floor red), the mapping walk, and
-/// the user. A few thousand small rects at most, drawn only when the row is open (egui repaints on input).
+/// the user. A few thousand small rects at most, drawn only while the Room page is open (egui repaints on input).
 fn draw_preview(ui: &mut Ui, pv: &Preview, floor_cm: Option<i32>, head: Option<[i32; 3]>, setup: Option<&SetupInfo>) {
     let p = theme::pal(ui);
     let Some((x0, x1, z0, z1)) = pv.bounds() else { return };

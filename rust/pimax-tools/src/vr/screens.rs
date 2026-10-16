@@ -1,8 +1,8 @@
 //! VR screens as Hyprland outputs (user design, 2026-10-15): `pimax desk start --screens N` (1 to 4, default 4).
 //!
 //! * **Displays before VR.** Each extra VR screen is a Hyprland *headless* output (`PIMAX-LEFT`, `PIMAX-RIGHT`,
-//!   `PIMAX-UP`), created by `desk start` BEFORE Monado and WayVR start, and removed by `desk stop` after Monado has
-//!   gone. Nothing creates or removes an output while a monado-service runs (that can disturb the leased DP-1):
+//!   `PIMAX-UP`, `PIMAX-UPLEFT`, `PIMAX-UPRIGHT`), created by `desk start` BEFORE Monado and WayVR start, and removed
+//!   by `desk stop` after Monado has gone. Nothing creates or removes an output while a monado-service runs (that can disturb the leased DP-1):
 //!   [`prepare`] and [`remove_all`] refuse then. Runtime calls only (`~/.config/hypr` is never edited):
 //!   `hyprctl eval 'hl.monitor({ output = "PIMAX-LEFT", mode = "1920x1080@60", position = "-1920x0", scale = 1 })'`
 //!   (Hyprland 0.56 Lua: a monitor rule for this run of Hyprland), then `hyprctl output create headless PIMAX-LEFT`.
@@ -29,8 +29,8 @@ use std::time::Duration;
 
 /// Output name prefix of the VR screens (never a real connector name).
 pub const PREFIX: &str = "PIMAX-";
-/// Most VR screens (main + left + right + up).
-pub const MAX: u8 = 4;
+/// Most VR screens (main + left + right + up + up-left + up-right).
+pub const MAX: u8 = 6;
 /// `--screens` default: every screen, shown on demand.
 pub const DEFAULT: u8 = 4;
 /// The report of the last `desk start` in the session dir (read by the app's readiness line).
@@ -45,19 +45,25 @@ pub enum Slot {
     Left,
     Right,
     Up,
+    /// Above the left screen.
+    UpLeft,
+    /// Above the right screen.
+    UpRight,
 }
 
 /// The extra screens in the order they are filled ("new window": the next free one).
-pub const EXTRA: [Slot; 3] = [Slot::Left, Slot::Right, Slot::Up];
+pub const EXTRA: [Slot; 5] = [Slot::Left, Slot::Right, Slot::Up, Slot::UpLeft, Slot::UpRight];
 
 impl Slot {
-    /// `main`, `left`, `right`, `up` (the `wayvrctl desk-screens` slot names).
+    /// `main`, `left`, `right`, `up`, `up-left`, `up-right` (the `wayvrctl desk-screens` slot names).
     pub fn key(self) -> &'static str {
         match self {
             Slot::Main => "main",
             Slot::Left => "left",
             Slot::Right => "right",
             Slot::Up => "up",
+            Slot::UpLeft => "up-left",
+            Slot::UpRight => "up-right",
         }
     }
 
@@ -67,6 +73,8 @@ impl Slot {
             "left" => Some(Slot::Left),
             "right" => Some(Slot::Right),
             "up" | "top" | "upper" | "above" => Some(Slot::Up),
+            "up-left" | "upleft" | "up_left" | "top-left" => Some(Slot::UpLeft),
+            "up-right" | "upright" | "up_right" | "top-right" => Some(Slot::UpRight),
             _ => None,
         }
     }
@@ -78,6 +86,8 @@ impl Slot {
             Slot::Left => Some("PIMAX-LEFT"),
             Slot::Right => Some("PIMAX-RIGHT"),
             Slot::Up => Some("PIMAX-UP"),
+            Slot::UpLeft => Some("PIMAX-UPLEFT"),
+            Slot::UpRight => Some("PIMAX-UPRIGHT"),
         }
     }
 
@@ -193,6 +203,8 @@ pub fn wanted(count: u8, main: &Mon) -> Vec<Want> {
             let (x, y) = match slot {
                 Slot::Left => (main.x - main.width, main.y),
                 Slot::Right => (main.x + main.width, main.y),
+                Slot::UpLeft => (main.x - main.width, main.y - main.height),
+                Slot::UpRight => (main.x + main.width, main.y - main.height),
                 _ => (main.x, main.y - main.height),
             };
             Want { slot, name: slot.output().unwrap_or_default(), width: main.width, height: main.height, x, y }
@@ -489,11 +501,14 @@ pub struct ShowState {
     /// Apps of different kinds never share a screen ([`layout_plan`]). Off after "put everything back together"
     /// (the kinds share the main screen on purpose), on again after "put everything in its own window".
     pub sort: bool,
+    /// Hidden by voice ("hide screen 3", "close everything"): off even with apps or the focus on it. The apps on it
+    /// stay open. `show` / `more` clear it, `add SLOT` takes that slot out.
+    pub hidden: Vec<Slot>,
 }
 
 impl Default for ShowState {
     fn default() -> Self {
-        ShowState { limit: MAX, pinned: Vec::new(), sort: true }
+        ShowState { limit: MAX, pinned: Vec::new(), sort: true, hidden: Vec::new() }
     }
 }
 
@@ -506,6 +521,7 @@ impl ShowState {
                 "limit" => s.limit = v.trim().parse::<u8>().ok().filter(|n| (1..=MAX).contains(n)).unwrap_or(MAX),
                 "pinned" => s.pinned = v.split(',').filter_map(Slot::parse).filter(|s| *s != Slot::Main).collect(),
                 "sort" => s.sort = !matches!(v.trim(), "off" | "false" | "0" | "no"),
+                "hidden" => s.hidden = v.split(',').filter_map(Slot::parse).filter(|s| *s != Slot::Main).collect(),
                 _ => {}
             }
         }
@@ -514,10 +530,11 @@ impl ShowState {
 
     pub fn render(&self) -> String {
         format!(
-            "# VR screens shown (pimax desk / pimax-voice; read by `pimax desk screens watch`)\nlimit = {}\npinned = {}\nsort = {}\n",
+            "# VR screens shown (pimax desk / pimax-voice; read by `pimax desk screens watch`)\nlimit = {}\npinned = {}\nsort = {}\nhidden = {}\n",
             self.limit,
             self.pinned.iter().map(|s| s.key()).collect::<Vec<_>>().join(","),
-            if self.sort { "on" } else { "off" }
+            if self.sort { "on" } else { "off" },
+            self.hidden.iter().map(|s| s.key()).collect::<Vec<_>>().join(",")
         )
     }
 
@@ -526,8 +543,8 @@ impl ShowState {
     pub fn for_preset(p: super::preset::Preset) -> ShowState {
         use super::preset::Preset;
         match p {
-            Preset::Cinema | Preset::Work1 => ShowState { limit: 1, pinned: Vec::new(), sort: true },
-            Preset::Work3 => ShowState { limit: 3, pinned: vec![Slot::Left, Slot::Right], sort: true },
+            Preset::Cinema | Preset::Work1 => ShowState { limit: 1, pinned: Vec::new(), sort: true, hidden: Vec::new() },
+            Preset::Work3 => ShowState { limit: 3, pinned: vec![Slot::Left, Slot::Right], sort: true, hidden: Vec::new() },
             Preset::Assistant => ShowState::default(),
         }
     }
@@ -565,7 +582,8 @@ pub fn visibility(mons: &[Mon], apps: &HashMap<i64, usize>, st: &ShowState) -> V
         let Some(m) = mons.iter().find(|m| Some(m.name.as_str()) == slot.output() && !m.disabled) else { continue };
         let busy = apps.get(&m.active_ws).copied().unwrap_or(0) > 0;
         let want = st.pinned.contains(&slot) || busy || m.focused;
-        let on = (want && shown < st.limit) || m.focused;
+        // hidden by voice: off even with the focus on it (its apps stay open)
+        let on = !st.hidden.contains(&slot) && ((want && shown < st.limit) || m.focused);
         if on {
             shown += 1;
         }
@@ -606,6 +624,248 @@ pub fn preset_visibility(p: super::preset::Preset, h: &mut dyn Hypr) -> Option<V
     }
     let apps = h.run(&["-j", "clients"]).ok().and_then(|j| parse_client_counts(&j).ok()).unwrap_or_default();
     Some(visibility(&mons, &apps, &ShowState::for_preset(p)))
+}
+
+// ------------------------------------------------------------------- `pimax desk screens show|more|add` (voice)
+
+/// What the voice (or anyone) asks of the shown screens.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ShowCmd {
+    /// `show N`: N screens (the main one + the first N-1 extras).
+    Show(u32),
+    /// `more K`: K more than are shown now.
+    More(u32),
+    /// `add SLOT`: that one screen as well.
+    Add(Slot),
+    /// `hide SLOT[,SLOT..]` (screen numbers 2-6 or slot names; `others` = every extra screen): those screens no
+    /// longer show. Never closes or moves an app: its apps stay open on the hidden screen.
+    Hide(Vec<Slot>),
+}
+
+/// A screen by number (docs/SCREENS.md: 1 main, 2 left, 3 right, 4 up, 5 up-left, 6 up-right) or slot name.
+pub fn slot_of(s: &str) -> Option<Slot> {
+    match s.trim().parse::<usize>() {
+        Ok(1) => Some(Slot::Main),
+        Ok(n) if (2..=MAX as usize).contains(&n) => EXTRA.get(n - 2).copied(),
+        Ok(_) => None,
+        Err(_) => Slot::parse(s),
+    }
+}
+
+/// The screen number of a slot (1 main .. 6 up-right).
+pub fn number_of(s: Slot) -> usize {
+    EXTRA.iter().position(|x| *x == s).map(|i| i + 2).unwrap_or(1)
+}
+
+/// Parse `show N` / `more K` / `add SLOT`.
+pub fn parse_show(sub: &str, arg: Option<&str>) -> Result<ShowCmd, String> {
+    let arg = arg.map(str::trim).filter(|a| !a.is_empty());
+    let num = |what: &str| -> Result<u32, String> {
+        arg.and_then(|a| a.parse::<u32>().ok()).ok_or_else(|| format!("desk screens {what}: a number is needed, e.g. `desk screens {what} 3`"))
+    };
+    match sub {
+        "show" => Ok(ShowCmd::Show(num("show")?)),
+        "more" => Ok(ShowCmd::More(num("more")?)),
+        "add" => {
+            let a = arg.ok_or("desk screens add: a screen is needed: left, right, up, up-left or up-right")?;
+            match Slot::parse(a) {
+                Some(Slot::Main) => Err("The main screen is always shown".into()),
+                Some(s) => Ok(ShowCmd::Add(s)),
+                None => Err(format!("No screen called {a}: use left, right, up, up-left or up-right")),
+            }
+        }
+        "hide" => {
+            let a = arg.ok_or("desk screens hide: which screens? e.g. `desk screens hide 3,4` or `desk screens hide others`")?;
+            if matches!(a, "others" | "all" | "everything") {
+                return Ok(ShowCmd::Hide(EXTRA.to_vec()));
+            }
+            let mut v = Vec::new();
+            for x in a.split([',', ' ']).filter(|x| !x.trim().is_empty()) {
+                match slot_of(x) {
+                    Some(Slot::Main) => return Err("The main screen is always shown".into()),
+                    Some(s) if !v.contains(&s) => v.push(s),
+                    Some(_) => {}
+                    None => return Err(format!("No screen {x}: use 2 to {MAX} or left, right, up, up-left, up-right")),
+                }
+            }
+            if v.is_empty() {
+                return Err("desk screens hide: which screens?".into());
+            }
+            Ok(ShowCmd::Hide(v))
+        }
+        other => Err(format!("desk screens: unknown command {other}")),
+    }
+}
+
+/// What a [`ShowCmd`] comes to (pure; [`plan_show`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShowPlan {
+    /// The state to write (the `sort` setting is kept).
+    pub state: ShowState,
+    /// Outputs the session needs for this: the Screens setting is raised to at least this (never lowered).
+    pub setting: u8,
+    /// Needed screens that have no output (the session started with fewer): cannot be made while WayVR runs.
+    pub missing: Vec<Slot>,
+    /// The one plain line for the headset.
+    pub message: String,
+}
+
+fn plural(n: usize) -> String {
+    format!("{n} screen{}", if n == 1 { "" } else { "s" })
+}
+
+fn friendly(s: Slot) -> String {
+    s.key().replace('-', " ")
+}
+
+/// Plan a show command. `present`: our outputs that exist now; `shown_now`: the extra screens shown now (the main
+/// one always shows), counted by [`visibility`]; `old`: the current state.
+pub fn plan_show(cmd: &ShowCmd, present: &[Slot], shown_now: &[Slot], old: &ShowState) -> Result<ShowPlan, String> {
+    let max = MAX as u32;
+    match cmd {
+        ShowCmd::Hide(slots) => {
+            let mut st = old.clone();
+            st.pinned.retain(|s| !slots.contains(s));
+            for s in slots {
+                if !st.hidden.contains(s) {
+                    st.hidden.push(*s);
+                }
+            }
+            let all = EXTRA.iter().all(|s| slots.contains(s));
+            if all {
+                // "close everything": only the main screen
+                st.limit = 1;
+            }
+            let was: Vec<Slot> = slots.iter().copied().filter(|s| shown_now.contains(s)).collect();
+            let names = |v: &[Slot]| v.iter().map(|s| number_of(*s).to_string()).collect::<Vec<_>>().join(" and ");
+            let message = if all {
+                "Only the main screen now; the apps stay open".to_string()
+            } else if was.is_empty() {
+                format!("Screen {} is not shown", names(slots))
+            } else {
+                format!("Hid screen {}; its apps stay open", names(&was))
+            };
+            Ok(ShowPlan { state: st, setting: 0, missing: Vec::new(), message })
+        }
+        ShowCmd::Show(_) | ShowCmd::More(_) => {
+            let asked = match cmd {
+                ShowCmd::Show(n) => *n,
+                ShowCmd::More(k) => 1 + shown_now.len() as u32 + k,
+                ShowCmd::Add(_) | ShowCmd::Hide(_) => unreachable!(),
+            };
+            if asked == 0 {
+                return Err(format!("Screens go from 1 to {MAX}"));
+            }
+            let n = asked.min(max) as u8;
+            let needed = extra_slots(n);
+            let pinned: Vec<Slot> = needed.iter().copied().filter(|s| present.contains(s)).collect();
+            let missing: Vec<Slot> = needed.iter().copied().filter(|s| !present.contains(s)).collect();
+            let capped = asked > max;
+            let mut message = if capped { format!("That's the most: {MAX} screens") } else { format!("Showing {}", plural(n as usize)) };
+            if !missing.is_empty() {
+                message = format!("{n} screens need Screens = {n} in the Pimax app and a Work restart. Showing {}", plural(1 + pinned.len()));
+                if capped {
+                    message = format!("That's the most: {MAX} screens. {message}");
+                }
+            }
+            Ok(ShowPlan { state: ShowState { limit: n, pinned, sort: old.sort, hidden: Vec::new() }, setting: n, missing, message })
+        }
+        ShowCmd::Add(slot) => {
+            let Some(idx) = EXTRA.iter().position(|s| s == slot) else { return Err("The main screen is always shown".into()) };
+            let setting = idx as u8 + 2;
+            if !present.contains(slot) {
+                return Ok(ShowPlan {
+                    state: old.clone(),
+                    setting,
+                    missing: vec![*slot],
+                    message: format!("The {} screen needs Screens = {setting} in the Pimax app and a Work restart", friendly(*slot)),
+                });
+            }
+            let mut pinned = old.pinned.clone();
+            if !pinned.contains(slot) {
+                pinned.push(*slot);
+            }
+            let hidden: Vec<Slot> = old.hidden.iter().copied().filter(|s| s != slot).collect();
+            let room = if shown_now.contains(slot) { 1 + shown_now.len() } else { 2 + shown_now.len() };
+            let limit = (old.limit as usize).max(room).max(1 + pinned.len()).min(MAX as usize) as u8;
+            Ok(ShowPlan {
+                state: ShowState { limit, pinned, sort: old.sort, hidden },
+                setting,
+                missing: Vec::new(),
+                message: format!("Showing the {} screen", friendly(*slot)),
+            })
+        }
+    }
+}
+
+/// The recorded start arguments with `--screens` raised to at least `n` (never lowered; an absent flag means the
+/// default, so nothing is added up to it).
+pub fn argv_with_screens(args: &[String], n: u8) -> Vec<String> {
+    let mut v = args.to_vec();
+    let pos = v.iter().position(|a| a == "--screens" || a.starts_with("--screens="));
+    match pos {
+        Some(i) if v[i] == "--screens" => {
+            let cur = v.get(i + 1).and_then(|x| x.parse::<u8>().ok()).unwrap_or(DEFAULT);
+            if i + 1 < v.len() {
+                v[i + 1] = cur.max(n).min(MAX).to_string();
+            } else {
+                v.push(cur.max(n).min(MAX).to_string());
+            }
+        }
+        Some(i) => {
+            let cur = v[i].split_once('=').and_then(|(_, x)| x.parse::<u8>().ok()).unwrap_or(DEFAULT);
+            v[i] = format!("--screens={}", cur.max(n).min(MAX));
+        }
+        None if n > DEFAULT => {
+            v.push("--screens".into());
+            v.push(n.min(MAX).to_string());
+        }
+        None => {}
+    }
+    v
+}
+
+/// Where `show` runs and writes.
+pub struct ShowEnv<'a> {
+    pub state_file: &'a Path,
+    pub session_dir: &'a Path,
+    pub wayvrctl: &'a Path,
+    /// A Work session (monado-service) runs.
+    pub running: bool,
+    pub dry_run: bool,
+}
+
+/// `pimax desk screens show|more|add`: plan, write the show state, tell WayVR (`desk-screens`, which places a screen
+/// that was not shown) and raise the recorded Screens setting so a restart keeps it. Returns the one plain line for the
+/// headset. Never creates or removes an output while a session runs (WayVR only learns the outputs at its start), and
+/// never closes, kills or moves an app.
+pub fn run_show(cmd: &ShowCmd, h: &mut dyn Hypr, e: &ShowEnv) -> Result<String, String> {
+    if !e.running {
+        return Err("No Work session is running".into());
+    }
+    let mons = monitors(h).map_err(|err| format!("Cannot read the screens: {err}"))?;
+    if main_output(&mons).is_none() {
+        return Err("No desktop screen found".into());
+    }
+    let apps = h.run(&["-j", "clients"]).ok().and_then(|j| parse_client_counts(&j).ok()).unwrap_or_default();
+    let old = read_state(e.state_file);
+    let present: Vec<Slot> = vr_outputs(&mons).into_iter().map(|(s, _)| s).collect();
+    let shown: Vec<Slot> = visibility(&mons, &apps, &old).into_iter().filter(|v| v.2 && v.0 != Slot::Main).map(|v| v.0).collect();
+    let plan = plan_show(cmd, &present, &shown, &old)?;
+    if e.dry_run {
+        return Ok(format!("would write {:?}; {}", plan.state, plan.message));
+    }
+    write_state(e.state_file, &plan.state).map_err(|err| format!("Cannot save the screens: {err}"))?;
+    if let Some((kind, args)) = super::supervise::read_argv(e.session_dir) {
+        if kind == "desk" {
+            let new = argv_with_screens(&args, plan.setting);
+            if new != args {
+                let _ = super::supervise::rewrite_argv(e.session_dir, &kind, &new);
+            }
+        }
+    }
+    sync_once(h, e.wayvrctl, &plan.state, None, true, false, &mut |_| {}).map_err(|err| format!("WayVR did not answer: {err}"))?;
+    Ok(plan.message)
 }
 
 // ------------------------------------------------------------------------------ the layout inside a screen
@@ -1111,7 +1371,7 @@ mod tests {
         assert_eq!(w[0].rule(), r#"hl.monitor({ output = "PIMAX-LEFT", mode = "1920x1080@60", position = "-1920x0", scale = 1 })"#);
         assert_eq!(wanted(2, &main).len(), 1);
         assert_eq!(parse_count("3"), Ok(3));
-        assert!(parse_count("0").is_err() && parse_count("5").is_err() && parse_count("x").is_err());
+        assert!(parse_count("0").is_err() && parse_count("7").is_err() && parse_count("x").is_err());
     }
 
     #[test]
@@ -1233,9 +1493,9 @@ mod tests {
 
     #[test]
     fn state_file_round_trip_and_events() {
-        let s = ShowState { limit: 3, pinned: vec![Slot::Left, Slot::Right], sort: true };
+        let s = ShowState { limit: 3, pinned: vec![Slot::Left, Slot::Right], sort: true, hidden: Vec::new() };
         assert_eq!(ShowState::parse(&s.render()), s);
-        assert_eq!(ShowState::parse("limit = 9\npinned = main,up,bogus\n"), ShowState { limit: MAX, pinned: vec![Slot::Up], sort: true });
+        assert_eq!(ShowState::parse("limit = 9\npinned = main,up,bogus\n"), ShowState { limit: MAX, pinned: vec![Slot::Up], sort: true, hidden: Vec::new() });
         let d = crate::vr::test_dir("screens-state");
         let p = d.join("pimax-screens.state");
         assert_eq!(read_state(&p), ShowState::default());
@@ -1431,5 +1691,209 @@ mod tests {
         layout_once(&mut h, &st, &mut seen, Some(&st_file), &mut |_| {}).unwrap();
         assert!(h.0.contains(&"dispatch hl.dsp.window.move({ workspace = \"11\", follow = true })".to_string()), "{:?}", h.0);
         assert_eq!(read_state(&st_file).limit, MAX);
+    }
+    // ---------------------------------------------------------------- six screens and `desk screens show|more|add`
+
+    fn six() -> Vec<Mon> {
+        let mut mons = desktop();
+        mons.extend([
+            mon("PIMAX-LEFT", 1920, -1920, 0, 11),
+            mon("PIMAX-RIGHT", 1920, 1920, 0, 12),
+            mon("PIMAX-UP", 1920, 0, -1080, 13),
+            mon("PIMAX-UPLEFT", 1920, -1920, -1080, 14),
+            mon("PIMAX-UPRIGHT", 1920, 1920, -1080, 15),
+        ]);
+        mons
+    }
+
+    #[test]
+    fn six_slots_names_keys_and_positions() {
+        assert_eq!(MAX, 6);
+        assert_eq!(EXTRA, [Slot::Left, Slot::Right, Slot::Up, Slot::UpLeft, Slot::UpRight]);
+        assert_eq!((Slot::UpLeft.key(), Slot::UpRight.key()), ("up-left", "up-right"));
+        assert_eq!((Slot::UpLeft.output(), Slot::UpRight.output()), (Some("PIMAX-UPLEFT"), Some("PIMAX-UPRIGHT")));
+        assert_eq!((Slot::parse("up-left"), Slot::parse("UP-RIGHT"), Slot::parse("upright")), (Some(Slot::UpLeft), Some(Slot::UpRight), Some(Slot::UpRight)));
+        assert_eq!(Slot::of_output("PIMAX-UPRIGHT"), Some(Slot::UpRight));
+        assert_eq!(extra_slots(6), EXTRA);
+        assert_eq!(extra_slots(5), &EXTRA[..4]);
+        assert_eq!(parse_count("6"), Ok(6));
+        assert!(parse_count("7").is_err());
+        let main = desktop().remove(0);
+        let w = wanted(6, &main);
+        assert_eq!(
+            w.iter().map(|w| (w.name, w.x, w.y)).collect::<Vec<_>>(),
+            [("PIMAX-LEFT", -1920, 0), ("PIMAX-RIGHT", 1920, 0), ("PIMAX-UP", 0, -1080), ("PIMAX-UPLEFT", -1920, -1080), ("PIMAX-UPRIGHT", 1920, -1080)]
+        );
+        assert_eq!(w[4].rule(), r#"hl.monitor({ output = "PIMAX-UPRIGHT", mode = "1920x1080@60", position = "1920x-1080", scale = 1 })"#);
+        // the state file knows the new keys and the new limit
+        let st = ShowState { limit: 6, pinned: vec![Slot::UpLeft, Slot::UpRight], sort: true, hidden: Vec::new() };
+        assert_eq!(ShowState::parse(&st.render()), st);
+        assert_eq!(ShowState::parse("limit = 6\n").limit, 6);
+        assert_eq!(ShowState::parse("limit = 7\n").limit, MAX);
+    }
+
+    #[test]
+    fn visibility_with_six_screens() {
+        let mons = six();
+        let apps: HashMap<i64, usize> = [(2, 1), (14, 1), (15, 2)].into();
+        let v = visibility(&mons, &apps, &ShowState::default());
+        assert_eq!(
+            v.iter().map(|x| (x.0, x.2)).collect::<Vec<_>>(),
+            [(Slot::Main, true), (Slot::Left, false), (Slot::Right, false), (Slot::Up, false), (Slot::UpLeft, true), (Slot::UpRight, true)]
+        );
+        // the limit counts the main screen: 2 = main + the first screen that wants to show
+        let two = ShowState { limit: 2, ..ShowState::default() };
+        assert_eq!(visibility(&mons, &apps, &two).iter().filter(|x| x.2).count(), 2);
+        let all = ShowState { limit: 6, pinned: EXTRA.to_vec(), sort: true, hidden: Vec::new() };
+        assert_eq!(visibility(&mons, &HashMap::new(), &all).iter().filter(|x| x.2).count(), 6);
+        let args = desk_screens_args(&visibility(&mons, &apps, &ShowState::default()), None, false);
+        assert_eq!(args[args.len() - 2..], ["up-left=PIMAX-UPLEFT", "up-right=PIMAX-UPRIGHT"]);
+        assert_eq!(screen_workspaces(&mons).len(), 6);
+    }
+
+    fn plan(cmd: ShowCmd, present: &[Slot], shown: &[Slot], old: &ShowState) -> ShowPlan {
+        plan_show(&cmd, present, shown, old).unwrap()
+    }
+
+    #[test]
+    fn show_n_pins_the_first_extras_in_order() {
+        let old = ShowState { limit: 2, pinned: vec![Slot::Up], sort: false, hidden: Vec::new() };
+        let p = plan(ShowCmd::Show(4), &EXTRA, &[], &old);
+        assert_eq!((p.state.limit, p.state.pinned.clone(), p.state.sort, p.setting), (4, vec![Slot::Left, Slot::Right, Slot::Up], false, 4));
+        assert_eq!((p.message.as_str(), p.missing.is_empty()), ("Showing 4 screens", true));
+        let p = plan(ShowCmd::Show(6), &EXTRA, &[], &old);
+        assert_eq!((p.state.limit, p.state.pinned.len(), p.message.as_str()), (6, 5, "Showing 6 screens"));
+        let p = plan(ShowCmd::Show(1), &EXTRA, &[Slot::Left], &old);
+        assert_eq!((p.state.limit, p.state.pinned.len(), p.message.as_str()), (1, 0, "Showing 1 screen"));
+        // above 6: the most
+        let p = plan(ShowCmd::Show(9), &EXTRA, &[], &old);
+        assert_eq!((p.state.limit, p.setting, p.message.as_str()), (6, 6, "That's the most: 6 screens"));
+        assert!(plan_show(&ShowCmd::Show(0), &EXTRA, &[], &old).is_err());
+    }
+
+    #[test]
+    fn show_more_counts_what_is_shown_now() {
+        let old = ShowState::default();
+        let p = plan(ShowCmd::More(2), &EXTRA, &[Slot::Left], &old); // main + left shown: 2 more -> 4
+        assert_eq!((p.state.limit, p.state.pinned.clone()), (4, vec![Slot::Left, Slot::Right, Slot::Up]));
+        let p = plan(ShowCmd::More(5), &EXTRA, &[Slot::Left, Slot::Right], &old);
+        assert_eq!((p.state.limit, p.message.as_str()), (6, "That's the most: 6 screens"));
+        let p = plan(ShowCmd::More(1), &EXTRA, &[], &old);
+        assert_eq!((p.state.limit, p.state.pinned.clone(), p.message.as_str()), (2, vec![Slot::Left], "Showing 2 screens"));
+    }
+
+    #[test]
+    fn missing_outputs_are_not_made_live_and_the_rest_shows() {
+        let four = &EXTRA[..3];
+        let p = plan(ShowCmd::Show(6), four, &[], &ShowState::default());
+        assert_eq!(p.missing, [Slot::UpLeft, Slot::UpRight]);
+        assert_eq!((p.state.limit, p.state.pinned.len(), p.setting), (6, 3, 6));
+        assert_eq!(p.message, "6 screens need Screens = 6 in the Pimax app and a Work restart. Showing 4 screens");
+        let p = plan(ShowCmd::Show(99), four, &[], &ShowState::default());
+        assert_eq!(p.message, "That's the most: 6 screens. 6 screens need Screens = 6 in the Pimax app and a Work restart. Showing 4 screens");
+        let p = plan(ShowCmd::Add(Slot::UpRight), four, &[], &ShowState::default());
+        assert_eq!((p.missing.clone(), p.setting, p.state), (vec![Slot::UpRight], 6, ShowState::default()));
+        assert_eq!(p.message, "The up right screen needs Screens = 6 in the Pimax app and a Work restart");
+    }
+
+    #[test]
+    fn add_pins_one_screen_and_raises_the_limit() {
+        let old = ShowState { limit: 3, pinned: vec![Slot::Left, Slot::Right], sort: true, hidden: Vec::new() };
+        let p = plan(ShowCmd::Add(Slot::UpLeft), &EXTRA, &[Slot::Left, Slot::Right], &old);
+        assert_eq!((p.state.limit, p.state.pinned.clone(), p.setting), (4, vec![Slot::Left, Slot::Right, Slot::UpLeft], 5));
+        assert_eq!(p.message, "Showing the up left screen");
+        // already shown: nothing more is needed
+        let p = plan(ShowCmd::Add(Slot::Left), &EXTRA, &[Slot::Left, Slot::Right], &old);
+        assert_eq!((p.state.limit, p.state.pinned.len()), (3, 2));
+        // a limit of 1 (cinema) is lifted just enough
+        let p = plan(ShowCmd::Add(Slot::Up), &EXTRA, &[], &ShowState { limit: 1, pinned: vec![], sort: true, hidden: Vec::new() });
+        // hide (live 2026-10-16 "remove screen number four and three", "close everything"): no app closes
+        assert_eq!(parse_show("hide", Some("4,3")), Ok(ShowCmd::Hide(vec![Slot::Up, Slot::Right])));
+        assert_eq!(parse_show("hide", Some("others")), Ok(ShowCmd::Hide(EXTRA.to_vec())));
+        assert!(parse_show("hide", Some("1")).is_err() && parse_show("hide", Some("9")).is_err());
+        let old4 = ShowState { limit: 4, pinned: vec![Slot::Left, Slot::Right, Slot::Up], sort: true, hidden: Vec::new() };
+        let h = plan(ShowCmd::Hide(vec![Slot::Up, Slot::Right]), &EXTRA, &[Slot::Left, Slot::Right, Slot::Up], &old4);
+        assert_eq!(h.state.pinned, vec![Slot::Left]);
+        assert_eq!(h.state.hidden, vec![Slot::Up, Slot::Right]);
+        assert_eq!(h.message, "Hid screen 4 and 3; its apps stay open");
+        let back = plan(ShowCmd::Add(Slot::Up), &EXTRA, &[Slot::Left], &h.state);
+        assert_eq!(back.state.hidden, vec![Slot::Right], "add takes the slot out of hidden");
+        let only = plan(ShowCmd::Hide(EXTRA.to_vec()), &EXTRA, &[Slot::Left], &old4);
+        assert_eq!((only.state.limit, only.state.pinned.len()), (1, 0));
+        assert_eq!(ShowState::parse(&only.state.render()), only.state, "hidden round-trips");
+        assert!(plan(ShowCmd::Show(3), &EXTRA, &[], &only.state).state.hidden.is_empty(), "show N clears hidden");
+        assert_eq!((p.state.limit, p.state.pinned.clone(), p.setting), (2, vec![Slot::Up], 4));
+        assert_eq!(parse_show("add", Some("main")).unwrap_err(), "The main screen is always shown");
+    }
+
+    #[test]
+    fn show_command_parsing() {
+        assert_eq!(parse_show("show", Some("4")), Ok(ShowCmd::Show(4)));
+        assert_eq!(parse_show("more", Some("2")), Ok(ShowCmd::More(2)));
+        assert_eq!(parse_show("add", Some("up-left")), Ok(ShowCmd::Add(Slot::UpLeft)));
+        assert!(parse_show("show", None).is_err() && parse_show("show", Some("x")).is_err());
+        assert!(parse_show("add", Some("sideways")).unwrap_err().starts_with("No screen called sideways"));
+    }
+
+    #[test]
+    fn the_recorded_screens_setting_is_raised_never_lowered() {
+        let v = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(argv_with_screens(&v(&["--6dof", "--screens", "2"]), 4), v(&["--6dof", "--screens", "4"]));
+        assert_eq!(argv_with_screens(&v(&["--screens", "6"]), 3), v(&["--screens", "6"]));
+        assert_eq!(argv_with_screens(&v(&["--screens=3", "--voice"]), 5), v(&["--screens=5", "--voice"]));
+        assert_eq!(argv_with_screens(&v(&["--voice"]), 6), v(&["--voice", "--screens", "6"]));
+        assert_eq!(argv_with_screens(&v(&["--voice"]), 3), v(&["--voice"]), "absent = the default 4");
+        assert_eq!(argv_with_screens(&v(&["--voice"]), 9), v(&["--voice", "--screens", "6"]));
+    }
+
+    #[test]
+    fn run_show_writes_the_state_tells_wayvr_and_records_the_setting() {
+        struct H(Vec<String>);
+        impl Hypr for H {
+            fn run(&mut self, args: &[&str]) -> Result<String, String> {
+                self.0.push(args.join(" "));
+                match args {
+                    ["-j", "monitors", "all"] => {
+                        let mut m = desktop();
+                        m.extend([mon("PIMAX-LEFT", 1920, -1920, 0, 11), mon("PIMAX-RIGHT", 1920, 1920, 0, 12), mon("PIMAX-UP", 1920, 0, -1080, 13)]);
+                        Ok(json(&m))
+                    }
+                    ["-j", "clients"] => Ok("[]".into()),
+                    _ => Err(format!("must not run hyprctl {args:?}")),
+                }
+            }
+            fn sleep(&mut self, _d: Duration) {}
+        }
+        let d = crate::vr::test_dir("screens-run-show");
+        let ctl = d.join("wayvrctl");
+        let log = d.join("ctl.log");
+        std::fs::write(&ctl, format!("#!/bin/sh\necho \"$*\" >> '{}'\n", log.display())).unwrap();
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&ctl, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let state = d.join("pimax-screens.state");
+        crate::vr::supervise::record_argv(&d, "desk", &["--6dof".to_string(), "--screens".into(), "4".into()]).unwrap();
+        let env = ShowEnv { state_file: &state, session_dir: &d, wayvrctl: &ctl, running: true, dry_run: false };
+        let mut h = H(Vec::new());
+        let line = run_show(&ShowCmd::Show(6), &mut h, &env).unwrap();
+        assert_eq!(line, "6 screens need Screens = 6 in the Pimax app and a Work restart. Showing 4 screens");
+        assert!(h.0.iter().all(|c| c.starts_with("-j ")), "only reads (no output is made or removed live): {:?}", h.0);
+        let st = read_state(&state);
+        assert_eq!((st.limit, st.pinned), (6, vec![Slot::Left, Slot::Right, Slot::Up]));
+        let calls = std::fs::read_to_string(&log).unwrap();
+        assert!(calls.starts_with("desk-screens main=SUNSHINE left=PIMAX-LEFT right=PIMAX-RIGHT up=PIMAX-UP"), "{calls}");
+        assert!(!calls.contains("hide"), "{calls}");
+        assert_eq!(crate::vr::supervise::read_argv(&d).unwrap().1, ["--6dof", "--screens", "6"], "a restart keeps it");
+        // show 2 shrinks what shows, the setting stays at 6
+        let line = run_show(&ShowCmd::Show(2), &mut H(Vec::new()), &env).unwrap();
+        assert_eq!(line, "Showing 2 screens");
+        assert_eq!(crate::vr::supervise::read_argv(&d).unwrap().1, ["--6dof", "--screens", "6"]);
+        assert!(std::fs::read_to_string(&log).unwrap().contains("right=PIMAX-RIGHT:hide"));
+        // no session: a plain error, nothing written
+        let _ = std::fs::remove_file(&state);
+        let off = ShowEnv { running: false, ..ShowEnv { state_file: &state, session_dir: &d, wayvrctl: &ctl, running: true, dry_run: false } };
+        assert_eq!(run_show(&ShowCmd::Show(3), &mut H(Vec::new()), &off).unwrap_err(), "No Work session is running");
+        assert!(!state.exists());
     }
 }

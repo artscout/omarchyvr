@@ -17,12 +17,15 @@ usage: pimax record start [options] [--save]   start recording (the VR session m
 options (defaults from ~/.config/pimax/record.toml; --save writes the given ones there):
   --eyes left|both          one eye, lens-undistorted (default) or both side by side
   --fps 30|60|72            frame rate (default 30)
-  --quality low|medium|high (default medium)
+  --quality low|medium|high (default high)
   --scale F                 0 = fit --max-height (default); 0.1-1.0 = fraction of the eye's resolution
   --max-height N            per-eye height cap (default 1080)
   --codec h264|hevc         (default h264)
   --encoder auto|nvenc|cpu  auto = NVENC, else x264 on the CPU (default auto)
   --dir DIR                 output directory (default ~/Videos/pimax)
+  --audio on|off            record what you hear into the video (default on)
+  --mic on|off              also mix in your microphone (default off)
+pimax record start --brief / stop --brief: the saved settings, and one short line (\"Recording\", \"Saved: name.mp4\") for voice
 Design and reliability notes: docs/RECORD.md";
 
 /// The session's recorder pid file and comm.
@@ -38,6 +41,8 @@ pub enum Cmd {
     Status,
     Run { overrides: Vec<(String, String)> },
     Help,
+    /// `start --brief` / `stop --brief`: the saved settings, and one short line for voice ("Recording", "Saved: x.mp4").
+    Brief { stop: bool },
     /// `tracking start [scenario] [seconds] | stop | status`.
     Tracking(Track),
 }
@@ -95,6 +100,9 @@ pub fn parse(args: &[String]) -> Result<Cmd, String> {
     let Some(first) = args.first() else { return Ok(Cmd::Help) };
     if first == "tracking" {
         return parse_tracking(&args[1..]);
+    }
+    if args.len() == 2 && args[1] == "--brief" && matches!(first.as_str(), "start" | "stop") {
+        return Ok(Cmd::Brief { stop: first == "stop" });
     }
     let mut overrides = Vec::new();
     let mut save = false;
@@ -235,6 +243,20 @@ pub fn stop(r: &Roots) -> Result<String, String> {
     }
 }
 
+/// `stop --brief`: "Saved: pimax-20261016-120000.mp4", or why nothing was saved, in plain words.
+pub fn stop_brief(r: &Roots) -> Result<String, String> {
+    if running_pid(r).is_none() {
+        return Ok("Not recording".into());
+    }
+    stop(r)?;
+    let st = Status::load(&status::status_path(&r.session_dir)).unwrap_or_default();
+    Ok(match (st.file.is_empty(), st.state.as_str()) {
+        (false, _) => format!("Saved: {}", st.file.rsplit('/').next().unwrap_or(&st.file)),
+        (true, "error") => format!("Not saved: {}", st.note),
+        (true, _) => "Nothing was recorded".into(),
+    })
+}
+
 /// `status`: one line.
 pub fn status_line(r: &Roots) -> String {
     let st = Status::load(&status::status_path(&r.session_dir)).unwrap_or_default();
@@ -274,6 +296,8 @@ pub fn main(args: &[String]) -> i32 {
         Cmd::Start { overrides, save } => start(&r, &overrides, save),
         Cmd::Tracking(t) => tracking(&r, &t),
         Cmd::Stop => stop(&r),
+        Cmd::Brief { stop: false } => start(&r, &[], false).map(|_| "Recording".to_string()),
+        Cmd::Brief { stop: true } => stop_brief(&r),
         Cmd::Status => Ok(status_line(&r)),
     };
     match res {
@@ -342,6 +366,20 @@ mod tests {
             t.set(&k, &v).unwrap();
         }
         assert_eq!(t, s);
+    }
+
+    #[test]
+    fn brief_commands_are_start_and_stop_with_the_saved_settings() {
+        assert_eq!(parse(&a(&["start", "--brief"])).unwrap(), Cmd::Brief { stop: false });
+        assert_eq!(parse(&a(&["stop", "--brief"])).unwrap(), Cmd::Brief { stop: true });
+        assert!(parse(&a(&["status", "--brief"])).is_err());
+    }
+
+    #[test]
+    fn audio_flags_reach_the_recorder() {
+        let c = parse(&a(&["start", "--audio", "off", "--mic=on"])).unwrap();
+        assert_eq!(c, Cmd::Start { overrides: vec![("audio".into(), "off".into()), ("mic".into(), "on".into())], save: false });
+        assert!(parse(&a(&["start", "--audio", "maybe"])).is_err());
     }
 
     #[test]

@@ -1,7 +1,7 @@
 # Sound and microphone in the headset
 
-App: Home > "Sound in headset" (switch) + "Test headset sound", "Headset microphone" (switch) + "Microphone: headset / other"
-+ "Test microphone". Saved in `~/.config/pimax/audio.toml` (`headset_sound`, `headset_mic`, both default true).
+App: Home > Sound: "Headset sound" (switch) + "Test sound", "Headset mic" (switch) + "Test microphone", "Input now:
+headset / other". Saved in `~/.config/pimax/audio.toml` (`headset_sound`, `headset_mic`, both default true).
 Engine: `pimax vr audio status|on|off|mic-on|mic-off|mic-test|speaker-test` (rust/pimax-tools/src/vr/audio.rs). Only
 `pactl`, `pw-record` and `pw-play` are used. Nothing is root-owned and nothing needs a password.
 
@@ -51,7 +51,7 @@ asks PipeWire for 1 ch 16 kHz, so PipeWire does the 48 kHz stereo -> 16 kHz mono
 
 ## Test plan (one session, all from the app)
 
-1. Home: "Sound in headset" and "Headset microphone" on. Press Play (or Work), put the headset on.
+1. Home > Sound: "Headset sound" and "Headset mic" on. Press Play (or Work), put the headset on.
 2. Within about 10 s the session log shows `sound: the headset speaker is on (...)`. Press "Test headset sound":
    two soft notes in the headset; the line next to the button says "played on the headset speaker".
    If it says "not selected" or "no headset speaker", open Logs > session `audio.log`.

@@ -1,5 +1,5 @@
 usage: pimax desk <command> [options]
-  start [--no-passthrough] [--eye] [--6dof [--ctrl-track]] [--voice [--voice-hud]] [--no-perf] [--settle SECS] [--passthrough-bin P] [--wayvr-bin P] [--wayvr-home DIR]
+  start [--no-passthrough] [--eye] [--6dof [--ctrl-track]] [--voice [--voice-hud]] [--no-perf] [--controllers when-held|always|off] [--settle SECS] [--passthrough-bin P] [--wayvr-bin P] [--wayvr-home DIR]
         [--voice-bin P] [--voice-hud-bin P] [--wayvrctl-bin P] [--perf-bin P]
         [+ the options of `pimax vr start`: --fps, --monado-build, --connector, --dry-run, --force, --no-notify, ...]
       monado-service (like `pimax vr start`), then pimax-passthrough run (the main OpenXR app), then WayVR as an

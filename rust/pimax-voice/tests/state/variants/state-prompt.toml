@@ -1,0 +1,10 @@
+# For the new planner: the exact state (world::describe blocks), a target line, tools of Lara's category plus the
+# matcher's hints. The current code does not read these knobs: the report lists them as not honoured until it does.
+name = "state-prompt"
+notes = "planner: state blocks + target line + category tools"
+[prompt]
+blocks = ["screens", "apps", "focus", "gaze", "tabs", "session", "hints"]
+target_line = true
+[tools]
+scope = "category+hints"
+top_k = 12

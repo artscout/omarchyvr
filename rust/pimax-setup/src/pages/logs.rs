@@ -16,23 +16,18 @@ fn loading(ui: &mut Ui, what: &str) {
 
 /// Draw the page.
 pub fn show(ui: &mut Ui, app: &mut PimaxApp) {
-    card(ui, |ui| {
-        ui.label(RichText::new("Logs & History").size(24.0).strong());
-        ui.horizontal(|ui| {
-            for (t, name) in [
-                (LogsTab::Logs, "Logs"),
-                (LogsTab::History, "Problems and fixes"),
-                (LogsTab::Issues, "Open issues"),
-                (LogsTab::Lessons, "Lessons"),
-                (LogsTab::Safety, "Safety rules"),
-            ] {
-                if ui.selectable_label(app.ui.logs_tab == t, name).clicked() {
-                    app.ui.logs_tab = t;
-                }
-            }
-        });
-    });
-    ui.add_space(8.0);
+    const TABS: [(LogsTab, &str); 5] = [
+        (LogsTab::Logs, "Logs"),
+        (LogsTab::History, "Problems and fixes"),
+        (LogsTab::Issues, "Open issues"),
+        (LogsTab::Lessons, "Lessons"),
+        (LogsTab::Safety, "Safety rules"),
+    ];
+    let names: Vec<&str> = TABS.iter().map(|t| t.1).collect();
+    let cur = TABS.iter().position(|t| t.0 == app.ui.logs_tab).unwrap_or(0);
+    if let Some(i) = crate::widgets::seg(ui, "logs-tabs", &names, cur, true) {
+        app.ui.logs_tab = TABS[i].0;
+    }
     match app.ui.logs_tab {
         LogsTab::Logs => logs(ui, app),
         LogsTab::History => match app.core.docs().map(|d| d.history.clone()) {
@@ -50,10 +45,9 @@ pub fn show(ui: &mut Ui, app: &mut PimaxApp) {
             };
             for (i, (sec, t)) in l.into_iter().enumerate() {
                 card(ui, |ui| {
-                    ui.label(RichText::new(&sec).strong().size(16.0));
+                    crate::widgets::title(ui, &sec);
                     grid(ui, &format!("lessons-{i}"), &t, "");
                 });
-                ui.add_space(6.0);
             }
             note(ui, "From docs/LESSONS.md: every row is enforced by a check, an ordering step or a state of this app (see docs/GUI.md).");
         }
@@ -64,12 +58,11 @@ pub fn show(ui: &mut Ui, app: &mut PimaxApp) {
             };
             for (sec, lines) in s {
                 card(ui, |ui| {
-                    ui.label(RichText::new(&sec).strong().size(16.0));
+                    crate::widgets::title(ui, &sec);
                     for l in lines {
                         ui.add(egui::Label::new(l).wrap());
                     }
                 });
-                ui.add_space(6.0);
             }
         }
     }

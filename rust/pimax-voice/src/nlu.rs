@@ -42,7 +42,8 @@ fn slot_hint(name: &str, t: SlotType) -> String {
     match t {
         SlotType::Number => format!("{name}=N"),
         SlotType::Word => format!("{name}=word"),
-        SlotType::Side => format!("{name}=left|right|up|main"),
+        SlotType::Side => format!("{name}=left|right|up|main|up-left|up-right"),
+        SlotType::Screen => format!("{name}=1-6|left|right|up|main|up-left|up-right|here"),
         SlotType::Text | SlotType::Name => format!("{name}=\"words\""),
     }
 }
@@ -61,16 +62,29 @@ pub fn system_prompt(cat: &Catalogue) -> String {
          are often misheard. Decide what the user MEANS and answer with one line: an intent id from the list, then \
          your confidence as one digit (9 sure, 6 likely, 3 a guess), then the intent's slots, e.g. \
          `win.ws.goto 9 n=4`. Answer `none 9` if the words are noise, a test (\"can you hear me\"), chatter or no \
-         command. A request with several actions gets up to 3 steps separated by ` ; ` (in order).\n\
-         Known mishearings: war/walk/were=work, liz/leaks/least=list, tree/free=three, mars/marks/macs=max, \
-         tap=tab, won=one, for=four, to=two, sinema=cinema, winter=window, tight=type, full scream=fullscreen, \
-         and do=undo, high=hide.\n\
+         command. A request with several actions gets up to 4 steps separated by ` ; ` (in order).\n\
+         Known mishearings (word for word): war/walk/were=work, liz/leaks/least=list, tree/free=three, \
+         mars/marks/macs=max, tap=tab, won=one, for=four, to=two, sinema=cinema, winter=window, tight=type, full \
+         scream=fullscreen, and do=undo, high=hide, scream(s)=screen(s), write=right, lift=left, of=off.\n\
+         Never put the user's name or a word that was not heard into an app slot. When the user corrects himself, \
+         the last request wins (\"X, no, Y\" = Y).\n\
          hints = the intents whose phrases sound closest (score 0-1): often right, but the meaning decides; a short \
-         command with an odd word (\"necks song\", \"mood\", \"coffee that\") is usually the best hint, not none. \
+         command with one odd word (a misheard verb or noun) is usually the best hint, not none. \
          Words: \"window\" = a workspace (one VR screen, all its apps; close window = win.ws.close); one program = \
-         an \"app\" (close this = win.close); \"tab\" = inside an app; \"N screens\" = VR presets (work three = 3); \
-         VR screens: main (centre), left, right, up (move this left = win.screen.move side=left; close the other \
-         windows = vr.preset.work1, nothing closes).\n\
+         an \"app\" (close this = win.close); \"tab\" = inside an app; \"desktop\" = workspace.\n\
+         VR screens: main (centre, \"the main window\"), left, right, up, up-left, up-right. How many: \"N screens\" = \
+         vr.screens.count n=N; \"N more screens\" = vr.screens.more n=N; \"a screen on the right / up there\" = \
+         vr.screens.add; \"a new window / new screen\" = win.ws.new; close / remove / hide / shut down screen N (one or \
+         more numbers) = vr.screens.hide screens=\"N,M\" (it HIDES the screen, never closes apps; never win.ws.close \
+         for a screen); close everything / close the screens = vr.screens.hide_others; all screens half / double / N \
+         percent = win.screen.scale; stop / shut down the VR / work / session = vr.session.stop. Apps: THIS app to a side = win.screen.move; apps named by kind or name \
+         (\"the terminals\", \"chrome\") to a side = win.screen.put, to screen N = win.screen.put_n; \"X in a new \
+         window\" = win.screen.open app=X; move THIS SCREEN right = win.screen.nudge (the screen itself).\n\
+         Screen numbers (shown on each screen): 1 main, 2 left, 3 right, 4 up, 5 up-left, 6 up-right; \"here\" = the \
+         screen looked at. screen=N|side|here. \"from here / from screen 2 to screen 5\" = win.screen.put_from (an app) \
+         or win.screen.move_all (everything); \"swap screens A and B\" = win.screen.swap.\n\
+         Movies: \"watch a movie\" / \"movie time\" = vr.preset.cinema; \"play <a title>\" = media.play (a file); \
+         vr.preset.exit_cinema only to LEAVE cinema (exit, out of).\n\
          Intents (id: what it does / example phrases):\n",
     );
     for i in offered(cat) {
@@ -89,9 +103,8 @@ pub fn system_prompt(cat: &Catalogue) -> String {
         let sl: Vec<String> = slots.iter().map(|(k, v)| format!("{k}={v}")).collect();
         s += &format!("{id} {}: {gloss}\n", sl.join(" "));
     }
-    s += "Examples: \"liz windows\" -> win.list 8 | \"time max war three\" -> vr.preset.work3 8 | \
-          \"go to work space for\" -> win.ws.goto 9 n=4 | \"remind me in 5 minutes to stretch\" -> omarchy.reminder 9 minutes=5 text=\"stretch\" | \
-          \"can you hear me\" -> none 9 | \"dim the lights in here\" -> vr.passthrough.dim 7 | \"my screens are gone\" -> vr.screens.reset 8 | \"close the other two screens\" -> vr.preset.work1 8 | \"in the browser type how to cook rice\" -> browser.search 9 q=\"how to cook rice\" | \"type hello world\" -> type.text 9 text=\"hello world\" | \"check the internet browser\" -> omarchy.launch.browser 8 | \"go to the youtube tab\" -> browser.tab.focus 9 q=\"youtube\" | \"open two more screens\" -> vr.preset.work3 8 | \"close the window i'm looking at\" -> win.ws.close 8 | \"go to workspace 2 and make it fullscreen\" -> win.ws.goto 9 n=2 ; omarchy.window.fullscreen 8\n";
+    s += "Examples: \"list everything that is open\" -> win.list 8 | \"switch to desktop to\" -> win.ws.goto 8 n=2 | \"remind me in 20 minutes to call mom\" -> omarchy.reminder 9 minutes=20 text=\"call mom\" | \"is this thing on\" -> none 9 | \"it's too bright in here\" -> vr.passthrough.dim 7 | \"I lost all my screens\" -> vr.screens.reset 8 | \"leave only screen one\" -> vr.screens.hide_others 8 | \"hide screens 5 and 6\" -> vr.screens.hide 9 screens=\"5,6\" | \"search the web for cheap flights to rome\" -> browser.search 9 q=\"cheap flights to rome\" | \"type see you soon\" -> type.text 9 text=\"see you soon\" | \"bring up the wikipedia tab\" -> browser.tab.focus 9 q=\"wikipedia\" | \"I'd like four more screens\" -> vr.screens.more 8 n=4 | \"let's have five screens\" -> vr.screens.count 9 n=5 | \"spotify on a screen of its own\" -> win.screen.open 9 app=\"spotify\" | \"collect every browser on one screen\" -> win.screen.gather 9 app=\"browsers\" | \"jump to the upper screen\" -> win.screen.goto 9 side=up | \"put the editor on the right\" -> win.screen.put 9 side=right app=\"editor\" | \"spotify over to screen 6\" -> win.screen.put_n 9 screen=6 app=\"spotify\" | \"take the editor from screen 3 to screen 5\" -> win.screen.put_from 9 from=3 screen=5 app=\"editor\" | \"trade screens 4 and 6\" -> win.screen.swap 9 screen=4 b=6 | \"every screen at 60 percent\" -> win.screen.scale 9 screens=all size=60 | \"screen 5 a bit closer\" -> win.screen.adjust 9 screen=5 how=closer | \"play the matrix\" -> media.play 9 q=\"the matrix\" | \"open wikipedia\" -> browser.open 9 site=wikipedia | \"shift that screen a little left\" -> win.screen.nudge 8 side=left | \"one more screen and put spotify on it\" -> vr.screens.more 9 n=1 ; win.screen.open 8 app=\"spotify\" | \"shut this whole workspace\" -> win.ws.close 8 | \"switch to workspace 5 then turn the volume up\" -> win.ws.goto 9 n=5 ; omarchy.volume.up 8\n";
+
     s
 }
 
@@ -108,15 +121,33 @@ pub fn grammar(cat: &Catalogue) -> String {
 /// model otherwise invents a first step.
 pub fn wants_plan(heard: &str) -> bool {
     let w = crate::command::words(heard);
-    w.iter().any(|x| matches!(x.as_str(), "and" | "then" | "also" | "y" | "luego"))
+    if w.iter().any(|x| matches!(x.as_str(), "and" | "then" | "also" | "plus" | "afterwards" | "y" | "luego" | "despues")) {
+        return true;
+    }
+    // two commands back to back without "and" ("close this go to the main screen"): two action verbs apart
+    let verbs: Vec<usize> = w.iter().enumerate().filter(|(_, x)| PLAN_VERBS.contains(&x.as_str())).map(|(i, _)| i).collect();
+    verbs.windows(2).any(|p| p[1] >= p[0] + 2)
 }
 
-/// The grammar; `plan`: up to 3 steps.
+/// Verbs that start a command (for [`wants_plan`]).
+const PLAN_VERBS: &[&str] = &["open", "close", "focus", "switch", "put", "start", "stop", "turn", "launch", "search", "type", "take", "mute", "send", "dim", "reload", "play", "pause"];
+
+/// Most steps in a plan.
+pub const PLAN_MAX: usize = 4;
+
+/// The grammar; `plan`: up to [`PLAN_MAX`] steps.
 pub fn grammar_steps(cat: &Catalogue, plan: bool) -> String {
+    grammar_subset(cat, plan, &|_| true)
+}
+
+/// The grammar with only the intents `allow` lets through (two stages on this PC: the router's categories, docs/AI.md
+/// section 16). "none" is always allowed; so are "voice.undo" and "voice.help".
+pub fn grammar_subset(cat: &Catalogue, plan: bool, allow: &dyn Fn(&str) -> bool) -> String {
+    let allow = |id: &str| allow(id) || crate::remote::ALWAYS.contains(&id);
     let mut plain = vec![gbnf_str("none")];
     let mut rules = Vec::new();
     let mut alts = Vec::new();
-    for i in offered(cat) {
+    for i in offered(cat).into_iter().filter(|i| allow(&i.id)) {
         if i.slots.is_empty() {
             plain.push(gbnf_str(&i.id));
             continue;
@@ -127,6 +158,7 @@ pub fn grammar_steps(cat: &Catalogue, plan: bool) -> String {
                 SlotType::Number => "num",
                 SlotType::Word => "word",
                 SlotType::Side => "side",
+                SlotType::Screen => "scr",
                 SlotType::Text | SlotType::Name => "txt",
             };
             r += &format!(" \" {k}=\" {v}");
@@ -135,7 +167,7 @@ pub fn grammar_steps(cat: &Catalogue, plan: bool) -> String {
         rules.push(format!("{name} ::= {r}"));
         alts.push(name);
     }
-    for (id, _, slots) in WINDOW_INTENTS {
+    for (id, _, slots) in WINDOW_INTENTS.iter().filter(|w| allow(w.0)) {
         let mut r = format!("{} \" \" c", gbnf_str(id));
         for (k, v) in *slots {
             r += &format!(" \" {k}=\" {}", if *v == "wN" { "win" } else { "num" });
@@ -144,8 +176,8 @@ pub fn grammar_steps(cat: &Catalogue, plan: bool) -> String {
         rules.push(format!("{name} ::= {r}"));
         alts.push(name);
     }
-    // a plan: up to 3 steps separated by " ; "
-    let mut g = String::from(if plan { "root ::= one (\" ; \" one){0,2}\n" } else { "root ::= one\n" });
+    // a plan: up to PLAN_MAX steps separated by " ; "
+    let mut g = if plan { format!("root ::= one (\" ; \" one){{0,{}}}\n", PLAN_MAX - 1) } else { "root ::= one\n".to_string() };
     g += &format!("one ::= plain{}\n", alts.iter().map(|a| format!(" | {a}")).collect::<String>());
     g += &format!("plain ::= ({}) \" \" c\n", plain.join(" | "));
     for r in rules {
@@ -153,7 +185,8 @@ pub fn grammar_steps(cat: &Catalogue, plan: bool) -> String {
         g.push('\n');
     }
     g += "c ::= [0-9]\nnum ::= [1-9] [0-9]? [0-9]?\nword ::= [a-zA-Z0-9_-]{1,24}\n\
-          txt ::= \"\\\"\" [a-zA-Z0-9 ',.?!-]{1,80} \"\\\"\"\nwin ::= \"w\" [1-9]\nside ::= \"left\" | \"right\" | \"up\" | \"main\"\n";
+          txt ::= \"\\\"\" [a-zA-Z0-9 ',.?!-]{1,80} \"\\\"\"\nwin ::= \"w\" [1-9]\nside ::= \"left\" | \"right\" | \"up\" | \"main\" | \"up-left\" | \"up-right\"\n\
+          scr ::= [1-6] | side | \"here\"\n";
     g
 }
 
@@ -161,7 +194,7 @@ pub fn grammar_steps(cat: &Catalogue, plan: bool) -> String {
 /// word of a window's class or title ("go to chrome", "the one with the google search").
 pub fn needs_windows(ctx: &Context, heard: &str) -> bool {
     let words = crate::command::words(heard);
-    const W: &[&str] = &["window", "windows", "this", "that", "it", "app", "move", "close", "focus", "switch", "show", "go", "where", "send", "put", "ventana"];
+    const W: &[&str] = &["window", "windows", "this", "that", "it", "app", "move", "close", "focus", "switch", "show", "go", "where", "send", "put", "ventana", "screen", "screens", "remove", "hide", "shut", "pantalla"];
     if words.iter().any(|w| W.contains(&w.as_str())) {
         return true;
     }
@@ -177,6 +210,7 @@ pub fn user_message(ctx: &Context, cands: &[Cand], heard: &str, strip_titles: bo
     }
     let mut c2 = ctx.clone();
     c2.clients.clear();
+    c2.screens.clear();
     c2.focused = None;
     c2.this = None;
     user_message_inner(&c2, cands, heard, strip_titles)
@@ -208,6 +242,10 @@ fn user_message_inner(ctx: &Context, cands: &[Cand], heard: &str, strip_titles: 
     if !wins.is_empty() {
         s += &format!("apps: {}\n", wins.join("; "));
     }
+    // the VR screens by number with their apps (live 2026-10-16: "screen 3" had nothing to point at)
+    if ctx.screens.len() > 1 {
+        s += &format!("screens: {}\n", screens_line(ctx, &ids));
+    }
     // no VR state line: the small model copied it ("vr now: assistant preset" turned "dark" and "necks
     // background" into vr.preset.assistant, audit 2026-10-15); no intent needs it to decide
     if let Some(n) = ctx.focused.as_ref().and_then(|f| wname(&f.address)) {
@@ -227,6 +265,29 @@ fn user_message_inner(ctx: &Context, cands: &[Cand], heard: &str, strip_titles: 
     }
     s += &format!("heard: \"{}\"", windows::clean_title(heard).replace('"', "'"));
     (s, ids)
+}
+
+/// `1 main [w1 foot, w2 foot] ; 2 left [] ; 3 right hidden [w3 pimax]`: each VR screen by number (docs/SCREENS.md),
+/// hidden ones marked, its apps by their `wN` of the apps line (else the class).
+pub fn screens_line(ctx: &Context, ids: &[String]) -> String {
+    ctx.screens
+        .iter()
+        .map(|sc| {
+            let apps: Vec<String> = ctx
+                .clients
+                .iter()
+                .filter(|c| c.workspace == sc.ws)
+                .take(6)
+                .map(|c| match ids.iter().position(|a| *a == c.address) {
+                    Some(p) => format!("w{} {}", p + 1, windows::clean_title(&c.class)),
+                    None => windows::clean_title(&c.class),
+                })
+                .collect();
+            let hidden = if ctx.hidden.iter().any(|h| h == sc.slot) { " hidden" } else { "" };
+            format!("{} {}{hidden} [{}]", windows::screen_number(sc.slot).unwrap_or(0), sc.slot, apps.join(", "))
+        })
+        .collect::<Vec<_>>()
+        .join(" ; ")
 }
 
 /// The model's decision.
@@ -332,7 +393,7 @@ pub fn parse_plan(answer: &str) -> Result<Vec<Decision>, String> {
     let mut v = Vec::new();
     for part in answer.split(|c| c == ';' || c == '\n').map(str::trim).filter(|p| !p.is_empty() && !p.starts_with("```")) {
         v.push(parse(part)?);
-        if v.len() == 3 {
+        if v.len() == PLAN_MAX {
             break;
         }
     }
@@ -367,8 +428,8 @@ mod tests {
         assert!(p.contains("focus_window window=wN"));
         assert!(!p.contains("win.ai.switch"));
         // about 4 characters per token: about 2,300 tokens, cached by the server (was ~5,650 with the tool schemas;
-        // +9 VR screen intents on 2026-10-15)
-        assert!(p.len() < 9800, "{} chars", p.len());
+        // +9 VR screen intents on 2026-10-15; +6 screen intents and the 2026-10-16 live mishearings)
+        assert!(p.len() < 15200, "{} chars", p.len()); // +4 intents: hide screens, hide others, scale, stop session (2026-10-16 b) // +13 screen-number, layout and volume intents (2026-10-16 evening): ~4,100 tokens of 8,192
     }
 
     /// Every rule a GBNF grammar uses is defined (an undefined one makes llama-server answer HTTP 400 to every
@@ -417,7 +478,7 @@ mod tests {
     #[test]
     fn grammar_lists_ids_and_slot_rules() {
         let g = grammar(&cat());
-        assert!(g.starts_with("root ::= one (\" ; \" one){0,2}\none ::= plain | r0"), "{}", &g[..80]);
+        assert!(g.starts_with("root ::= one (\" ; \" one){0,3}\none ::= plain | r0"), "{}", &g[..80]);
         assert!(g.contains("\"vr.preset.cinema\""));
         assert!(g.contains("\"omarchy.reminder\" \" \" c \" minutes=\" num \" text=\" txt"));
         assert!(g.contains("\"move_window\" \" \" c \" window=\" win \" workspace=\" num"));

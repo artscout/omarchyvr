@@ -1,8 +1,9 @@
-//! The look of the app, after Pimax Play: near-black glassy surfaces, rounded cards, an indigo accent (#4a5cff),
-//! uppercase row titles, outline icons (Phosphor), pills whose colour fades, eased expand/collapse. Visual only.
+//! The look of the app: a dark console in the spirit of Pimax's Windows apps, drawn our own way. Near-black
+//! surfaces, flat cards with thin borders and small corners, small-caps labels, one indigo accent (#4a5cff), outline
+//! icons (Phosphor), our own line art ([`crate::art`]), pills whose colour fades. Visual only.
 //!
 //! Dark is the default; a light palette exists for people who switch the desktop to light.
-use eframe::egui::{self, Color32, CornerRadius, FontData, FontDefinitions, FontFamily, Id, Margin, Stroke, Ui};
+use eframe::egui::{self, Color32, CornerRadius, FontData, FontDefinitions, FontFamily, Id, Margin, RichText, Stroke, Ui};
 use std::sync::Arc;
 
 // Phosphor icons (regular weight), as text glyphs: only the ones the app shows are compiled in (a few KB).
@@ -10,11 +11,11 @@ egui_phosphor::subset! {
     pub mod icons {
         use regular::{
             ANCHOR, ARROW_COUNTER_CLOCKWISE, ARROW_SQUARE_OUT, ARROWS_CLOCKWISE, BATTERY_EMPTY, BATTERY_HIGH, BATTERY_LOW,
-            BATTERY_MEDIUM, BOOK_OPEN, BRIEFCASE, BUG, CARET_DOWN, CHECK_CIRCLE, CIRCLE, CODE, COPY, CROSSHAIR, CUBE_FOCUS,
-            DESKTOP, EYE, EYE_SLASH, FILE_TEXT, FILM_SLATE, FOLDER_OPEN, GAME_CONTROLLER, GEAR, GOGGLES, HAND, HEADSET,
-            HOUSE, INFO, LIGHTNING, LINK_SIMPLE, LIST, MAGIC_WAND, MAP_TRIFOLD, MICROPHONE, MONITOR, PLAY, POPCORN, POWER, PULSE,
-            QR_CODE, QUESTION, ROBOT, SCAN, SLIDERS, SPARKLE, SQUARES_FOUR, STEAM_LOGO, STOP, SUN, TERMINAL, USERS,
-            VIDEO_CAMERA, WARNING, WRENCH, X_CIRCLE,
+            BATTERY_MEDIUM, BOOK_OPEN, BRAIN, BRIEFCASE, BUG, CARET_DOWN, CARET_RIGHT, CHECK_CIRCLE, CIRCLE, CODE, COPY,
+            CROSSHAIR, CUBE_FOCUS, DESKTOP, EYE, EYE_SLASH, FILE_TEXT, FILM_SLATE, FOLDER_OPEN, GAME_CONTROLLER, GEAR,
+            GOGGLES, HAND, HEADSET, HOUSE, INFO, LIGHTNING, LINK_SIMPLE, LIST, MAGIC_WAND, MAP_TRIFOLD, MICROPHONE, MONITOR,
+            PLAY, POPCORN, POWER, PULSE, QR_CODE, QUESTION, ROBOT, SCAN, SEAL_CHECK, SLIDERS, SPARKLE, SPEAKER_HIGH,
+            SQUARES_FOUR, STEAM_LOGO, STOP, SUN, TERMINAL, USERS, VIDEO_CAMERA, WARNING, WRENCH, X_CIRCLE,
         };
     }
 }
@@ -29,7 +30,7 @@ pub struct Palette {
     pub dark: bool,
     /// Window background.
     pub bg: Color32,
-    /// Top and bottom bars.
+    /// The sidebar, the action row and the status bar.
     pub bar: Color32,
     /// Cards and rows.
     pub card: Color32,
@@ -39,7 +40,7 @@ pub struct Palette {
     pub inset: Color32,
     /// Hairlines around cards.
     pub stroke: Color32,
-    /// Stronger lines (focus, separators).
+    /// Stronger lines (focus, separators, outlined buttons).
     pub stroke_strong: Color32,
     /// Main text.
     pub text: Color32,
@@ -64,16 +65,16 @@ pub struct Palette {
 /// The dark palette (default).
 pub const DARK: Palette = Palette {
     dark: true,
-    bg: Color32::from_rgb(10, 11, 15),
-    bar: Color32::from_rgb(13, 15, 20),
-    card: Color32::from_rgb(21, 23, 30),
-    card_hover: Color32::from_rgb(28, 31, 40),
-    inset: Color32::from_rgb(16, 18, 24),
-    stroke: Color32::from_rgb(36, 40, 52),
-    stroke_strong: Color32::from_rgb(52, 57, 74),
-    text: Color32::from_rgb(233, 235, 242),
-    dim: Color32::from_rgb(163, 169, 183),
-    faint: Color32::from_rgb(107, 113, 128),
+    bg: Color32::from_rgb(9, 10, 13),
+    bar: Color32::from_rgb(13, 14, 19),
+    card: Color32::from_rgb(19, 21, 27),
+    card_hover: Color32::from_rgb(27, 30, 39),
+    inset: Color32::from_rgb(14, 16, 21),
+    stroke: Color32::from_rgb(40, 44, 56),
+    stroke_strong: Color32::from_rgb(62, 67, 85),
+    text: Color32::from_rgb(232, 234, 241),
+    dim: Color32::from_rgb(160, 166, 181),
+    faint: Color32::from_rgb(104, 110, 126),
     accent: Color32::from_rgb(74, 92, 255),
     accent_hover: Color32::from_rgb(98, 114, 255),
     ok: Color32::from_rgb(54, 196, 138),
@@ -90,11 +91,11 @@ pub const LIGHT: Palette = Palette {
     card: Color32::from_rgb(255, 255, 255),
     card_hover: Color32::from_rgb(243, 245, 251),
     inset: Color32::from_rgb(246, 247, 251),
-    stroke: Color32::from_rgb(223, 227, 236),
-    stroke_strong: Color32::from_rgb(196, 202, 216),
+    stroke: Color32::from_rgb(220, 224, 233),
+    stroke_strong: Color32::from_rgb(190, 196, 211),
     text: Color32::from_rgb(20, 24, 33),
     dim: Color32::from_rgb(77, 85, 102),
-    faint: Color32::from_rgb(138, 145, 161),
+    faint: Color32::from_rgb(132, 139, 156),
     accent: Color32::from_rgb(59, 76, 245),
     accent_hover: Color32::from_rgb(80, 96, 250),
     ok: Color32::from_rgb(26, 154, 98),
@@ -104,11 +105,11 @@ pub const LIGHT: Palette = Palette {
 };
 
 /// Corner radius of cards.
-pub const R_CARD: u8 = 14;
-/// Corner radius of rows and buttons.
-pub const R_ROW: u8 = 12;
+pub const R_CARD: u8 = 6;
+/// Corner radius of rows and big buttons.
+pub const R_ROW: u8 = 5;
 /// Corner radius of small controls.
-pub const R_SMALL: u8 = 8;
+pub const R_SMALL: u8 = 4;
 /// Spacing unit.
 pub const GAP: f32 = 10.0;
 /// Expand / collapse time.
@@ -117,6 +118,8 @@ pub const T_EXPAND: f32 = 0.22;
 pub const T_HOVER: f32 = 0.12;
 /// Colour fade time of pills.
 pub const T_FADE: f32 = 0.35;
+/// Letter spacing of small-caps labels (points).
+pub const CAPS_SPACING: f32 = 0.7;
 
 /// The palette of this ui's theme.
 pub fn pal(ui: &Ui) -> Palette {
@@ -134,6 +137,11 @@ pub fn pal_ctx(ctx: &egui::Context) -> Palette {
     } else {
         LIGHT
     }
+}
+
+/// Small caps: the text in capitals, a little spaced (labels, card titles, buttons of the action row).
+pub fn caps(text: &str, size: f32, color: Color32) -> RichText {
+    RichText::new(text.to_uppercase()).size(size).color(color).extra_letter_spacing(CAPS_SPACING)
 }
 
 fn heading_name() -> FontFamily {
@@ -194,9 +202,9 @@ pub fn visuals(p: &Palette) -> egui::Visuals {
     v.hyperlink_color = p.accent;
     v.selection.bg_fill = p.accent.gamma_multiply(0.45);
     v.selection.stroke = Stroke::new(1.0, p.accent);
-    v.window_corner_radius = CornerRadius::same(R_CARD);
+    v.window_corner_radius = CornerRadius::same(R_CARD + 2);
     v.menu_corner_radius = CornerRadius::same(R_ROW);
-    v.window_stroke = Stroke::new(1.0, p.stroke);
+    v.window_stroke = Stroke::new(1.0, p.stroke_strong);
     v.override_text_color = None;
     let r = CornerRadius::same(R_SMALL);
     let w = &mut v.widgets;
@@ -205,16 +213,20 @@ pub fn visuals(p: &Palette) -> egui::Visuals {
     w.noninteractive.bg_stroke = Stroke::new(1.0, p.stroke);
     w.noninteractive.fg_stroke = Stroke::new(1.0, p.dim);
     w.noninteractive.corner_radius = r;
-    let control = if p.dark { Color32::from_rgb(30, 33, 43) } else { Color32::from_rgb(234, 237, 244) };
-    let control_hover = if p.dark { Color32::from_rgb(40, 44, 57) } else { Color32::from_rgb(224, 228, 238) };
+    // sliders: the part up to the handle in the accent, a round handle
+    v.slider_trailing_fill = true;
+    v.handle_shape = egui::style::HandleShape::Circle;
+    // buttons: outlined, a dark fill (the look of the action row)
+    let control = if p.dark { Color32::from_rgb(28, 31, 41) } else { Color32::from_rgb(236, 239, 245) };
+    let control_hover = if p.dark { Color32::from_rgb(32, 36, 48) } else { Color32::from_rgb(230, 234, 243) };
     w.inactive.bg_fill = control;
     w.inactive.weak_bg_fill = control;
-    w.inactive.bg_stroke = Stroke::new(1.0, p.stroke);
+    w.inactive.bg_stroke = Stroke::new(1.0, p.stroke_strong);
     w.inactive.fg_stroke = Stroke::new(1.0, p.text);
     w.inactive.corner_radius = r;
     w.hovered.bg_fill = control_hover;
     w.hovered.weak_bg_fill = control_hover;
-    w.hovered.bg_stroke = Stroke::new(1.0, p.accent.gamma_multiply(0.7));
+    w.hovered.bg_stroke = Stroke::new(1.0, p.accent.gamma_multiply(0.8));
     w.hovered.fg_stroke = Stroke::new(1.5, p.text);
     w.hovered.corner_radius = r;
     w.active.bg_fill = p.accent;
@@ -224,6 +236,7 @@ pub fn visuals(p: &Palette) -> egui::Visuals {
     w.active.corner_radius = r;
     w.open.weak_bg_fill = control_hover;
     w.open.bg_fill = control_hover;
+    w.open.bg_stroke = Stroke::new(1.0, p.accent.gamma_multiply(0.8));
     w.open.corner_radius = r;
     v
 }
@@ -235,17 +248,19 @@ pub fn install(ctx: &egui::Context, dark: bool) {
         ctx.style_mut_of(theme, |s| {
             s.visuals = visuals(&p);
             s.spacing.item_spacing = egui::vec2(8.0, 7.0);
-            s.spacing.button_padding = egui::vec2(12.0, 5.0);
-            s.spacing.interact_size.y = 26.0;
-            s.spacing.window_margin = Margin::same(16);
-            s.spacing.menu_margin = Margin::same(8);
+            s.spacing.button_padding = egui::vec2(10.0, 4.0);
+            s.spacing.interact_size.y = 24.0;
+            // setting rows shorten it when the row is narrow (widgets::at_right)
+            s.spacing.slider_width = 160.0;
+            s.spacing.window_margin = Margin::same(18);
+            s.spacing.menu_margin = Margin::same(6);
             s.interaction.selectable_labels = false;
             s.animation_time = 0.18;
             use egui::{FontId, TextStyle};
-            s.text_styles.insert(TextStyle::Body, FontId::proportional(14.0));
-            s.text_styles.insert(TextStyle::Button, FontId::proportional(14.0));
+            s.text_styles.insert(TextStyle::Body, FontId::proportional(13.5));
+            s.text_styles.insert(TextStyle::Button, FontId::proportional(13.0));
             s.text_styles.insert(TextStyle::Small, FontId::proportional(11.5));
-            s.text_styles.insert(TextStyle::Heading, FontId::proportional(22.0));
+            s.text_styles.insert(TextStyle::Heading, FontId::proportional(20.0));
             s.text_styles.insert(TextStyle::Monospace, FontId::monospace(12.5));
         });
     }

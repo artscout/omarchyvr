@@ -48,7 +48,7 @@ target/release/pimax-ai stop
 
 The server:
 - listens on 127.0.0.1 only;
-- runs under `nice -n 19`, `ionice -c 3` (idle I/O) and `--prio -1`, with one slot and an 8k context;
+- runs under `nice -n 19`, `ionice -c 2 -n 7` (lowest best-effort I/O; the idle class held a model load for minutes under steady disk load, 2026-10-16) and `--prio -1`, with one slot and an 8k context;
 - uses `--jinja` (tool calling through the model's chat template), with `--reasoning off` and
   `enable_thinking: false`.
 
@@ -557,3 +557,333 @@ answered (the installed build's audit: 312/444). Fixes:
 
 Local dry-run audit after the fix (Qwen3.5-4B on the CPU, VR session running): **440/444 (99.1 %)**, 128 model
 requests p50 1.29 s, p95 2.05 s. Two of the four remaining failures got phrases afterwards.
+
+## 16. Two stages on this PC: Lara sorts, the model on the GPU acts (2026-10-16)
+
+User request (2026-10-16): "we already have an OpenRouter model with Jev set up; let's have a toggle that is LOCAL: 'lara',
+same as Jev, and the other model on the GPU, all local for the orders; lara for the same filter, and whatever model for
+the uses. Add this to WayVR." Later the same day: the GPU memory is adaptive (no fixed cap), and both models are picked
+from a list that shows size, video memory, speed and the audit's accuracy, with the recommended one marked.
+
+### What "Lara" is
+
+- `typesafe/jev-router` (Jev) is TypeSafe's hosted "System One" router. No weights are published (Hugging Face: none;
+  OpenRouter and TypeSafe's API only), so Jev cannot run on this PC.
+- No model called "Lara" exists (OpenRouter, Hugging Face, TypeSafe). The open counterpart of Jev is **Laya**
+  (`convaiinnovations/laya`, code github.com/NandhaKishorM/laya, Apache-2.0): LiteLLM lists it next to Jev and Bespoke
+  Nimble as the self-hosted decision classifiers, and its `laya-serve` speaks Jev's own `/v1/systemone` protocol.
+  "Lara" is almost certainly Laya heard or spelled differently. The app keeps the name **Lara** for the router's role.
+- Laya is not a language model: a ModernBERT-large encoder (421M parameters) with decision heads answers a `choice`
+  question (our 11 categories with a short description each) with one probability per category in one forward pass.
+  No text is generated, so it cannot go off script. It runs on the processor only (PyTorch CPU, ~2 GB of RAM).
+- As published it does not know this desk's words ("dim", "necks background", "liz windows"). **Lara** is Laya tuned on
+  this PC to the command catalogue (`pimax-ai tune-lara`): every catalogue phrase of every intent, its ASR-mangled
+  copy and some chatter (1,975 rows; `pimax-voice routerbench --out`), 3 epochs on the processor (here ~65 minutes on
+  16 cores at nice 19, next to VR and these benchmarks; 0.8 GB). The audit's natural phrasings stay out, so the audit tests unseen wording.
+  Laya's own calibration slice (in-sample): 41 % -> 90 %.
+
+### The pipeline (`rust/pimax-voice/src/router.rs`, `Agent::lara_filtered`)
+
+Exact phrases, near-exact fuzzy hits and noise stay with the matcher (no model, as in every mode). Everything else:
+
+1. **Lara and the model at the same time.** Lara (port 8081) gets only the words. Meanwhile the model on port 8080
+   answers the simple request of section 4 (the cached prompt with every intent, a one-line answer under a GBNF
+   grammar). One round trip of latency.
+2. **The filter.** An answer whose intent belongs to one of Lara's categories stands. So does an answer the model is
+   sure of (8 or 9 of 9, `LARA_TRUST`). Lara's categories are its best one, plus the runner-up below 70 %
+   probability, plus the third when the first two are under 80 % together, plus the matcher's first guess.
+3. **Otherwise the model is asked again** with a grammar of only those categories' intents (`nlu::grammar_subset`;
+   "none", undo and help always allowed). The prompt is the same, so the server's prompt cache still holds.
+4. **Fallbacks.** Lara down or slow (1.5 s): the model's own answer (the simple mode). The model down: the matcher's
+   "Did you mean ...?" or "Didn't get". `voice_ai_style = "two-stage"` switches stage 2 to tool calling with the
+   category's tools, like the online path (section 14); measured below, it is worse on this PC.
+
+The debug line under the captions starts with Lara's verdict: `~x .58 > AI Lara system .93 > omarchy.volume.up 9/9 >
+Volume up 412ms`; an overruled answer shows as `Lara system .97 > not vr.preset.cinema > omarchy.volume.up 9/9`, a
+missing router as `Lara off > ...`.
+
+### Models
+
+| role | id in ai.toml | what | download | memory | licence |
+|---|---|---|---|---|---|
+| router | `lara` (recommended) | Laya 421M tuned here on the catalogue | 2.7 GB (Python packages ~0.4 GB, 1.2 GB installed; the Laya repository with its three checkpoints 2.3 GB), then ~1 h of tuning once (0.8 GB more) | ~2 GB RAM, no VRAM | Apache-2.0 |
+| router | `laya` | Laya 421M as published (`english` checkpoint, revision 55cf4c4) | 2.7 GB | ~2 GB RAM | Apache-2.0 |
+| router | `qwen3.5-0.8b` | Qwen3.5-0.8B Q4_K_M on a second llama-server, JSON schema | 508 MiB | ~0.9 GB RAM | Apache-2.0 |
+| action | `qwen3.5-4b` (recommended) | Qwen3.5-4B Q4_K_M (the simple mode's model) | 2.6 GiB | ~3.0 GB VRAM (measured 3,006 MiB) | Apache-2.0 |
+| action | `qwen3.5-9b` | Qwen3.5-9B IQ4_XS (Q4_K_M would be 5.3 GiB) | 4.8 GiB | ~4.8 GB VRAM (measured 4,846 MiB) | Apache-2.0 |
+
+On this PC everything above is downloaded already (2026-10-16), and Lara is tuned (`~/.local/share/pimax/ai/laya/lara`).
+
+Downloads are pinned and checked: GGUF files by Hugging Face revision and LFS SHA-256 (`pimax-ai` `Asset`s); Laya by
+`laya==0.4.8` with every Python package at a tested version (`LAYA_CONSTRAINTS`, PyTorch's CPU wheel index) and the
+checkpoint at the revision Laya lists as reviewed (`LAYA_REVISION=reviewed`). Nothing is bundled in this repository.
+
+### Runtime (`rust/pimax-ai/src/twostage.rs`)
+
+| port | process | pid file / log |
+|---|---|---|
+| 8080 | llama-server with the action model (in the simple mode: the simple model) | `llama-server.pid`, `llama-server.log` |
+| 8081 | `laya-serve` (Lara / Laya, CPU, 8 threads, offline, nice 19) or llama-server (0.8B, CPU) | `router.pid`, `ai-router.log` |
+| - | `pimax-ai watch` (VRAM watch) | `vram-watch.pid`, `ai-vram-watch.log` |
+
+```sh
+pimax-ai install --two-stage [--router lara|laya|qwen3.5-0.8b] [--action qwen3.5-4b|qwen3.5-9b]
+pimax-ai up            # what ai.toml asks for (simple or two stages), fitted to the free VRAM; waits until ready
+pimax-ai fit [--json]  # what up would choose now and why
+pimax-ai test --two-stage   # "two stages: router 31 ms: system; model 190 ms (...); VRAM 3.0 GB in use, 19.3 GB free"
+pimax-ai down          # router, model and watch
+pimax-ai tune-lara     # (again) tune Laya to the catalogue
+```
+
+pimaxd's `ai.server` component (System page: "Local AI (pimax-ai)") now starts `pimax-ai up` and stops with
+`pimax-ai down`, so Play and Work bring the AI up in the saved shape; it stays a leaf (VR never waits for it).
+
+**Video memory: Auto by default** (`vram_mib = "auto"`, the AI page's "Video memory for AI": Auto / up to 4, 6, 8, 12 GB).
+At each `up` (each Play / Work start, or a change of the setting) `pimax-ai` reads the free VRAM (nvidia-smi; its own
+server's memory counts as free) and what runs next to it from the process list:
+
+| session | VRAM kept free for it |
+|---|---|
+| none | 1 GB |
+| the Work desk (wayvr) | 2 GB |
+| SteamVR without a game (vrserver) | 8 GB (room for the game to come) |
+| a game (a process under `steamapps/common/`, not SteamVR) | 3 GB more than it uses now |
+
+Then (`twostage::fit`): the chosen model whole on the GPU when it fits; else a smaller downloaded action model that
+fits whole; else llama.cpp's own fit (`--fit on --fit-target M`: as many layers as leave M MiB free, the rest on the
+CPU, slower; checked: the 9B with `--fit-target 18000` took 3.8 GB, left 18.1 GB free and answered); below 1.5 GB of
+room, the CPU. A limit ("up to N GB") caps the room. `gpu_layers = N` by hand wins over
+all of it. While the model sits on the GPU, `pimax-ai watch` checks every 15 s: when a game squeezes the free memory
+under half its reserve, the model is fitted again (fewer layers, the smaller model or the CPU). It never grows back by
+itself (the next start does), so it cannot flap.
+
+### Settings (`~/.config/pimax/ai.toml`, via `pimax_config::ai`)
+
+```toml
+voice_local = "two-stage"      # simple (default) | two-stage; with [use] voice = a local provider
+
+[local_two_stage]
+router = "lara"                # lara | laya | qwen3.5-0.8b
+action = "qwen3.5-4b"          # qwen3.5-4b | qwen3.5-9b
+gpu_layers = "all"             # or a number (0 = CPU); "all" = the VRAM fit decides
+vram_mib = "auto"              # or a limit in MiB
+```
+
+"AI runs on" writes only `[use] voice`, `voice_local` and this section; keys and other providers stay as they are
+(`AiConfig::set_runs_on`, tested with a key in the file). `pimax-voice act` checks the file every 2 s and loads the new
+agent between two commands (no restart; a toast "AI: This PC, 2 stages" and the watch button follow).
+
+### Where the switch is (user decision 2026-10-16)
+
+- **Work only.** The local models belong to Work (the WayVR desk for work and movies). pimaxd's `ai.server` is a session
+  component whose rule is "Work and Local models On": Play / SteamVR / games never start them, and a Work session that
+  switches to Play stops them (`pimax-ai down`). The switch is `voice_local_models` in ai.toml (pimaxd reads it each
+  round; it wins over pimaxd.toml's `ai_server`). Off and no online choice: voice has no AI agent (offline commands).
+- **App: Local AI** (navigation, next to Ready): the switch **Local models On / Off**; **How much of the PC the AI may
+  use**: Low / Medium (recommended) / High, each with its download, RAM, video memory, speed and the audit's result;
+  **Advanced: choose models**: Lara on / off (two stages or the model alone), the router and action model pickers
+  (size, memory, result, licence, the recommended one marked), **Video memory for AI** (Auto / up to 4, 6, 8, 12 GB);
+  **State**: Download (and tune), Start / Test (each stage's time, the VRAM in use) / Stop, Lara's and the model's
+  state; **Online (Jev) instead**: a separate switch. Screenshot `local-ai.png`. The AI page's "AI runs on" card
+  shows the current choice and opens this page.
+- **WayVR, Work desk: the watch** (left wrist): "Local AI: On" (press: On / Off, `pimax-voice ai-mode local-toggle`)
+  and, while on, the preset button "Medium" (press: Low -> Medium -> High, `ai-mode preset-next`). Hidden unless Pimax
+  voice shows it; `pimax-voice act` sets the texts over `wayvrctl panel-modify watch ...` at start and on every change;
+  `ai-mode` loads or unloads the models (`pimax-ai up`, detached).
+
+| preset | router + action model | download | memory | hard 40 / all | speed |
+|---|---|---|---|---|---|
+| Low | Lara + Qwen3.5-4B on the processor | 5.3 GB | ~5 GB RAM, no VRAM | 40/40, 452/454 (the 4B on the CPU) | ~1.2-1.5 s |
+| **Medium** (default) | Lara + Qwen3.5-4B on the GPU | 5.3 GB | 2 GB RAM, 3.0 GB VRAM | 40/40, 458/460 (with 6 plans) | ~0.35 s |
+| High | Lara + Qwen3.5-9B IQ4_XS on the GPU | 7.5 GB | 2 GB RAM, 4.7 GB VRAM | 38/40 (no better than Medium here) | ~0.35 s |
+
+**Commands of several steps** ("make a new window and then open the terminal there", "go to the next tab and then
+reload the page"): with "and" / "then" the model may answer a plan of up to 3 steps (section 3), run one after the
+other with 400 ms between them. Lara names one category, so a plan of several steps is never filtered (its steps may be
+of several categories); with tool calling (`voice_ai_style = "two-stage"`) such a request gets every tool. The audit
+has 6 such plans (`tests/fixtures/audit.tsv`, want `a ; b`: every step, in order): 6/6 for the simple 4B on the GPU and
+6/6 with Lara + 4B; agent tests check the order and that a single unsure step is still filtered.
+
+**Why no plan ran live on 2026-10-16** (the first Work session with two stages): the plan grammar was offered only when
+the words held "and" / "then", and none of that session's requests did ("can you focus youtube in a new window", "can
+we have 2 more screens can we have 4 screens"); every request got the one-step grammar, and the missing actions (a
+screen count, an app on a new screen) did not exist as intents, so the model picked the nearest single one. Since then:
+plans have up to 4 steps (`nlu::PLAN_MAX`); "also", "plus", "afterwards" and two command verbs back to back ("close
+this go to the main screen") offer the plan grammar too; a plan of several steps is never filtered by Lara (its steps
+may be of several categories); the composite requests got intents of their own (`vr.screens.count/more/add`,
+`win.screen.open`, `win.screen.gather`); and one toast lists every step's result. The session's 29 requests as an
+audit fixture (`tests/fixtures/live-2026-10-16.tsv`, VOICE.md "Live session 2026-10-16").
+
+### Benchmark (2026-10-16, `pimax-voice audit --hard` and the full audit, dry run)
+
+Setup: VR Work session running at the start (WayVR was stopped by someone else at 12:46, during the two-stage runs),
+the machine busy (Lara's tuning on 16 cores at nice 19, other builds), dry run, 1 s between model requests. **Hard 40** =
+the natural phrasings the matcher leaves to the model, spread over the intents (the online benchmark's selection,
+`audit --hard`); **all** = every audit phrase (454: each intent's first phrase exact and mangled, plus
+`tests/fixtures/audit.tsv`; ~133 reach a model). The dry run reads the live desktop, so an action that needs a focused
+window fails when none is focused; the table counts **right decisions** (the model's intent; the HTML pages also show
+the strict pass rate). Latency: end of the transcript to the decision, model requests only.
+
+| setup | hard 40 | all 454 | p50 / p95 | VRAM | CPU per command |
+|---|---|---|---|---|---|
+| This PC, simple: Qwen3.5-4B on the CPU (24 threads) | 40/40 | 452/454 | 1.24 / 1.77 s | 0 | 21.9 s |
+| This PC, simple: Qwen3.5-4B on the GPU | 40/40 | 452/454 | 0.20 / 0.26 s | 3.0 GB | 0.1 s |
+| This PC, simple: Qwen3.5-9B on the GPU | 39/40 | 452/454 | 0.25 / 0.36 s | 4.7 GB | 0.2 s |
+| **Two stages: Lara + Qwen3.5-4B GPU (Medium)** | 40/40 | 458/460 | 0.33 / 0.39 s | 3.0 GB | 2.6 s (2.5 s Lara) |
+| Two stages: Lara + Qwen3.5-9B GPU (High) | 38/40 | - | 0.33 / 0.36 s | 4.7 GB | 2.7 s (2.6 s Lara) |
+| Two stages: Laya (published) + 4B GPU | 40/40 | 452/454 | 0.46 / 0.86 s | 3.0 GB | 3.5 s (3.4 s Lara) |
+| Two stages: Laya (published) + 9B GPU | 39/40 | 451/454 | 0.45 / 0.56 s | 4.7 GB | 3.4 s (3.3 s Lara) |
+| Two stages: Qwen3.5-0.8B router + 4B GPU (router missed its deadline every time) | 40/40 | - | 1.03 / 1.04 s | 3.0 GB | 0.1 s + router (not measured) |
+| Two stages, stage 2 = tool calling (the online design): Laya + 4B GPU | 23/40 | - | 0.86 / 2.12 s | 3.0 GB | 4.0 s (3.4 s Lara) |
+| Online (section 14, 2026-10-15): jev-router + gpt-6-luna | 37/40 | - | 3.4 / 5.1 s | 0 | (remote) |
+
+Router alone (`pimax-voice routerbench`, stage 1 only; "offered" = the right category among the ones Lara passes on).
+| router | categories right | offered | with the matcher's guess | p50 |
+|---|---|---|---|---|
+Natural phrasings (242, the audit's own; never in Lara's training rows) and the hard 40:
+
+| router | categories right | offered | with the matcher's guess | p50 (busy CPU) |
+|---|---|---|---|---|
+| Laya as published | 57 % (hard 45 %) | 64 % (hard 58 %) | 95 % (hard 90 %) | 0.33 s |
+| Qwen3.5-0.8B (llama-server, CPU) | 57 % (hard 40 %) | 57 % (hard 40 %) | 94 % (hard 92 %) | 0.82 s |
+| **Lara (Laya tuned here, 3 epochs; the installed one)** | **94 %** (hard 92 %) | **95 %** (hard 92 %) | 98 % (hard 98 %) | 0.31 s |
+| the matcher's guess alone | 89 % (hard 88 %) | | | 0 |
+
+A first measurement of Lara gave ~72 %: the requests did not name the checkpoint, and laya-serve sends a sentence it
+recognises as English to its published `english` checkpoint even when the tuned one is the default. The router now
+names it (`"model": "lara"` / `"english"`, `router::laya_body`). Lara's hard 40 include 5 ASR-mangled catalogue
+phrases that were in its training rows (35 are natural phrasings it never saw).
+
+**What the data says.**
+- The simple request on the GPU is already right for 40/40 hard phrases (4B) and 452/454 of all, in 0.2 s; the 9B is
+  no better here (39/40) and needs 4.8 GB instead of 3.0 GB. On the processor the same 4B takes ~1.3 s (section 13).
+- Two stages with Lara and the 4B on the GPU decide every hard phrase (40/40) and 458/460 of all (the 6 plans
+  included) in 0.33 s: Lara adds ~0.13 s. The model alone is as accurate on this audit (its prompt was tuned on these
+  phrases); Lara is the safety net for wording the model is unsure about.
+- Stage 2 as tool calling (the online design) is much worse locally: 23/40, 0.86 s (a 4B picks "help" when the right
+  tool is missing, and every category change re-reads ~2,000 tokens of tool schemas).
+- Laya as published sorts 57 % of the unseen natural phrasings into the right category; tuned here (Lara, 3 epochs,
+  ~65 min of 16 cores) **94 %** (hard 45 % -> 92 %), better than the matcher's own guess (89 %), which stage 2 still
+  gets as well.
+- The 0.8B LLM router is no better than Laya (57 %) and slower; on the busy processor it missed the router deadline
+  every time (`Lara timed out`, the model answered alone, still 40/40). The deadline was 1 s then (curl took whole
+  seconds); `curl_seconds` now passes 1.5 s.
+- VR frames: the GPU model costs skipped compositor frames while it computes (0 to ~6 per command in these runs,
+  ~10 for the 9B; it depends on what the compositor does at that moment); Lara on the processor costs none.
+
+**Defaults** (from the data): Local models **On** in Work with the **Medium** preset: Lara (tuned; Laya as published
+runs while it tunes) + Qwen3.5-4B on the GPU, video memory **Auto**. High (the 9B) costs 1.7 GB more video memory and
+was not more accurate here; Low keeps the GPU free for 1-1.5 s per command. The online mode (jev-router + gpt-6-luna)
+was 37/40 at 3.4 s p50 / 5.1 s p95 (section 14); its key has expired.
+
+The report with every run: `analysis/voice-ai-local-two-stage.html`; the raw audit pages are in the run directories of
+the bench script (not kept).
+
+## 17. Speech recognition on the GPU (2026-10-16)
+
+User request (2026-10-16): a "Large GPU" speech-recognition choice next to the local AI in Work. `pimax-voice listen`
+used Parakeet TDT 0.6B v3 int8 on the processor; it now has a second engine, whisper.cpp's `whisper-server`
+(large-v3-turbo, Vulkan), and Parakeet gets hotwords.
+
+### Benchmark (60 Kokoro TTS commands, and the same with noise; scripts and results in the session scratchpad `asr/`)
+
+| engine | WER clean | WER noisy | p50 / p95 | VRAM |
+|---|---|---|---|---|
+| Parakeet v3 int8 CPU (greedy, before) | 3.6% | 18.5% | 129 / 185 ms | 0 |
+| Parakeet + hotwords (modified_beam_search, score 1.5) | 2.7% | 13.3% | 138 / 203 ms | 0 |
+| whisper large-v3-turbo q5_0, GPU (Vulkan, whisper-server) | 6.4% | 10.3% | 43 / 69 ms | 835 MB |
+| distil-large-v3, GPU | 3.6% | 10.6% | 36 / 52 ms | 1.7 GB |
+
+Through `pimax-voice transcribe` (the whole path: Silero VAD, segments, partials, the engine; WER on the final of each
+clip) the numbers are different, because the VAD cuts and the wake word ("Max") sits first:
+
+| `--engine` | clean | noisy | decode p50 / p95 |
+|---|---|---|---|
+| parakeet --no-hotwords (greedy) | 7.0% | 21.2% | 120 / 196 ms |
+| parakeet (hotwords 1.5, the CPU option) | 6.1% | 17.0% | 132 / 198 ms |
+| whisper-server (GPU) | 8.2% | 14.5% | 44 / 71 ms |
+
+So the GPU model is clearly faster (3x) and better in noise; on clean speech the hotword Parakeet is as good or better
+(Whisper writes "Re-center", "Mac" for "Max"). The server is English only (`-l en`); Parakeet also hears Spanish.
+distil-large-v3 is not used: no better than turbo in noise and twice the memory.
+
+### Integration
+
+- **Engine** (`rust/pimax-voice/src/engine.rs`, no cargo feature): `EngineSpec::WhisperServer { port, timeout_ms,
+  fallback }`. Per segment (partials and finals both): a WAV (16 kHz, 16-bit, mono, in memory, padded to 1.1 s) goes as
+  multipart `file` + `response_format=json` + `temperature=0.0` to `POST http://127.0.0.1:8082/inference`; connect
+  timeout 250 ms, answer timeout 4 s. On any failure the segment is decoded by the Parakeet fallback (always loaded)
+  and the server is left alone for 3 s, then tried again, so voice never stops and a server that starts later is used
+  by itself. voice.log gets one line on each change ("asr: GPU server not usable (...); Parakeet on the processor
+  answers" / "asr: the GPU server answers"). Partials use the server too (40 ms instead of 130 ms, no processor load).
+  Bracketed sounds ("[BLANK_AUDIO]", "(silence)") are dropped.
+- **Server flags**: `-nc -l en -nt --host 127.0.0.1 --port 8082` (without `-nc` the server feeds earlier output into the
+  next request and degrades), at nice 19 / ionice. Binary `~/src/whisper.cpp/build-vk/bin/whisper-server`, model
+  `~/models/whisper/ggml-large-v3-turbo-q5_0.bin` (not downloaded by the app yet; a missing file is a plain-words
+  message and the small model answers).
+- **Lifecycle** (same rule as section 16): a third slot of `pimax-ai` (`Slot::Asr`, port 8082, `asr.pid`,
+  `ai-asr.log`), started and stopped by pimaxd's `ai.server` through `pimax-ai up` / `down`: Work only, with Local
+  models On. `up` decides first and counts the server's 0.9 GB in the fit of the action model. `pimax-ai stop --asr`,
+  `pimax-ai status` (line "speech") and `status --json` (`asr`, `asr_missing`) show it.
+- **Setting** (`ai.toml`, `pimax_config::ai::Asr`): `asr = "auto" | "cpu" | "gpu"`, default auto (key absent).
+  Auto: the large model when Local models are On and at least 1.5 GB of video memory is free, else the small one. `cpu`
+  never starts the server; `gpu` starts it when 0.9 GB + margin is free and the local models are On. Local models Off:
+  no server (Work only rule), the small model answers.
+- **`pimax-voice listen`/`transcribe`** read `asr` at start (`--engine auto`, the default): small = Parakeet with
+  hotwords; auto/gpu = the server engine with the Parakeet fallback; the engine line goes to voice.log and the `hello`
+  event. Other commands (bench, audit) use fixed Parakeet. `--engine parakeet --no-hotwords|whisper-server`,
+  `--asr-port`, `--asr-timeout-ms` override. A change of `asr` reaches the server at once (the app runs `pimax-ai up`)
+  and the engine at the next voice start.
+- **Hotwords** (CPU option): sherpa-onnx C API fields exist (`hotwords_file`, `hotwords_score`, `modeling_unit`,
+  `bpe_vocab`); `SttConfig.hotwords` switches to `modified_beam_search`, score 1.5 (2 to 8 were worse). Words: Max,
+  passthrough, screens, workspace, YouTube, Chrome, terminal, foot, cinema, Omarchy (`engine::HOTWORDS`); the files
+  (`hotwords.txt`, `bpe.vocab` built from tokens.txt) are written to `~/.cache/pimax/voice/`.
+- **App**: Local AI page, card "Speech recognition": Auto / Small (processor) / Large (graphics card) with the numbers
+  of each, the decision in plain words, a chip for the server and the missing-file message. Help line in the app's
+  help. Not done: a WayVR watch button (it would need `act.rs`, edited elsewhere), a Download button for the model and
+  server.
+
+## 18. Agent-mode model: Qwen3.6-27B as an option (2026-10-16)
+
+User request: try a quantised ~27B Qwen for agent mode (multi-step goals) next to the current models, and compare.
+
+**The model.** Qwen3.6-27B exists (Qwen, Apache-2.0). GGUF `unsloth/Qwen3.6-27B-GGUF`, revision `82d411a`, file
+`Qwen3.6-27B-Q4_K_M.gguf`, 15.66 GiB (16,817,244,384 bytes, SHA-256 `5ed60d0a...392a0`, checked), in
+`~/.local/share/pimax/ai/models/Qwen3.6-27B/`. Measured 16.7 GB of VRAM with a 16k context.
+
+**Wiring (opt-in only).** `[local_two_stage] agent = "qwen3.6-27b"` (default: absent = off). `AiConfig::set_agent(Some(id))`
+(for the Local AI page's picker) writes that key plus `voice_agent_url = http://127.0.0.1:8083/v1/chat/completions` and
+`voice_agent_model`, which voice reads (goal steps only; simple commands stay on Lara + 4B; the usual model is the
+fallback while the 27B is not up); `set_agent(None)` removes all three. `pimax-ai up` starts the server (port 8083, slot
+`agent`) only when the setting is on, the file is downloaded, the session is none or the Work desk (never SteamVR or a
+game; the watch stops it when one appears) and the free VRAM covers 18 GB plus the session's reserve. Presets, Play
+and Work never set it. `pimax-ai down` stops it. Download: `pimax-ai install --two-stage` fetches it when the setting is on.
+Still to do on the app side (not touched here, another agent's files): a "27B agent model" switch on the Local AI page
+calling `set_agent`, with its size, 17 GB VRAM and the result below.
+
+**Benchmark** (`pimax-voice audit --url ... --pause-ms 200`, dry run, one model at a time on port 8083, VR closed, Lara on
+the processor, 4B of the user's own server left running; scripts in the session scratchpad). Sets: **hard 40** (the
+two-stage set), **agent 7+10** (`agent-2026-10-16.tsv`: 7 goals, 10 single commands), **long 12** (`agent27b-2026-10-16.tsv`:
+goals of 3 to 8 steps). Wrong actions = steps that ran but are not in the goal; per-step time = goal time / steps run.
+
+| model | hard 40 | agent set: goals / singles | long set: goals ok | steps per goal | wrong actions / missed | time per goal (mean) | per step | first token (mean) | load | VRAM |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Qwen3.5-4B Q4_K_M | 39/40 | 5/7, 10/10 | 2/12 | 4.6 | 9 / 2 | 1.83 s | 0.40 s | 81 ms | 2 s | 3.3 GB |
+| Qwen3.5-9B IQ4_XS | 36/40 | 5/7, 10/10 | 2/12 | 4.5 | 8 / 2 | 1.95 s | 0.43 s | 101 ms | 8 s | 5.1 GB |
+| Qwen3.6-27B Q4_K_M | 33/40 | 5/7, 10/10 | 2/12 | 4.7 | 10 / 2 | 2.34 s | 0.50 s | 284 ms | 5 s (cached file) | 16.7 GB |
+
+(The 4B/9B/27B hard-40 here uses the audit's prompt, which was tuned on the 4B; the 27B answers "none" with 9/9
+confidence for plain commands such as "refresh this page" and "copy the selection". Loads are warm-cache; a cold read of
+15.7 GB from disk takes much longer. The 4B's 0.35 s per command in section 16 is the single-command path.)
+
+**What the data says.** The goal results are the same for all three models: the same two agent-set goals and ten long
+goals fail with the same cause, a stray first step (`win.screen.put app=wrap`, `vr.passthrough.brighter`, `omarchy.screenshot`,
+`media.play q=session`, a doubled `vr.preset.work3`) that comes from the goal loop (parts and hints, the "let's /
+get ready" header words), not from the model. A bigger model does not fix this; the loop does (report to the voice
+agent). The 27B is 4 to 6 times slower per step and takes 16.7 GB of the 24 GB, leaving ~4 GB with the 4B loaded: not
+enough for a Work desk with passthrough and the compositor plus headroom.
+
+**Recommendation.** Do not use the 27B for agent mode now: no accuracy gain here, slower, and too much VRAM to keep
+loaded in Work. Keep it as an opt-in experiment for sessions without a headset (Session none), loaded on demand and
+stopped before Play/Work. Revisit after the goal loop's stray-step problem is fixed, with a prompt written for the bigger
+model (its "none" answers) and thinking enabled for the planning step only. The 9B is no better than the 4B either.

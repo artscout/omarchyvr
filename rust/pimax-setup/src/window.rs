@@ -121,7 +121,7 @@ pub fn native_options(r: Renderer) -> eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("omarchyvr")
             .with_inner_size([1180.0, 820.0])
-            .with_min_inner_size([760.0, 520.0])
+            .with_min_inner_size([900.0, 560.0])
             .with_app_id("pimax"),
         renderer: match r {
             #[cfg(feature = "wgpu")]

@@ -1,6 +1,6 @@
 # One click to VR: Play and Work, the Monado cap, start at login, the hand test
 
-Everything here is in the Pimax app (`pimax-setup`), Home page, right column. Code: `rust/pimax-gui-core/src/play.rs`,
+Everything here is in the Pimax app (`pimax-setup`), Home page, the headset card. Code: `rust/pimax-gui-core/src/play.rs`,
 `rust/pimax-gui-core/src/handtest.rs`, UI in `rust/pimax-setup/src/pages/home.rs`.
 
 ## Readiness line
@@ -12,7 +12,7 @@ sets it anyway) and the **last start** from the app (ok / failed, how long ago).
 ## Play and Work
 
 Three layers: the **base** Pimax services (Monado + driver, tracking, controllers, hands, recording, keepalive,
-pimaxd; their own switches, shared by both sides), **Play** and **Work**. Home has two big buttons:
+pimaxd; their own switches, shared by both sides), **Play** and **Work**. Home's headset card has two big buttons:
 
 - **Play**: games, like SteamVR. `pimax vr start` with the base switches (6DoF, controllers, hands, anchor, readout,
   refresh rate) for Steam (xrizer) and OpenXR games; when the auto mode daemon runs it is told

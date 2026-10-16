@@ -48,6 +48,7 @@ would start: $ROOT/home/src/monado-eye/build/src/xrt/targets/service/monado-serv
   PIMAX_HEAD_IMU_LOG=$ROOT/session/head-imu.csv
   PIMAX_CTRL_TRACK=1
   PIMAX_CTRL_IMU_LOG=$ROOT/session/ctrl-imu
+  PIMAX_CTRL_INHAND=auto
   PIMAX_CTRL_AIM=head
   PIMAX_PERF_FILE=$ROOT/run/pimax-perf.stats
   PIMAX_DEBUG_PTRACE=1

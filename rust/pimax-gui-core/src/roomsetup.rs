@@ -26,7 +26,7 @@ pub fn setup_cmd(roommap: &std::path::Path, full: bool, name: &str, runtime_json
     .env("IPC_IGNORE_VERSION", "1")
 }
 
-/// One line for the Room row: "Room home: play area 3.0 x 2.0 m, floor set, in place in this session".
+/// One line for the Room page: "Room home: play area 3.0 x 2.0 m, floor set, in place in this session".
 pub fn status_line(core: &AppCore) -> String {
     let st = &core.room.state;
     let name = &core.room.map_name;

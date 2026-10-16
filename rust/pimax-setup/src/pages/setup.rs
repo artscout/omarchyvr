@@ -3,7 +3,8 @@
 //! directly with a progress log; root fixes show the exact lines with Copy and "Run with pkexec" (confirmed).
 use crate::app::{PimaxApp, SetupTab};
 use crate::pages::{autofix, checks};
-use crate::widgets::{self, card, chip, level_chip, note, pal, title};
+use crate::theme;
+use crate::widgets::{self, card, chip, level_chip, note, pal};
 use eframe::egui::{self, RichText, Ui};
 use pimax_doctor::Level;
 use pimax_gui_core::checklist::{counts, Fix, Group, Item};
@@ -91,23 +92,18 @@ pub fn item_ui(ui: &mut Ui, item: &Item, busy: bool, running: bool, focus: bool,
     click
 }
 
-/// Draw the page: the tab bar, then the tab.
+/// Draw the page: the tabs (developer mode), then the tab.
 pub fn show(ui: &mut Ui, app: &mut PimaxApp) {
     // the simple flow shows only the ready check; Install and Autofix are Developer mode
     let dev = app.core.state.dev_mode;
-    card(ui, |ui| {
-        ui.label(RichText::new(if dev { "Setup" } else { "Ready check" }).size(24.0).strong());
-        if dev {
-            ui.horizontal(|ui| {
-                for (t, name) in [(SetupTab::Checks, "Checks"), (SetupTab::Install, "Install"), (SetupTab::Autofix, "Autofix")] {
-                    if ui.selectable_label(app.ui.setup_tab == t, name).clicked() {
-                        app.ui.setup_tab = t;
-                    }
-                }
-            });
+    if dev {
+        const TABS: [(SetupTab, &str); 3] = [(SetupTab::Checks, "Checks"), (SetupTab::Install, "Install"), (SetupTab::Autofix, "Autofix")];
+        let names: Vec<&str> = TABS.iter().map(|t| t.1).collect();
+        let cur = TABS.iter().position(|t| t.0 == app.ui.setup_tab).unwrap_or(0);
+        if let Some(i) = widgets::seg(ui, "setup-tabs", &names, cur, true) {
+            app.ui.setup_tab = TABS[i].0;
         }
-    });
-    ui.add_space(8.0);
+    }
     if app.core.setup_focus.is_some() && dev {
         // a preflight or the onboarding pointed at an install item
         app.ui.setup_tab = SetupTab::Install;
@@ -126,9 +122,11 @@ pub fn install(ui: &mut Ui, app: &mut PimaxApp) {
     let (ok, warn, fail) = counts(&items);
     let busy = app.core.busy();
     let running = app.core.live.anything_running();
-    card(ui, |ui| {
-        ui.horizontal(|ui| {
-            title(ui, "Install and builds");
+    widgets::section_with(
+        ui,
+        "Install and builds",
+        Some("pimax-doctor's checks plus the rules from docs/LESSONS.md. Fixes that need root are shown first and only run when you press Run with pkexec and confirm."),
+        |ui| {
             chip(ui, &format!("{ok} ok"), pal(ui).ok);
             if warn > 0 {
                 chip(ui, &format!("{warn} warnings"), pal(ui).warn);
@@ -136,28 +134,27 @@ pub fn install(ui: &mut Ui, app: &mut PimaxApp) {
             if fail > 0 {
                 chip(ui, &format!("{fail} failing"), pal(ui).fail);
             }
-        });
-        note(ui, "pimax-doctor's checks plus the rules from docs/LESSONS.md. Fixes that need root are shown first and only run when you press Run with pkexec and confirm.");
-        ui.add_space(6.0);
+        },
+        |ui| {
         ui.horizontal_wrapped(|ui| {
-            if ui.add_enabled(!busy, egui::Button::new("Re-check")).clicked() {
+            if widgets::tbutton(ui, "Re-check", !busy).clicked() {
                 app.core.refresh(true);
             }
-            let r = ui
-                .add_enabled(!busy && !running, egui::Button::new("Rebuild Monado (desk)"))
+            let r = widgets::tbutton(ui, "Rebuild Monado (desk)", !busy && !running)
                 .on_hover_text("cmake -DPIMAX_CAM=ON . and ninja in ~/src/monado-eye/build, then the setcap prompt");
             let r = if running { r.on_disabled_hover_text("Stop desk/VR first (LESSONS row 8)") } else { r };
             if r.clicked() {
                 app.core.rebuild_desk();
             }
-            if ui.button("Copy doctor fix plan").on_hover_text("pimax-doctor --fix-plan as text").clicked() {
+            if widgets::tbutton(ui, "Copy doctor fix plan", true).on_hover_text("pimax-doctor --fix-plan as text").clicked() {
                 if let Some(rep) = &app.core.facts.report {
                     ui.ctx().copy_text(rep.fix_plan());
                     app.core.message = "Fix plan copied".into();
                 }
             }
         });
-    });
+        },
+    );
     if let Some(f) = app.core.setup_focus.take() {
         app.ui.focus = Some((f, std::time::Instant::now(), true));
     }
@@ -177,12 +174,9 @@ pub fn install(ui: &mut Ui, app: &mut PimaxApp) {
         }
         let bad = group.iter().filter(|i| i.bad()).count();
         let worst = group.iter().map(|i| i.level).max().unwrap_or(Level::Ok);
-        ui.add_space(8.0);
         card(ui, |ui| {
-            let head = RichText::new(format!("{}{}", g.title(), if bad > 0 { format!("  ({bad} to look at)") } else { String::new() }))
-                .strong()
-                .size(16.0)
-                .color(if worst >= Level::Warn { widgets::level_color(ui, worst) } else { ui.visuals().text_color() });
+            let c = if worst >= Level::Warn { widgets::level_color(ui, worst) } else { theme::pal(ui).text };
+            let head = theme::caps(&format!("{}{}", g.title(), if bad > 0 { format!("  ·  {bad} to look at") } else { String::new() }), 13.0, c).family(theme::heading(ui));
             let has_focus = scroll && focus.as_ref().is_some_and(|f| group.iter().any(|i| &i.id == f));
             egui::CollapsingHeader::new(head)
                 .id_salt(("group", g as u8))
@@ -204,9 +198,7 @@ pub fn install(ui: &mut Ui, app: &mut PimaxApp) {
         Some(ItemClick::Root(id)) => app.core.ask_root(&id),
         None => {}
     }
-    ui.add_space(8.0);
-    card(ui, |ui| {
-        title(ui, "Desktop entry");
-        note(ui, "Setup > Launcher and app > This app installs the binary to ~/.local/bin/pimax-setup, the icon and 'Pimax' in ~/.local/share/applications (no root).");
+    widgets::section(ui, "Desktop entry", Some("Launcher and app > This app installs the binary to ~/.local/bin/pimax-setup, the icon and 'Pimax' in ~/.local/share/applications (no root)."), |ui| {
+        note(ui, "~/.local/bin/pimax-setup, \"Pimax\" in the app launcher");
     });
 }

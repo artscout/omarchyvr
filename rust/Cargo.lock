@@ -2255,6 +2255,7 @@ name = "pimax-ai"
 version = "0.1.0"
 dependencies = [
  "libc",
+ "pimax-config",
 ]
 
 [[package]]
@@ -2274,7 +2275,17 @@ dependencies = [
  "libc",
  "pimax",
  "pimax-components",
+ "pimax-config",
  "pimax-proto",
+]
+
+[[package]]
+name = "pimax-backgrounds"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "toml",
 ]
 
 [[package]]
@@ -2521,10 +2532,12 @@ dependencies = [
  "libc",
  "log",
  "minidumper",
+ "pimax-backgrounds",
  "pimax-config",
  "pimax-doctor",
  "pimax-gui-core",
  "png",
+ "vello_cpu",
 ]
 
 [[package]]
@@ -2545,6 +2558,7 @@ dependencies = [
  "log",
  "pimax",
  "pimax-autod",
+ "pimax-backgrounds",
  "pimax-components",
  "pimax-config",
  "pimax-proto",
@@ -2559,6 +2573,7 @@ version = "0.1.0"
 dependencies = [
  "libc",
  "libloading 0.8.9",
+ "pimax-backgrounds",
  "pimax-config",
  "pimax-voicebench",
  "pipewire",

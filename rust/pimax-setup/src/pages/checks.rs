@@ -4,7 +4,7 @@
 //! app ran is listed under "Applied fixes" (`~/.local/state/pimax/fixes.log`) with Undo.
 use crate::app::PimaxApp;
 use crate::theme::{self, icon};
-use crate::widgets::{self, card, chip, note, pal, spinner, title};
+use crate::widgets::{self, card, chip, note, pal, spinner};
 use eframe::egui::{self, RichText, Ui};
 use pimax_gui_core::device::check::Planned;
 use pimax_gui_core::device::{Finding, Severity};
@@ -120,9 +120,11 @@ pub fn show(ui: &mut Ui, app: &mut PimaxApp) {
     };
     let (ok, warn, fail) = findings::counts(&all);
     let busy = app.core.busy();
-    card(ui, |ui| {
-        ui.horizontal_wrapped(|ui| {
-            title(ui, "System checks");
+    widgets::section_with(
+        ui,
+        "System checks",
+        Some("Checks the headset, USB, GPU, CPU and runtime. Fix runs the repair; a fix that needs root shows its lines and asks first."),
+        |ui| {
             chip(ui, &format!("{ok} ok"), pal(ui).ok);
             if warn > 0 {
                 chip(ui, &format!("{warn} warnings"), pal(ui).warn);
@@ -130,27 +132,27 @@ pub fn show(ui: &mut Ui, app: &mut PimaxApp) {
             if fail > 0 {
                 chip(ui, &format!("{fail} failing"), pal(ui).fail);
             }
-        });
-        note(ui, "Checks the headset, USB, GPU, CPU and runtime. Fix runs the repair; a fix that needs root shows its lines and asks first.");
-        ui.horizontal_wrapped(|ui| {
-            if widgets::ibutton(ui, icon::ARROWS_CLOCKWISE, "Check again", !busy).clicked() {
-                app.core.refresh(true);
-            }
-            if widgets::ibutton(ui, icon::ROBOT, "Ask Autofix", true).on_hover_text("Let a language model read the findings and propose catalogue fixes").clicked() {
-                app.ui.setup_tab = crate::app::SetupTab::Autofix;
-            }
-        });
-    });
+        },
+        |ui| {
+            ui.horizontal_wrapped(|ui| {
+                if widgets::ibutton(ui, icon::ARROWS_CLOCKWISE, "Check again", !busy).clicked() {
+                    app.core.refresh(true);
+                }
+                if widgets::ibutton(ui, icon::ROBOT, "Ask Autofix", true).on_hover_text("Let a language model read the findings and propose catalogue fixes").clicked() {
+                    app.ui.setup_tab = crate::app::SetupTab::Autofix;
+                }
+            });
+        },
+    );
     super::gamecheck::show(ui, app);
     if app.core.headset_camera_missing() || app.core.restart_headset_progress().is_some() {
-        ui.add_space(8.0);
         card(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
                 sev_chip(ui, Severity::Warn);
                 ui.label(RichText::new("Headset camera missing").strong());
                 ui.label(RichText::new("usb 34a4:0014").size(10.5).color(theme::pal(ui).faint));
             });
-            note(ui, "The headset is on USB but its camera is not (no passthrough, no 6DoF). Restart headset sends the headset its restart command and waits for the camera and the picture (about 30 seconds; not while VR runs).");
+            note(ui, "The headset is on USB but its camera is not (no passthrough, no 6DoF). Restart headset brings it back in about 30 seconds (not while VR runs).");
             let blocker = app.core.restart_headset_blocker();
             let r = widgets::primary(ui, "Restart headset", blocker.is_none());
             let r = match &blocker {
@@ -167,13 +169,9 @@ pub fn show(ui: &mut Ui, app: &mut PimaxApp) {
     for (area, list) in findings::grouped(&all) {
         let bad = list.iter().filter(|f| f.severity >= Severity::Warn).count();
         let worst = list.iter().map(|f| f.severity).max().unwrap_or(Severity::Ok);
-        ui.add_space(8.0);
         card(ui, |ui| {
             let color = if worst >= Severity::Warn { sev_color(ui, worst) } else { theme::pal(ui).text };
-            let head = RichText::new(format!("{}{}", findings::area_title(area), if bad > 0 { format!("  ({bad} to look at)") } else { String::new() }))
-                .strong()
-                .size(16.0)
-                .color(color);
+            let head = theme::caps(&format!("{}{}", findings::area_title(area), if bad > 0 { format!("  ·  {bad} to look at") } else { String::new() }), 13.0, color).family(theme::heading(ui));
             egui::CollapsingHeader::new(head).id_salt(("area", area.id())).default_open(bad > 0).show(ui, |ui| {
                 for f in &list {
                     if let Some(p) = finding_ui(ui, app, f) {
@@ -187,7 +185,6 @@ pub fn show(ui: &mut Ui, app: &mut PimaxApp) {
     if let Some(p) = run {
         run_fix(app, p);
     }
-    ui.add_space(8.0);
     applied(ui, app);
 }
 
@@ -196,9 +193,7 @@ pub fn applied(ui: &mut Ui, app: &mut PimaxApp) {
     let entries = app.core.fixes.entries.clone();
     let busy = app.core.busy();
     let mut undo = None;
-    card(ui, |ui| {
-        title(ui, "Applied fixes");
-        note(ui, "Every catalogue fix the app ran or opened, from ~/.local/state/pimax/fixes.log (newest first). Undo runs the fix's undo lines the same way: as your user, or through the pkexec dialog.");
+    widgets::section(ui, "Applied fixes", Some("Every catalogue fix the app ran or opened, from ~/.local/state/pimax/fixes.log (newest first). Undo runs the fix's undo lines the same way: as your user, or through the pkexec dialog."), |ui| {
         if !app.core.fixes.loaded {
             spinner(ui);
             return;

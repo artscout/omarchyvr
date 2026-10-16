@@ -22,54 +22,30 @@ struct Shot {
 
 fn shots() -> Vec<Shot> {
     vec![
-        Shot { name: "desk-idle", running: false, page: Page::Desk, height: 1080.0, dark: true, setup: |_| {} },
-        Shot { name: "desk-running", running: true, page: Page::Desk, height: 980.0, dark: true, setup: |_| {} },
-        Shot { name: "desk-idle-light", running: false, page: Page::Desk, height: 1080.0, dark: false, setup: |_| {} },
+        Shot { name: "desk-idle", running: false, page: Page::Desk, height: 820.0, dark: true, setup: |_| {} },
         Shot {
-            name: "home-rows",
+            name: "desk-running",
             running: true,
             page: Page::Desk,
-            height: 1500.0,
+            height: 820.0,
             dark: true,
-            setup: |a| {
-                a.ui.open_rows = vec!["row-quality", "row-desktop"];
+            setup: |app| {
+                // the running session's in-hand status (PIMAX_CTRL_INHAND): the right controller is in the hand, the left one sends nothing
+                let side = |state: &str, why: &str| pimax_config::ctrl_inhand::Side { state: state.into(), why: why.into() };
+                app.core.live.ctrl_inhand = Some(pimax_config::ctrl_inhand::Status {
+                    pid: 1,
+                    mode: pimax_config::ctrl_inhand::CtrlMode::WhenHeld,
+                    left: side("down", "no reports"),
+                    right: side("held", "motion"),
+                });
             },
         },
-        Shot {
-            name: "home-optics",
-            running: false,
-            page: Page::Desk,
-            height: 1250.0,
-            dark: true,
-            setup: |a| {
-                // IPD: lenses read from the headset, a value being edited, the last move's result; the headset card shows
-                // the last restart's result
-                a.core.lens_ipd = Some(61.4);
-                a.core.lens_ipd_asked = true;
-                a.ui.ipd_edit = Some(58.0);
-                a.core.ipd_result = Some(pimax_gui_core::ipdmotor::IpdResult { ok: true, text: "Lenses set to 61.4 mm.".into() });
-                a.core.headset_reset = Some(pimax_gui_core::reset::ResetResult { ok: true, text: "Headset restarted: the camera is back after 17 s.".into() });
-                a.ui.open_rows = vec!["row-optics"];
-            },
-        },
-        Shot {
-            name: "home-optics-running",
-            running: true,
-            page: Page::Desk,
-            height: 1250.0,
-            dark: true,
-            setup: |a| {
-                // a session runs: the lenses do not move and the page says why
-                a.core.lens_ipd_asked = true;
-                a.ui.ipd_edit = Some(60.0);
-                a.ui.open_rows = vec!["row-optics"];
-            },
-        },
+        Shot { name: "desk-idle-light", running: false, page: Page::Desk, height: 820.0, dark: false, setup: |_| {} },
         Shot {
             name: "home-play-cap",
             running: false,
             page: Page::Desk,
-            height: 1250.0,
+            height: 860.0,
             dark: true,
             setup: |a| {
                 // the relink dropped cap_sys_nice on the build Play uses: the readiness line offers Fix
@@ -79,30 +55,51 @@ fn shots() -> Vec<Shot> {
                 a.core.facts.polkit_agent = true;
                 a.core.state.autostart = true;
                 a.core.play.autostart_note = Some((false, "Not started at login: monado-service lacks cap_sys_nice (press Fix, or Play or Work once; no password prompt at login).".into()));
-                a.ui.open_rows = vec!["row-tracking"];
+                // the last headset restart's result under the headset card
+                a.core.headset_reset = Some(pimax_gui_core::reset::ResetResult { ok: true, text: "Headset restarted: the camera is back after 17 s.".into() });
             },
         },
         Shot {
-            name: "home-room",
-            running: true,
+            name: "home-mock",
+            running: false,
             page: Page::Desk,
-            height: 1250.0,
+            height: 820.0,
             dark: true,
             setup: |a| {
-                a.ui.open_rows = vec!["row-room", "row-voice"];
+                // a headset module that is listed but not supported yet
                 a.ui.model = Some("crystal-super");
             },
         },
         Shot {
-            name: "home-auto",
-            running: true,
-            page: Page::Desk,
-            height: 1300.0,
+            name: "display",
+            running: false,
+            page: Page::Display,
+            height: 820.0,
             dark: true,
             setup: |a| {
-                a.ui.open_rows = vec!["row-auto", "row-runtime"];
+                // IPD: lenses read from the headset, a value being edited, the last move's result
+                a.core.lens_ipd = Some(61.4);
+                a.core.lens_ipd_asked = true;
+                a.ui.ipd_edit = Some(58.0);
+                a.core.ipd_result = Some(pimax_gui_core::ipdmotor::IpdResult { ok: true, text: "Lenses set to 61.4 mm.".into() });
             },
         },
+        Shot {
+            name: "display-running",
+            running: true,
+            page: Page::Display,
+            height: 820.0,
+            dark: true,
+            setup: |a| {
+                // a session runs: the lenses do not move and the page says why
+                a.core.lens_ipd_asked = true;
+                a.ui.ipd_edit = Some(60.0);
+            },
+        },
+        Shot { name: "tracking", running: true, page: Page::Tracking, height: 900.0, dark: true, setup: |_| {} },
+        Shot { name: "room", running: true, page: Page::Room, height: 900.0, dark: true, setup: |_| {} },
+        Shot { name: "desktop", running: true, page: Page::Desktop, height: 820.0, dark: true, setup: |_| {} },
+        Shot { name: "developer", running: true, page: Page::Developer, height: 1300.0, dark: true, setup: |_| {} },
         Shot {
             name: "setup",
             running: false,
@@ -123,6 +120,17 @@ fn shots() -> Vec<Shot> {
                         a.core.pending = Some(Pending::Root { title: it.title.clone(), fix: r.clone(), catalogue: None });
                     }
                 }
+            },
+        },
+        Shot {
+            name: "restart-steam",
+            running: false,
+            page: Page::Display,
+            height: 700.0,
+            dark: true,
+            setup: |a| {
+                let steam = pimax_gui_core::facts::TaintedSteam { pid: 16972, vars: vec!["SteamAppId".into(), "PIMAX_SLAM".into()], busy: Some("a game seems to be running".into()) };
+                a.core.pending = Some(Pending::RestartSteam { steam, vr: true });
             },
         },
         Shot { name: "tools", running: true, page: Page::Tools, height: 2100.0, dark: true, setup: |_| {} },
@@ -183,6 +191,64 @@ fn shots() -> Vec<Shot> {
                 a.core.want_ai();
                 a.core.ai_test("claude");
                 a.core.ai_test("openrouter");
+            },
+        },
+        Shot {
+            name: "record",
+            running: true,
+            page: Page::Record,
+            height: 700.0,
+            dark: true,
+            setup: |_| {},
+        },
+        Shot {
+            name: "backgrounds",
+            running: false,
+            page: Page::Backgrounds,
+            height: 1900.0,
+            dark: true,
+            setup: |_| crate::pages::backgrounds::preload(),
+        },
+        Shot {
+            name: "local-ai",
+            running: true,
+            page: Page::LocalAi,
+            height: 1700.0,
+            dark: true,
+            setup: |a| {
+                a.core.want_ai();
+                a.core.want_localai();
+                a.core.ai_set_local_models(true, false);
+                a.core.localai.test = Some(Ok(pimax_gui_core::localai::parse_checks(
+                    &[
+                        "check router ok 31 Lara sorted a test command: system",
+                        "check action ok 190 Qwen3.5-4B-Q4_K_M (gpu (all layers)); 3.4 GB of video memory, 19.3 GB free",
+                        "check speech skip 0 large model off, the small one answers",
+                        "check agent fail 412 Qwen3.6-27B: port 8083: connection refused",
+                    ]
+                    .map(String::from),
+                )));
+            },
+        },
+        Shot {
+            name: "local-ai-help",
+            running: true,
+            page: Page::LocalAi,
+            height: 700.0,
+            dark: true,
+            setup: |a| {
+                a.core.want_ai();
+                a.core.want_localai();
+                a.core.ai_set_local_models(true, false);
+                a.core.localai.test = Some(Ok(pimax_gui_core::localai::parse_checks(
+                    &[
+                        "check router ok 31 Lara sorted a test command: system",
+                        "check action ok 190 Qwen3.5-4B-Q4_K_M (gpu (all layers)); 3.4 GB of video memory, 19.3 GB free",
+                        "check speech skip 0 large model off, the small one answers",
+                        "check agent fail 412 Qwen3.6-27B: port 8083: connection refused",
+                    ]
+                    .map(String::from),
+                )));
             },
         },
         Shot {
@@ -262,7 +328,11 @@ pub fn render_core(dir: &Path, core: AppCore) -> io::Result<Vec<PathBuf>> {
     let mut app = PimaxApp::new(core);
     let mut out = Vec::new();
     for (name, page, tab, height) in [
-        ("desk", Page::Desk, LogsTab::Logs, 1000.0),
+        ("desk", Page::Desk, LogsTab::Logs, 860.0),
+        ("display", Page::Display, LogsTab::Logs, 860.0),
+        ("tracking", Page::Tracking, LogsTab::Logs, 900.0),
+        ("room", Page::Room, LogsTab::Logs, 900.0),
+        ("desktop", Page::Desktop, LogsTab::Logs, 860.0),
         ("setup", Page::Setup, LogsTab::Logs, 1600.0),
         ("tools", Page::Tools, LogsTab::Logs, 2100.0),
         ("logs", Page::Logs, LogsTab::Logs, 900.0),
@@ -276,7 +346,7 @@ pub fn render_core(dir: &Path, core: AppCore) -> io::Result<Vec<PathBuf>> {
         let ctx = egui::Context::default();
         crate::theme::install(&ctx, true);
         let path = dir.join(format!("{name}.png"));
-        screenshot::snapshot(&ctx, egui::vec2(1280.0, height), 1.0, 3, |ui| app.draw(ui), &path)?;
+        screenshot::snapshot(&ctx, egui::vec2(shot_width(), shot_height(height)), 1.0, 3, |ui| app.draw(ui), &path)?;
         out.push(path);
     }
     Ok(out)
@@ -305,10 +375,24 @@ pub fn render_all(dir: &Path) -> io::Result<Vec<PathBuf>> {
         (s.setup)(&mut app);
         let ctx = egui::Context::default();
         crate::theme::install(&ctx, s.dark);
+        if s.name == "local-ai-help" {
+            crate::widgets::open_next_help(&ctx);
+        }
         let path = dir.join(if dev { format!("{}-dev.png", s.name) } else { format!("{}.png", s.name) });
-        screenshot::snapshot(&ctx, egui::vec2(1280.0, s.height), 1.0, 3, |ui| app.draw(ui), &path)?;
+        screenshot::snapshot(&ctx, egui::vec2(shot_width(), shot_height(s.height)), 1.0, 3, |ui| app.draw(ui), &path)?;
         out.push(path);
     }
     let _ = std::fs::remove_dir_all(&tmp);
     Ok(out)
+}
+
+/// The screenshot width in points: 1280, or `PIMAX_SHOT_WIDTH` (to check the minimum window size).
+fn shot_width() -> f32 {
+    std::env::var("PIMAX_SHOT_WIDTH").ok().and_then(|v| v.parse().ok()).unwrap_or(1280.0)
+}
+
+/// The screenshot height in points: the picture's own, or `PIMAX_SHOT_HEIGHT` for all of them (with
+/// `PIMAX_SHOT_WIDTH=900 PIMAX_SHOT_HEIGHT=560`: every page at the window's minimum size).
+fn shot_height(own: f32) -> f32 {
+    std::env::var("PIMAX_SHOT_HEIGHT").ok().and_then(|v| v.parse().ok()).unwrap_or(own)
 }

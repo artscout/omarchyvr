@@ -22,7 +22,19 @@ Nothing leaves the machine unless you set up a remote LLM yourself.
   ignored without a toast.
 - **Debug line.** With the voice AI on, a dim cyan line under the captions shows what the matcher and the model
   decided and how long it took. "Max, debug off" / "Max, debug on" ([AI.md](AI.md) section 12).
+- **Where the AI runs.** The Work desk's watch has an "AI: ..." button: This PC (one model) / This PC, 2 stages (the
+  router Lara sorts the command, the model on the graphics card answers) / Online. With two stages, two more buttons
+  switch Lara and the model. Voice control follows within 2 s, no restart ([AI.md](AI.md) section 16).
 - **"Max" on its own.** You get a "Listening..." toast, and your next sentence (within 6 s) is taken as the command.
+- **Pauses** (2026-10-16). A sentence that stops mid-way ("Max, can you move uh one of the", "can you write uh") is not
+  run: the listener waits 1.1 s instead of 0.5 s for more words after "the", "of", "to", "uh", "can you" and similar
+  endings (`segment.rs`: a decode 64 ms into each pause tells a finished command from a cut-off one), and when the
+  sentence still ends there, `act` holds it and joins it with your next sentence (within 6 s, without "Max"):
+  "Max, can you move all the" + "terminals to one window" runs as one command. Nothing comes: it is dropped.
+  Hesitations ("uh", "um") are never typed.
+- **"Max" later in a sentence** (2026-10-16). When the speech-to-text marks a pause next to "Max" ("Windows, can we ha
+  Max, can we have two more windows?", "Okay. Max, cinema"), what follows "Max" runs. Without a pause mark ("I told
+  Max to switch") nothing happens.
 - **Filler words are ignored:** please, the, a, can you, could you, por favor, and so on. "Max, could you please
   switch to the cinema mode" works.
 - **Languages.** English phrases plus some Spanish ones ("Max, modo cine"). Spoken numbers work: "work three",
@@ -100,6 +112,9 @@ With one VR screen, work-3 makes up its side screens from **WayVR app panels**:
 Other ways to set it:
 - "Max, background sky", "Max, mountain lake background" or "Max, black background" pick one by name.
 - "Max, passthrough on/off", "Max, dim", "Max, brighter" and "Max, darker" control the room view directly.
+
+The full library (66 free 360 pictures in 13 themes, the Backgrounds page of the app, resolutions, licences) is in
+[BACKGROUNDS.md](BACKGROUNDS.md): "Max, background off" brings the room back, "Max, next background" steps through them.
 
 The **desktop wallpaper** is different: "Max, next wallpaper" or "Max, desktop background" runs Omarchy's
 `omarchy-theme-bg-next` (row 37).
@@ -225,6 +240,12 @@ left", "cycle windows", "float window" are now "app" phrases):
 | new tab / open a new tab | browser Ctrl+T; in a terminal a new terminal split (`omarchy-launch-terminal`); not in a group | win.tab.new |
 | list windows / show windows / what windows are open | the VR screens with their apps ("Main: foot, firefox \| Left: empty \| ..."), then apps no screen shows | win.list |
 | go to / switch to / find window where {text} (also "with", "about") | the AI switch (needs a provider) | win.ai.switch |
+| four screens / give me 4 screens / one screen (1 to 6) | shows that many VR screens: main, left, right, up, up-left, up-right (`pimax desk screens show N`) | vr.screens.count |
+| two more screens / add 2 screens / one more screen / another screen | N more than are shown now, up to 6 (`pimax desk screens more N`) | vr.screens.more, vr.screens.one_more |
+| a screen to the left / add a screen up there / a screen top right | shows that screen (`pimax desk screens add SIDE`) | vr.screens.add |
+| open / focus / put YouTube in a new window, put Spotify on its own screen | that app on a free VR screen of its own, focused: a browser tab moves alone (its address opens in a new browser window there, the page reloads), another app moves whole, not open = it opens there | win.screen.open |
+| move all the terminals to one window / put all the browsers on one screen | every app of that kind joins the one in use; the other apps stay | win.screen.gather |
+| go to / focus (in) the main window | the main (middle) VR screen | win.screen.goto |
 | new window / new screen (with VR screens) | the next free VR screen (left, right, up): the first whose workspace has no app; all busy = an empty workspace here | win.ws.new |
 | move this left / right / up / down (the VR screen itself, in space), bring it closer / push it away, zoom in / zoom out | `wayvrctl screen-nudge` on the looked-at (else focused) screen ([SCREENS.md](SCREENS.md)) | win.screen.nudge / closer / farther / bigger / smaller |
 | send this to the left / right / up / main screen, move this app to the left screen | sends the focused app to that VR screen | win.screen.move |
@@ -265,7 +286,98 @@ select all / undo / redo are refused there. At most 200 characters per command.
 | go to the {q} tab / switch to the {q} tab / find the {q} tab / the tab with {q} | a **tab** (inside the browser): an app whose title has the words, else Ctrl+Tab through each browser (at most 25 tabs, back to the start when not found), else open {q} as a site | browser.tab.focus |
 
 "Open the browser" focuses the open browser (any workspace) and starts one only when none runs. A request with
-"and"/"then" can run up to 3 steps through the model: "Max, open youtube and search for cats".
+"and"/"then"/"also" (or two commands back to back: "close this go to the main screen") can run up to 4 steps through
+the model, in order: "Max, open youtube and search for cats", "Max, two more screens and put Chrome there". One toast
+then lists every step's result ("2 of 2 steps: 1. Showing 6 screens | 2. google-chrome on the up-left screen").
+
+### Apps to named screens, videos, agent mode (user requests 2026-10-16)
+
+| say "Max ..." | does | intent |
+|---|---|---|
+| put all the terminals on the left screen / move Chrome to the right screen / YouTube on the up-right screen / put the code editor in the middle | every app of that kind or name (terminals = foot, kitty, Alacritty, ghostty...; browser = Chrome, Firefox...; a browser tab by its title; "code editor" = Code, Zed) goes to that VR screen, which shows; the other apps stay | win.screen.put |
+| move Chrome to screen 3 / put all my terminals on screen two / the newest terminal to screen 5 | the same, to screen N (docs/SCREENS.md: 1 main, 2 left, 3 right, 4 up, 5 up-left, 6 up-right, the number on each screen); "one", "newest", "last" = only the one used last | win.screen.put_n |
+| move the terminal from here to screen 4 / move Chrome from screen 2 to screen 5 | only the apps of that kind on the first screen ("here" = the screen looked at, else the focused one) | win.screen.put_from |
+| move everything from screen 2 to screen 5 / from screen 3 to screen 1 | every app of one screen to another | win.screen.move_all |
+| send this to screen 6 | the focused app to screen N | win.screen.move_n |
+| go to screen 4 / what's on screen 3 | focus that screen / list its apps | win.screen.goto_n, win.screen.list_n |
+| swap screens 1 and 2 | the apps of the two screens change places | win.screen.swap |
+| make screen 2 bigger / bring screen one closer / move screen 3 left | that screen in space: bigger, smaller, closer, farther, left, right, up, down | win.screen.adjust |
+| open YouTube on screen 3 / open https://... on screen 2 / open ~/Videos/x.mkv on screen 1 | that screen is focused, then the site (new browser window), address, file (its default app) or terminal / browser / files opens there | win.screen.open_n |
+| save this layout (as coding) / restore the (coding) layout | which app is on which screen, saved in `~/.local/state/pimax/voice-layouts.json`; restore moves the open apps back (by class, the closest title first), nothing opens or closes | win.layout.save(_as), win.layout.restore(_as) |
+| show screen numbers / hide screen numbers / always show screen numbers | the number badge on each VR screen (`wayvrctl screen-numbers show|hide|always`). The numbers also flash by themselves for ~5 s when "Max" is heard alone or a command talks about screens, and after a move / send / go to / swap / open on screen N that screen's badge lights amber (`screen-numbers flash N`). An older WayVR without the command: nothing happens, nothing fails | vr.screens.numbers(_hide, _always) |
+| set the volume to 40 / volume 70 percent | the volume to N percent (`wpctl -l 1.0`: never above 100) | omarchy.volume.set |
+| play Dune / I want to watch Dune | the video whose file name has those words, in ~/Downloads, ~/Videos and the XDG videos folder only (3 folders deep, never the rest of home): the biggest match, then the newest ("Playing Dune.2021.mkv (the biggest of 2)"); fullscreen in mpv on the main screen (cinema mode shows that one). Not found: "No video called ..." and nothing else runs. Nothing is downloaded | media.play |
+| exit cinema mode / leave cinema mode | the mode from before cinema comes back, with its passthrough ("cinema mode" while it is on already changes nothing) | vr.preset.exit_cinema |
+| pause / play | mpv answers the media keys (mpv-mpris) | omarchy.media.play_pause |
+| cancel / cancel that / stop | stops a task of several steps (below); else a question waiting for "yes" | voice.cancel |
+
+### Screens by voice: hide, resize, stop (user rules 2026-10-16, live session 15:49)
+
+| say "Max ..." | does | intent |
+|---|---|---|
+| close screen 2 / close down screen number two / remove screen number four and three / shut down screens 4 and 3 / hide screens 2, 3 and 5 / close window 2 / close this screen | those VR screens HIDE (`pimax desk screens hide 4,3`); their apps stay open and come back with the screen ("add a screen on the right", "4 screens"). Never closes an app | vr.screens.hide |
+| close everything / close the screens / close all the screens / close the other two screens | every screen but the main one hides; no app closes | vr.screens.hide_others |
+| make all these screens half the size / make all the screens double the size / all screens 75 percent / make screen 2 half the size | every VR screen (or the one named) scaled to that size (`wayvrctl screen-nudge --step`: half = 1/2, double = x2, a percent) | win.screen.scale |
+| move all the terminals to screen number three / put chrome on screen five | the apps of that kind or name to screen N (the screen number always reaches the action) | win.screen.put_n |
+| move this screen number one to the right | screen 1 itself moves right in space | win.screen.adjust |
+| move it in front of me (the screen) / bring the screen in front of me | the screens back in front of your head | vr.screens.reset |
+| stop the VR / shut down work VR / exit VR / close work / stop the session | stops Work / VR exactly like the app's Stop button (`pimax desk stop --grace 30`). **The one command that always asks "yes" first**, whatever `voice_confirm` says | vr.session.stop |
+
+These are decided by fixed rules (`rules.rs`) before the model is asked: a request that names a VR screen by number,
+stops the session or resizes screens never depends on the model. "Close window" (a workspace with its apps,
+`win.ws.close`) never runs for a request that names a screen or a number: that hides the screen. And "close window"
+is pinned to the workspace it meant when it was heard: the question names it ("Close window 3 (2 apps)?") and the
+"yes" closes exactly that one, never the one looked at a few seconds later (regression test
+`close_window_closes_only_the_window_named_and_never_for_a_screen`).
+
+"Max" in the middle of a sentence: "Can you Max can you shut down ...", "uh Max can you ...", "All of them. Can you
+make Max, can you make ..." act on the words after the last "Max". When those are only a fragment ("Can you move it in
+front of me, Max, the screen."), the words before "Max" stay. "I told Max to switch" and "set it to max" still never
+wake.
+
+The model sees the VR screens by number with their apps when a request is about screens:
+`screens: 1 main [w1 foot, w2 foot] ; 2 left [] ; 3 right hidden [w3 pimax]` (the `wN` of the apps line; `hidden` =
+hidden by voice).
+
+**Agent mode** (`voice_agent = true` in ai.toml, the default; `agent::goal`). A request that is a goal of several
+steps, with a goal word ("set up", "let's", "I want to watch", "get ready", "prepare") and more than one thing in it, or
+a long request with "and"/"then"/two commas, runs one step at a time: each round the model gets the goal, the steps
+done with their results and the VR screens by number with their apps now (`screens now: 1 main* ws2: foot | 2 left ws11: empty`, `*` = focused), and
+answers the next single step from the catalogue (under the grammar) or `done`. At most 10 steps (the user's cap) or 30 s. Each step
+shows "Step 2: Cinema mode" in the headset, the end one line with every step ("Done 3 steps: 1. Playing Dune.mkv | 2.
+Cinema mode | 3. Background: black"). A failed step ends the goal ("Step 1 failed: No video called "dune" in
+Downloads or Videos"); careful steps follow `voice_confirm`; only catalogue actions run (no shell). The model giving no
+step at all (a weak model) sends the request the usual way (one decision or a plan of up to 4 steps). Online
+(jev-router), the action model answers the steps. A part of the goal that is an exact catalogue phrase or an
+apps-to-a-screen pattern ("terminals left", "chrome on screen 2", "swap screens 1 and 3", "the terminal from here to
+screen 4") runs without asking the model, so a goal still works when the model is slow or down.
+
+**Audit 2026-10-16 (evening)**, dry run, local Lara + Qwen3.5-4B, the same fixture phrases before (493d0ca) and after (plus each version's own catalogue phrases):
+all 531/582 -> 617/625 (91% -> 99%); the natural phrasings of `tests/fixtures/audit.tsv` 256/294 -> 292/297; the goal set
+`tests/fixtures/agent-2026-10-16.tsv` 2/17 -> 17/17; today's real phrases (`live-2026-10-16.tsv`) 53/55 -> 54/55. The
+report: analysis/voice-audit.html.
+
+**Agent model** (optional, ai.toml top level): `voice_agent_url = "http://127.0.0.1:8083/v1/chat/completions"` and
+`voice_agent_model = "<alias>"` (OpenAI-compatible; a local llama-server also takes the step grammar;
+`voice_agent_api_key_env` names an environment variable for a key). Then the steps of a goal go to that model (e.g. a
+bigger local model on its own port), while simple commands stay on Lara + the 4B. If it fails or is not running, the
+usual model goes on with the same goal. Unset: the usual model plans too.
+
+**The tools and their inputs** (user request 2026-10-16: "the tools have to receive input"). Every catalogue intent is
+a tool with typed inputs: `screen` (1-6, a side, or `here`), `side`, `app` (a kind or name, with "one"/"newest"), `n`
+(a number, e.g. a volume percent), `q` / `text` (words), `name` (a layout or background), `how` (bigger, smaller,
+closer, farther, left, right, up, down). The local model sees them as `id screen=1-6|left|...|here app="words"` lines
+and a grammar that only lets those values through; an online model gets one JSON schema per tool. Every value is
+checked again before anything runs (`command::slot_ok`, `windows::screen_value`). Online models also get
+`move_apps {apps, which: all|one, to, from}` and `list_screens` (read-only). There is no free shell.
+
+Examples: "Max, let's enter cinema mode, I want to watch Dune, it's already downloaded" (play Dune, cinema mode,
+passthrough off), "Max, set up work: terminals left, browser middle, YouTube up-right", "Max, let's set up four
+screens, the terminals on the left and Chrome on the right".
+
+**Cancel** (user decision 2026-10-16): "Max, cancel", "Max, cancel that", "Max, stop", or "cancel"/"stop" alone while a
+plan or a goal runs. `pimax-voice act`'s listener thread watches for these while a task runs (`Actor::task_busy`): the
+task stops before its next step (a step already started finishes and is not undone) and says "Cancelled after step 1 of 3" (in a goal, M = the parts heard); the words never reach the planner as a new request.
 
 ### Recording (docs/RECORD.md)
 
@@ -299,6 +411,128 @@ need the model). Results: [AI.md](AI.md) section 13 and `analysis/voice-audit.ht
 `--live` (CLI only, for agents) also types for real into a scratch terminal the audit opens and closes itself
 (`foot` running `cat`, closed by its PID): "type hello pimax", Enter, Backspace, checked in what `cat` received.
 Keys are sent only while that window has the focus; browser, window and workspace commands stay in the dry run.
+
+## Live session 2026-10-16: why most requests failed
+
+Every "Max" request of the two Work sessions that afternoon (voiceact.log, ai.log traces, voice.log), 23 that reached
+`act` plus 6 sentences that never did:
+
+| cause | requests | examples |
+|---|---|---|
+| online AI unusable: OpenRouter HTTP 401 (key expired), the local model not yet on | 7 | "can you create 2 screens more", "do 2 more screens", "can you move the windows in a nice layout" |
+| cut off: the end of speech came at a 0.5 s pause ("uh", "the") | 4 (+2 among the 401s, +3 lost halves) | "can you move uh 1 of the", "can you move all the", "can you write uh" (ran network info), "... something in the" (typed it) |
+| misheard (speech-to-text) | 4 | "can i focus you 2" (focused a terminal as "user"), "canwii", "2 screams up there", "stop us through" |
+| missing intent (screen count, app on a new screen) | 4 | "2 more screens" ran work-3 again (already 3), "can we have 4 screens" ran work-3 |
+| needed several steps | 1 | "focus youtube in a new window" only focused YouTube |
+| wrong intent | 1 | "focus in the main window" focused Chrome |
+| "Max" not first, or the second half of a cut-off sentence | 6 | "Windows, can we ha Max, can we have two more windows?", "One of the screens to the right." |
+| right | 3 (+2 near: work-3) | "open a new window", "open youtube", "clot screens" (work-1) |
+
+No plan of several steps ran: the plan grammar needed "and"/"then" in the words, and none of the requests had it
+(AI.md section 16). The fixes: the endpointing and the held cut-off sentence (Pauses, above), "Max" later in a sentence,
+the mishearings (screams, clot, us through), app slots from the words heard, the screen intents and the 6 screens
+(VOICE-DECISIONS 10-19), plans of up to 4 steps on more cues, and agent mode.
+
+Dry-run audit (local Lara + Qwen3.5-4B on the GPU, `tests/fixtures/live-2026-10-16.tsv`):
+
+| run | the 29 live requests | with variants (53) | full audit |
+|---|---|---|---|
+| before (3be30ba) | 13/29 (45 %) | 20/53 | 456/460 (99.1 %) |
+| after (0ae6425 + fixes) | 27/29 pass, 1 asks ("Did you mean youtube?") | 51/53 | 476/483 (98.6 %) |
+
+## How the local voice AI decides (scoped planner, user design 2026-10-16)
+
+```text
+ "Max, ..." ─► rules.rs ── screen numbers / stop / sizes / close everything ──► run (no model)
+     │
+     ├─► exact phrase / clear fuzzy hit ───────────────────────────────────────► run (no model)
+     │
+     ├─► Lara (~30 ms): the category (+ the runner-up when unsure) ─┐
+     └─► fuzzy matcher: the 3 closest intents (hints) ──────────────┤
+                                                                    ▼
+        system prompt of THOSE categories (fixed text per set, cached by llama-server)
+        + only their tools (10-25 of 136) + the hints + none / cancel / help
+        + a grammar of exactly those tools
+        user message: the state the category needs (world::describe: screens by number, shown or
+        hidden, with their apps by kind and title; focus; gaze; tabs; session; view; media), hints, heard
+                                                                    ▼
+        model: [target: <the state the user wants>]  step ; step ...  (at most 4)
+                                                                    ▼
+        dry run on the state snapshot (world::apply, step by step): an unknown tool, a missing input, or a
+        plan that closes an app nobody named is refused ──► run
+```
+
+- The question the model answers: "Using only these tools, which steps, in order and with which inputs, reach the
+  state the user wants?" (`planner::system_prompt`).
+- A request about screens ("close screen 2") never sees `browser.search` or the app closers; an answer outside the
+  offered tools is refused even without a grammar.
+- Each knob is a variant setting (`pimax-voice audit --state --variant FILE`, `tests/state/variants/*.toml`):
+  `tools.scope` = all (production for now) | category | category+hints | topk, `tools.top_k`, `prompt.blocks`,
+  `prompt.target_line`, `prompt.template` (a file with another opening), plus the model, Lara and grammar knobs the
+  runner applies. An experiment is a config change.
+- Lara off or failing: the single prompt with every intent (the old route) answers.
+- Goals of several steps (agent mode) keep their own loop (`agent::goal`).
+- First measurement (2026-10-16, intent audit, dry run, Lara + Qwen3.5-4B, 298 natural phrasings): single prompt
+  293/298 at p50 311-341 ms; scoped category+hints 280/298 at p50 655 ms. The second step of a plan across two
+  categories ("cinema mode then dim the room") had no tool, and every category's prompt misses the one llama-server
+  slot's cache. So production keeps the single prompt (with the screens line). The scoped planner is the subject of
+  the experiment loop on the state audit, and wins only when it beats the single prompt on the held-out set.
+- The audit page shows, under each phrase, exactly what the model got ("what the model got").
+- State-audit loop (2026-10-16 evening, docs/VOICE-STATE-TESTS.md section 6): the planner now falls back to the
+  single prompt when its answer fails or is `none` (`tools.fallback`). It still loses on dev and is slower (p95
+  0.9-1.0 s against 0.45-0.6 s), so production keeps the single prompt.
+
+## What decides before the model (general grammar, 2026-10-16)
+
+The rules and the matcher settle about 3 of 4 requests alone (`--no-ai`: 72% of the state cases). All of it is
+grammar, never a test phrase (`leak::tests` checks):
+- **Clauses.** "close screen 2 and make the main one bigger": split at "and" / "then" before a verb; each clause is
+  decided on its own (rule, exact phrase, else the model for that clause). A later clause that points back ("put
+  Chrome there") keeps the whole request for the model.
+- **Take-backs.** "X, no, forget it" / "X, cancel that" does nothing; "X, no, Y" runs Y (only when a pause is marked
+  at the "no": "cinema mode, no room" is passthrough off).
+- **Openers and stray words.** "yeah", "so", "okay" in front are dropped; one or two words the ASR put before an
+  exact phrase ("sex, next background") are dropped when they are no command word.
+- **Screens by side.** "hide the left screen", "unhide the upper one", "make the main one bigger", "move this to the
+  right screen", "put the editors on the left one"; "move the screen up a bit" moves the screen itself; "where did
+  my screens go" resets them; "screen for" = screen 4. A command that sends something to a hidden screen shows it;
+  lifting the screen limit never lowers it.
+- **Opening apps.** "open Google Chrome" shows the Chrome that is open (its hidden screen comes back); "open chrome
+  here" / "in main" / "on screen 3" brings it there; a new window only when asked; a full desk never blocks it.
+- **Closing (user rule: no app closes unless named).** `win.close.named`: "close Spotify", "close the video";
+  "close YouTube" closes only that tab. Whatever picked it (rule, matcher, fuzzy ask-back, model), a destructive
+  action runs only when the words ask for it: a close verb; window / workspace for a whole workspace; stop + VR /
+  session words; type / write for typing; and a launcher only when the words name that app.
+
+## Live session 2026-10-16 15:49-16:00: 3 of ~16 right
+
+| request (heard) | ran | cause | fix |
+|---|---|---|---|
+| "Max, can you move this screen number one to the right?" (the first) | nothing, not logged | `act` starts ~12 s after the listener (the launcher's settle waits); the final was sent before it had subscribed | the listener keeps the finals said before the first command client; `act` asks for them once (`backlog`, max 30 s old) |
+| "Can you move it in front of me, Max, the screen." | app fullscreen | only "the screen" (after "Max") reached the model | the words before "Max" stay when the rest is a fragment; "in front of me" = vr.screens.reset |
+| "make all these screens half the size" (x2) | screen 1 one step smaller | no intent for all screens / a size | win.screen.scale (all, half, double, percent) |
+| "remove screen number four and three" (x2) | swap 4 and 3 | no "hide screen" intent; the model picked the one with two screen slots | vr.screens.hide with a list of numbers; rule before the model |
+| "Can you Max can you shut down numbers screens four and three" | nothing, not logged | "Max" not first and no comma around it: never woke | "Max" after fillers / before "can you" wakes |
+| "move all the terminals to screen number three" (x2) | gather on the LEFT screen | the router's top was put_n (0.83-0.90); the model chose gather and dropped screen=3 ("screen number 3" matched no phrase) | "screen number N" = "screen N"; app + "to screen N" = put_n by rule |
+| "close (down) screen number two" (x4) | win.ws.close on a gazed workspace; once "Close window 1 (2 apps)?" | the model's "close window" for a screen; the target was re-read at the yes | rule: hide the screen; close window never for a screen; pinned workspace |
+| "shut down work VR", "can you stop the VR" | nothing | no stop intent | vr.session.stop (asks yes) |
+| "close everything" (x2) | nothing | no intent | vr.screens.hide_others |
+| (all session) | Parakeet on the CPU | the GPU speech server (8082) had been stopped at 14:59 and nothing started it again: `ai.server`'s health only watches llama-server, and game mode's restore ran `pimax-ai serve` (the action model only) | Work start runs `pimax-ai up --wait 0` (detached) when Local AI is on; game mode restores with `pimax-ai up` |
+
+Audit (dry run, local Lara + Qwen3.5-4B on the GPU; the natural phrasings of each set, before 2068884 -> after
+7a3181e; "all" adds each version's own catalogue phrases, exact and ASR-mangled):
+
+| set | natural before | natural after | all before | all after |
+|---|---|---|---|---|
+| this session (`live-2026-10-16-b.tsv`, new) | 9/36 | 36/36 | 271/300 | 304/308 |
+| goals, long (`agent27b-2026-10-16.tsv`) | 3/12 | 12/12 | 265/276 | 280/284 |
+| goals (`agent-2026-10-16.tsv`) | 15/15 | 15/15 | 277/279 | 283/287 |
+| audit.tsv | 287/293 | 293/298 | 549/557 | 561/570 |
+| live 2026-10-16 morning | 52/53 | 51/53 | 314/317 | 319/325 |
+| aibench | 41/45 | 42/45 | 303/309 | 310/317 |
+
+The intent audit is now a smoke test: the measure of quality is the state audit (`pimax-voice audit --state`,
+docs/VOICE-STATE-TESTS.md), which checks the end state of the desktop, not the intent name.
 
 ## Your own changes: `~/.config/pimax/voice-intents.toml`
 This file is optional and not created for you. It uses the same format as the built-in catalogue (the comments at the
@@ -434,3 +668,10 @@ A **Voice** settings row could have:
     preset.
   - While desk mode runs, "Apply now" runs `pimax desk preset NAME`.
 - **Work panels**: two text fields for `left =` / `right =` in `~/.config/pimax/work-panels.conf`.
+
+## Speech engine (2026-10-16)
+
+`pimax-voice listen` recognises speech with Parakeet TDT v3 on the processor (biased to words like Max, passthrough,
+screens, workspace, YouTube) or, when the Local AI page says Auto or Large and the local models run (Work), with Whisper
+large-v3-turbo on the graphics card through `whisper-server` (port 8082). If the server is down, Parakeet answers, so
+voice never stops. The engine in use is the first line of voice.log. Details and numbers: docs/AI.md section 17.

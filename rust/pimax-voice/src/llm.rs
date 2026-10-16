@@ -66,6 +66,7 @@ pub fn validate(c: &Catalogue, answer: &str) -> Result<Option<Match>, String> {
         // the same normalisation as spoken words (numbers as digits, lower case)
         let val = match t {
             SlotType::Number | SlotType::Word | SlotType::Side => command::words(&raw).join(" "),
+            SlotType::Screen => command::norm_slot(SlotType::Screen, command::words(&raw).join(" ")),
             SlotType::Text | SlotType::Name => raw.trim().to_string(),
         };
         if !command::slot_ok(*t, &val) {
@@ -251,12 +252,23 @@ pub fn curl_config(url: &str, key: Option<&str>, body: &str, timeout: Duration) 
     curl_config_headers(url, &headers, body, timeout)
 }
 
-/// The same with arbitrary extra headers ("Name: value").
+/// curl's `max-time`: fractional seconds ("1.50"; whole seconds as "6"), at least 0.2 s (a 1.5 s router deadline
+/// must not become 1 s).
+pub fn curl_seconds(t: Duration) -> String {
+    let s = t.as_secs_f64().max(0.2);
+    if s.fract() == 0.0 {
+        format!("{}", s as u64)
+    } else {
+        format!("{s:.2}")
+    }
+}
+
+/// [`curl_config`] with arbitrary extra headers ("Name: value").
 pub fn curl_config_headers(url: &str, headers: &[String], body: &str, timeout: Duration) -> String {
     let mut c = format!(
         "url = {}\nrequest = \"POST\"\nsilent\nshow-error\nfail-with-body\nmax-time = {}\nheader = \"Content-Type: application/json\"\n",
         curl_quote(url),
-        timeout.as_secs().max(1)
+        curl_seconds(timeout)
     );
     for h in headers {
         c += &format!("header = {}\n", curl_quote(h));
@@ -543,6 +555,7 @@ mod tests {
         assert!(cfg.contains(r#"header = "Authorization: Bearer k\"1""#));
         assert!(cfg.contains(r#"data-binary = "{\"a\":\"b\\n\"}""#));
         assert!(cfg.contains("max-time = 6"));
+        assert_eq!((curl_seconds(Duration::from_millis(1500)), curl_seconds(Duration::from_millis(50))), ("1.50".to_string(), "0.20".to_string()));
     }
 
     #[test]

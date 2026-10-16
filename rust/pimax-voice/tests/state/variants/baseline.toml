@@ -1,0 +1,3 @@
+# The pipeline as ai.toml configures it (Lara on 8081, the 4B on 8080). Every knob at its default.
+name = "baseline"
+notes = "the current pipeline, unchanged"

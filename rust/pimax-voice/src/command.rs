@@ -35,6 +35,8 @@ const ALIASES: &[(&str, &str)] = &[
     ("tree", "three"), ("free", "three"),
     ("won", "one"),
     ("cinemas", "cinema"), ("sinema", "cinema"),
+    // live 2026-10-16: "clot screens" (close), "two screams" (screens)
+    ("clot", "close"), ("screams", "screens"), ("scream", "screen"),
     // window control
     ("tabs", "tab"), ("tap", "tab"), ("tub", "tab"), ("taps", "tab"),
     ("prev", "previous"), ("preview", "previous"), ("previews", "previous"),
@@ -53,11 +55,24 @@ const NUMBERS: &[(&str, &str)] = &[
     ("first", "1"), ("second", "2"), ("third", "3"), ("fourth", "4"), ("fifth", "5"), ("sixth", "6"), ("seventh", "7"), ("eighth", "8"), ("ninth", "9"),
 ];
 
-const COMPOUNDS: &[(&[&str], &str)] = &[
+pub(crate) const COMPOUNDS: &[(&[&str], &str)] = &[
     (&["pass", "through"], "passthrough"),
     (&["pass", "thru"], "passthrough"),
     (&["passthru"], "passthrough"),
     (&["full", "screen"], "fullscreen"),
+    (&["full", "scream"], "fullscreen"),
+    (&["full", "screams"], "fullscreen"),
+    // "stop pass through" heard as "stop us through" / "past through" (live 2026-10-16)
+    (&["us", "through"], "passthrough"),
+    (&["past", "through"], "passthrough"),
+    (&["pass", "true"], "passthrough"),
+    // the screens above the left / right ones (6 screens, user decision 2026-10-16)
+    (&["up", "left"], "upleft"),
+    (&["upper", "left"], "upleft"),
+    (&["top", "left"], "upleft"),
+    (&["up", "right"], "upright"),
+    (&["upper", "right"], "upright"),
+    (&["top", "right"], "upright"),
     (&["screen", "shot"], "screenshot"),
     (&["wall", "paper"], "wallpaper"),
     (&["scratch", "pad"], "scratchpad"),
@@ -89,9 +104,12 @@ pub fn words(text: &str) -> Vec<String> {
             }
         }
         let x = &w[i];
-        // "workspace for" / "tab to": the ASR spells the number as a word that is a filler or a preposition
+        // "workspace for" / "tab to" / "screen number for" / "screens to and four": the ASR spells the number as a
+        // word that is a filler or a preposition (not before "the", "me", a side: "the screen to the left")
         if let Some((_, d)) = AFTER_WORKSPACE.iter().find(|(a, _)| a == x) {
-            if out.last().is_some_and(|p| p == "workspace" || p == "tab") {
+            let next_ok = w.get(i + 1).is_none_or(|n| !matches!(n.as_str(), "the" | "a" | "an" | "me" | "my" | "you" | "it" | "this" | "that" | "left" | "right" | "up" | "down" | "main" | "top" | "bottom" | "upper" | "now"));
+            let screenish = out.last().is_some_and(|p| matches!(p.as_str(), "screen" | "screens" | "number" | "numbers")) && next_ok;
+            if out.last().is_some_and(|p| p == "workspace" || p == "tab") || screenish {
                 out.push((*d).to_string());
                 i += 1;
                 continue;
@@ -157,12 +175,22 @@ pub struct Match {
     pub score: usize,
 }
 
+/// A side or a screen is stored in its one canonical word: top / above -> up, middle -> main, "three" -> 3.
+pub fn norm_slot(ty: SlotType, val: String) -> String {
+    match ty {
+        SlotType::Side => crate::windows::slot_word(&val).map(str::to_string).unwrap_or(val),
+        SlotType::Screen => crate::windows::screen_value(&val).unwrap_or(val),
+        _ => val,
+    }
+}
+
 /// Is `v` an acceptable value of a slot?
 pub fn slot_ok(t: SlotType, v: &str) -> bool {
     match t {
         SlotType::Number => v.parse::<u32>().is_ok_and(|n| (1..=999).contains(&n)),
         SlotType::Word => !v.is_empty() && v.len() <= 32 && v.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_'),
         SlotType::Side => crate::windows::slot_word(v).is_some(),
+        SlotType::Screen => crate::windows::screen_value(v).is_ok(),
         SlotType::Text | SlotType::Name => {
             !v.trim().is_empty()
                 && v.chars().count() <= 120
@@ -188,7 +216,7 @@ fn match_toks(
         Tok::Slot(name) => {
             let ty = slots.get(name).copied().unwrap_or(SlotType::Text);
             let max = match ty {
-                SlotType::Number | SlotType::Word | SlotType::Side => 1,
+                SlotType::Number | SlotType::Word | SlotType::Side | SlotType::Screen => 1,
                 _ => cw.len(),
             };
             // shortest first, so the literal words after a slot bind as early as possible
@@ -204,7 +232,7 @@ fn match_toks(
                 }
                 let mut o2 = out.clone();
                 // a side is stored in its one word: top / above -> up, middle -> main
-                let val = if ty == SlotType::Side { crate::windows::slot_word(&val).map(str::to_string).unwrap_or(val) } else { val };
+                let val = norm_slot(ty, val);
                 o2.insert(name.clone(), val);
                 if match_toks(&toks[1..], w, &cw[n..], slots, &mut o2) {
                     *out = o2;
@@ -230,6 +258,10 @@ pub fn match_intent(i: &Intent, w: &[String]) -> Option<Match> {
         }
         let mut slots = BTreeMap::new();
         if match_toks(&toks, w, &cw, &i.slots, &mut slots) {
+            // an intent that destroys something never takes a slot of "all" / "every" ("close all windows")
+            if i.confirm && slots.values().any(|v| words(v).iter().any(|x| matches!(x.as_str(), "all" | "every" | "everything" | "windows" | "apps"))) {
+                continue;
+            }
             let score = toks.iter().filter(|t| matches!(t, Tok::Lit(_))).count();
             if best.as_ref().is_none_or(|b| score > b.score) {
                 best = Some(Match { id: i.id.clone(), slots, score });
@@ -288,6 +320,247 @@ pub fn wake(text: &str, wake_words: &[String]) -> Heard {
     }
 }
 
+/// A wake word in the middle of a sentence, after a pause the speech-to-text marks with punctuation ("Windows, can
+/// we ha Max, can we have two more windows?"): the text from that wake word on, when a punctuation mark of the
+/// speech-to-text comes right before or after it and at least 2 words follow it (user decision 2026-10-16). "set it
+/// to max" and "I told Max to switch" (no pause marked) never wake.
+pub fn wake_mid(text: &str, wake_words: &[String]) -> Option<String> {
+    let toks: Vec<&str> = text.split_whitespace().collect();
+    let singles: Vec<String> = wake_words.iter().map(|w| words(w)).filter(|p| p.len() == 1).map(|p| p[0].clone()).collect();
+    // the last one: "max can we... max, can we have two more" means the second try
+    for i in (1..toks.len()).rev() {
+        // a pause before it ("..., Max can you") or the name called out ("we ha Max, can we")
+        let prev = toks[i - 1];
+        if !prev.ends_with([',', '.', '?', '!', ';', ':']) && !toks[i].ends_with(',') {
+            continue;
+        }
+        let w = words(toks[i]);
+        if w.len() == 1 && singles.contains(&w[0]) && toks.len() >= i + 3 {
+            return Some(mid_text(&toks, i));
+        }
+    }
+    // no pause marked, but only fillers before it ("Can you Max can you shut down ...", "uh Max can you ..."), or the
+    // name called out before a polite request ("so Max can you close screen 2"; live 2026-10-16): "I told Max to
+    // switch" (no request after it) and "set it to max" (nothing after it) still never wake
+    for i in (1..toks.len()).rev() {
+        let w = words(toks[i]);
+        if !(w.len() == 1 && singles.contains(&w[0]) && toks.len() >= i + 3) {
+            continue;
+        }
+        let before = words(&toks[..i].join(" "));
+        let after = words(&toks[i + 1..].join(" "));
+        let only_fillers = before.iter().all(|x| FILLERS.contains(&x.as_str()) || LEAD.contains(&x.as_str()) || matches!(x.as_str(), "yes" | "yeah" | "and" | "s" | "sh" | "st" | "all" | "of" | "them" | "this" | "make" | "do"));
+        let polite = after.first().is_some_and(|x| matches!(x.as_str(), "can" | "could" | "would" | "will" | "please" | "lets" | "let's"));
+        if only_fillers || polite {
+            return Some(mid_text(&toks, i));
+        }
+    }
+    None
+}
+
+/// The text from the wake word at `i` on; when the words after it are only a fragment ("..., Max, the screen.") the
+/// words before it stay too: "Can you move it in front of me, Max, the screen." = "Max can you move it in front of
+/// me the screen" (live 2026-10-16).
+fn mid_text(toks: &[&str], i: usize) -> String {
+    let after = words(&toks[i + 1..].join(" "));
+    if fragment(&after) {
+        let before = toks[..i].join(" ");
+        return format!("{} {} {}", toks[i].trim_end_matches([',', '.', '?', '!']), before.trim_end_matches([',', '.']), toks[i + 1..].join(" "));
+    }
+    toks[i..].join(" ")
+}
+
+/// Words that are no command of their own: at most 2 content words, all of them pointing at something said before
+/// ("the screen", "this one", "please").
+pub fn fragment(after: &[String]) -> bool {
+    let c: Vec<&str> = content(after).iter().map(|&i| after[i].as_str()).collect();
+    c.len() <= 2 && c.iter().all(|x| matches!(*x, "screen" | "screens" | "window" | "windows" | "it" | "this" | "that" | "one" | "please" | "there" | "here" | "them" | "thing"))
+}
+
+/// A wake word again inside the command words ("can you s max can you shut down uh work vr", "make max can you make
+/// all of these screens half the size"): the speaker started over, so the words after the LAST one count. When
+/// those are only a fragment ("move it in front of me max the screen"), the wake word is just dropped. Only for a
+/// restart: the words after it start a request ("can", "could", "please", ...) or only fillers come before it.
+pub fn after_last_wake(w: &[String], wake_words: &[String]) -> Vec<String> {
+    let singles: Vec<String> = wake_words.iter().map(|x| words(x)).filter(|p| p.len() == 1).map(|p| p[0].clone()).collect();
+    let Some(j) = w.iter().rposition(|x| singles.contains(x)) else { return w.to_vec() };
+    let (before, after) = (&w[..j], &w[j + 1..]);
+    if fragment(after) {
+        let mut v = before.to_vec();
+        v.extend_from_slice(after);
+        return v;
+    }
+    let polite = after.first().is_some_and(|x| matches!(x.as_str(), "can" | "could" | "would" | "will" | "please" | "lets" | "let's"));
+    let stutter = content(before).len() <= 2;
+    if polite || stutter {
+        return after.to_vec();
+    }
+    w.to_vec()
+}
+
+/// Words a sentence does not end on when it is complete: articles, prepositions, conjunctions, hesitations.
+const DANGLE: &[&str] = &[
+    "the", "a", "an", "of", "to", "for", "with", "and", "or", "but", "uh", "um", "uhm", "er", "erm", "ah", "eh", "hmm", "mm",
+    "my", "your", "our", "their", "some", "can", "could", "would", "will", "you", "we", "into",
+    "onto", "from", "about", "than", "then", "is", "are", "las", "los", "el", "la", "de", "y",
+];
+/// Verbs that need an object: "can you move" alone is not a command yet.
+const NEEDS_OBJECT: &[&str] = &["move", "open", "put", "set", "make", "send", "type", "write", "bring", "add", "create", "close", "go", "switch", "search", "press", "have", "give", "want", "need"];
+
+/// Was the speaker cut off ("can you move uh one of the", "can you move", "can you write uh")? Then the next
+/// sentence continues this one (docs/VOICE.md, "Pauses").
+pub fn dangling(w: &[String]) -> bool {
+    let Some(last) = w.last() else { return false };
+    if DANGLE.contains(&last.as_str()) {
+        return true;
+    }
+    let c: Vec<&str> = content(w).iter().map(|&i| w[i].as_str()).filter(|x| !matches!(*x, "we" | "i" | "uh" | "um")).collect();
+    !c.is_empty() && c.iter().all(|x| NEEDS_OBJECT.contains(x))
+}
+
+/// "Max, cancel", "cancel that", "stop" (with or without the wake word): the words that stop a task of several
+/// steps while it runs (user decision 2026-10-16). Never a new goal.
+pub fn is_cancel(text: &str, wake_words: &[String]) -> bool {
+    let w = match wake(text, wake_words) {
+        Heard::Command(w) => w,
+        Heard::WakeOnly => return false,
+        Heard::Talk => words(text),
+    };
+    let c: Vec<&str> = content(&w).iter().map(|&i| w[i].as_str()).filter(|x| !matches!(*x, "that" | "it" | "this" | "everything" | "all" | "task" | "please")).collect();
+    matches!(c.as_slice(), ["cancel"] | ["stop"] | ["abort"] | ["nevermind"] | ["forget"] | ["cancela"] | ["para"] | ["stop", "stop"] | ["cancel", "cancel"])
+}
+
+/// A request taken back in the same breath (general grammar, not phrases): "hide screen two, no, forget it",
+/// "put the terminals on 3, no wait, cancel that", "make them bigger. Max, cancel." -> [`TakeBack::Cancel`];
+/// "two screens, no, three screens", "give me two more, actually three screens in all" -> the correction alone.
+#[derive(Debug, Clone, PartialEq)]
+pub enum TakeBack {
+    None,
+    Cancel,
+    Correct(Vec<String>),
+}
+
+/// Words that take back what was just said.
+const CANCEL_WORDS: &[&str] = &["cancel", "nevermind", "forget", "abort", "scratch", "ignore", "cancela", "olvidalo"];
+/// Words a take-back tail may have besides a cancel word ("no wait, forget about it, never mind that").
+const CANCEL_OK: &[&str] = &["no", "wait", "it", "that", "this", "about", "dont", "do", "not", "never", "mind", "max", "actually", "sorry", "oh", "please", "all", "the", "last", "one", "thing", "request", "command"];
+/// Words that start a correction ("no", "actually", "i mean", "sorry", "wait", "or rather").
+const CORRECT_WORDS: &[&str] = &["no", "actually", "sorry", "wait", "rather", "mean", "instead"];
+
+/// `raw`: the text as heard; a "no" corrects only when the speech-to-text marked a pause at it ("two screens, no,
+/// three") or "wait" / "sorry" / "actually" follows it ("cinema mode, no room" is passthrough off, no correction).
+pub fn take_back(w: &[String], raw: &str) -> TakeBack {
+    let rl = raw.to_lowercase();
+    let no_marked = rl.split_whitespace().collect::<Vec<_>>().windows(2).any(|p| (p[0] == "no," || p[0] == "no." || p[0] == "no!") || (p[0].trim_end_matches(',') == "no" && matches!(p[1].trim_matches(|c: char| !c.is_alphanumeric()), "wait" | "sorry" | "actually" | "i"))) || rl.trim_end().ends_with(" no");
+    let c = content(w);
+    if c.len() < 2 {
+        return TakeBack::None;
+    }
+    // a cancel word in the tail, with only take-back words around it, after at least one other content word
+    if let Some(k) = c.iter().rposition(|&i| CANCEL_WORDS.contains(&w[i].as_str())) {
+        let mut start = k;
+        while start > 0 && (CANCEL_OK.contains(&w[c[start - 1]].as_str()) || CORRECT_WORDS.contains(&w[c[start - 1]].as_str())) {
+            start -= 1;
+        }
+        let tail_ok = c[k + 1..].iter().all(|&i| CANCEL_OK.contains(&w[i].as_str()));
+        // "cancel the cinema mode" / "ignore the terminal" name a thing to act on: no take-back
+        if tail_ok && start > 0 {
+            return TakeBack::Cancel;
+        }
+    }
+    // a correction: "<request> no <request>", "<request> actually <request>"; the last one counts. Not "no" in front
+    // of a number ("number no 3"), and the first part must be a request of its own (2+ content words)
+    for (j, &i) in c.iter().enumerate().rev() {
+        let x = w[i].as_str();
+        let marker = matches!(x, "no" | "actually" | "sorry" | "instead") || (x == "mean" && i > 0 && w[i - 1] == "i") || (x == "rather" && i > 0 && w[i - 1] == "or");
+        if !marker || j < 2 {
+            continue;
+        }
+        if x == "no" && (!no_marked || w.get(i + 1).is_some_and(|n| matches!(n.as_str(), "more" | "longer" | "one" | "need"))) {
+            continue;
+        }
+        let mut k = j + 1;
+        while k < c.len() && (CORRECT_WORDS.contains(&w[c[k]].as_str()) || matches!(w[c[k]].as_str(), "i" | "or" | "max")) {
+            k += 1;
+        }
+        if k >= c.len() || c.len() - k < 1 {
+            continue;
+        }
+        let tail: Vec<String> = w[c[k]..].to_vec();
+        if content(&tail).is_empty() {
+            continue;
+        }
+        return TakeBack::Correct(tail);
+    }
+    TakeBack::None
+}
+
+/// Verbs that start a command of their own after "and" / "then" ("close screen 2 and make the main one bigger").
+const CLAUSE_VERBS: &[&str] = &[
+    "make", "put", "move", "open", "close", "hide", "show", "turn", "switch", "go", "play", "start", "stop", "set", "add",
+    "give", "bring", "take", "mute", "unmute", "pause", "resume", "search", "google", "type", "write", "dim", "record",
+    "remind", "send", "focus", "launch", "change", "exit", "leave", "enter", "lower", "raise", "swap", "reset", "skip",
+    "shrink", "enlarge", "push", "pull", "press", "scroll", "reload", "maximize", "minimize", "quit", "remove", "get",
+];
+const CLAUSE_JOIN: &[&str] = &["and", "then", "also", "plus", "afterwards", "y", "luego"];
+
+/// The clauses of a request ("close screen 2 and make the main one bigger" -> 2): a split at "and" / "then" right
+/// before a command verb. "hide screens 2, 3 and 4" or "terminals left and chrome right" stay one clause.
+pub fn clauses(w: &[String]) -> Vec<Vec<String>> {
+    let mut out: Vec<Vec<String>> = Vec::new();
+    let mut cur: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < w.len() {
+        if CLAUSE_JOIN.contains(&w[i].as_str()) && !content(&cur).is_empty() {
+            // "and then make", "and please make", "then can you make"
+            let mut j = i + 1;
+            while j < w.len() && (CLAUSE_JOIN.contains(&w[j].as_str()) || FILLERS.contains(&w[j].as_str())) {
+                j += 1;
+            }
+            if j < w.len() && CLAUSE_VERBS.contains(&w[j].as_str()) {
+                out.push(std::mem::take(&mut cur));
+                i = j;
+                continue;
+            }
+        }
+        cur.push(w[i].clone());
+        i += 1;
+    }
+    if !content(&cur).is_empty() {
+        out.push(cur);
+    } else if let Some(last) = out.last_mut() {
+        last.extend(cur);
+    }
+    out
+}
+
+/// Words that open a sentence without being part of the command ("yeah put youtube ...", "so uh open ...", "well,
+/// okay, hide ..."): dropped from the front.
+const OPENERS: &[&str] = &["yeah", "yes", "yep", "well", "so", "okay", "ok", "alright", "and", "uh", "um", "uhm", "oh", "hmm", "eh", "ah", "now", "hey", "right", "also"];
+
+pub fn drop_openers(w: &[String]) -> Vec<String> {
+    let mut i = 0;
+    // "right" is a direction too: only as an opener when more words follow and another opener or a verb comes next
+    while i < w.len() && OPENERS.contains(&w[i].as_str()) && w.len() - i > 2 {
+        if w[i] == "right" && !w.get(i + 1).is_some_and(|n| OPENERS.contains(&n.as_str()) || CLAUSE_VERBS.contains(&n.as_str()) || matches!(n.as_str(), "can" | "could" | "please")) {
+            break;
+        }
+        i += 1;
+    }
+    w[i..].to_vec()
+}
+
+/// Hesitations dropped from typed text and dictation ("uh something in the" types "something in the").
+pub fn strip_fillers(text: &str) -> String {
+    text.split_whitespace()
+        .filter(|t| {
+            let w = t.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase();
+            !matches!(w.as_str(), "uh" | "um" | "uhm" | "umm" | "uhh" | "er" | "erm" | "hmm" | "mm" | "ehm")
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// The raw words after the wake word (case and punctuation kept, numbers and aliases NOT normalised): what typing
 /// and search use, so "type free shipping for two" types exactly that.
 pub fn raw_after_wake(text: &str, wake_words: &[String]) -> String {
@@ -337,6 +610,47 @@ mod tests {
 
     fn cat() -> Catalogue {
         Catalogue::from_texts(BUILTIN, None).unwrap()
+    }
+
+    #[test]
+    fn take_backs_clauses_openers() {
+        let w = |t: &str| words(t);
+        assert_eq!(take_back(&w("mute the sound, no wait, forget about it"), "mute the sound, no wait, forget about it"), TakeBack::Cancel);
+        assert_eq!(take_back(&w("open spotify actually never mind"), "open spotify actually never mind"), TakeBack::Cancel);
+        assert_eq!(take_back(&w("five screens, no, six screens"), "five screens, no, six screens"), TakeBack::Correct(w("6 screens")));
+        // "no" without a pause is a word of the request ("no room" = passthrough off)
+        assert_eq!(take_back(&w("music off and no captions"), "music off and no captions"), TakeBack::None);
+        assert_eq!(take_back(&w("cancel the reminder"), "cancel the reminder"), TakeBack::None);
+        assert_eq!(clauses(&w("mute the sound and then open spotify")).len(), 2);
+        assert_eq!(clauses(&w("hide screens 4, 5 and 6")).len(), 1);
+        assert_eq!(clauses(&w("editor left and spotify right")).len(), 1);
+        assert_eq!(drop_openers(&w("yeah so open the files")), w("open the files"));
+        assert_eq!(drop_openers(&w("right screen bigger")), w("right screen bigger"));
+        // "screen for" / "screens to and five" are numbers; "the screen to the left" is not
+        assert_eq!(w("hide screen for"), w("hide screen 4"));
+        assert_eq!(w("hide screens to and five"), w("hide screens 2 and 5"));
+        assert!(w("move it to the screen to the left").contains(&"to".to_string()));
+    }
+
+    #[test]
+    fn wake_late_cut_off_and_fillers() {
+        let ww: Vec<String> = ["max", "pimax"].map(String::from).to_vec();
+        assert_eq!(wake_mid("Windows, can we ha Max, can we have two more windows?", &ww).as_deref(), Some("Max, can we have two more windows?"));
+        assert_eq!(wake_mid("I told Max to switch to cinema", &ww), None);
+        assert_eq!(wake_mid("okay. max", &ww), None);
+        for t in ["can you move uh 1 of the", "can you move all the", "can you move", "can you write uh", "max can you", "do the"] {
+            assert!(dangling(&words(t)), "{t}");
+        }
+        for t in ["cinema", "zoom in", "passthrough on", "close it all", "focus this", "type hello", "turn it up", "go back", "volume up please"] {
+            assert!(!dangling(&words(t)), "{t}");
+        }
+        assert_eq!(strip_fillers("uh something in the, um, line"), "something in the, line");
+        for t in ["Max, cancel", "max cancel that", "cancel", "Max, stop.", "stop it", "Max abort"] {
+            assert!(is_cancel(t, &ww), "{t}");
+        }
+        for t in ["Max, cancel mode", "stop recording", "Max cinema", "cancel the cinema and go"] {
+            assert!(!is_cancel(t, &ww), "{t}");
+        }
     }
 
     #[test]
@@ -469,6 +783,13 @@ mod tests {
         assert_eq!((i.as_str(), s["name"].as_str()), ("vr.backdrop.set", "sky"));
         let (i, s) = id(&c, "Pimax mountain lake background").unwrap();
         assert_eq!((i.as_str(), s["name"].as_str()), ("vr.backdrop.set", "mountain lake"));
+        for (said, name) in [("Pimax set background flowers", "flowers"), ("Pimax set the background to hawaii", "hawaii"), ("Pimax set background universe", "universe"), ("Pimax set background ocean", "ocean")] {
+            let (i, s) = id(&c, said).unwrap();
+            assert_eq!((i.as_str(), s["name"].as_str()), ("vr.backdrop.set", name), "{said}");
+        }
+        is(&c, "Pimax background off", "vr.passthrough.on");
+        is(&c, "Pimax turn the background off", "vr.passthrough.on");
+        is(&c, "Pimax next background", "vr.backdrop.next");
         // the desktop wallpaper is another thing
         is(&c, "Pimax next wallpaper", "omarchy.wallpaper.next");
         is(&c, "Pimax desktop background", "omarchy.wallpaper.next");

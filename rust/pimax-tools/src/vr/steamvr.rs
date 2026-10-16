@@ -450,6 +450,9 @@ pub const STEAM_PID_FILE: &str = "steam-client.pid";
 /// Seconds Play waits for Steam to come up before it starts SteamVR.
 pub const STEAM_WAIT: Duration = Duration::from_secs(60);
 
+/// What SteamVR's PATH gets shims for: everything that can open a `steam://` link or start Steam (incident 2026-10-16).
+pub const SHIMMED: [&str; 4] = ["xdg-open", "steam", "gio", "gtk-launch"];
+
 /// `<session dir>/steamvr-shim`: `xdg-open` and `steam` for SteamVR's PATH.
 pub fn shim_dir(session_dir: &Path) -> PathBuf {
     session_dir.join("steamvr-shim")
@@ -513,7 +516,7 @@ pub fn write_shims(session_dir: &Path, scrub: &[String], user: &dyn Fn(&str) -> 
     std::fs::create_dir_all(&dir)?;
     let path = user("PATH").unwrap_or_else(|| "/usr/local/bin:/usr/bin:/bin".into());
     let args = clean_env_args(scrub, user);
-    for name in ["xdg-open", "steam"] {
+    for name in SHIMMED {
         let f = dir.join(name);
         std::fs::write(&f, shim_text(&which_in(&path, name, &dir), &args))?;
         std::fs::set_permissions(&f, std::fs::Permissions::from_mode(0o755))?;
@@ -558,6 +561,88 @@ pub fn leaked_message(pid: u32, vars: &[String]) -> String {
         "Steam (pid {pid}) was started from inside SteamVR and still carries SteamVR's settings ({}), so games can freeze. Quit Steam (Steam menu > Exit), then press Play again: Play starts Steam the normal way first.",
         vars.join(", ")
     )
+}
+
+/// Seconds the restart waits for a tainted Steam to exit after `steam -shutdown` (Steam saves cloud data first).
+pub const SHUTDOWN_WAIT: Duration = Duration::from_secs(90);
+
+/// `steam -shutdown` through `env` without SteamVR's or our variables (the clean environment). The real `steam`
+/// script finds the running client through `~/.steam/steam.pipe`.
+pub fn steam_shutdown_spec(session_dir: &Path, scrub: &[String], user: &dyn Fn(&str) -> Option<String>) -> ProcSpec {
+    let mut args = clean_env_args(scrub, user);
+    args.extend(["/usr/bin/steam".to_string(), "-shutdown".to_string()]);
+    ProcSpec { name: "steam-shutdown", program: PathBuf::from("/usr/bin/env"), args, env: Vec::new(), log: session_dir.join("steam-shutdown.log") }
+}
+
+/// What [`restart_steam`] did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Restart {
+    /// Steam is not running or runs clean: nothing was closed (a clean Steam is never shut down here).
+    NothingToDo,
+    /// The tainted Steam with this pid asked to quit and is gone.
+    Closed(u32),
+}
+
+/// The tainted Steam: its pid and the SteamVR variables it carries (None = no Steam, or a clean one).
+pub fn tainted_steam(home: &Path, procs: &dyn super::host::Procs) -> Option<(u32, Vec<String>)> {
+    let pid = steam_pid(home, procs)?;
+    let leaked = leaked_vars(&procs.environ(pid).unwrap_or_default());
+    (!leaked.is_empty()).then_some((pid, leaked))
+}
+
+/// Close a Steam that carries SteamVR's variables, politely: `steam -shutdown` in a clean environment, then wait for
+/// that pid to exit. Never signals Steam: when it does not exit within `wait` (a game or a download may be
+/// finishing), the Err says so in plain words and nothing else happens. A clean or absent Steam is left alone.
+#[allow(clippy::too_many_arguments)]
+pub fn restart_steam(
+    home: &Path,
+    session_dir: &Path,
+    scrub: &[String],
+    user: &dyn Fn(&str) -> Option<String>,
+    procs: &dyn super::host::Procs,
+    sp: &dyn Spawner,
+    clock: &dyn super::host::Clock,
+    wait: Duration,
+) -> Result<Restart, String> {
+    let Some((pid, _)) = tainted_steam(home, procs) else { return Ok(Restart::NothingToDo) };
+    let spec = steam_shutdown_spec(session_dir, scrub, user);
+    sp.spawn(&spec).map_err(|e| format!("Could not ask Steam to close ({e}). Close it yourself (Steam menu > Exit), then press Play again."))?;
+    let t0 = clock.now();
+    loop {
+        if !procs.is_alive(pid) || procs.comm(pid).as_deref() != Some("steam") {
+            return Ok(Restart::Closed(pid));
+        }
+        if clock.now() - t0 > wait {
+            return Err(format!(
+                "Steam (pid {pid}) did not close within {} s. A game or a download may still be finishing. Close Steam yourself when it is safe (Steam menu > Exit), then press Play again. Nothing was forced.",
+                wait.as_secs()
+            ));
+        }
+        clock.sleep(Duration::from_millis(500));
+    }
+}
+
+/// `pimax vr steam-restart [--wait SECS]` for the app (the confirmed restart step of Play).
+pub fn restart_cli(wait: Duration) -> Result<(), CliError> {
+    let home = PathBuf::from(std::env::var("HOME").unwrap_or_default());
+    let session_dir = PathBuf::from(std::env::var("PIMAX_VR_SESSION_DIR").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| super::config::SESSION_DIR.to_string()));
+    super::session::ensure_private_dir(&session_dir)?;
+    let pimax: Vec<(String, String)> = std::env::vars().filter(|(k, _)| k.starts_with("PIMAX_")).collect();
+    let scrub = scrub_vars(&pimax);
+    let user = |k: &str| std::env::var(k).ok();
+    let procs = super::host::RealHost::from_env();
+    let clock = super::host::RealClock::new();
+    match restart_steam(&home, &session_dir, &scrub, &user, &procs, &super::desk::RealSpawner, &clock, wait) {
+        Ok(Restart::NothingToDo) => {
+            vout!("pimax vr: Steam is not running with SteamVR's settings: nothing to close");
+            Ok(())
+        }
+        Ok(Restart::Closed(pid)) => {
+            vout!("pimax vr: Steam (pid {pid}) closed");
+            Ok(())
+        }
+        Err(e) => Err(CliError::new(e)),
+    }
 }
 
 /// Make sure a clean Steam runs before SteamVR starts, so SteamVR never starts Steam itself. Records its pid in the
@@ -1021,6 +1106,72 @@ mod tests {
         assert_eq!(procs.signals.borrow().as_slice(), [(4241, Signal::Term)]);
         assert!(procs.procs.borrow().keys().all(|p| *p >= 3000), "only Steam is left: {:?}", procs.procs.borrow());
         assert!(!o.session_dir.join(PID_FILE).exists() && !o.session_dir.join(STEAM_PID_FILE).exists() && !shim_dir(&o.session_dir).exists());
+    }
+
+    /// Spawner for the restart tests: `steam -shutdown` makes the Steam leave unless it is stubborn.
+    struct ShutdownSpawner<'a>(&'a FakeProcs, RefCell<Vec<String>>, bool);
+    impl Spawner for ShutdownSpawner<'_> {
+        fn spawn(&self, s: &ProcSpec) -> io::Result<u32> {
+            self.1.borrow_mut().push(format!("{} {}", s.program.display(), s.args.join(" ")));
+            if self.2 {
+                self.0.procs.borrow_mut().retain(|_, n| n != "steam");
+            }
+            Ok(97)
+        }
+    }
+
+    fn tainted_world() -> (std::path::PathBuf, FakeProcs) {
+        let h = crate::vr::test_dir("steam-restart");
+        let procs = FakeProcs::default();
+        procs.procs.borrow_mut().insert(500, "steam".into());
+        procs.environs.borrow_mut().insert(500, vec![("SteamAppId".into(), STEAMVR_APPID.into()), ("PIMAX_SLAM".into(), "1".into())]);
+        (h, procs)
+    }
+
+    #[test]
+    fn a_tainted_steam_is_found_a_clean_or_absent_one_is_not() {
+        let (h, procs) = tainted_world();
+        let (pid, vars) = tainted_steam(&h, &procs).unwrap();
+        assert_eq!((pid, vars), (500, vec!["PIMAX_SLAM".to_string(), "SteamAppId".to_string()]));
+        procs.environs.borrow_mut().insert(500, vec![("HOME".into(), "/h".into()), ("SteamAppId".into(), "730".into())]);
+        assert_eq!(tainted_steam(&h, &procs), None, "a game's own app id is not SteamVR's");
+        procs.procs.borrow_mut().clear();
+        assert_eq!(tainted_steam(&h, &procs), None);
+    }
+
+    #[test]
+    fn restart_closes_a_tainted_steam_with_a_clean_shutdown_and_waits_for_the_pid() {
+        let (h, procs) = tainted_world();
+        let sp = ShutdownSpawner(&procs, RefCell::new(vec![]), true);
+        let clock = FakeClock(std::cell::Cell::new(Duration::ZERO));
+        let scrub = scrub_vars(&[("PIMAX_FPS".into(), "90".into())]);
+        let r = restart_steam(&h, &h.join("s"), &scrub, &|_| None, &procs, &sp, &clock, Duration::from_secs(5)).unwrap();
+        assert_eq!(r, Restart::Closed(500));
+        let spawned = sp.1.borrow();
+        assert_eq!(spawned.len(), 1);
+        assert!(spawned[0].starts_with("/usr/bin/env -u ") && spawned[0].ends_with(" /usr/bin/steam -shutdown"), "{}", spawned[0]);
+        assert!(spawned[0].contains("-u SteamAppId") && spawned[0].contains("-u LD_PRELOAD"), "clean environment: {}", spawned[0]);
+        assert!(procs.signals.borrow().is_empty(), "never a signal to Steam");
+    }
+
+    #[test]
+    fn restart_that_times_out_says_so_and_never_signals_steam() {
+        let (h, procs) = tainted_world();
+        let sp = ShutdownSpawner(&procs, RefCell::new(vec![]), false);
+        let clock = FakeClock(std::cell::Cell::new(Duration::ZERO));
+        let e = restart_steam(&h, &h.join("s"), &[], &|_| None, &procs, &sp, &clock, Duration::from_secs(5)).unwrap_err();
+        assert!(e.contains("did not close within 5 s") && e.contains("Nothing was forced"), "{e}");
+        assert!(procs.signals.borrow().is_empty() && procs.is_alive(500));
+    }
+
+    #[test]
+    fn restart_leaves_a_clean_or_absent_steam_alone() {
+        let (h, procs) = tainted_world();
+        procs.environs.borrow_mut().insert(500, vec![("HOME".into(), "/h".into())]);
+        let sp = ShutdownSpawner(&procs, RefCell::new(vec![]), true);
+        let clock = FakeClock(std::cell::Cell::new(Duration::ZERO));
+        assert_eq!(restart_steam(&h, &h.join("s"), &[], &|_| None, &procs, &sp, &clock, Duration::from_secs(5)), Ok(Restart::NothingToDo));
+        assert!(sp.1.borrow().is_empty() && procs.is_alive(500), "a clean Steam is never shut down");
     }
 
     #[test]

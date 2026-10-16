@@ -1,7 +1,7 @@
 # Render quality and frame health
 
 ## The switch
-Home > **Quality / Performance** > **Render quality**: Quality / Balanced / Performance. Saved as `scale_pct` in
+**Display** > **Render quality**: Quality / Balanced / Performance. Saved as `scale_pct` in
 `~/.config/pimax/gui-state.toml`; the next Play or Work passes it as `XRT_COMPOSITOR_SCALE_PERCENTAGE` (the CLI reads
 the same variable, or `SCALE`). Developer mode adds a custom slider (50-200 %).
 
@@ -40,22 +40,43 @@ missed since 2026-10-15; the card line shows late as a percentage ("92 % late") 
 - No async reprojection: SteamVR logs "Async support disabled ... direct mode driver"; Monado re-shows the last
   game frame with rotation-only timewarp. A game that misses its frame shows judder on position.
 
+## Shaky desk screens (2026-10-16 18:08-18:16 Work session, 90 Hz)
+- **Dropped frames, not tracking noise.** Monado showed 41644 frames while the passthrough app was paced 45638 times
+  (8.8 % fewer); `comp_skipped` = 3920, about 8 per second (idle sessions: 0; a smooth 72 Hz one: 2 in 14061). A dropped
+  frame repeats the image of 11 ms earlier: at an ordinary 15-60 deg/s head turn the screens jump 0.17-0.67 deg
+  (6-25 panel pixels).
+- **Tracking was fine.** Replaying the session's `head-imu.csv` through the driver's head tracker
+  (`pimax-slam corrections`): jitter while worn and quiet 0.3-0.5 mm vertical, 0.8-0.9 mm horizontal (under one
+  pixel on a screen 2.5 m away); IMU 1 kHz with no gap over 1.02 ms; 4 IMU samples held by the gate in the whole
+  session; one tracker re-zero (about 18:13) held without a jump. Monado ran with the realtime GPU queue and SCHED_FIFO
+  threads (cap_sys_nice was set).
+- **The GPU was shared** with the local AI the whole time: llama-server (4B, Vulkan) answered 872 requests in those
+  8 minutes (a voice audit run by an agent, ~110 per minute back to back, plus the user's 64 commands) and
+  whisper-server (Vulkan) decoded ~290 utterances. NVIDIA time-slices between processes; earlier measurements give
+  about one dropped frame per GPU model request (docs/AI.md). Sunshine took another ~30 % of the GPU.
+- WayVR itself kept 90 fps except while loading an 8k backdrop (down to 386 frames in 5 s at 18:12:09); its layers
+  are re-projected by Monado, so that is not the shake.
+- What helps: no AI benchmarks on the GPU servers while VR runs; AI preset Low (model on the processor) or Parakeet
+  (processor) speech recognition when smoothness matters; Sunshine off.
+- **Timeline:** `pimax-perf` now writes one line every 5 s to the session's `perf.log`
+  (`perf: unix=... mono_ms=... fps=... frames+N dropped+N late+N app_fps=... app_gpu_ms=...`), so the next session
+  shows *when* frames dropped and they can be lined up with `voice.log`, `ai.log` and the llama-server log.
+
 ## Game mode: free the graphics card while playing
-Home > Quality / Performance > **While playing**: two switches, "Game mode: pause the local AI" (default on) and "Also pause Sunshine (stops game streaming)" (default **off**). It only applies to **Play** (`pimax vr start`), never to Work.
+**Display** > **Performance**: one switch, "Game mode" (default on, also in Home > Quick settings). **Sunshine is never stopped or paused** (user rule; the old "Pause Sunshine" switch and `pause_sunshine` setting are gone, an old value in gamemode.toml is ignored and dropped at the next save). It only applies to **Play** (`pimax vr start`), never to Work.
 - At Play start (after VR is up) it pauses the **local AI** (`pimax-ai stop`: SIGTERM,
-  llama-server on Vulkan) and, only if "Also pause Sunshine" is on, **Sunshine** (`systemctl --user stop app-dev.lizardbyte.app.Sunshine.service`,
-  or `sunshine.service`; it holds about 25 % of the GPU all the time). Only what was really running is paused; it is written to
-  `<session dir>/gamemode-paused.txt` (`sunshine=<unit>`, `ai=gpu|cpu`). The voice AI is not used in Play.
+  llama-server on Vulkan). Only what was really running is paused; it is written to
+  `<session dir>/gamemode-paused.txt` (`ai=gpu|cpu`; a `sunshine=<unit>` line left by an older version is only started again, never written). The voice AI is not used in Play.
 - Stop Play (`pimax vr stop`) starts exactly those again (`systemctl --user start`, `pimax-ai serve [--cpu]`, detached).
 - Crash recovery: the app, at start and when no monado-service/vrserver runs, runs `pimax vr gamemode restore` if the
   state file is still there. `restore` refuses while a session runs.
-- It is an optional step: any failure is a plain line in the log ("game mode: Sunshine could not be paused (VR goes on)").
-  The session card shows "Paused for game mode: Sunshine, local AI".
-- CLI: `pimax vr gamemode [status|on|off|sunshine on|off|restore]`; saved in `~/.config/pimax/gamemode.toml` (`pause_ai`, `pause_sunshine`;
-  the old `game_mode` key is still read and means `pause_ai` only, so Sunshine is never paused by an old file).
+- It is an optional step: any failure is a plain line in the log ("game mode: the local AI could not be paused (VR goes on)").
+  The session card shows "Paused for game mode: local AI".
+- CLI: `pimax vr gamemode [status|on|off|budget auto|6|8|restore]`; saved in `~/.config/pimax/gamemode.toml` (`pause_ai`, `comp_budget`;
+  the old `game_mode` key is still read and means `pause_ai` only, so Sunshine is never paused).
 
 ## Compositor time budget
-Home > Quality / Performance > **Compositor time budget**: Auto / 6 ms / 8 ms (`comp_budget` in gamemode.toml,
+**Display** > **Performance** > **Compositor budget**: Auto / 6 ms / 8 ms (`comp_budget` in gamemode.toml,
 `pimax vr gamemode budget auto|6|8`). It becomes `U_PACING_COMP_MIN_TIME_MS=6.0` / `8.0` for monado-service, set by the
 one env builder (`vr/config.rs build_env`; a value already in the caller's environment wins). Checked in Monado
 (`u_pacing_compositor_fake.c`: `DEBUG_GET_ONCE_FLOAT_OPTION(min_comp_time_ms, "U_PACING_COMP_MIN_TIME_MS", 3.0f)`):
@@ -68,7 +89,7 @@ choice. Keep the one with fewer dropped frames first, then lower late %, and a g
 changes, leave Auto.
 
 ## Brightness
-Home > Quality / Performance > **Brightness** (also in the Optics / Display summary). Settings: `~/.config/pimax/display.toml`
+**Display** > **Brightness**. Settings: `~/.config/pimax/display.toml`
 (`image = "standard|bright|brighter"`, `backlight = 20..100`); CLI `pimax vr display [status|image X|backlight N|apply]`.
 
 * **Panel backlight** (default 100 %). Measured: the bridge log prints `nvt_set_bl_brightness: 255` at every Linux

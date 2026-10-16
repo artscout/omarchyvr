@@ -242,7 +242,22 @@ pub fn run(s: &Settings, r: &Roots) -> i32 {
     let out = unique_path(&dir, &settings::file_name(unix_now() as i64));
     let ff_log = session_dir.join("record-ffmpeg.log");
     let mut enc_i = 0usize;
-    let spawn = |enc: Encoder| Ffmpeg::spawn(&ffmpeg, enc, s, w, h, &out, &ff_log);
+    // Sound: only what can be read right now goes in; a missing output or mic never stops the video.
+    let mut es = s.clone();
+    let mut audio_note = String::new();
+    if es.audio {
+        if let Err(e) = encode::probe_audio(&ffmpeg, encode::MONITOR_SRC) {
+            es.audio = false;
+            es.mic = false;
+            audio_note = format!("recording without sound: the audio output cannot be read ({e})");
+        } else if es.mic {
+            if let Err(e) = encode::probe_audio(&ffmpeg, encode::MIC_SRC) {
+                es.mic = false;
+                audio_note = format!("the microphone cannot be read, recording the output sound only ({e})");
+            }
+        }
+    }
+    let spawn = |enc: Encoder| Ffmpeg::spawn(&ffmpeg, enc, &es, w, h, &out, &ff_log);
     let mut ff = match spawn(plan[0]) {
         Ok(f) => f,
         Err(e) => {
@@ -255,6 +270,10 @@ pub fn run(s: &Settings, r: &Roots) -> i32 {
     cx.st.state = "recording".into();
     cx.st.file = out.display().to_string();
     cx.st.encoder = plan[0].name(s.codec).into();
+    cx.st.audio = if !es.audio { "" } else if es.mic { "output+mic" } else { "output" }.into();
+    if !audio_note.is_empty() {
+        status::event(&session_dir, "notice", &audio_note, true);
+    }
     cx.st.width = w;
     cx.st.height = h;
     cx.save();

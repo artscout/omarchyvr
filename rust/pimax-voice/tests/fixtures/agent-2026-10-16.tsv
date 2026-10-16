@@ -1,0 +1,18 @@
+# pimax-voice audit: agent mode and apps to named screens (user requests 2026-10-16). A goal runs step by step
+# (agent::goal); want = every step in order. The dry run continues after a step this desktop cannot do (no such
+# window), so the decisions are what is checked. Columns: intent(s), phrase, optional slots.
+vr.preset.cinema ; media.play ; vr.passthrough.off	let's enter cinema mode, I want to watch Dune, it's already downloaded
+media.play ; vr.preset.cinema ; vr.passthrough.off	let's watch Arrival, cinema mode, and turn off the room
+win.screen.put ; win.screen.put ; win.screen.put	set up work: terminals left, browser middle, YouTube up-right
+vr.screens.count ; win.screen.put ; win.screen.put	let's set up four screens, the terminals on the left and chrome on the right
+vr.preset.work3 ; win.organize	get ready for work, three screens and sort my apps by kind
+win.screen.put ; win.screen.put	put the terminals on the left screen and chrome on the right screen
+vr.preset.exit_cinema ; vr.passthrough.on	let's exit cinema mode and turn the passthrough back on
+win.screen.put	put all the terminals on the left screen	app=terminals,side=left
+win.screen.put	youtube on the up right screen	side=up-right
+win.screen.put_n	move chrome to screen 3	app=chrome,screen=3
+win.screen.put	put the code editor in the middle	side=main
+vr.preset.exit_cinema	exit cinema mode
+omarchy.media.play_pause	pause
+voice.cancel	cancel that
+voice.cancel	stop

@@ -138,7 +138,7 @@ pub fn reconcile(w: &World) -> Plan {
         }
     }
 
-    // ai.server is not tied to a session
+    // ai.server: Work sessions only (its rule); planned here like before, so a session switch to Play stops it
     plan_process(w, &h, "ai.server", &mut p);
 
     if !w.intent.on() {

@@ -28,6 +28,11 @@ fn sample(t: SlotType, name: &str) -> &'static str {
         (SlotType::Number, _) => "3",
         (SlotType::Name, _) => "sky",
         (SlotType::Side, _) => "left",
+        (SlotType::Screen, "from") => "2",
+        (SlotType::Screen, "b") => "4",
+        (SlotType::Screen, _) => "3",
+        (_, "screens") => "3",
+        (_, "size") => "50",
         (_, "app") => "terminal",
         (_, "site") => "github",
         (_, "key") => "tab",
@@ -77,8 +82,9 @@ pub fn cases(cat: &Catalogue, fixture: &str) -> Vec<Case> {
         let Some(p) = i.phrases.first() else { continue };
         let mut slots = Vec::new();
         let mut filled = p.clone();
-        for (k, t) in &i.slots {
-            let s = sample(*t, k);
+        for (k, t) in i.slots.iter().filter(|(k, _)| p.contains(&format!("{{{k}}}"))) {
+            // "3 screens" is also the work-3 preset's own phrase: the screen count is tested with 4
+            let s = if i.id.starts_with("vr.screens.") && *t == SlotType::Number { "4" } else { sample(*t, k) };
             filled = filled.replace(&format!("{{{k}}}"), s);
             slots.push((k.clone(), s.to_string()));
         }
@@ -98,6 +104,42 @@ pub fn cases(cat: &Catalogue, fixture: &str) -> Vec<Case> {
         let (Some(want), Some(heard)) = (f.next(), f.next()) else { continue };
         let slots = f.next().unwrap_or("").split(',').filter_map(|kv| kv.split_once('=')).map(|(k, v)| (k.trim().to_string(), v.trim().to_string())).collect();
         v.push(Case { want: want.trim().into(), heard: heard.trim().into(), kind: "natural", slots });
+    }
+    v
+}
+
+/// Training phrases for the router "Lara" (docs/AI.md section 16): EVERY catalogue phrase of every enabled intent
+/// (slots filled with a few sample values), an ASR-mangled copy of each, and chatter for "none". The audit's natural
+/// phrasings (`tests/fixtures/audit.tsv`) are NOT in it: they stay the held-out test.
+pub fn train_cases(cat: &Catalogue) -> Vec<Case> {
+    const FILL: [(&str, &str, &str); 9] = [("app", "terminal", "spotify"), ("site", "github", "youtube"), ("q", "the weather", "rust tutorials"), ("text", "hello there", "see you tomorrow"), ("key", "tab", "enter"), ("minutes", "10", "25"), ("n", "3", "2"), ("side", "left", "right"), ("name", "sky", "beach")];
+    let mut v = Vec::new();
+    for i in cat.enabled() {
+        for p in &i.phrases {
+            let mut first = String::new();
+            for variant in 0..2 {
+                let mut filled = p.clone();
+                for (k, t) in &i.slots {
+                    let val = FILL.iter().find(|f| f.0 == k.as_str()).map(|f| if variant == 0 { f.1 } else { f.2 }).unwrap_or_else(|| sample(*t, k));
+                    filled = filled.replace(&format!("{{{k}}}"), val);
+                }
+                // a phrase without slots gives the same row twice: once is enough
+                if variant == 1 && filled == first {
+                    continue;
+                }
+                if variant == 0 {
+                    first = filled.clone();
+                }
+                v.push(Case { want: i.id.clone(), heard: filled.clone(), kind: "train", slots: vec![] });
+                let m = mangle(&filled);
+                if m != filled && variant == 0 {
+                    v.push(Case { want: i.id.clone(), heard: m, kind: "train", slots: vec![] });
+                }
+            }
+        }
+    }
+    for c in ["hello", "testing testing", "is this thing on", "never mind", "sorry not you", "what was i saying", "ok thanks", "hmm", "i'm talking to someone else", "nothing", "that was a joke", "good morning everyone", "wait a second let me think", "oops"] {
+        v.push(Case { want: "none".into(), heard: c.into(), kind: "train", slots: vec![] });
     }
     v
 }
@@ -151,6 +193,16 @@ pub struct Outcome {
     /// pass | ask | fail
     pub verdict: &'static str,
     pub why: String,
+    /// The exact user message the model got (the state, the hints, the words); empty when no model was asked.
+    pub prompt: String,
+}
+
+/// The heard cell: the words, and the model's exact input under them (folded).
+fn heard_cell(x: &Outcome) -> String {
+    if x.prompt.is_empty() {
+        return esc(&x.case.heard);
+    }
+    format!("{}<details><summary>what the model got</summary><pre>{}</pre></details>", esc(&x.case.heard), esc(&x.prompt))
 }
 
 /// `ai:win_list?` / `win.list` -> the catalogue id form for comparing.
@@ -172,7 +224,21 @@ pub fn judge_full(case: &Case, ran: Option<&str>, asked: bool, slots: &BTreeMap<
             Some(r) => ("fail", format!("ran {r}")),
         };
     }
-    let decided = decision.split(" ; ").next().and_then(|d| d.split_whitespace().next()).unwrap_or("");
+    if case.want.contains(" ; ") {
+        // a plan: every step, in this order (what ran, else what the model decided when an action failed on the
+        // dry run's desktop)
+        let want: Vec<String> = case.want.split(" ; ").map(norm_id).collect();
+        let ran_steps: Vec<String> = ran.map(|r| r.split(',').map(|x| norm_id(x.trim_start_matches("ai:").trim_end_matches('?'))).collect()).unwrap_or_default();
+        let decided: Vec<String> = decision.split(" > ").last().unwrap_or("").split(" ; ").filter_map(|d| d.split_whitespace().next()).map(norm_id).collect();
+        return if ran_steps == want {
+            ("pass", String::new())
+        } else if decided == want {
+            ("pass", format!("decided right; here the actions gave {result:?}"))
+        } else {
+            ("fail", format!("ran {}, decided {}", ran.unwrap_or("-"), decided.join(" ; ")))
+        };
+    }
+    let decided = decision.split(" > ").last().unwrap_or("").split(" ; ").next().and_then(|d| d.split_whitespace().next()).unwrap_or("");
     // two stages: the right tool was called, its action failed on the dry run's desktop and the model explained
     if ran == Some("ai:answer") && decision.split([' ', ',']).any(|t| norm_id(t) == norm_id(&case.want)) {
         return ("pass", format!("called the right tool; here the action said {result:?}"));
@@ -238,7 +304,7 @@ main{max-width:1100px;margin:0 auto;padding:16px}h1{font-size:22px;margin:4px 0}
 table{border-collapse:collapse;width:100%;font-size:13px}th,td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}\
 th{position:sticky;top:0;background:var(--card);color:var(--dim);font-weight:600}td.m{font-family:ui-monospace,monospace;font-size:12px;word-break:break-word}\
 .v{font-weight:700}.pass{color:var(--pass)}.ask{color:var(--ask)}.fail{color:var(--fail)}.chip{background:var(--chip);border-radius:6px;padding:1px 6px;font-size:12px}\
-details{margin:8px 0}summary{cursor:pointer;color:var(--dim)}";
+details{margin:8px 0}summary{cursor:pointer;color:var(--dim)}pre{white-space:pre-wrap;font-size:12px;margin:4px 0}";
     h += "</style></head><body><main>";
     h += &format!("<h1>{}</h1><div class=sub>{}</div>", esc(title), esc(sub));
     for (name, o) in runs {
@@ -257,7 +323,7 @@ details{margin:8px 0}summary{cursor:pointer;color:var(--dim)}";
             for x in fails {
                 h += &format!(
                     "<tr><td class='v {v}'>{v}</td><td class=m>{}</td><td>{}</td><td><span class=chip>{}</span></td><td class=m>{} {}</td><td>{}</td></tr>",
-                    esc(&x.case.want), esc(&x.case.heard), esc(&x.route), esc(&x.ran), esc(&x.decision), esc(&x.why), v = x.verdict
+                    esc(&x.case.want), heard_cell(x), esc(&x.route), esc(&x.ran), esc(&x.decision), esc(&x.why), v = x.verdict
                 );
             }
             h += "</table></div>";
@@ -267,7 +333,7 @@ details{margin:8px 0}summary{cursor:pointer;color:var(--dim)}";
             let sl: Vec<String> = x.slots.iter().map(|(k, v)| format!("{k}={v}")).collect();
             h += &format!(
                 "<tr><td class='v {v}'>{v}</td><td class=m>{}</td><td>{}</td><td>{}</td><td><span class=chip>{}</span></td><td class=m>{}{}</td><td class=m>{}</td><td>{}</td></tr>",
-                esc(&x.case.want), x.case.kind, esc(&x.case.heard), esc(&x.route), esc(&x.ran), if x.asked { " (asked)" } else { "" }, esc(&sl.join(" ")), x.ms, v = x.verdict
+                esc(&x.case.want), x.case.kind, heard_cell(x), esc(&x.route), esc(&x.ran), if x.asked { " (asked)" } else { "" }, esc(&sl.join(" ")), x.ms, v = x.verdict
             );
         }
         h += "</table></div></details>";

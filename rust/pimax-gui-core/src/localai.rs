@@ -36,6 +36,47 @@ pub struct LocalModel {
     pub installed: bool,
 }
 
+/// One line of the one Test (`pimax-ai test --all`: `check <id> <ok|fail|skip> <ms> <detail>`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TestCheck {
+    /// `router`, `action`, `speech`, `agent`.
+    pub id: String,
+    /// `ok`, `fail` or `skip`.
+    pub state: String,
+    /// How long the check took.
+    pub ms: u64,
+    /// Plain words: what was checked and what came back.
+    pub detail: String,
+}
+
+impl TestCheck {
+    /// The name shown in the result line.
+    pub fn label(&self) -> &str {
+        match self.id.as_str() {
+            "router" => "Lara (router)",
+            "action" => "Action model",
+            "speech" => "Speech recognition",
+            "agent" => "Agent model",
+            o => o,
+        }
+    }
+}
+
+/// The check lines of `pimax-ai test --all` in a log slice.
+pub fn parse_checks<'a>(lines: impl IntoIterator<Item = &'a String>) -> Vec<TestCheck> {
+    lines
+        .into_iter()
+        .filter_map(|l| {
+            let mut it = l.trim().splitn(5, ' ');
+            if it.next()? != "check" {
+                return None;
+            }
+            let (id, state, ms, detail) = (it.next()?, it.next()?, it.next()?, it.next().unwrap_or(""));
+            matches!(state, "ok" | "fail" | "skip").then(|| TestCheck { id: id.into(), state: state.into(), ms: ms.parse().ok().unwrap_or(0), detail: detail.trim().into() })
+        })
+        .collect()
+}
+
 /// The running server.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Running {
@@ -70,6 +111,39 @@ pub struct LocalAiStatus {
     pub gpu_budget_mib: Option<u64>,
     /// The model alias (`pimax-local`).
     pub model_alias: Option<String>,
+    /// The two-stage router ("Lara", port 8081), when it runs.
+    pub router: Option<RouterRun>,
+    /// Laya (the router's runtime and checkpoint) is downloaded.
+    pub laya: bool,
+    /// Lara (Laya tuned to the commands) is there; its tuning runs.
+    pub lara: bool,
+    pub lara_tuning: bool,
+    /// Free and total VRAM (MiB).
+    pub vram_free_mib: Option<u64>,
+    pub vram_total_mib: Option<u64>,
+    /// What runs next to the AI ("the Work desk", "a running game", ...).
+    pub session: Option<String>,
+    /// The speech server (whisper-server, port 8082), when it runs: ready and its video memory (MiB).
+    pub asr: Option<AsrRun>,
+    /// Why the large speech model cannot start (not built / not downloaded), in plain words.
+    pub asr_missing: Option<String>,
+}
+
+/// The running speech server.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AsrRun {
+    pub pid: u32,
+    pub ready: bool,
+    pub gpu_mib: Option<u64>,
+}
+
+/// The running router.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RouterRun {
+    pub pid: u32,
+    /// `laya:english` or a GGUF file.
+    pub model: String,
+    pub ready: bool,
 }
 
 impl LocalAiStatus {
@@ -102,7 +176,33 @@ pub fn parse_status(text: &str) -> Result<LocalAiStatus, String> {
         gpu_mib: v["gpu_mib"].as_u64(),
         gpu_budget_mib: v["gpu_budget_mib"].as_u64(),
         model_alias: s(&v["model_alias"]),
+        router: v["router"].as_object().map(|r| RouterRun {
+            pid: r.get("pid").and_then(Value::as_u64).unwrap_or(0) as u32,
+            model: r.get("model").and_then(Value::as_str).unwrap_or("").to_string(),
+            ready: r.get("ready").and_then(Value::as_bool).unwrap_or(false),
+        }),
+        laya: v["laya"].as_bool().unwrap_or(false),
+        lara: v["lara"].as_bool().unwrap_or(false),
+        lara_tuning: v["lara_tuning"].as_bool().unwrap_or(false),
+        vram_free_mib: v["vram_free_mib"].as_u64(),
+        vram_total_mib: v["vram_total_mib"].as_u64(),
+        session: s(&v["session"]),
+        asr: v["asr"].as_object().map(|r| AsrRun { pid: r.get("pid").and_then(Value::as_u64).unwrap_or(0) as u32, ready: r.get("ready").and_then(Value::as_bool).unwrap_or(false), gpu_mib: r.get("gpu_mib").and_then(Value::as_u64) }),
+        asr_missing: s(&v["asr_missing"]),
     })
+}
+
+impl LocalAiStatus {
+    /// Is a two-stage model id downloaded?
+    pub fn has(&self, id: &str) -> bool {
+        match id {
+            "laya" => self.laya,
+            // tuning: Laya serves meanwhile, nothing more to download
+            "lara" => self.lara || (self.laya && self.lara_tuning),
+            "qwen3.5-4b" => self.models.iter().any(|m| m.id == "model-gpu" && m.installed),
+            other => self.models.iter().any(|m| m.id == other && m.installed),
+        }
+    }
 }
 
 /// The demo status: installed, running on the GPU, ready.
@@ -119,6 +219,15 @@ pub fn demo_status() -> LocalAiStatus {
         gpu_mib: Some(3480),
         gpu_budget_mib: Some(4096),
         model_alias: Some(LOCAL_MODEL.into()),
+        router: Some(RouterRun { pid: 4400, model: "laya:lara".into(), ready: true }),
+        laya: true,
+        lara: true,
+        lara_tuning: false,
+        vram_free_mib: Some(19800),
+        vram_total_mib: Some(24564),
+        session: Some("the Work desk".into()),
+        asr: Some(AsrRun { pid: 4410, ready: true, gpu_mib: Some(790) }),
+        asr_missing: None,
     }
 }
 
@@ -159,10 +268,14 @@ pub struct LocalAiView {
     pub bin: Option<PathBuf>,
     /// The last status, or why there is none.
     pub status: Option<Result<LocalAiStatus, String>>,
-    /// The last Test's line ("<ms> ms: <reply>") or its error.
-    pub test: Option<Result<String, String>>,
+    /// The last Test: one entry per check (None: not run yet), or why it did not run.
+    pub test: Option<Result<Vec<TestCheck>, String>>,
+    /// The Test job is running.
+    pub testing: bool,
     at: Option<Instant>,
     test_from: Option<usize>,
+    /// Run `pimax-ai up` when the pending ai.toml save is done.
+    pub follow_after_save: bool,
 }
 
 impl AppCore {
@@ -231,26 +344,59 @@ impl AppCore {
         }
     }
 
-    /// Stop the server.
+    /// Stop the server (and the two-stage router with it).
     pub fn localai_stop(&mut self) {
-        self.localai_spawn(&["stop"], "Stop the local model", false, KIND);
+        self.localai_spawn(&["down"], "Stop the local model", false, KIND);
     }
 
-    /// One tiny request to the running server (prints the latency).
+    /// Download what the two-stage setting needs (the router "Lara" and the action model of ai.toml).
+    pub fn localai_install_two_stage(&mut self) {
+        let t = self.ai.config.two_stage();
+        let mib: u32 = [&t.router, &t.action].iter().filter_map(|id| pimax_config::ai::local_model(id)).map(|m| m.download_mib).sum();
+        self.localai_spawn(&["install", "--two-stage", "--router", &t.router, "--action", &t.action], &format!("Download the two-stage AI ({:.1} GB at most)", mib as f64 / 1024.0), false, KIND);
+    }
+
+    /// Start what ai.toml asks for (simple or two stages, fitted to the free VRAM).
+    pub fn localai_up(&mut self) {
+        self.localai_spawn(&["up"], "Start the local AI", true, KIND);
+    }
+
+    /// After a change of the local setting: the running servers follow it (`pimax-ai up`) once ai.toml is written;
+    /// nothing starts when no local server runs (the next Play / Work start brings it up).
+    pub fn localai_follow(&mut self) {
+        if self.demo || !self.task_busy("ai-save") {
+            self.localai_follow_now();
+        } else {
+            self.localai.follow_after_save = true;
+        }
+    }
+
+    /// The same, now.
+    pub fn localai_follow_now(&mut self) {
+        let runs = self.localai.status.as_ref().and_then(|s| s.as_ref().ok()).is_some_and(|s| s.running.is_some());
+        if runs && self.job.is_none() {
+            self.localai_up();
+        }
+    }
+
+    /// The one Test: every check in order (Lara, the action model, speech, the agent model when it is on), timed.
     pub fn localai_test(&mut self) {
         self.localai.test = None;
-        self.localai_spawn(&["test"], "Test the local model", false, TEST_KIND);
+        self.localai_spawn(&["test", "--all"], "Test the local AI", false, TEST_KIND);
+        self.localai.testing = self.job.is_some();
     }
 
-    /// A local-model job ended (the status is asked again; a test's line is kept).
+    /// A local-model job ended (the status is asked again; a test's lines are kept).
     pub(crate) fn localai_done(&mut self, kind: &str, ok: bool) {
         self.localai.at = None;
         if kind == TEST_KIND {
+            self.localai.testing = false;
             let from = self.localai.test_from.take().unwrap_or(0).min(self.log.len());
-            let line = self.log[from..].iter().rev().find(|l| l.contains(" ms: ")).cloned();
-            self.localai.test = Some(match (line, ok) {
-                (Some(l), true) => Ok(l.trim().to_string()),
-                (_, _) => Err("The test did not answer (see the output below).".into()),
+            let checks = parse_checks(&self.log[from..]);
+            self.localai.test = Some(if checks.is_empty() {
+                Err(if ok { "The test printed no result (see the output below).".into() } else { "The test could not run (see the output below).".into() })
+            } else {
+                Ok(checks)
             });
         }
     }
@@ -305,6 +451,25 @@ mod tests {
         let stopped = parse_status(r#"{"installed":false,"runtime":null,"models":[],"running":null,"ready":false,"gpu_mib":null,"gpu_budget_mib":4096,"model_alias":"pimax-local"}"#).unwrap();
         assert!(stopped.running.is_none() && stopped.gpu_mib.is_none() && !stopped.on_gpu());
         assert!(parse_status("error: not installed").is_err());
+        // two stages: the router, Laya / Lara, the free VRAM and the session
+        let two = r#"{"installed":true,"runtime":"/r","models":[{"id":"model-gpu","file":"Qwen3.5-4B-Q4_K_M.gguf","installed":true},{"id":"qwen3.5-9b","file":"Qwen3.5-9B-IQ4_XS.gguf","installed":false}],"running":null,"ready":false,"gpu_mib":null,"gpu_budget_mib":4096,"model_alias":"pimax-local","router":{"pid":9,"port":8081,"model":"laya:lara","ready":true},"laya":true,"lara":true,"vram_free_mib":19800,"vram_total_mib":24564,"session":"the Work desk"}"#;
+        let s = parse_status(two).unwrap();
+        assert_eq!(s.router, Some(RouterRun { pid: 9, model: "laya:lara".into(), ready: true }));
+        assert!(s.has("lara") && s.has("laya") && s.has("qwen3.5-4b") && !s.has("qwen3.5-9b"));
+        assert_eq!((s.vram_free_mib, s.vram_total_mib, s.session.as_deref()), (Some(19800), Some(24564), Some("the Work desk")));
+    }
+
+    #[test]
+    fn the_test_lines() {
+        let log: Vec<String> = ["starting", "check router ok 31 Lara sorted a test command: system", "check action ok 190 Qwen3.5-4B-Q4_K_M (gpu); 3.4 GB", "check speech skip 0 large model off", "check agent fail 12 x: refused", "check bogus maybe 1 x", "check action"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let c = parse_checks(&log);
+        assert_eq!(c.len(), 4);
+        assert_eq!((c[0].id.as_str(), c[0].state.as_str(), c[0].ms), ("router", "ok", 31));
+        assert_eq!(c[0].detail, "Lara sorted a test command: system");
+        assert_eq!((c[2].state.as_str(), c[3].label()), ("skip", "Agent model"));
     }
 
     #[test]

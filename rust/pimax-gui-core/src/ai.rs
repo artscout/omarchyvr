@@ -76,6 +76,9 @@ pub enum KeyChoice {
     Session(Secret),
 }
 
+/// "AI runs on" (the AI page's first switch, also on the Work desk's watch).
+pub use pimax_config::ai::RunsOn;
+
 impl AppCore {
     /// ai.toml.
     pub fn ai_path(&self) -> PathBuf {
@@ -281,6 +284,104 @@ impl AppCore {
         self.ai_set_use(Feature::Voice, n.as_deref());
     }
 
+    /// "AI runs on" with three choices: This PC (simple), This PC (two stages: Lara + GPU model), Online.
+    pub fn ai_runs_on(&self) -> RunsOn {
+        self.ai.config.runs_on()
+    }
+
+    /// Switch "AI runs on": `[use] voice` and `voice_local` only (keys and other providers stay as they are; a local
+    /// choice adds the local provider when it is missing). The running local servers follow (`pimax-ai up`), and the
+    /// running voice control picks the new file up by itself.
+    pub fn ai_set_runs_on3(&mut self, r: RunsOn) {
+        if let Err(e) = self.ai.config.set_runs_on(r) {
+            self.message = e;
+            return;
+        }
+        self.ai_save();
+        if r != RunsOn::Online {
+            self.localai_follow();
+        }
+    }
+
+    /// "Local models: On / Off" (Work only). Off with `online`: Jev online instead; Off without: the offline
+    /// commands only. The local servers follow when they run.
+    pub fn ai_set_local_models(&mut self, on: bool, online: bool) {
+        if let Err(e) = self.ai.config.set_local_models(on, online) {
+            self.message = e;
+            return;
+        }
+        if on && self.ai_local_provider().is_none() {
+            if let Err(e) = self.localai_use() {
+                self.message = e;
+            }
+        }
+        self.ai_save();
+        self.localai_follow();
+    }
+
+    /// Low / Medium / High: the preset's router and action model.
+    pub fn ai_set_preset(&mut self, p: ai::Preset) {
+        self.ai.config.set_preset(p);
+        self.ai_save();
+        self.localai_follow();
+    }
+
+    /// The two-stage router ("Lara") or action model: an id of `ROUTER_MODELS` / `ACTION_MODELS`.
+    pub fn ai_set_two_stage_model(&mut self, router: bool, id: &str) {
+        let t = self.ai.config.local_two_stage.get_or_insert_with(ai::LocalTwoStage::default);
+        if router {
+            t.router = id.into();
+        } else {
+            t.action = id.into();
+        }
+        // chosen by hand: a preset only when the pair is one
+        t.preset = t.matching();
+        self.ai_save();
+        self.localai_follow();
+    }
+
+    /// "VRAM for AI": None = Auto, Some(MiB) = up to that much.
+    pub fn ai_set_vram(&mut self, mib: Option<u32>) {
+        self.ai.config.local_two_stage.get_or_insert_with(ai::LocalTwoStage::default).vram_mib = mib;
+        self.ai_save();
+        self.localai_follow();
+    }
+
+    /// "Speech recognition": Auto / Small (processor) / Large (graphics card), saved as `asr` (docs/AI.md section 17).
+    /// The speech server follows at once (`pimax-ai up`); voice control picks the engine when it starts.
+    pub fn ai_set_asr(&mut self, a: ai::Asr) {
+        self.ai.config.asr = a;
+        self.ai_save();
+        self.localai_follow();
+    }
+
+    /// Agent mode (`voice_agent`, default on): a goal of several steps runs step by step (docs/VOICE.md). Kept as a
+    /// top-level key of ai.toml (`AiConfig.extra`), read by pimax-voice act.
+    pub fn ai_voice_agent(&self) -> bool {
+        self.ai.config.extra.get("voice_agent").is_none_or(|v| v.trim() != "false")
+    }
+
+    pub fn ai_set_voice_agent(&mut self, on: bool) {
+        self.ai.config.extra.insert("voice_agent".into(), on.to_string());
+        self.ai_save();
+    }
+
+    /// The optional big agent-mode model (Qwen3.6-27B, `[local_two_stage] agent`; docs/AI.md section 18): opt-in,
+    /// default off.
+    pub fn ai_agent_big(&self) -> bool {
+        self.ai.config.local_two_stage.as_ref().and_then(|t| t.agent.as_deref()).is_some()
+    }
+
+    pub fn ai_set_agent_big(&mut self, on: bool) {
+        match self.ai.config.set_agent(if on { Some("qwen3.6-27b") } else { None }) {
+            Ok(()) => {
+                self.ai_save();
+                self.localai_follow();
+            }
+            Err(e) => self.ai.saved = format!("Agent model: {e}"),
+        }
+    }
+
     /// "Use online if local is not running" (`voice_online_backup`).
     pub fn ai_set_online_backup(&mut self, on: bool) {
         self.ai.config.voice_online_backup = Some(on);
@@ -329,6 +430,10 @@ impl AppCore {
                 log::info!("ai.toml saved");
             }
             Box::new(move |c: &mut AppCore| {
+                // the local AI follows a changed setting once the file is written (pimax-ai up reads it)
+                if r.is_ok() && std::mem::take(&mut c.localai.follow_after_save) {
+                    c.localai_follow_now();
+                }
                 c.ai.saved = match r {
                     Ok(()) => format!("Saved to {} (mode 600)", c.ai_path().display()),
                     Err(e) => format!("Not saved: {e}"),
@@ -498,6 +603,42 @@ mod tests {
         let t = Arc::new(Counting { probes: AtomicUsize::new(0), sends: AtomicUsize::new(0), reply: "OK".into() });
         a.autofix = AutofixView::new(t.clone());
         (a, t)
+    }
+
+    #[test]
+    fn runs_on_switches_the_saved_file_and_keeps_the_keys() {
+        let (mut a, _) = app("runs-on");
+        a.want_ai();
+        let mut or = pimax_config::ai::Provider::new("openrouter", Kind::OpenAiCompatible);
+        or.base_url = Some(ai::OPENROUTER_BASE.into());
+        or.api_key = Some(Secret::new("sk-or-v1-TEST-NOT-A-KEY"));
+        a.ai.config.providers.push(or);
+        a.ai_set_runs_on3(RunsOn::TwoStage);
+        assert_eq!(a.ai_runs_on(), RunsOn::TwoStage);
+        a.ai_set_two_stage_model(false, "qwen3.5-9b");
+        a.ai_set_vram(Some(6144));
+        let text = std::fs::read_to_string(a.ai_path()).unwrap();
+        assert!(text.contains("voice_local = \"two-stage\"") && text.contains("action = \"qwen3.5-9b\"") && text.contains("vram_mib = 6144"), "{text}");
+        assert!(text.contains("sk-or-v1-TEST-NOT-A-KEY"), "the key stays in the file");
+        a.ai_set_runs_on3(RunsOn::Online);
+        assert_eq!(a.ai_runs_on(), RunsOn::Online);
+        a.ai_set_runs_on3(RunsOn::Simple);
+        assert_eq!(a.ai_runs_on(), RunsOn::Simple);
+        assert!(std::fs::read_to_string(a.ai_path()).unwrap().contains("[local_two_stage]"), "the model choices are kept for next time");
+        // the Local AI page: On / Off and the presets
+        a.ai_set_local_models(true, false);
+        a.ai_set_preset(ai::Preset::High);
+        let text = std::fs::read_to_string(a.ai_path()).unwrap();
+        assert!(text.contains("voice_local_models = true") && text.contains("preset = \"high\"") && text.contains("action = \"qwen3.5-9b\""), "{text}");
+        // speech recognition: saved as `asr`, the keys stay
+        a.ai_set_asr(ai::Asr::Gpu);
+        let text = std::fs::read_to_string(a.ai_path()).unwrap();
+        assert!(text.contains("asr = \"gpu\"") && text.contains("sk-or-v1-TEST-NOT-A-KEY"), "{text}");
+        a.ai_set_asr(ai::Asr::Auto);
+        assert!(!std::fs::read_to_string(a.ai_path()).unwrap().contains("asr ="), "Auto is the absent key");
+        a.ai_set_local_models(false, true);
+        assert_eq!(a.ai_runs_on(), RunsOn::Online);
+        assert!(std::fs::read_to_string(a.ai_path()).unwrap().contains("sk-or-v1-TEST-NOT-A-KEY"));
     }
 
     #[test]

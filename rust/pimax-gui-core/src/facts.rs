@@ -79,6 +79,28 @@ pub struct ServiceInfo {
     pub anchor: bool,
 }
 
+/// A Steam client that was started from inside SteamVR and still carries its variables.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TaintedSteam {
+    /// Its pid.
+    pub pid: u32,
+    /// The SteamVR variables it carries.
+    pub vars: Vec<String>,
+    /// A game or a download seems to be running (plain words), when detectable.
+    pub busy: Option<String>,
+}
+
+/// Plain words for "a game or a download seems to be running in Steam" (None = nothing seen). Steam starts every
+/// game through a `reaper` process; running downloads leave files in `steamapps/downloading`.
+pub fn steam_busy_hint(game_running: bool, download: bool) -> Option<String> {
+    match (game_running, download) {
+        (true, true) => Some("a game seems to be running and a download is in progress".into()),
+        (true, false) => Some("a game seems to be running".into()),
+        (false, true) => Some("a download seems to be in progress".into()),
+        (false, false) => None,
+    }
+}
+
 /// Fast-changing state.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Live {
@@ -107,12 +129,17 @@ pub struct Live {
     /// Plain words when Steam or SteamVR went wrong during a SteamVR session (Steam restarted or closed, a Steam that
     /// SteamVR started with its own variables, SteamVR quit): pimax_tools::vr::steamvr::session_note_from.
     pub steam_note: Option<String>,
+    /// A running Steam that carries SteamVR's variables (started from inside SteamVR): Play asks to restart it.
+    pub steam_tainted: Option<TaintedSteam>,
     /// Render scale of the running Monado (`XRT_COMPOSITOR_SCALE_PERCENTAGE`; Monado's default 140 when unset).
     pub scale_pct: Option<u16>,
     /// Frame statistics of the running Monado (`pimax-perf.stats`, only while it is fresh).
     pub perf: Option<crate::quality::PerfSnap>,
     /// What game mode paused for the session (Sunshine, local AI; `gamemode-paused.txt` in the session dir).
     pub gm_paused: Vec<String>,
+    /// In hand / put down per controller, from the running Monado (`$XDG_RUNTIME_DIR/pimax-ctrl-inhand`,
+    /// PIMAX_CTRL_INHAND; docs/CONTROLLERS-INHAND.md). None: no session, or a build without it.
+    pub ctrl_inhand: Option<pimax_config::ctrl_inhand::Status>,
 }
 
 impl Live {
@@ -189,6 +216,11 @@ pub fn collect_live(m: &dyn Machine, p: &Paths, follower: &mut LogFollower) -> L
     live.log = follower.log.clone();
     live.gm_paused = m.read_str(&p.session_dir.join("gamemode-paused.txt")).map(|t| pimax_tools::vr::gamemode::paused_from(&t)).unwrap_or_default();
     live.captions_off = m.exists(&p.runtime_dir.join(crate::subtitles::OFF_FLAG));
+    live.ctrl_inhand = m
+        .read_str(&p.runtime_dir.join("pimax-ctrl-inhand"))
+        .and_then(|t| pimax_config::ctrl_inhand::parse_status(&t))
+        // the writer: monado-service, or SteamVR's vrserver (driver_monado runs the same driver)
+        .filter(|st| procs::is_alive(m, st.pid));
     live.watchdog = m
         .read_str(&p.session_dir.join(crate::reset::WATCHDOG_PID))
         .and_then(|s| s.trim().parse::<u32>().ok())
@@ -215,6 +247,7 @@ pub fn collect_live(m: &dyn Machine, p: &Paths, follower: &mut LogFollower) -> L
             .map(|pid| (pid, procs::environ(m, pid)));
         live.steam_note = pimax_tools::vr::steamvr::session_note_from(at_play, live.steamvr.is_some(), now);
     }
+    live.steam_tainted = steam_taint(m, &p.home);
     live.started_as = m.read_str(&p.session_dir.join(crate::reset::ARGV_FILE)).and_then(|s| s.lines().next().map(str::to_string)).filter(|k| k == "desk" || k == "vr");
     if live.alive("ctrltrack") {
         let f = p.session_dir.join("ctrltrack.log");
@@ -303,10 +336,8 @@ pub struct Facts {
     pub mic_headset: bool,
     /// The default input now (`pactl get-default-source`; None = unknown).
     pub mic_default: Option<String>,
-    /// Game mode switch and compositor time budget (`~/.config/pimax/gamemode.toml`; defaults AI on / Sunshine off / auto).
+    /// Game mode switch and compositor time budget (`~/.config/pimax/gamemode.toml`; defaults AI on / auto).
     pub game_mode: bool,
-    /// Also pause Sunshine while playing (default off).
-    pub pause_sunshine: bool,
     pub comp_budget: String,
     /// Brightness (`~/.config/pimax/display.toml`; defaults bright / 100 %).
     pub image_brightness: String,
@@ -317,6 +348,8 @@ pub struct Facts {
     pub hands_models: bool,
     /// `<session dir>/start-argv.txt` of the last start from any path, with its mtime.
     pub start_argv: Option<(String, u64)>,
+    /// `<session dir>/screens.txt` (what the last Work start made of the VR screens), read here so the UI thread never does.
+    pub screens_report: Option<String>,
     /// Eye chip 2104:0561 enumerated.
     pub tobii: bool,
     /// The paths the checks looked at that exist (binaries, models, libraries).
@@ -557,7 +590,6 @@ pub fn collect_facts(
         .filter(|s| !s.is_empty());
     let gm = m.read_str(&pimax_tools::vr::gamemode::settings_path(&p.home)).map(|t| pimax_tools::vr::gamemode::parse_settings(&t)).unwrap_or_default();
     f.game_mode = gm.pause_ai;
-    f.pause_sunshine = gm.pause_sunshine;
     f.comp_budget = gm.comp_budget;
     let ds = m.read_str(&pimax_tools::vr::display::settings_path(&p.home)).map(|t| pimax_tools::vr::display::parse_settings(&t)).unwrap_or_default();
     f.image_brightness = ds.image;
@@ -571,6 +603,7 @@ pub fn collect_facts(
                 .any(|d| m.exists(&d.join("monado/hand-tracking-models").join(n)))
         });
     let argv = p.session_dir.join(pimax_tools::vr::supervise::ARGV_FILE);
+    f.screens_report = m.read_str(&p.session_dir.join(pimax_tools::vr::screens::REPORT_FILE));
     f.start_argv = m.read_str(&argv).and_then(|t| m.meta(&argv).map(|x| (t, x.mtime)));
     let mut check: Vec<PathBuf> = RELEASE_BINS.iter().chain(OPTIONAL_BINS.iter()).map(|(b, _)| p.bin(b)).collect();
     // the installed set (~/.local/bin) is what an installed launcher runs
@@ -670,6 +703,23 @@ mod tests {
     }
 
     #[test]
+    fn a_steam_started_from_inside_steamvr_is_detected_with_the_busy_hint() {
+        let (mut m, p) = demo::idle_machine();
+        let home = p.home.display().to_string();
+        assert_eq!(steam_taint(&m, &p.home), None, "no Steam");
+        m.process(7001, "steam", "/home/u/.local/share/Steam/ubuntu12_32/steam steam://launch/658920/VR", &[("HOME", "/home/u"), ("PIMAX_SLAM", "1"), ("SteamAppId", "250820")], 5, &[]);
+        let t = steam_taint(&m, &p.home).unwrap();
+        assert_eq!((t.pid, t.vars.clone(), t.busy.clone()), (7001, vec!["PIMAX_SLAM".to_string(), "SteamAppId".to_string()], None));
+        m.process(7002, "reaper", "reaper SteamLaunch AppId=730", &[], 6, &[]);
+        assert_eq!(steam_taint(&m, &p.home).unwrap().busy.as_deref(), Some("a game seems to be running"));
+        m.process(7001, "steam", "/home/u/.local/share/Steam/ubuntu12_32/steam", &[("HOME", "/home/u"), ("SteamAppId", "730")], 5, &[]);
+        assert_eq!(steam_taint(&m, &p.home), None, "a clean Steam is not asked about ({home})");
+        assert_eq!(steam_busy_hint(false, true).as_deref(), Some("a download seems to be in progress"));
+        assert!(steam_busy_hint(true, true).unwrap().contains("download"));
+        assert_eq!(steam_busy_hint(false, false), None);
+    }
+
+    #[test]
     fn stale_pid_file_with_reused_pid_is_not_alive() {
         let (mut m, p) = demo::running_machine();
         // pid of the wayvr pid file now belongs to another program
@@ -737,4 +787,19 @@ mod tests {
         assert_eq!(f.lock_holders[0].pid, 4243);
         assert_eq!(f.stray_clients, vec![(4244, "pimax-lenstest".to_string())]);
     }
+}
+
+/// The running Steam when it carries SteamVR's variables (reads one `/proc/PID/environ`).
+pub fn steam_taint(m: &dyn Machine, home: &Path) -> Option<TaintedSteam> {
+    let pid = m
+        .read_str(&home.join(".steam/steam.pid"))
+        .and_then(|s| s.trim().parse::<u32>().ok())
+        .filter(|pid| procs::is_alive(m, *pid) && procs::comm(m, *pid).as_deref() == Some("steam"))
+        .or_else(|| procs::by_comm(m, "steam").first().copied())?;
+    let vars = pimax_tools::vr::steamvr::leaked_vars(&procs::environ(m, pid));
+    if vars.is_empty() {
+        return None;
+    }
+    let download = m.list(&home.join(".local/share/Steam/steamapps/downloading")).iter().any(|n| !n.starts_with('.'));
+    Some(TaintedSteam { pid, vars, busy: steam_busy_hint(!procs::by_comm(m, "reaper").is_empty(), download) })
 }

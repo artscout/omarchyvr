@@ -1,11 +1,13 @@
-//! The window: navigation, pages, status bar with the job log, and the confirmation dialogs. All state and every
-//! action live in [`pimax_gui_core::app::AppCore`].
+//! The window: the sidebar with the pages, the action row (games runtime, restarts, room setup), the page, the status
+//! bar with the job log, and the dialogs. All state and every action live in [`pimax_gui_core::app::AppCore`].
+use crate::art::{self, Art};
 use crate::pages;
-use crate::theme::{self, icon};
+use crate::theme::{self, caps, icon};
 use crate::widgets::{self, pal};
 use eframe::egui::{self, RichText, Ui};
-use pimax_gui_core::app::{AppCore, Page, Pending};
+use pimax_gui_core::app::{AppCore, DeskPhase, Page, Pending};
 use pimax_gui_core::crash;
+use pimax_gui_core::devices::Dev;
 use pimax_gui_core::launcher::DeskToggles;
 use pimax_gui_core::preflight::Preflight;
 use std::sync::atomic::Ordering;
@@ -75,14 +77,10 @@ pub struct UiState {
     pub backlight_edit: Option<u8>,
     /// The headset model picked in the headset card (None: the connected one).
     pub model: Option<&'static str>,
-    /// Scroll to the Room row on the next frame (ROOM SETUP).
-    pub scroll_room: bool,
     /// The help dialog is open.
     pub help_open: bool,
     /// The page shown and when it was opened (for the fade-in).
     pub page_t0: Option<(Page, f64)>,
-    /// Home rows to open on the next frame (screenshots, tests).
-    pub open_rows: Vec<&'static str>,
     /// Setup page tab.
     pub setup_tab: SetupTab,
     /// The headset picked on the onboarding's first step (not used yet).
@@ -112,10 +110,8 @@ impl Default for UiState {
             ipd_edit: None,
             backlight_edit: None,
             model: None,
-            scroll_room: false,
             help_open: false,
             page_t0: None,
-            open_rows: Vec::new(),
             setup_tab: SetupTab::Checks,
             onb_pick: None,
             ai_draft: None,
@@ -130,6 +126,72 @@ pub struct PimaxApp {
     /// UI state.
     pub ui: UiState,
 }
+
+/// The widest a page gets (points); wider windows centre it.
+const PAGE_MAX_W: f32 = 1280.0;
+
+/// One entry of the sidebar.
+struct Nav {
+    page: Page,
+    icon: &'static str,
+    label: &'static str,
+}
+
+const MAIN: [Nav; 9] = [
+    Nav { page: Page::Desk, icon: icon::HOUSE, label: "Home" },
+    Nav { page: Page::Display, icon: icon::SUN, label: "Display" },
+    Nav { page: Page::Tracking, icon: icon::CROSSHAIR, label: "Tracking" },
+    Nav { page: Page::Room, icon: icon::MAP_TRIFOLD, label: "Room" },
+    Nav { page: Page::Desktop, icon: icon::DESKTOP, label: "Desktop" },
+    Nav { page: Page::Backgrounds, icon: icon::CUBE_FOCUS, label: "Backgrounds" },
+    Nav { page: Page::Record, icon: icon::VIDEO_CAMERA, label: "Recording" },
+    Nav { page: Page::LocalAi, icon: icon::BRAIN, label: "Local AI" },
+    Nav { page: Page::Ai, icon: icon::ROBOT, label: "AI" },
+];
+
+/// Developer mode: the advanced pages.
+const DEV: [Nav; 5] = [
+    Nav { page: Page::Developer, icon: icon::CODE, label: "Developer" },
+    Nav { page: Page::Tools, icon: icon::WRENCH, label: "Tools" },
+    Nav { page: Page::Logs, icon: icon::FILE_TEXT, label: "Logs" },
+    Nav { page: Page::Profiles, icon: icon::USERS, label: "Profiles" },
+    Nav { page: Page::System, icon: icon::PULSE, label: "System" },
+];
+
+/// The name of a page in the sidebar.
+pub fn page_label(p: Page) -> &'static str {
+    match p {
+        Page::Setup => "Ready",
+        Page::Onboarding => "Onboarding",
+        _ => MAIN.iter().chain(DEV.iter()).find(|n| n.page == p).map(|n| n.label).unwrap_or("Home"),
+    }
+}
+
+/// The help page: one short paragraph per feature (the "?" next to each setting says the same where it is).
+const HELP: [(&str, &str); 22] = [
+    ("The \"?\" marks", "Point at a \"?\" or click it (in the headset, click): a small box says what the setting does. Click it again, click anywhere else or press Esc to close it."),
+    ("Ready", "Ready checks the PC and the headset; Fix does what is needed. Fixes that need root show their lines and ask for your password first."),
+    ("Play and Work", "Play starts VR for Steam and OpenXR games. Work starts the desk (screens over passthrough). Stop ends what runs. The headset card on Home has the buttons."),
+    ("Restarts", "Restart service (top bar) restarts the running session with the same settings. Restart headset sends the headset its restart command (stop VR first; back in about 30 seconds)."),
+    ("Games run with", "Top bar: Monado (xrizer), or SteamVR (experimental: Play starts SteamVR with the Pimax driver, Stop closes it; Play starts Steam first the normal way; if a Steam that SteamVR once started is still open, Play asks \"Restart Steam now?\" and only closes it on your yes). Steam set up once: Ready > \"Steam set up for VR games\" > Fix, then quit and start Steam once; no game needs launch options. docs/STEAMVR.md."),
+    ("Display", "Refresh rate 72 Hz or 90 Hz (new), applied when VR starts with the commands Pimax Play sends on Windows. Render quality: Quality = the panel's own 3840x3552 per eye, Balanced = 85 %, Performance = 70 % (about half the pixels) for games that stutter. Applies at the next Play. docs/RENDER-QUALITY.md."),
+    ("Brightness", "Image (Display page): Standard / Bright (default) / Brighter lifts the mid tones of games at the next start without burning out whites. Panel backlight (20 to 100 %) changes the headset right away; it is already at its maximum on Linux."),
+    ("Game mode", "Display page: Play pauses the local AI to free the graphics card and Stop starts it again; Sunshine is never paused or stopped. Compositor budget (Auto / 6 ms / 8 ms): compare the late % and game fps of the session line on Home."),
+    ("IPD", "Display page: set your eye distance (58-72 mm). Apply moves the lenses when VR is stopped and saves it for the next start."),
+    ("Tracking", "6DoF follows your head with the headset cameras: start it in a lit room with the cameras free. Eye tracking is visual only: a dot where you look in Work; your eyes never click. It starts with every session once calibrated."),
+    ("Camera hands", "Tracking page (developer mode): in Work your bare hand is the pointer (pinch = click) and the controllers are ignored unless \"Controllers in Work\" is on (off by default). Say \"Max, use controllers\" or \"Max, hands only\" to switch. docs/HANDS.md."),
+    ("Controllers", "Home: Pair - put the controller in pairing mode first, then press Pair for that hand only and wait up to 60 s (the other controller may drop out briefly). Unpair disconnects one controller; pair it again afterwards. Vibrate gives it a short buzz (also while VR runs). docs/STEAMVR.md section 6."),
+    ("Controllers when picked up", "Home, Controllers card: In Work (default When picked up) a controller lying on the desk is hidden, so it never shows or jumps around; pick it up or touch a button and it is back at once, 5 s still puts it away. In games it is Always by default. Each controller shows \"in hand\" or \"put down\" while VR runs. Voice: \"Max, controllers on / off\". docs/CONTROLLERS-INHAND.md."),
+    ("Controller models", "Desktop page (developer mode): with controllers in use in Work you see a 3D controller in each hand, like SteamVR shows; the pointer ray leaves its front tip. \"Pointer and grip axes\" draws coloured axes to check that in the headset. docs/WAYVR-CONTROLS.md."),
+    ("Sound and microphone", "Home: Headset sound sends all sound to the headset speakers while VR runs (they get it over the video cable a few seconds after the headset lights up); Stop puts your old output back. Test plays two soft notes there. Headset mic makes it the input for voice, games and calls while VR runs; Test records 3 s and plays it back (start VR first: the microphone is silent while the display is off). Sunshine is left alone."),
+    ("Room", "Room page: Fast setup (30 s: stand in the middle, look around, look forward and pull a trigger) or Full setup (walk the room, controller on the floor, trace the play area with a trigger). The steps show in the headset. \"Room at every start\" puts the floor, centre and forward back every session; \"Share with SteamVR\" gives SteamVR the same play area. View room map opens the map in the browser, offline. docs/ROOM-SETUP.md."),
+    ("Desktop", "Passthrough shows the room behind the screens. Presets: Cinema (curved screens, dimmed room), Work (flat, sharper screens), Assistant (voice captions on). Screen numbers: 1 main, 2 left, 3 right, 4 up, 5 up-left, 6 up-right. docs/SCREENS.md."),
+    ("Backgrounds", "Backgrounds page: the VR environment around you (not the desktop wallpaper). Tap a picture to show it, pick a resolution (Auto, 8K, 4K, 2K), Off / passthrough brings the room back, Download more fetches the free pictures. Work starts with your choice. Say \"Max, set background flowers\" (universe, ocean, Hawaii, sunset ...), \"Max, next background\" or \"Max, background off\". docs/BACKGROUNDS.md."),
+    ("Voice", "In Work: pause as you like and \"Max\" may come mid-sentence. Screens: \"Max, four screens\", \"a screen up there\", \"open YouTube in a new window\", \"all the terminals on one screen\". Two things at once: \"... and ...\". Apps to screens: \"Max, move Chrome to screen 3\", \"Max, swap screens 1 and 2\", \"Max, save this layout\". Hide screens (apps stay open): \"Max, close screen 2\", \"remove screens 3 and 4\", \"close everything\". Sizes: \"make all screens half the size\". \"Max, stop the VR\" stops Work like Stop and always asks \"yes\" first. docs/VOICE.md."),
+    ("Local AI", "Local models On / Off for Work (Play never loads them), Low / Medium / High (how much of the PC they may use), Advanced to choose the router Lara, the action model and the video memory, or Online (Jev) instead. Speech recognition: Auto, Small (processor) or Large (graphics card; English only). One Test button (State) checks Lara, the action model, speech and, when it is on, the agent model, one line each; details behind the \"?\". docs/AI.md sections 16 and 17."),
+    ("Agent mode", "Local AI page: \"Max, let's enter cinema mode, I want to watch Dune\" or \"Max, set up work: terminals left, browser middle, YouTube up-right\" runs step by step (each step shows in the headset); \"Max, cancel\" stops it. docs/VOICE.md."),
+    ("Recording", "Start recording saves what the headset shows as a video in ~/Videos/pimax. Record tracking saves one folder per take (cameras, controller logs, session log) for comparing with Windows; it never disturbs a running session. docs/RECORD.md."),
+];
 
 impl PimaxApp {
     /// Wrap a core.
@@ -193,20 +255,40 @@ impl PimaxApp {
         let t0 = Instant::now();
         let had_job = self.core.job.is_some();
         let p = theme::pal(ui);
-        egui::Panel::top("top")
-            .frame(egui::Frame::new().fill(p.bar).inner_margin(egui::Margin::symmetric(18, 10)).stroke(egui::Stroke::new(1.0, p.stroke)))
-            .show(ui, |ui| self.top_bar(ui));
+        if std::mem::take(&mut self.core.room_requested) {
+            // the onboarding's room step
+            self.core.page = Page::Room;
+        }
+        let before = self.core.toggles;
+        let side_w = if ui.available_width() < 1000.0 { 172.0 } else { 192.0 };
         egui::Panel::bottom("status")
-            .frame(egui::Frame::new().fill(p.bar).inner_margin(egui::Margin::symmetric(16, 6)).stroke(egui::Stroke::new(1.0, p.stroke)))
+            .frame(egui::Frame::new().fill(p.bar).inner_margin(egui::Margin::symmetric(14, 5)).stroke(egui::Stroke::new(1.0, p.stroke)))
             .show(ui, |ui| self.status_bar(ui));
+        egui::Panel::left("nav")
+            .exact_size(side_w)
+            .resizable(false)
+            .show_separator_line(false)
+            .frame(egui::Frame::new().fill(p.bar).inner_margin(egui::Margin { left: 10, right: 10, top: 14, bottom: 10 }).stroke(egui::Stroke::new(1.0, p.stroke)))
+            .show(ui, |ui| self.sidebar(ui));
         egui::CentralPanel::default()
-            .frame(egui::Frame::new().fill(p.bg).inner_margin(egui::Margin::symmetric(20, 16)))
+            .frame(egui::Frame::new().fill(p.bg).inner_margin(egui::Margin { left: 18, right: 18, top: 10, bottom: 0 }))
             .show(ui, |ui| {
                 let page = self.core.page;
                 if page != Page::System {
                     // the System page's event stream stops a few seconds after it was left
                     self.core.system_closed();
                 }
+                // the action row lines up with the page (both keep a readable width, centred, on very wide windows)
+                let w = ui.available_width();
+                let pad = ((w - PAGE_MAX_W) / 2.0).max(0.0).floor();
+                ui.horizontal_top(|ui| {
+                    ui.add_space(pad);
+                    ui.vertical(|ui| {
+                        ui.set_width(w.min(PAGE_MAX_W) - 2.0);
+                        self.action_row(ui);
+                    });
+                });
+                ui.add_space(10.0);
                 // the new page fades in
                 let now = ui.input(|i| i.time);
                 let since = match self.ui.page_t0 {
@@ -221,41 +303,36 @@ impl PimaxApp {
                     ui.multiply_opacity(0.25 + 0.75 * alpha);
                     ui.ctx().request_repaint();
                 }
-                match self.ui.page_error.clone() {
-                    Some((p, msg)) if p == page => {
-                        egui::ScrollArea::vertical().id_salt("page").auto_shrink([false, false]).show(ui, |ui| self.page_error_card(ui, p, &msg));
-                    }
-                    _ => {
-                        let r = crash::catching(|| {
-                            if page == Page::Desk {
-                                // Home: two columns that scroll on their own
-                                pages::home::show(ui, self);
-                            } else {
-                                egui::ScrollArea::vertical().id_salt("page").auto_shrink([false, false]).show(ui, |ui| {
-                                    ui.spacing_mut().item_spacing.y = 10.0;
-                                    match page {
-                                        Page::Setup => pages::setup::show(ui, self),
-                                        Page::Tools => pages::tools::show(ui, self),
-                                        Page::Logs => pages::logs::show(ui, self),
-                                        Page::Profiles => pages::profiles::show(ui, self),
-                                        Page::Ai => pages::ai::show(ui, self),
-                                        Page::System => pages::system::show(ui, self),
-                                        Page::Onboarding => pages::onboarding::show(ui, self),
-                                        Page::Desk => {}
+                egui::ScrollArea::vertical().id_salt(("page", page.name())).auto_shrink([false, false]).show(ui, |ui| {
+                    // very wide windows: the page keeps a readable width, centred
+                    let w = ui.available_width();
+                    let pad = ((w - PAGE_MAX_W) / 2.0).max(0.0).floor();
+                    ui.horizontal_top(|ui| {
+                        ui.add_space(pad);
+                        ui.vertical(|ui| {
+                            ui.set_width(w.min(PAGE_MAX_W) - 2.0);
+                            ui.spacing_mut().item_spacing.y = 12.0;
+                            match self.ui.page_error.clone() {
+                                Some((p, msg)) if p == page => self.page_error_card(ui, p, &msg),
+                                _ => {
+                                    let r = crash::catching(|| self.page(ui, page));
+                                    if let Err(e) = r {
+                                        let msg = pimax_gui_core::worker::panic_text(e.as_ref());
+                                        log::error!("the {} page failed: {msg}", page.name());
+                                        self.ui.page_error = Some((page, msg));
                                     }
-                                    ui.add_space(12.0);
-                                });
+                                }
                             }
+                            ui.add_space(14.0);
                         });
-                        if let Err(e) = r {
-                            let msg = pimax_gui_core::worker::panic_text(e.as_ref());
-                            log::error!("the {} page failed: {msg}", page.name());
-                            self.ui.page_error = Some((page, msg));
-                        }
-                    }
-                }
+                    });
+                });
             });
-        self.help_button(ui);
+        if self.core.toggles != before {
+            // a switch of the next start changed (any page): judge again and keep it
+            self.ui.pf = None;
+            self.core.save_state();
+        }
         self.modal(ui);
         self.recovery_dialog(ui);
         self.report_dialog(ui);
@@ -272,74 +349,171 @@ impl PimaxApp {
         }
     }
 
-    /// Logo and the page tabs.
-    fn top_bar(&mut self, ui: &mut Ui) {
+    /// The page itself.
+    fn page(&mut self, ui: &mut Ui, page: Page) {
+        match page {
+            Page::Desk => pages::home::show(ui, self),
+            Page::Display => pages::display::show(ui, self),
+            Page::Tracking => pages::tracking::show(ui, self),
+            Page::Room => pages::room::show(ui, self),
+            Page::Desktop => pages::desktop::show(ui, self),
+            Page::Developer => pages::developer::show(ui, self),
+            Page::Setup => pages::setup::show(ui, self),
+            Page::Tools => pages::tools::show(ui, self),
+            Page::Logs => pages::logs::show(ui, self),
+            Page::Profiles => pages::profiles::show(ui, self),
+            Page::Ai => pages::ai::show(ui, self),
+            Page::Record => pages::record::show(ui, self),
+            Page::LocalAi => pages::localai::show(ui, self),
+            Page::Backgrounds => pages::backgrounds::show(ui, self),
+            Page::System => pages::system::show(ui, self),
+            Page::Onboarding => pages::onboarding::show(ui, self),
+        }
+    }
+
+    /// The mark, the pages, the developer switch.
+    fn sidebar(&mut self, ui: &mut Ui) {
         let p = theme::pal(ui);
         ui.horizontal(|ui| {
-            ui.label(RichText::new(icon::GOGGLES).size(24.0).color(p.accent));
-            ui.label(RichText::new("omarchyvr").size(21.0).family(theme::heading(ui)).color(p.text));
-            ui.add_space(28.0);
-            let (_, warn, fail) = pimax_gui_core::checklist::counts(&self.core.items);
-            let mut tabs = vec![
-                (Page::Desk, icon::HOUSE, "Home".to_string()),
-                (Page::Setup, icon::WRENCH, if fail + warn > 0 { format!("Ready ({})", fail + warn) } else { "Ready".to_string() }),
-            ];
-            tabs.push((Page::Ai, icon::ROBOT, "AI".to_string()));
-            // Developer mode (Home, bottom): the advanced pages; a page already open stays reachable
-            if self.core.state.dev_mode || self.core.page == Page::Tools {
-                tabs.push((Page::Tools, icon::SQUARES_FOUR, "Tools".to_string()));
+            ui.add_space(4.0);
+            art::show(ui, Art::Mark, egui::vec2(30.0, 19.0), p.accent, p.dim);
+            ui.label(caps("Pimax", 15.0, p.text).family(theme::heading(ui)));
+        });
+        ui.add_space(14.0);
+        let dev = self.core.state.dev_mode;
+        let (_, warn, fail) = pimax_gui_core::checklist::counts(&self.core.items);
+        let current = self.core.page;
+        let mut go = None;
+        // the developer switch and help stay at the bottom; the list scrolls when the window is short
+        ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
+            let mut dv = dev;
+            let r = ui
+                .horizontal(|ui| {
+                    ui.add_space(4.0);
+                    let r = widgets::switch(ui, &mut dv, "Developer mode", true);
+                    ui.label(caps("Developer", 10.5, p.dim));
+                    r
+                })
+                .inner
+                .on_hover_text("Shows the advanced settings and pages: tests, screens, voice, auto mode, logs, tools.");
+            if r.changed() {
+                self.core.set_dev_mode(dv);
             }
-            if self.core.state.dev_mode || self.core.page == Page::Logs {
-                tabs.push((Page::Logs, icon::FILE_TEXT, "Logs".to_string()));
+            ui.add_space(6.0);
+            if (!self.core.state.onboarded || current == Page::Onboarding) && widgets::nav_item(ui, current == Page::Onboarding, icon::SPARKLE, "Onboarding", None).clicked() {
+                go = Some(Page::Onboarding);
             }
-            if self.core.state.dev_mode || self.core.page == Page::Profiles {
-                tabs.push((Page::Profiles, icon::USERS, "Profiles".to_string()));
-            }
-            if self.core.state.dev_mode || self.core.page == Page::System {
-                tabs.push((Page::System, icon::PULSE, "System".to_string()));
-            }
-            if !self.core.state.onboarded || self.core.page == Page::Onboarding {
-                tabs.push((Page::Onboarding, icon::SPARKLE, "Onboarding".to_string()));
-            }
-            for (pg, ic, name) in tabs {
-                let sel = self.core.page == pg;
-                let id = egui::Id::new(("tab", pg.name()));
-                let t = theme::ease(ui, id, sel, 0.18);
-                let text = RichText::new(format!("{ic}  {name}")).size(14.0).color(theme::mix(p.dim, p.text, t));
-                let b = egui::Button::new(text)
-                    .fill(theme::mix(egui::Color32::TRANSPARENT, p.accent.gamma_multiply(0.22), t))
-                    .stroke(egui::Stroke::new(1.0, theme::mix(egui::Color32::TRANSPARENT, p.accent.gamma_multiply(0.6), t)))
-                    .corner_radius(egui::CornerRadius::same(255))
-                    .min_size(egui::vec2(0.0, 32.0));
-                let r = ui.add(b);
-                r.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &name));
-                if r.clicked() {
-                    self.core.page = pg;
-                }
-            }
+            ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+                egui::ScrollArea::vertical().id_salt("nav").auto_shrink([false, false]).scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden).show(ui, |ui| {
+                    ui.spacing_mut().item_spacing.y = 2.0;
+                    for n in &MAIN {
+                        if widgets::nav_item(ui, current == n.page, n.icon, n.label, None).clicked() {
+                            go = Some(n.page);
+                        }
+                    }
+                    nav_separator(ui, &p);
+                    let badge = (fail + warn > 0).then(|| ((fail + warn).to_string(), if fail > 0 { p.fail } else { p.warn }));
+                    if widgets::nav_item(ui, current == Page::Setup, icon::SEAL_CHECK, "Ready", badge).clicked() {
+                        go = Some(Page::Setup);
+                    }
+                    // Developer mode: the advanced pages; a page already open stays reachable
+                    let devs: Vec<&Nav> = DEV.iter().filter(|n| dev || current == n.page).collect();
+                    if !devs.is_empty() {
+                        nav_separator(ui, &p);
+                        for n in devs {
+                            if widgets::nav_item(ui, current == n.page, n.icon, n.label, None).clicked() {
+                                go = Some(n.page);
+                            }
+                        }
+                    }
+                });
+            });
+        });
+        if let Some(pg) = go {
+            self.core.page = pg;
+        }
+    }
+
+    /// The row over every page: what games run with on the left; restart service, restart headset, room setup and
+    /// re-check on the right.
+    fn action_row(&mut self, ui: &mut Ui) {
+        let p = theme::pal(ui);
+        let compact = ui.available_width() < 800.0;
+        ui.horizontal(|ui| {
+            ui.set_min_height(28.0);
+            self.games_runtime(ui);
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.spacing_mut().item_spacing.x = 6.0;
                 if self.core.demo {
                     widgets::chip(ui, "demo data", p.info);
                 }
                 if self.core.facts.at == 0 {
-                    ui.label(RichText::new("checking this PC...").size(12.0).color(p.dim));
-                    widgets::spinner(ui);
+                    widgets::spinner(ui).on_hover_text("Checking this PC");
                 } else {
-                    let r = ui.add(egui::Button::new(RichText::new(format!("{} Re-check", icon::ARROWS_CLOCKWISE)).size(12.5).color(p.dim)).frame(false));
+                    let r = ui.add(egui::Button::new(RichText::new(icon::ARROWS_CLOCKWISE).size(14.0).color(p.dim)).frame(false));
                     r.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Re-check"));
-                    if r.on_hover_text("Run the doctor checks and read the kernel log again").clicked() {
+                    if r.on_hover_text("Re-check: the doctor checks and the kernel log again").clicked() {
                         self.core.refresh(true);
                         self.ui.pf = None;
                     }
+                }
+                if widgets::ghost_btn(ui, icon::MAP_TRIFOLD, "Room setup", true, compact).clicked() {
+                    self.core.page = Page::Room;
+                }
+                let hd = self.core.restart_headset_blocker();
+                let r = widgets::ghost_btn(ui, icon::ARROW_COUNTER_CLOCKWISE, "Restart headset", hd.is_none(), compact);
+                let r = match &hd {
+                    Some(b) => r.on_disabled_hover_text(b.as_str()),
+                    None => r.on_hover_text("The headset's own restart command (what Pimax Play's restart sends): back on USB after about 8 s, a picture after about 22 s. Not while VR runs; keep it still."),
+                };
+                if r.clicked() {
+                    self.core.restart_headset();
+                }
+                let svc = self.core.restart_service_blocker();
+                let r = widgets::ghost_btn(ui, icon::POWER, "Restart service", svc.is_none(), compact);
+                let r = match &svc {
+                    Some(b) => r.on_disabled_hover_text(b.as_str()),
+                    None => r.on_hover_text("Stops the running session (30 s grace) and starts it again with the same settings."),
+                };
+                if r.clicked() {
+                    self.core.restart_service();
                 }
             });
         });
     }
 
+    /// What games run with (only the options this PC has); Play starts Monado or SteamVR from it
+    /// (`~/.config/pimax/games.toml`).
+    fn games_runtime(&mut self, ui: &mut Ui) {
+        let p = theme::pal(ui);
+        let (installed, chosen) = (self.core.facts.steamvr_installed, self.core.facts.games_steamvr);
+        let names: Vec<&str> = if installed || chosen { vec!["Monado (xrizer)", "SteamVR (experimental)"] } else { vec!["Monado (xrizer)"] };
+        let sel = usize::from(chosen).min(names.len() - 1);
+        let free = !self.core.busy() && self.core.phase() == DeskPhase::Idle;
+        ui.label(caps("Games", 10.5, p.faint));
+        let mut pick = None;
+        let r = ui.add_enabled_ui(free, |ui| {
+            egui::ComboBox::from_id_salt("games-runtime").selected_text(RichText::new(names[sel]).size(12.5)).width(170.0).show_ui(ui, |ui| {
+                for (i, n) in names.iter().enumerate() {
+                    if ui.selectable_label(i == sel, *n).clicked() && i != sel {
+                        pick = Some(i);
+                    }
+                }
+            })
+        });
+        let tip = if chosen { "Play starts SteamVR with the Pimax driver (no Monado); Stop closes it. Experimental: Help > Games run with." } else { "Play starts Monado; Steam games reach it through xrizer." };
+        let r = r.response.on_hover_text(tip);
+        if !free {
+            r.on_disabled_hover_text("Stop VR first");
+        }
+        if let Some(i) = pick {
+            self.core.runtime(if i == 0 { "xrizer" } else { "steamvr" });
+        }
+    }
+
     fn page_error_card(&mut self, ui: &mut Ui, page: Page, msg: &str) {
-        widgets::card(ui, |ui| {
-            ui.label(RichText::new("This page hit an internal error").size(20.0).strong().color(pal(ui).fail));
-            widgets::note(ui, "The rest of the app works; nothing was stopped or started. The error is in the app's log and in a report under ~/.local/state/pimax/crashes.");
+        widgets::section(ui, "This page hit an internal error", None, |ui| {
+            widgets::status(ui, "The rest of the app works; nothing was stopped or started. The error is in the app's log.", pal(ui).fail);
             widgets::code_box(ui, &[msg.to_string()]);
             ui.horizontal(|ui| {
                 if ui.button("Try again").clicked() {
@@ -348,20 +522,22 @@ impl PimaxApp {
                 if ui.button("Report a problem...").clicked() {
                     self.ui.report_open = true;
                 }
-                if page != Page::Desk && ui.button("Go to Desk mode").clicked() {
+                if page != Page::Desk && ui.button("Go to Home").clicked() {
                     self.core.page = Page::Desk;
                 }
             });
         });
     }
 
-    /// Device dots, the job or the last message, the output panel, settings and help.
+    /// The headset, the controllers and the tracking in one line; the job or the last message; output, Ready and
+    /// Help on the right.
     fn status_bar(&mut self, ui: &mut Ui) {
         let p = theme::pal(ui);
         let devs = pimax_gui_core::devices::devices(&self.core.facts, &self.core.live, &self.core.toggles, self.core.demo);
         if self.ui.show_log {
             let row_h = ui.text_style_height(&egui::TextStyle::Monospace).max(14.0);
             let n = self.core.log.len();
+            ui.add_space(4.0);
             widgets::inset(ui, |ui| {
                 egui::ScrollArea::vertical()
                     .id_salt("joblog")
@@ -378,85 +554,89 @@ impl PimaxApp {
         }
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
-            for (id, d) in [("sb-h", &devs.headset), ("sb-l", &devs.left), ("sb-r", &devs.right)] {
-                let c = theme::fade(ui, egui::Id::new(id), widgets::dev_color(&p, d.state));
-                widgets::dot(ui, c, 3.5);
-                ui.label(RichText::new(&d.name).size(11.5).color(p.dim)).on_hover_text(format!("{}: {}", d.label, d.detail));
-                ui.add_space(8.0);
-            }
-            let c = theme::fade(ui, egui::Id::new("sb-t"), widgets::dev_color(&p, devs.tracking.1));
-            ui.label(RichText::new(format!("{} {}", icon::CROSSHAIR, devs.tracking.0)).size(11.5).color(c));
-            ui.add_space(14.0);
-            if let Some(j) = &self.core.job {
-                widgets::spinner(ui);
-                ui.label(RichText::new(format!("{} ({:.0} s)", j.label, j.started.elapsed().as_secs_f64())).size(12.0).color(p.text));
-            } else if !self.core.message.is_empty() {
-                ui.add(egui::Label::new(RichText::new(self.core.message.clone()).size(12.0).color(p.dim)).truncate());
-            }
+            let sep = |ui: &mut Ui| {
+                ui.add_space(4.0);
+                ui.label(RichText::new("|").size(11.0).color(p.stroke_strong));
+                ui.add_space(4.0);
+            };
+            let hc = theme::fade(ui, egui::Id::new("sb-h"), widgets::dev_color(&p, devs.headset.state));
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 5.0;
+                widgets::dot(ui, hc, 3.0);
+                ui.label(caps(&devs.headset.name, 10.0, p.dim));
+            })
+            .response
+            .on_hover_text(format!("{}: {}", devs.headset.label, devs.headset.detail));
+            sep(ui);
+            let up = pages::home::controllers_up(self);
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 3.0;
+                for (id, d) in [("sb-l", &devs.left), ("sb-r", &devs.right)] {
+                    let c = theme::fade(ui, egui::Id::new(id), widgets::dev_color(&p, d.state));
+                    widgets::dot(ui, c, 3.0);
+                }
+                ui.add_space(2.0);
+                ui.label(caps(&format!("Controllers {up}/2"), 10.0, p.dim));
+            })
+            .response
+            .on_hover_text(format!("{}: {}\n{}: {}", devs.left.name, devs.left.label, devs.right.name, devs.right.label));
+            sep(ui);
+            let tc = theme::fade(ui, egui::Id::new("sb-t"), widgets::dev_color(&p, devs.tracking.1));
+            ui.label(RichText::new(icon::CROSSHAIR).size(11.0).color(tc));
+            ui.label(caps(&format!("Tracking {}", devs.tracking.0), 10.0, if devs.tracking.1 == Dev::Off { p.dim } else { tc }));
+            ui.add_space(12.0);
+            // the links first, from the right: the job or the message is cut to what is left between
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let h = ui.add(egui::Button::new(RichText::new(icon::QUESTION).size(16.0).color(p.dim)).frame(false));
-                h.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Help"));
-                if h.on_hover_text("Help").clicked() {
+                ui.spacing_mut().item_spacing.x = 14.0;
+                let link = |ui: &mut Ui, ic: &str, text: &str, name: &str| {
+                    let r = ui.add(egui::Button::new(caps(&format!("{ic} {text}"), 10.0, p.dim)).frame(false));
+                    let name = name.to_string();
+                    r.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &name));
+                    r
+                };
+                if link(ui, icon::QUESTION, "Help", "Help").clicked() {
                     self.ui.help_open = true;
                 }
-                let g = ui.add(egui::Button::new(RichText::new(icon::GEAR).size(16.0).color(p.dim)).frame(false));
-                g.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Setup checklist"));
-                if g.on_hover_text("Setup checklist").clicked() {
+                if link(ui, icon::SEAL_CHECK, "Ready", "Setup checklist").on_hover_text("The setup checks").clicked() {
                     self.core.page = Page::Setup;
                 }
-                let label: String = if self.ui.show_log { "Hide output".into() } else { format!("Output ({} lines)", self.core.log.len()) };
-                if ui.add(egui::Button::new(RichText::new(label).size(11.5).color(p.dim)).frame(false)).clicked() {
+                let (text, name) = if self.ui.show_log { ("Hide output".to_string(), "Hide output".to_string()) } else { (format!("Output {}", self.core.log.len()), format!("Output ({} lines)", self.core.log.len())) };
+                if link(ui, icon::TERMINAL, &text, &name).clicked() {
                     self.ui.show_log = !self.ui.show_log;
                 }
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    ui.spacing_mut().item_spacing.x = 6.0;
+                    if let Some(j) = &self.core.job {
+                        widgets::spinner(ui);
+                        ui.add(egui::Label::new(RichText::new(format!("{} ({:.0} s)", j.label, j.started.elapsed().as_secs_f64())).size(11.5).color(p.text)).truncate());
+                    } else if !self.core.message.is_empty() {
+                        ui.add(egui::Label::new(RichText::new(self.core.message.clone()).size(11.5).color(p.dim)).truncate());
+                    }
+                });
             });
         });
     }
 
-    /// The round help button over the bottom right corner.
-    fn help_button(&mut self, ui: &mut Ui) {
-        let p = theme::pal(ui);
-        let ctx = ui.ctx().clone();
-        egui::Area::new(egui::Id::new("help-fab"))
-            .anchor(egui::Align2::RIGHT_BOTTOM, egui::vec2(-26.0, -58.0))
-            .order(egui::Order::Foreground)
-            .show(&ctx, |ui| {
-                let (rect, resp) = ui.allocate_exact_size(egui::vec2(50.0, 50.0), egui::Sense::click());
-                resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Help"));
-                let hover = theme::ease(ui, egui::Id::new("help-fab-hover"), resp.hovered(), theme::T_HOVER);
-                let fill = theme::mix(p.accent, p.accent_hover, hover);
-                ui.painter().circle_filled(rect.center(), 25.0, fill);
-                ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, icon::HEADSET, egui::FontId::proportional(22.0), egui::Color32::WHITE);
-                if resp.on_hover_text("Help").clicked() {
-                    self.ui.help_open = true;
-                }
-            });
-    }
-
-    /// Help: the controls guide, the docs, a problem report.
+    /// Help: one short paragraph per feature, the docs, a problem report.
     fn help_dialog(&mut self, ui: &mut Ui) {
         if !self.ui.help_open || self.core.pending.is_some() || self.core.recovery.is_some() {
             return;
         }
         let mut close = false;
+        let max_h = (ui.ctx().content_rect().height() - 220.0).max(200.0);
         let resp = egui::Modal::new(egui::Id::new("pimax-help")).show(ui.ctx(), |ui| {
-            ui.set_max_width(560.0);
-            ui.label(RichText::new("Help").size(20.0).family(theme::heading(ui)));
-            widgets::note(ui, "Ready: checks the PC and the headset; Fix does what is needed. IPD: set your eye distance (Apply moves the lenses when VR is stopped). Room: map your room and floor.");
-            widgets::note(ui, "Play starts VR for Steam and OpenXR games. Work starts the desk (screens over passthrough). Stop ends what runs.");
-            widgets::note(ui, "Restart VR service restarts the running session with the same settings. Restart headset sends the headset its restart command (stop VR first; back in about 30 seconds).");
-            widgets::note(ui, "Camera hands (Home > Tracking): in Work your bare hand is the pointer (pinch = click) and the controllers are ignored entirely unless you switch on \"Use controllers in Work\" (off by default). Say \"Max, use controllers\" or \"Max, hands only\" to switch: docs/HANDS.md.");
-            widgets::note(ui, "Controller models (WayVR page): with controllers in use in Work you see a 3D Quest 2 style controller in each hand, like SteamVR shows (trigger, grip, stick and buttons move); the pointer ray leaves its front tip. \"Debug: show pointer and grip axes\" draws coloured axes to check that in the headset (next desk start): docs/WAYVR-CONTROLS.md.");
-            widgets::note(ui, "Room setup (Home > Room): Fast setup (30 s: stand in the middle, look around, look forward and pull a trigger) or Full setup (walk the room, controller on the floor, trace the play area with a trigger). The steps show in the headset. With 'Put my room in place at every Play and Work' the floor, centre and forward come back every session; 'Tell SteamVR' gives SteamVR the same play area. docs/ROOM-SETUP.md.");
-            widgets::note(ui, "View room map (Home > Room): opens your room map as a page in the browser, offline: turn it in 3D, switch to the floor plan, points coloured from floor to ceiling, the headset path as a line. Same page: pimax-roommap view. docs/GUI.md > Room.");
-            widgets::note(ui, "Render quality (Home > Quality / Performance): Quality = the panel's own 3840x3552 per eye, Balanced = 85 %, Performance = 70 % (about half the pixels) for games that stutter or feel delayed. Applies at the next Play: docs/RENDER-QUALITY.md.");
-            widgets::note(ui, "Brightness (Home > Quality / Performance): Image = Standard / Bright (default) / Brighter lifts the mid tones of games at the next start without burning out whites; Panel backlight (20 to 100 %) changes the headset right away. The backlight is already at its maximum on Linux: docs/RENDER-QUALITY.md.");
-            widgets::note(ui, "Game mode (Home > Quality / Performance): Play pauses the local AI to free the graphics card and Stop starts it again; Sunshine keeps streaming unless you turn on \"Also pause Sunshine (stops game streaming)\". Compositor time budget (Auto / 6 ms / 8 ms): compare the late % and game fps on the session card: docs/RENDER-QUALITY.md.");
-            widgets::note(ui, "Record (Home): Start recording saves what the headset shows as a video in ~/Videos/pimax. Record tracking saves one folder per take (cameras, controller logs, session log) for comparing with Windows: pick a scenario and a length, it works during Play, Work or SteamVR without disturbing them. docs/RECORD.md.");
-            widgets::note(ui, "Controllers (Home): Pair - put the controller in pairing mode first, then press Pair for that hand only and wait up to 60 s (the other controller may drop out briefly meanwhile). Unpair disconnects one controller (left or right) from the headset; pair it again afterwards. Test vibration gives that controller a short buzz (also while VR runs); games and SteamVR vibrate the controllers by themselves: docs/STEAMVR.md section 6.");
-            widgets::note(ui, "Sound and microphone (Home): Sound in headset sends all sound to the headset speakers while VR runs (Play, Work or SteamVR; they get it over the video cable a few seconds after the headset lights up) and Stop puts your old output back; Test headset sound plays two soft notes there. Headset microphone makes it the input for voice commands, games and calls while VR runs; Test microphone records 3 s, shows the level and plays it back (start VR first: the microphone is silent while the headset display is off). Sunshine is left alone.");
-            widgets::note(ui, "Refresh rate (Home > Quality / Performance): 72 Hz or 90 Hz (new), applied when VR starts with the same commands Pimax Play sends on Windows.");
-            widgets::note(ui, "Steam games: Ready > \"Steam set up for VR games\" > Fix sets Steam up once (then quit and start Steam once); no game needs launch options. Games run with (Home): Monado, or SteamVR (experimental: Play starts SteamVR with the Pimax driver, Stop Play closes it; Play starts Steam first the normal way so SteamVR never starts Steam with its own settings, and Home says so when Steam restarts or SteamVR quits during play): docs/STEAMVR.md.");
+            ui.set_max_width(600.0);
+            let p = theme::pal(ui);
+            widgets::title(ui, "Help");
             ui.add_space(6.0);
+            egui::ScrollArea::vertical().id_salt("help-text").max_height(max_h).show(ui, |ui| {
+                for (head, text) in HELP {
+                    ui.label(caps(head, 10.5, p.faint).strong());
+                    widgets::note(ui, text);
+                    ui.add_space(6.0);
+                }
+            });
+            ui.add_space(8.0);
             let docs = self.core.paths.repo.join("docs");
             ui.horizontal_wrapped(|ui| {
                 if widgets::ibutton(ui, icon::BOOK_OPEN, "SteamVR", true).clicked() {
@@ -561,6 +741,26 @@ impl PimaxApp {
                         }
                     });
                 }
+                Pending::RestartSteam { steam, .. } => {
+                    let (title, body, busy) = AppCore::restart_steam_text(steam);
+                    ui.set_max_width(460.0);
+                    ui.label(RichText::new(title).size(18.0).strong());
+                    ui.add_space(4.0);
+                    widgets::note(ui, &body);
+                    if let Some(b) = busy {
+                        ui.add_space(4.0);
+                        ui.colored_label(pal(ui).warn, b);
+                    }
+                    ui.add_space(10.0);
+                    ui.horizontal(|ui| {
+                        if widgets::primary(ui, "Restart Steam", !self.core.busy()).clicked() {
+                            confirm = true;
+                        }
+                        if ui.button("Cancel").clicked() {
+                            close = true;
+                        }
+                    });
+                }
                 Pending::Interrupt { pid, comm, .. } => {
                     ui.label(RichText::new(format!("Send SIGINT to pid {pid} ({comm})?")).size(18.0).strong());
                     widgets::note(ui, "A polite stop by process id (never by name, never SIGKILL). The name is checked again right before; monado-service is never signalled here (it stops through pimax vr stop --grace 30).");
@@ -584,6 +784,7 @@ impl PimaxApp {
             match p {
                 Pending::Root { .. } => self.core.confirm_root(),
                 Pending::Confirm { .. } => self.core.confirm_step(),
+                Pending::RestartSteam { .. } => self.core.confirm_steam_restart(),
                 Pending::Interrupt { .. } => self.core.confirm_interrupt(),
             }
         } else if close {
@@ -737,4 +938,13 @@ impl eframe::App for PimaxApp {
         self.core.flush_state();
         log::info!("window closing after {} frames", self.ui.frames);
     }
+}
+
+/// A thin line between groups of the sidebar.
+fn nav_separator(ui: &mut Ui, p: &theme::Palette) {
+    ui.add_space(5.0);
+    let w = ui.available_width();
+    let (r, _) = ui.allocate_exact_size(egui::vec2(w, 1.0), egui::Sense::hover());
+    ui.painter().hline(r.x_range().shrink(6.0), r.center().y, egui::Stroke::new(1.0, p.stroke));
+    ui.add_space(5.0);
 }

@@ -27,6 +27,8 @@ pub struct Markers {
     pub eye_v2: bool,
     /// `PIMAX_HT_HZ` (camera hand tracking, Mercury: the hands build).
     pub hands: bool,
+    /// `PIMAX_CTRL_INHAND` (controllers shown only while in the hand, docs/CONTROLLERS-INHAND.md).
+    pub ctrl_inhand: bool,
 }
 
 impl Markers {
@@ -40,6 +42,7 @@ impl Markers {
             (self.eye, "eye tracking (PIMAX_EYE)"),
             (self.ctrl_track, "optical controller tracking (PIMAX_CTRL_TRACK)"),
             (self.anchor, "the room anchor (PIMAX_ANCHOR)"),
+            (self.ctrl_inhand, "controllers only when picked up (PIMAX_CTRL_INHAND)"),
             (self.hands || !hands, "camera hand tracking (PIMAX_HT_HZ)"),
         ] {
             if !have {
@@ -50,7 +53,7 @@ impl Markers {
     }
 }
 
-const NEEDLES: [&[u8]; 7] = [b"PIMAX_SLAM\0", b"held from the tracker", b"PIMAX_EYE\0", b"PIMAX_CTRL_TRACK", b"PIMAX_ANCHOR", b"origin_gate_mm", b"PIMAX_HT_HZ\0"];
+const NEEDLES: [&[u8]; 8] = [b"PIMAX_SLAM\0", b"held from the tracker", b"PIMAX_EYE\0", b"PIMAX_CTRL_TRACK", b"PIMAX_ANCHOR", b"origin_gate_mm", b"PIMAX_HT_HZ\0", b"PIMAX_CTRL_INHAND"];
 
 /// Scan a binary in chunks (it is ~150 MB) for the marker strings.
 pub fn scan_markers(m: &dyn Machine, path: &Path) -> Option<Markers> {
@@ -85,6 +88,7 @@ pub fn scan_markers(m: &dyn Machine, path: &Path) -> Option<Markers> {
         anchor: found[4],
         eye_v2: found[5],
         hands: found[6],
+        ctrl_inhand: found[7],
     })
 }
 
@@ -258,7 +262,7 @@ mod tests {
         assert_eq!(i.branch.as_deref(), Some("desk"));
         assert_eq!(
             i.markers,
-            Some(Markers { slam: true, imu_gate: true, eye: true, ctrl_track: false, anchor: false, eye_v2: false, hands: false })
+            Some(Markers { slam: true, imu_gate: true, eye: true, ctrl_track: false, anchor: false, eye_v2: false, hands: false, ctrl_inhand: false })
         );
         // cached: same answer without rescanning
         assert_eq!(c.get(&m, Path::new(svc)), i.markers);

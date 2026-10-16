@@ -126,7 +126,7 @@ Start with [AGENTS.md](AGENTS.md) and [docs/AI-KNOWLEDGE.md](docs/AI-KNOWLEDGE.m
 ## Credits and licences
 
 - [Monado](https://monado.freedesktop.org/) (BSL-1.0): our fork carries the Pimax driver.
-- [WayVR](https://github.com/wlx-team/wayvr) (GPL-3.0): our fork adds gaze and VR screens.
+- [WayVR](https://github.com/wlx-team/wayvr) (GPL-3.0): our fork (github.com/laughtt/wayvr, branch omarchyvr) adds gaze and VR screens; the Monado fork is github.com/laughtt/monado (see patches/README.md).
 - [xrizer](https://github.com/Supreeeme/xrizer): OpenVR on top of OpenXR.
 - [Basalt](https://gitlab.freedesktop.org/mateosss/basalt) visual-inertial SLAM, via Monado.
 - Mercury hand tracking (Monado): models have no licence, personal use only, not redistributed.

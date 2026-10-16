@@ -1,0 +1,9 @@
+# The scoped planner with its fallback, without the target line (shorter answers, lower latency).
+name = "planner-notarget"
+notes = "planner + fallback, no target line"
+[prompt]
+blocks = ["screens", "apps", "focus", "gaze", "tabs", "session", "hints"]
+target_line = false
+[tools]
+scope = "category+hints"
+top_k = 12

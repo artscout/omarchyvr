@@ -1,0 +1,234 @@
+# Starting states for the voice state tests (src/statetest.rs, docs/VOICE-STATE-TESTS.md).
+# App line: name class place [cwd] [fs] [float] [tabs=A|B*|C] [title="..."]; place = screen number 1-6 (its
+# workspace) or wsN (a workspace no screen shows). Screens: 1 main, 2 left, 3 right, 4 up, 5 up-left, 6 up-right.
+# Tiers: easy = few screens and apps; medium = 3-4 screens, mixed apps; hard = 6 screens, many terminals spread
+# around, Chrome with 10 tabs, a fullscreen video, apps off-screen, the gaze on an unrelated screen.
+
+# ------------------------------------------------------------------------------------------------------ easy
+[worlds.e1]
+screens = 1
+preset = "work-1"
+apps = ["t1 foot 1 ~/pimax-re"]
+focus = "t1"
+gaze = "1:t1"
+
+[worlds.e1c]
+screens = 1
+preset = "work-1"
+apps = ["t1 foot 1 ~/pimax-re", "c1 google-chrome 1 tabs=Gmail - Inbox|YouTube*|GitHub"]
+focus = "c1"
+gaze = "1:c1"
+
+[worlds.e3]
+# 3 screens, one terminal on the main one, left and right shown and empty (work-3 pins them)
+screens = 3
+preset = "work-3"
+apps = ["t1 foot 1 ~/pimax-re"]
+focus = "t1"
+gaze = "1:t1"
+
+[worlds.e3c]
+screens = 3
+preset = "work-3"
+apps = ["t1 foot 1 ~/pimax-re", "c1 google-chrome 2 tabs=YouTube*|Gmail - Inbox"]
+focus = "t1"
+gaze = "1:t1"
+
+[worlds.e4]
+# four screens shown, one app on each (the live session at 15:52 after "three more screens")
+screens = 4
+preset = "assistant"
+apps = ["t1 foot 1 ~/pimax-re", "c1 google-chrome 2 tabs=YouTube*", "t2 foot 3 ~/src/wayvr", "p1 pimax 4"]
+focus = "t1"
+gaze = "1:t1"
+
+# ---------------------------------------------------------------------------------------------------- medium
+[worlds.m3]
+screens = 3
+preset = "work-3"
+apps = [
+  "t1 foot 1 ~/pimax-re",
+  "t2 foot 1 ~/src/monado-eye",
+  "c1 google-chrome 2 tabs=Gmail - Inbox|YouTube - Dune trailer*|GitHub - pimax-re",
+  "p1 pimax 3",
+]
+focus = "t1"
+gaze = "2:c1"
+
+[worlds.m4]
+screens = 4
+preset = "assistant"
+apps = [
+  "t1 foot 1 ~/pimax-re",
+  "c1 google-chrome 2 tabs=Gmail - Inbox|YouTube*|Monado docs",
+  "t2 foot 3 ~/src/wayvr",
+  "t3 foot 3 title=btop",
+  "p1 pimax 4",
+]
+focus = "t2"
+gaze = "3:t2"
+
+[worlds.m4s]
+# the live Work session 2026-10-16 15:52 (findings): 4 screens shown, two terminals and the Pimax app
+screens = 4
+preset = "assistant"
+apps = [
+  "t1 foot 1 title=finish-voice-hand-tracking",
+  "t2 foot 1 ~",
+  "p1 pimax 2",
+  "c1 google-chrome 3 tabs=YouTube*",
+]
+focus = "t2"
+gaze = "1:t2"
+
+[worlds.mcin]
+# cinema mode: only the main screen shows; the apps on left and right stay open, hidden
+screens = 3
+preset = "cinema"
+apps = ["c1 google-chrome 1 tabs=Netflix|YouTube*", "t1 foot 2 ~/pimax-re", "p1 pimax 3"]
+focus = "c1"
+gaze = "1:c1"
+
+# ------------------------------------------------------------------------------------------------------ hard
+[worlds.h6]
+# 6 screens, terminals spread around, Chrome with 10 tabs, a fullscreen video, apps on workspaces no screen shows,
+# screen 5 hidden by voice earlier, the eyes on an unrelated screen
+screens = 6
+preset = "assistant"
+hidden = [5]
+apps = [
+  "t1 foot 1 ~/pimax-re",
+  "t2 foot 1 ~/src/monado-eye",
+  "c1 google-chrome 2 tabs=Gmail - Inbox|YouTube - lofi beats|GitHub - pimax-re|Monado docs|Hacker News*|Reddit - r/VirtualReality|Google Search - dune showtimes|Wikipedia - Dune (2021 film)|Netflix|Google Calendar",
+  "t3 foot 3 title=btop",
+  "v1 mpv 4 fs title=\"Arrival.2016.mkv - mpv\"",
+  "p1 pimax 5",
+  "t4 foot 6 ~/src/wayvr",
+  "o1 obsidian ws7",
+  "t5 foot ws8 ~/notes",
+]
+focus = "t4"
+gaze = "6:t4"
+
+[worlds.h6b]
+# the same desk, the eyes on the browser, focus on a terminal of the main screen
+base = "h6"
+focus = "t1"
+gaze = "2:c1"
+
+[worlds.h6c]
+# the same desk in cinema mode: only the main screen shows; everything else is open on hidden screens
+base = "h6"
+preset = "cinema"
+hidden = []
+focus = "t1"
+gaze = "1:t1"
+
+[worlds.off]
+# no VR session running
+screens = 1
+running = false
+preset = "work-1"
+apps = ["t1 foot 1 ~/pimax-re"]
+focus = "t1"
+
+[worlds.m6]
+# 6 screens, few apps: three screens with an app, three empty
+screens = 6
+preset = "assistant"
+apps = ["t1 foot 1 ~/pimax-re", "c1 google-chrome 2 tabs=Gmail - Inbox|YouTube*", "p1 pimax 3"]
+focus = "t1"
+gaze = "1:t1"
+
+[worlds.mmix]
+# a mess: kinds mixed on the screens (before "put everything in its own window")
+screens = 4
+preset = "assistant"
+apps = [
+  "t1 foot 1 ~/pimax-re",
+  "c1 google-chrome 1 tabs=YouTube*|Gmail - Inbox",
+  "t2 foot 2 ~/src/wayvr",
+  "p1 pimax 2",
+]
+focus = "t1"
+gaze = "1:t1"
+
+# ------------------------------------------------------------------------------------------- fresh (split=fresh)
+# Starting states for goals-fresh.toml only, written 2026-10-16 before any tuning on them: other terminals (kitty),
+# an editor and Spotify, screen 3 hidden instead of 5, the browser on the main screen, music playing, a dim room.
+
+[worlds.fe2]
+# 3 screens present, 2 shown: a terminal on the main one, Chrome on the left (Google Docs in front), music playing
+screens = 3
+preset = "assistant"
+apps = ["t1 kitty 1 ~/projects/blog", "c1 google-chrome 2 tabs=Spotify - Web Player|Google Docs - draft*"]
+focus = "c1"
+gaze = "2:c1"
+music = "playing"
+
+[worlds.fm5]
+# 5 screens: an editor and a terminal on the main one, Chrome left, Spotify right, htop up; screen 5 empty
+screens = 5
+preset = "assistant"
+apps = [
+  "e1 code 1 ~/pimax-re",
+  "t1 kitty 1 ~/pimax-re",
+  "c1 google-chrome 2 tabs=Docs - Rust std|YouTube - rust talk|Gmail - Inbox*",
+  "s1 spotify 3",
+  "t2 foot 4 title=htop",
+]
+focus = "e1"
+gaze = "3:s1"
+volume = 65
+
+[worlds.fh6]
+# 6 screens, Chrome on the main screen with YouTube in a hidden tab, three terminals on the left, screen 3 hidden
+# (its terminal stays open), files up, Spotify up-left, a windowed video up-right, Obsidian off-screen, the eyes on
+# the file manager, the room dimmed, music playing
+screens = 6
+preset = "assistant"
+hidden = [3]
+apps = [
+  "c1 google-chrome 1 tabs=Google Calendar|GitHub - pimax-re|YouTube - Dune part two trailer|Gmail - Inbox|Hacker News*|Weather - Madrid|Amazon",
+  "t1 foot 2 ~/pimax-re",
+  "t2 foot 2 ~/src/monado-eye",
+  "t3 kitty 2 title=btop",
+  "t4 foot 3 ~/src/wayvr",
+  "n1 org.gnome.Nautilus 4",
+  "s1 spotify 5",
+  "v1 mpv 6 title=\"Interstellar.2014.mkv - mpv\"",
+  "o1 obsidian ws9",
+]
+focus = "c1"
+gaze = "4:n1"
+passthrough = "dim"
+music = "playing"
+volume = 70
+
+[worlds.fcin]
+# cinema with a fullscreen film on the main screen, the room off; a terminal and Chrome open on hidden screens
+screens = 4
+preset = "cinema"
+apps = ["v1 mpv 1 fs title=\"Dune.Part.Two.2024.mkv - mpv\"", "t1 foot 2 ~/pimax-re", "c1 google-chrome 3 tabs=Netflix*|Gmail - Inbox"]
+focus = "v1"
+gaze = "1:v1"
+passthrough = "off"
+
+# ------------------------------------------------------------------- live 2026-10-16 18:05-18:17 (split fresh)
+[worlds.lv4c]
+# cinema mode with 4 screens: the main screen empty, the apps open on hidden screens (the launcher's toast:
+# "Still open on hidden screens: left (foot, pimax), right (foot), up (google-chrome)")
+screens = 4
+preset = "cinema"
+apps = ["t1 foot 2 ~/pimax-re", "p1 pimax 2", "t2 foot 3 title=\"finish-voice-hand-tracking\"", "c1 google-chrome 4 tabs=YouTube*|Gmail - Inbox"]
+focused_screen = 1
+gaze = "1"
+
+[worlds.lv6]
+# 6 screens, every screen busy (no free screen), Chrome on the up screen, which is hidden
+screens = 6
+preset = "assistant"
+hidden = [4]
+apps = ["t1 foot 1 ~/pimax-re", "t2 foot 2 ~/src/wayvr", "p1 pimax 3", "c1 google-chrome 4 tabs=YouTube*|Gmail - Inbox", "t3 foot 5 title=btop", "o1 obsidian 6"]
+focus = "t1"
+gaze = "1:t1"

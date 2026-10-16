@@ -525,7 +525,7 @@ pub fn launch(id: ToolId, live: &Live, f: &Facts, o: &ToolOptions, p: &Paths, st
             }
         }
         ToolId::WalkTest => {
-            let t = DeskToggles { eye: false, sixdof: true, ctrl_track: false, hands: false, hands_roles: false, passthrough: true, voice: false, hz90: false, perf: true, anchor: false, preset: crate::launcher::Preset::None, eye_default_on: false, screens: 4 };
+            let t = DeskToggles { eye: false, sixdof: true, ctrl_track: false, hands: false, hands_roles: false, passthrough: true, voice: false, hz90: false, perf: true, anchor: false, preset: crate::launcher::Preset::None, eye_default_on: false, screens: 4, ..DeskToggles::default() };
             let rec = walk_dir(p, stamp);
             let mut env: Vec<(&str, String)> = vec![("PIMAX_CAM_AE", if o.walk_ae { "1" } else { "0" }.to_string())];
             let mut before = Vec::new();
@@ -659,8 +659,6 @@ pub fn gamemode_job(p: &Paths, f: &Facts, args: &[&str]) -> JobSpec {
         label: match args {
             ["on"] => "Game mode: on".into(),
             ["off"] => "Game mode: off".into(),
-            ["sunshine", "on"] => "Also pause Sunshine: on".into(),
-            ["sunshine", "off"] => "Also pause Sunshine: off".into(),
             ["restore"] => "Game mode: starting again what was paused".into(),
             ["budget", b] => format!("Compositor time budget: {b}"),
             _ => "Game mode".into(),

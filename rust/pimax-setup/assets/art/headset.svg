@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 132" fill="none" stroke-linecap="round" stroke-linejoin="round">
+  <!-- omarchyvr line art: a slim goggle headset seen from the front and a little above. Drawn for this project
+       (CC-BY-4.0). currentColor = the app's accent; #9aa1b5 = the theme's neutral line colour. -->
+  <g stroke="#9aa1b5" stroke-width="1.2" stroke-opacity="0.5">
+    <path d="M 22 50 C 14 4 226 4 218 50"/>
+    <path d="M 36 44 C 32 16 208 16 204 44"/>
+    <path d="M 22 50 L 36 44 M 218 50 L 204 44"/>
+  </g>
+  <path stroke="currentColor" stroke-width="1.1" stroke-opacity="0.55" d="M 28 47 C 34 36 70 30 120 30 C 170 30 206 36 212 47"/>
+  <path stroke="currentColor" stroke-width="1.7" d="M 30 46 C 74 37 166 37 210 46 C 224 49 230 58 230 72 C 230 86 224 96 210 98 C 190 101 166 102 152 101 C 140 100 134 86 120 86 C 106 86 100 100 88 101 C 74 102 50 101 30 98 C 16 96 10 86 10 72 C 10 58 16 49 30 46 Z"/>
+  <path stroke="currentColor" stroke-width="1" stroke-opacity="0.35" d="M 36 53 C 76 45 164 45 204 53 C 214 55 220 62 220 72 C 220 82 215 89 205 91 C 188 93 168 94 156 93 C 146 92 138 79 120 79 C 102 79 94 92 84 93 C 72 94 52 93 35 91 C 25 89 20 82 20 72 C 20 62 26 55 36 53 Z"/>
+  <path stroke="currentColor" stroke-width="2.6" d="M 100 60 Q 120 55 140 60"/>
+  <g stroke="currentColor" stroke-width="1.2">
+    <circle cx="34" cy="66" r="3"/>
+    <circle cx="206" cy="66" r="3"/>
+    <circle cx="42" cy="83" r="2.3"/>
+    <circle cx="198" cy="83" r="2.3"/>
+  </g>
+  <g stroke="#9aa1b5" stroke-width="1" stroke-opacity="0.35">
+    <path d="M 34 99 C 44 106 68 107 88 103"/>
+    <path d="M 152 103 C 172 107 196 106 206 99"/>
+  </g>
+</svg>

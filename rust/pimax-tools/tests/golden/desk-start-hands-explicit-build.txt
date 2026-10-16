@@ -45,6 +45,7 @@ would start: $ROOT/build/src/xrt/targets/service/monado-service
   VIT_SYSTEM_LIBRARY_PATH=$ROOT/home/.local/lib/libbasalt.so
   SLAM_CONFIG=$ROOT/session/basalt/pimax-basalt.toml
   PIMAX_HEAD_IMU_LOG=$ROOT/session/head-imu.csv
+  PIMAX_CTRL_INHAND=auto
   PIMAX_CTRL_AIM=head
   PIMAX_PERF_FILE=$ROOT/run/pimax-perf.stats
   PIMAX_DEBUG_PTRACE=1

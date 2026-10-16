@@ -129,6 +129,7 @@ fn fixture_through_the_cli_live_driver_and_socket() {
         .arg(fixture())
         .args(["--fast", "--json", "--socket"])
         .arg(&sock)
+        .args(["--engine", "parakeet", "--no-hotwords"])
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()

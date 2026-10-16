@@ -71,6 +71,34 @@ pub fn default_path() -> PathBuf {
     d.join("pimax-ctrltrack.pose")
 }
 
+/// Monado's in-hand status (`$XDG_RUNTIME_DIR/pimax-ctrl-inhand`, written by the Pimax controller driver,
+/// rust/pimax-hands inhand_ffi.rs).
+pub fn inhand_status_path() -> PathBuf {
+    default_path().with_file_name("pimax-ctrl-inhand")
+}
+
+/// Which controllers to look for (left, right): a controller is skipped only when the status file of a LIVE Monado
+/// says it is `down` or `off`. No file, an unreadable one or a dead writer: both (the tracker works as before).
+pub fn inhand_wanted(path: &std::path::Path) -> [bool; 2] {
+    let Ok(text) = std::fs::read_to_string(path) else { return [true, true] };
+    parse_inhand(&text, |pid| std::path::Path::new(&format!("/proc/{pid}")).exists())
+}
+
+/// [`inhand_wanted`] on the file's text; `alive` tells whether the writer's pid runs.
+pub fn parse_inhand(text: &str, alive: impl Fn(u32) -> bool) -> [bool; 2] {
+    let get = |k: &str| {
+        text.lines()
+            .find_map(|l| l.strip_prefix(k).and_then(|r| r.strip_prefix('=')))
+            .map(str::trim)
+    };
+    match get("pid").and_then(|p| p.parse::<u32>().ok()) {
+        Some(pid) if alive(pid) => {}
+        _ => return [true, true],
+    }
+    let want = |k: &str| !matches!(get(k), Some("down") | Some("off"));
+    [want("left"), want("right")]
+}
+
 pub fn monotonic_ns() -> u64 {
     let mut ts = libc::timespec {
         tv_sec: 0,
@@ -273,6 +301,16 @@ impl PoseReader {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn inhand_status() {
+        let t = "pid=7\nmode=auto\nleft=held\nleft_why=motion\nright=down\nright_why=still\n";
+        assert_eq!(parse_inhand(t, |p| p == 7), [true, false]);
+        assert_eq!(parse_inhand(t, |_| false), [true, true], "dead writer: look for both");
+        assert_eq!(parse_inhand("pid=7\nmode=off\nleft=off\nright=off\n", |_| true), [false, false]);
+        assert_eq!(parse_inhand("pid=7\nmode=always\nleft=shown\nright=held\n", |_| true), [true, true]);
+        assert_eq!(parse_inhand("garbage", |_| true), [true, true]);
+    }
 
     #[test]
     fn write_read_roundtrip() {

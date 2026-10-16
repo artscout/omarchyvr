@@ -1,0 +1,133 @@
+# Apps and tabs: which app is where, which has the focus, which tab is in front (written cases).
+
+[[goal]]
+id = "chrome-to-5"
+why = "Chrome to screen 5 (up-left), which shows; the other apps stay."
+expect = ["chrome on 5", "screen 5 shown", "terminals stay", "pimax stay"]
+worlds = { easy = "m6", medium = "m6", hard = "h6" }
+set = { medium = { gaze = "3:p1", focus = "p1" } }
+says = ["put chrome on screen number five", "move the browser to screen 5", "chrome to the upper left screen"]
+
+[[goal]]
+id = "chrome-right"
+why = "The browser to the right screen; the terminals stay."
+expect = ["browsers on 3", "terminals stay"]
+worlds = { easy = "e3", medium = "m3", hard = "h6" }
+set = { easy = { add_apps = ["c1 google-chrome 1 tabs=YouTube*"] } }
+says = ["put chrome on the right screen", "move the browser to the right"]
+
+[[goal]]
+id = "this-right"
+why = "The focused app to the screen on its right; the others stay."
+expect = ["focused on 3", "browsers stay", "pimax stay"]
+worlds = { easy = "e3", medium = "m4s", hard = "h6b" }
+says = ["move this to the right screen", "send this app to the right", "put this one on the right screen"]
+
+[[goal]]
+id = "terminal-from-here-to-4"
+why = "From the screen looked at (a terminal there) to screen 4: only that terminal moves."
+expect = ["t1 stay"]
+any = [["t3 on 4", "t2 stay"], ["t2 on 4", "t3 stay"]]
+worlds = { easy = "m4", medium = "m4", hard = "h6" }
+set = { easy = { drop_apps = ["t2"], gaze = "3:t3", focus = "t1" }, medium = { gaze = "3:t3" }, hard = { gaze = "3:t3" } }
+says = ["move the terminal from here to screen 4", "put this terminal up on screen four"]
+
+[[goal]]
+id = "everything-3-to-1"
+why = "Every app of screen 3 to screen 1; the rest stay."
+expect = ["t2 on 1", "t3 on 1", "pimax stay", "browsers stay"]
+worlds = { easy = "e4", medium = "m4", hard = "h6" }
+set = { easy = { add_apps = ["t3 foot 3 title=htop"] } }
+says = ["move everything from screen 3 to screen 1", "bring all the apps of the right screen to the main one"]
+
+[[goal]]
+id = "open-terminal-on-3"
+why = "A new terminal on screen 3."
+expect = ["opened terminal on 3"]
+worlds = { easy = "e3", medium = "m4", hard = "h6" }
+says = ["open a terminal on screen 3", "new terminal on the right screen"]
+
+[[goal]]
+id = "open-terminal"
+why = "A new terminal (on the focused screen); nothing else."
+expect = ["opened terminal"]
+worlds = { easy = "e1", medium = "m3", hard = "h6" }
+says = ["open a terminal", "start a new terminal", "can I get a terminal"]
+
+[[goal]]
+id = "fullscreen-this"
+why = "The focused app fullscreen."
+expect = ["focused fullscreen"]
+worlds = { easy = "e1c", medium = "m3", hard = "h6b" }
+says = ["make it fullscreen", "full screen please", "full scream"]
+
+[[goal]]
+id = "focus-terminal"
+why = "A terminal gets the focus (the one in use)."
+expect = ["focus terminals", "all stay"]
+worlds = { easy = "e1c", medium = "m3", hard = "h6b" }
+set = { medium = { focus = "c1", gaze = "2:c1" }, hard = { focus = "c1", gaze = "2:c1" } }
+says = ["switch to the terminal", "go to my terminal"]
+
+[[goal]]
+id = "focus-obsidian-offscreen"
+why = "An app open on a workspace no screen shows: it comes into view with the focus."
+expect = ["focus o1", "o1 on 1|2|3|4|5|6"]
+allow = ["screen:*:shown"]
+worlds = { easy = "m6", medium = "m4", hard = "h6" }
+set = { easy = { add_apps = ["o1 obsidian ws7"] }, medium = { add_apps = ["o1 obsidian ws7"] } }
+says = ["switch to obsidian", "show me my notes in obsidian"]
+
+[[goal]]
+id = "next-tab"
+why = "The browser's next tab."
+any = [["tab github"], ["tab reddit"]]
+worlds = { easy = "e1c", medium = "m3", hard = "h6b" }
+set = { easy = { focus = "c1" }, medium = { focus = "c1", gaze = "2:c1" }, hard = { focus = "c1" } }
+says = ["next tab"]
+
+[[goal]]
+id = "gmail-tab"
+why = "The Gmail tab in front (it is open)."
+expect = ["tab gmail"]
+worlds = { easy = "e1c", medium = "m3", hard = "h6" }
+says = ["go to the gmail tab", "switch to my email", "show me gmail"]
+
+[[goal]]
+id = "close-this-tab"
+why = "Only the active tab closes; the browser and every other app stay."
+expect = ["tabs c1 -1"]
+worlds = { easy = "e1c", medium = "m3", hard = "h6b" }
+set = { medium = { focus = "c1", gaze = "2:c1" }, hard = { focus = "c1" } }
+says = ["close this tab", "close the tab"]
+
+[[goal]]
+id = "search"
+why = "A web search for the words."
+expect = ["tab cook rice"]
+worlds = { easy = "e1", medium = "m3", hard = "h6" }
+says = ["google how to cook rice", "search the web for how to cook rice", "in the browser type how to cook rice"]
+
+[[goal]]
+id = "open-github"
+why = "GitHub in front (a tab of the browser)."
+expect = ["tab github"]
+worlds = { easy = "e1", medium = "m4", hard = "h6" }
+set = { hard = { drop_apps = [] } }
+says = ["open github", "go to the github website"]
+
+[[goal]]
+id = "press-enter"
+why = "Enter in the focused app (a browser here)."
+expect = ["typed <Return>"]
+worlds = { easy = "e1c", medium = "m3", hard = "h6b" }
+set = { medium = { focus = "c1", gaze = "2:c1" }, hard = { focus = "c1" } }
+says = ["press enter", "hit enter"]
+
+[[goal]]
+id = "close-this-app"
+why = "The app named 'this' (focused and looked at) closes, nothing else."
+expect = ["focused closed"]
+worlds = { easy = "e1c", medium = "m3", hard = "h6b" }
+set = { medium = { focus = "p1", gaze = "3:p1" }, hard = { focus = "t3", gaze = "3:t3" } }
+says = ["close this app", "close this program"]

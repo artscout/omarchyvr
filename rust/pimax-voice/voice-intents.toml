@@ -64,9 +64,17 @@ source = "vr"
 say = "Cinema mode"
 
 [[intent]]
+id = "vr.preset.exit_cinema"
+phrases = ["exit cinema mode", "exit cinema", "leave cinema mode", "stop cinema mode", "end cinema mode", "cinema mode off", "out of cinema mode", "sal del modo cine"]
+gloss = "leave cinema mode: the layout and background from before it come back"
+run = ["@preset", "exit-cinema"]
+safety = "safe"
+source = "user request 2026-10-16"
+
+[[intent]]
 id = "vr.preset.work3"
 phrases = ["work", "work mode", "work three", "work 3", "work mode three", "three screens", "3 screens", "work with three screens", "switch to work", "switch to work mode", "work layout", "switch to work layout", "modo trabajo", "tres pantallas"]
-gloss = "3 screens, work mode, more screens"
+gloss = "work mode: the 3-screen work layout"
 run = ["@preset", "work-3"]
 safety = "safe"
 source = "vr"
@@ -74,7 +82,7 @@ say = "Work mode, 3 screens"
 
 [[intent]]
 id = "vr.preset.work1"
-phrases = ["work one", "work 1", "work mode one", "one screen", "1 screen", "single screen", "work with one screen", "una pantalla", "close the other screens", "close the other 2 screens", "hide the other screens", "only one screen", "just one screen", "close the other windows", "close other windows", "close all the other windows", "hide the other windows", "only this window", "just this window", "show one screen only", "show only one screen", "cierra las otras ventanas"]
+phrases = ["work one", "work 1", "work mode one", "one screen", "1 screen", "single screen", "work with one screen", "una pantalla", "only one screen", "just one screen", "close the other windows", "close other windows", "close all the other windows", "hide the other windows", "only this window", "just this window", "show one screen only", "show only one screen", "cierra las otras ventanas"]
 # "close the other windows" (user decision 2026-10-15): show one screen only; it never closes workspaces or apps
 gloss = "1 flat screen, single screen; close/hide the other screens or windows"
 run = ["@preset", "work-1"]
@@ -93,7 +101,7 @@ say = "Assistant mode"
 
 [[intent]]
 id = "vr.passthrough.on"
-phrases = ["passthrough", "passthrough on", "turn on passthrough", "show passthrough", "show the room", "show my room", "i want to see the room", "enciende passthrough", "muestra la habitacion"]
+phrases = ["passthrough", "passthrough on", "background off", "backgrounds off", "turn off the background", "turn the background off", "no background", "remove the background", "turn on passthrough", "show passthrough", "show the room", "show my room", "i want to see the room", "enciende passthrough", "muestra la habitacion"]
 gloss = "see the real room (passthrough on)"
 run = ["@backdrop", "passthrough"]
 safety = "safe"
@@ -101,7 +109,7 @@ source = "vr"
 
 [[intent]]
 id = "vr.passthrough.off"
-phrases = ["passthrough off", "turn off passthrough", "hide passthrough", "hide the room", "black background", "black", "go black", "apaga passthrough", "fondo negro"]
+phrases = ["passthrough off", "turn off passthrough", "turn passthrough off", "stop passthrough", "stop the passthrough", "disable passthrough", "no passthrough", "switch off passthrough", "hide passthrough", "hide the room", "black background", "black", "go black", "apaga passthrough", "fondo negro"]
 gloss = "black background, room hidden"
 run = ["@backdrop", "black"]
 safety = "safe"
@@ -147,7 +155,7 @@ source = "vr"
 
 [[intent]]
 id = "vr.backdrop.set"
-phrases = ["background {name}", "set background to {name}", "change background to {name}", "switch background to {name}", "{name} background", "environment {name}", "fondo {name}"]
+phrases = ["background {name}", "set background to {name}", "set background {name}", "set the background to {name}", "set the background {name}", "put on {name} background", "show me {name} background", "change background to {name}", "switch background to {name}", "{name} background", "environment {name}", "fondo {name}"]
 gloss = "pick a VR background by name"
 run = ["@backdrop", "{name}"]
 slots = { name = "name" }
@@ -156,7 +164,7 @@ source = "vr"
 
 [[intent]]
 id = "vr.screens.reset"
-phrases = ["reset screens", "reset the screens", "screens back", "bring the screens back", "bring back the screens", "where are my screens", "resetea las pantallas"]
+phrases = ["reset screens", "reset the screens", "screens back", "bring the screens back", "bring back the screens", "where are my screens", "in front of me", "resetea las pantallas"]
 gloss = "screens lost or misplaced: bring them back in front"
 run = ["{wayvrctl}", "reset-screens"]
 safety = "safe"
@@ -173,7 +181,7 @@ say = "Recentered"
 
 [[intent]]
 id = "vr.input.controllers"
-phrases = ["use controllers", "use the controllers", "prioritize controllers", "prioritise controllers", "turn on controllers", "turn on the controllers", "controllers first", "controllers as pointer", "controllers over hands", "prioriza los mandos", "usa los mandos"]
+phrases = ["use controllers", "use the controllers", "prioritize controllers", "prioritise controllers", "turn on controllers", "turn on the controllers", "controllers first", "switch to controllers", "switch to the controllers", "controllers", "controllers as pointer", "controllers over hands", "prioriza los mandos", "usa los mandos"]
 gloss = "controllers work in Work too (a tracked controller wins); by default they are ignored entirely"
 run = ["{wayvrctl}", "controllers", "on"]
 safety = "safe"
@@ -188,6 +196,24 @@ run = ["{wayvrctl}", "controllers", "off"]
 safety = "safe"
 source = "vr"
 say = "Hands only"
+
+[[intent]]
+id = "vr.input.show_controllers"
+gloss = "controllers always shown"
+phrases = ["controllers on", "show controllers", "show the controllers", "controllers always", "muestra los mandos"]
+run = ["{pimax}", "controllers", "use", "always"]
+safety = "safe"
+source = "vr"
+say = "Controllers shown"
+
+[[intent]]
+id = "vr.input.hide_controllers"
+gloss = "controllers hidden"
+phrases = ["controllers off", "hide controllers", "hide the controllers", "oculta los mandos"]
+run = ["{pimax}", "controllers", "use", "off"]
+safety = "safe"
+source = "vr"
+say = "Controllers hidden"
 
 [[intent]]
 id = "vr.fps.show"
@@ -255,7 +281,8 @@ source = "vr"
 
 [[intent]]
 id = "voice.cancel"
-phrases = ["cancel", "never mind", "nevermind", "stop", "forget it", "cancela", "olvidalo"]
+phrases = ["cancel", "never mind", "nevermind", "stop", "forget it", "cancel that", "stop that", "stop it", "abort", "cancela", "olvidalo"]
+gloss = "cancel: a question waiting for yes, or a task of several steps (between two steps)"
 run = ["@cancel"]
 safety = "safe"
 source = "vr"
@@ -424,7 +451,7 @@ source = "user request 2026-10-15"
 
 [[intent]]
 id = "win.ws.next"
-phrases = ["next workspace", "workspace next", "workspace forward", "siguiente workspace", "next window", "siguiente ventana"]
+phrases = ["next workspace", "go to the next workspace", "the next workspace", "switch to the next workspace", "workspace next", "workspace forward", "siguiente workspace", "next window", "siguiente ventana"]
 gloss = "the next window (workspace, desktop)"
 run = ["@win", "ws_next"]
 safety = "safe"
@@ -449,7 +476,7 @@ source = "user request 2026-10-15"
 # VR screens (docs/SCREENS.md): the main screen in the centre, left, right and up around it (Hyprland outputs)
 [[intent]]
 id = "win.screen.goto"
-phrases = ["go to the {side} screen", "switch to the {side} screen", "focus the {side} screen", "show the {side} screen", "go to {side} screen", "ve a la pantalla {side}"]
+phrases = ["go to the {side} screen", "switch to the {side} screen", "focus the {side} screen", "show the {side} screen", "go to {side} screen", "focus on the {side} screen", "focus in the {side} screen", "back to the {side} screen", "go to the {side} window", "focus the {side} window", "focus on the {side} window", "focus in the {side} window", "switch to the {side} window", "back to the {side} window", "ve a la pantalla {side}"]
 slots = { side = "side" }
 gloss = "focus the VR screen on the left / right / up / main (middle)"
 run = ["@win", "screen", "{side}"]
@@ -465,6 +492,219 @@ run = ["@win", "move_screen", "{side}"]
 safety = "safe"
 source = "user request 2026-10-15"
 
+# VR screens: how many (user decisions 2026-10-16, docs/VOICE-DECISIONS.md 10-13): up to 6 screens (main, left, right,
+# up, up-left, up-right); `pimax desk screens show|more|add` creates/shows them and never closes or moves an app
+[[intent]]
+id = "vr.screens.count"
+phrases = ["{n} screens", "{n} screen", "give me {n} screens", "show {n} screens", "i want {n} screens", "can we have {n} screens", "can i have {n} screens", "let's have {n} screens", "use {n} screens", "make it {n} screens", "set {n} screens", "{n} vr screens", "{n} pantallas"]
+slots = { n = "number" }
+gloss = "show N VR screens in all (1 to 6): \"N screens\""
+run = ["{pimax}", "desk", "screens", "show", "{n}"]
+output = true
+safety = "safe"
+source = "user request 2026-10-16"
+
+[[intent]]
+id = "vr.screens.more"
+phrases = ["{n} more screens", "{n} more screen", "{n} screens more", "add {n} screens", "add {n} more screens", "create {n} more screens", "create {n} screens more", "open {n} more screens", "give me {n} more screens", "can we have {n} more screens", "can we have {n} more windows", "{n} more windows", "{n} pantallas mas"]
+slots = { n = "number" }
+gloss = "N more VR screens than now (\"N more screens\", \"N extra screens\"); up to 6"
+run = ["{pimax}", "desk", "screens", "more", "{n}"]
+output = true
+safety = "safe"
+source = "user request 2026-10-16"
+
+[[intent]]
+id = "vr.screens.one_more"
+phrases = ["one more screen", "another screen", "add a screen", "add another screen", "more screens", "give me another screen", "otra pantalla"]
+gloss = "one more VR screen than now"
+run = ["{pimax}", "desk", "screens", "more", "1"]
+output = true
+safety = "safe"
+source = "user request 2026-10-16"
+
+[[intent]]
+id = "vr.screens.add"
+phrases = ["a screen to the {side}", "add a screen to the {side}", "add a screen on the {side}", "a screen on the {side}", "another screen on the {side}", "add a screen {side}", "a screen {side} there", "add a screen {side} there", "show a screen {side}", "una pantalla a la {side}"]
+slots = { side = "side" }
+gloss = "add / show the VR screen on that side (left, right, up, up-left, up-right)"
+run = ["{pimax}", "desk", "screens", "add", "{side}"]
+output = true
+safety = "safe"
+source = "user request 2026-10-16"
+
+[[intent]]
+id = "win.screen.open"
+phrases = ["open {app} in a new window", "focus {app} in a new window", "put {app} in a new window", "show {app} in a new window", "{app} in a new window", "open {app} on a new screen", "open {app} in a new screen", "put {app} on a new screen", "move {app} to a new screen", "move {app} to a new window", "put {app} on its own screen", "give {app} its own screen", "{app} on its own screen", "abre {app} en una ventana nueva"]
+slots = { app = "text" }
+gloss = "move that app or tab (or open it) on a free VR screen of its own"
+run = ["@win", "open_screen", "{app}"]
+safety = "safe"
+source = "user request 2026-10-16"
+
+# apps to a named VR screen (user request 2026-10-16): by kind (terminals, browsers, the code editor) or by name
+[[intent]]
+id = "win.screen.put"
+phrases = ["put {app} on the {side} screen", "move {app} to the {side} screen", "put {app} in the {side}", "move {app} to the {side}", "put all the {app} on the {side} screen", "move all the {app} to the {side} screen", "put all the {app} on the {side}", "move all the {app} to the {side}", "send {app} to the {side} screen", "{app} on the {side} screen", "pon {app} en la pantalla {side}"]
+slots = { app = "text", side = "side" }
+gloss = "apps of that kind or name (terminals, chrome, youtube) to that screen"
+run = ["@win", "put", "{side}", "{app}"]
+safety = "safe"
+source = "user request 2026-10-16"
+
+# screen numbers (docs/SCREENS.md, the number badge on each VR screen): 1 main, 2 left, 3 right, 4 up, 5 up-left,
+# 6 up-right; "here" = the screen looked at, else the focused one (user request 2026-10-16)
+[[intent]]
+id = "win.screen.put_n"
+phrases = ["move {app} to screen {screen}", "put {app} on screen {screen}", "move {app} to window {screen}", "put {app} on window {screen}", "move all the {app} to screen {screen}", "put all the {app} on screen {screen}", "send {app} to screen {screen}", "{app} to screen {screen}", "{app} on screen {screen}", "pon {app} en la pantalla {screen}"]
+slots = { app = "text", screen = "screen" }
+gloss = "apps of that kind or name to screen N (\"one terminal\" = the last used)"
+run = ["@win", "put", "{screen}", "{app}"]
+safety = "safe"
+source = "user request 2026-10-16"
+
+[[intent]]
+id = "vr.screens.numbers"
+phrases = ["show screen numbers", "show the screen numbers", "screen numbers", "which screen is which", "number the screens", "show the numbers", "muestra los numeros de pantalla"]
+gloss = "show the number badge on every VR screen for a few seconds"
+run = ["{wayvrctl}", "screen-numbers", "show"]
+safety = "safe"
+source = "user request 2026-10-16"
+say = "Screen numbers"
+
+[[intent]]
+id = "vr.screens.numbers_hide"
+phrases = ["hide screen numbers", "hide the screen numbers", "hide the numbers", "screen numbers off", "no screen numbers", "oculta los numeros"]
+gloss = "hide the screen number badges (they still flash after a screen command)"
+run = ["{wayvrctl}", "screen-numbers", "hide"]
+safety = "safe"
+source = "user request 2026-10-16"
+say = "Screen numbers hidden"
+
+[[intent]]
+id = "vr.screens.numbers_always"
+phrases = ["always show screen numbers", "keep the screen numbers on", "screen numbers always on", "keep showing the screen numbers"]
+gloss = "keep the screen number badges on all the time"
+run = ["{wayvrctl}", "screen-numbers", "always"]
+safety = "safe"
+source = "user request 2026-10-16"
+say = "Screen numbers always on"
+
+[[intent]]
+id = "win.screen.put_from"
+phrases = ["move {app} from {from} to screen {screen}", "move {app} from screen {from} to screen {screen}", "move {app} from the {from} screen to screen {screen}", "move {app} from {from} to the {screen} screen", "move {app} from screen {from} to the {screen} screen", "put {app} from {from} on screen {screen}", "send {app} from {from} to screen {screen}", "move {app} from {from} to {screen}"]
+slots = { app = "text", from = "screen", screen = "screen" }
+gloss = "apps of that kind on one screen to another"
+run = ["@win", "put_from", "{from}", "{screen}", "{app}"]
+safety = "safe"
+source = "user request 2026-10-16"
+
+[[intent]]
+id = "win.screen.move_all"
+phrases = ["move everything from screen {from} to screen {screen}", "move everything from {from} to screen {screen}", "from screen {from} to screen {screen}", "move screen {from} to screen {screen}", "move all apps from screen {from} to screen {screen}", "move everything from the {from} screen to the {screen} screen", "put everything from screen {from} on screen {screen}", "everything from screen {from} to screen {screen}"]
+slots = { from = "screen", screen = "screen" }
+gloss = "every app of one screen to another"
+run = ["@win", "put_from", "{from}", "{screen}", "everything"]
+safety = "safe"
+source = "user request 2026-10-16"
+
+[[intent]]
+id = "win.screen.move_n"
+phrases = ["send this to screen {screen}", "move this to screen {screen}", "move this app to screen {screen}", "put this on screen {screen}", "send this app to screen {screen}", "send it to screen {screen}", "move it to screen {screen}", "manda esto a la pantalla {screen}"]
+slots = { screen = "screen" }
+gloss = "this app to screen N"
+run = ["@win", "put", "{screen}", "this"]
+safety = "safe"
+source = "user request 2026-10-16"
+
+[[intent]]
+id = "win.screen.goto_n"
+phrases = ["go to screen {screen}", "switch to screen {screen}", "focus screen {screen}", "show screen {screen}", "focus on screen {screen}", "back to screen {screen}", "jump to screen {screen}", "ve a la pantalla {screen}"]
+slots = { screen = "screen" }
+gloss = "focus screen N"
+run = ["@win", "screen", "{screen}"]
+safety = "safe"
+source = "user request 2026-10-16"
+
+[[intent]]
+id = "win.screen.swap"
+phrases = ["swap screens {screen} and {b}", "swap screen {screen} and screen {b}", "swap screen {screen} with screen {b}", "switch screens {screen} and {b}", "swap the {screen} and {b} screens", "swap the {screen} screen with the {b} screen", "exchange screens {screen} and {b}", "intercambia las pantallas {screen} y {b}"]
+slots = { screen = "screen", b = "screen" }
+gloss = "two screens swap their apps"
+run = ["@win", "swap", "{screen}", "{b}"]
+safety = "safe"
+source = "user request 2026-10-16"
+
+[[intent]]
+id = "win.screen.adjust"
+phrases = ["make screen {screen} {how}", "screen {screen} {how}", "move screen {screen} {how}", "bring screen {screen} {how}", "push screen {screen} {how}", "make the {screen} screen {how}", "move the {screen} screen {how}"]
+slots = { screen = "screen", how = "word" }
+gloss = "screen N how=bigger|smaller|closer|farther|left|right|up|down"
+run = ["@win", "nudge", "{how}", "{screen}"]
+safety = "safe"
+source = "user request 2026-10-16"
+
+[[intent]]
+id = "win.screen.list_n"
+phrases = ["what's on screen {screen}", "what is on screen {screen}", "list screen {screen}", "which apps are on screen {screen}", "what's on the {screen} screen", "list the {screen} screen", "que hay en la pantalla {screen}"]
+slots = { screen = "screen" }
+gloss = "list the apps on screen N"
+run = ["@win", "list_screen", "{screen}"]
+safety = "safe"
+source = "user request 2026-10-16"
+
+[[intent]]
+id = "win.screen.open_n"
+phrases = ["open {app} on screen {screen}", "open {app} on the {screen} screen", "start {app} on screen {screen}", "show {app} on screen {screen}", "launch {app} on screen {screen}", "abre {app} en la pantalla {screen}"]
+slots = { app = "text", screen = "screen" }
+gloss = "open a site, URL, file or terminal on screen N"
+run = ["@win", "open_on", "{screen}", "{app}"]
+safety = "safe"
+source = "user request 2026-10-16"
+
+[[intent]]
+id = "win.layout.save"
+phrases = ["save this layout", "save the layout", "remember this layout", "save my layout", "guarda este diseno"]
+gloss = "remember which app is on which screen"
+run = ["@win", "layout_save", "default"]
+safety = "safe"
+source = "user request 2026-10-16"
+
+[[intent]]
+id = "win.layout.save_as"
+phrases = ["save the layout as {name}", "save this layout as {name}", "remember this layout as {name}", "save layout {name}"]
+slots = { name = "word" }
+gloss = "the same, under a name"
+run = ["@win", "layout_save", "{name}"]
+safety = "safe"
+source = "user request 2026-10-16"
+
+[[intent]]
+id = "win.layout.restore"
+phrases = ["restore the layout", "restore my layout", "put the apps back where they were", "load my layout", "restaura el diseno"]
+gloss = "apps back to the saved layout's screens"
+run = ["@win", "layout_restore", "default"]
+safety = "safe"
+source = "user request 2026-10-16"
+
+[[intent]]
+id = "win.layout.restore_as"
+phrases = ["restore the layout {name}", "restore the {name} layout", "load the {name} layout", "back to the {name} layout", "restore layout {name}"]
+slots = { name = "word" }
+gloss = "the same, a named layout"
+run = ["@win", "layout_restore", "{name}"]
+safety = "safe"
+source = "user request 2026-10-16"
+
+[[intent]]
+id = "win.screen.gather"
+phrases = ["move all the {app} to one window", "move all the {app} to one screen", "put all the {app} on one screen", "put all the {app} in one window", "all the {app} on one screen", "all the {app} in one window", "all the {app} together", "put all the {app} together", "gather the {app}", "gather all the {app}", "move all the {app} together", "junta todas las {app}"]
+slots = { app = "text" }
+gloss = "all apps of one kind (terminals, browsers, ...) together on one screen; the others stay"
+run = ["@win", "gather", "{app}"]
+safety = "safe"
+source = "user request 2026-10-16"
+
 [[intent]]
 id = "win.focus.gaze"
 phrases = ["focus", "focus this", "focus that", "select this", "select that", "enfoca esto"]
@@ -478,7 +718,7 @@ source = "user request 2026-10-15"
 # looked at, else the focused one); "zoom in/out" = a bigger/smaller VR screen (wayvrctl screen-nudge)
 [[intent]]
 id = "win.screen.nudge"
-phrases = ["move this {side}", "move it {side}", "move this screen {side}", "move the screen {side}", "move this window {side}", "move the window {side}", "push this screen {side}", "screen {side}", "mueve la pantalla a la {side}"]
+phrases = ["move this {side}", "move it {side}", "move this screen {side}", "move one of the screens to the {side}", "move a screen to the {side}", "move the screen to the {side}", "move this screen to the {side}", "move the screen {side}", "move this window {side}", "move the window {side}", "push this screen {side}", "screen {side}", "mueve la pantalla a la {side}"]
 slots = { side = "side" }
 gloss = "move the VR screen itself in space (left, right, up, down)"
 run = ["@win", "nudge", "{side}"]
@@ -517,10 +757,52 @@ run = ["@win", "nudge", "smaller"]
 safety = "safe"
 source = "user request 2026-10-15"
 
+# hide VR screens (user rule 2026-10-16, live session 15:49): "close / remove / shut down screen N" HIDES that screen;
+# its apps stay open. Never closes an app. Lists of numbers: "screens 3 and 4", "2, 3 and 5".
+[[intent]]
+id = "vr.screens.hide"
+phrases = ["hide screen {screens}", "hide screens {screens}", "close screen {screens}", "close screens {screens}", "remove screen {screens}", "remove screens {screens}", "shut down screen {screens}", "shut down screens {screens}", "turn off screen {screens}", "get rid of screen {screens}", "oculta la pantalla {screens}"]
+slots = { screens = "text" }
+gloss = "hide VR screen(s) by number: screens=\"4,3\" (close / remove / shut down screen N); apps stay open"
+run = ["@win", "hide_screens", "{pimax}", "{screens}"]
+safety = "safe"
+source = "user request 2026-10-16"
+
+[[intent]]
+id = "vr.screens.hide_others"
+phrases = ["close everything", "close all the screens", "close all screens", "hide all the screens", "close the other screens", "close screens", "close the screens", "hide the other screens", "hide everything", "only the main screen", "just the main screen", "cierra todo"]
+gloss = "hide every screen but the main one (close everything / close the screens); no app closes"
+run = ["{pimax}", "desk", "screens", "hide", "others"]
+safety = "safe"
+source = "user request 2026-10-16"
+output = true
+
+# all screens (or one) resized by a factor (live 2026-10-16 "make all these screens half the size")
+[[intent]]
+id = "win.screen.scale"
+phrases = ["make all the screens {size}", "make all screens {size}", "make all these screens {size}", "make every screen {size}", "all screens {size}", "scale all the screens to {size}", "make all the screens {size} percent", "make screen {screens} {size} the size", "make screen {screens} {size} percent"]
+slots = { screens = "word", size = "word" }
+gloss = "resize screens=all|N by size=half|double|PERCENT (50 = half, 200 = double)"
+run = ["@win", "scale", "{screens}", "{size}"]
+safety = "safe"
+source = "user request 2026-10-16"
+
+# stop Work / VR like the app's Stop button (pimax desk stop --grace 30); the one command that always asks "yes"
+[[intent]]
+id = "vr.session.stop"
+phrases = ["stop vr", "stop the vr", "stop work", "stop the session", "shut down vr", "shut down work", "shut down the session", "exit vr", "quit vr", "close vr", "end the session", "turn off vr", "para la realidad virtual"]
+gloss = "stop the whole VR / Work session (asks yes first)"
+run = ["setsid", "{pimax}", "desk", "stop", "--grace", "30"]
+safety = "careful"
+source = "user request 2026-10-16"
+confirm = true
+ask_always = true
+say = "Stopping Work"
+
 # docs/VOICE-DECISIONS.md 5: sort the apps of the shown screens by kind onto the VR screens; reversible
 [[intent]]
 id = "win.organize"
-phrases = ["put everything in its own window", "put everything in their own windows", "everything in its own window", "organize", "organize the windows", "organize my windows", "organize everything", "separate everything", "sort the apps", "sort my apps", "spread everything out", "ordena las ventanas"]
+phrases = ["one kind of app per screen", "separate the apps by kind", "organize", "organize the windows", "organize my windows", "organize everything", "separate everything", "sort the apps", "sort my apps", "spread everything out", "ordena las ventanas"]
 gloss = "sort the apps by kind onto the VR screens: terminals together, browser, Pimax app, the rest"
 run = ["@win", "organize"]
 safety = "safe"
@@ -616,6 +898,39 @@ safety = "careful"
 source = "user request 2026-10-15"
 confirm = true
 
+# "open google chrome", "open chrome here", "open chrome in main" (live 2026-10-16 18:10): an app that is open shows
+# or comes to the named / looked-at screen; not open: a known family starts. A new window only when asked for one.
+[[intent]]
+id = "win.app.open"
+# "open X", "launch X", "bring up X" reach it from act.rs (decide_words) only when X is open or can start
+phrases = ["open the app {app}", "open app {app}"]
+gloss = "show an open app (or start it), optionally on a named screen: app=\"chrome\", \"chrome in main\""
+run = ["@win", "open_app", "{app}"]
+slots = { app = "text" }
+safety = "safe"
+source = "user request 2026-10-16: open an app that is open shows it"
+
+[[intent]]
+id = "win.app.here"
+phrases = ["bring {app} here", "open {app} here", "show {app} here", "put {app} here", "move {app} here"]
+gloss = "an open app to the screen looked at (or started there)"
+run = ["@win", "open_app", "{app}", "here"]
+slots = { app = "text" }
+safety = "safe"
+source = "user request 2026-10-16: open an app that is open shows it"
+
+# an app by its name or kind ("close spotify", "quit the video player"); a name only a browser tab carries closes that
+# tab, never the browser; several of a kind: the one looked at, else it asks which; nothing named: nothing closes
+[[intent]]
+id = "win.close.named"
+phrases = ["close {app}", "quit {app}", "exit {app}", "kill {app}", "shut down {app}", "cierra {app}"]
+gloss = "close the app the user names (by name or kind); a site name closes only that browser tab"
+run = ["@win", "close_named", "{app}"]
+slots = { app = "text" }
+safety = "careful"
+source = "user request 2026-10-16: no app closes unless named"
+confirm = true
+
 [[intent]]
 id = "win.tab.close"
 phrases = ["close this tab", "close tab", "close the current tab", "cierra el tab"]
@@ -690,6 +1005,16 @@ gloss = "lower the sound volume"
 run = ["omarchy-audio-output-volume", "lower"]
 safety = "safe"
 source = "omarchy#25"
+
+[[intent]]
+id = "omarchy.volume.set"
+phrases = ["set the volume to {n}", "volume {n}", "volume to {n}", "volume at {n}", "set volume {n}", "volume {n} percent", "set the volume to {n} percent", "volumen al {n}"]
+slots = { n = "number" }
+gloss = "volume to N percent"
+run = ["wpctl", "set-volume", "-l", "1.0", "@DEFAULT_AUDIO_SINK@", "{n}%"]
+safety = "safe"
+source = "user request 2026-10-16"
+say = "Volume {n}%"
 
 [[intent]]
 id = "omarchy.volume.mute_toggle"
@@ -799,6 +1124,16 @@ say = "Locking. Take the headset off to type your password."
 # ------------------------------------------------------------- typing, keys and the browser (user request 2026-10-15)
 # Typing and keys go only to the focused window (wtype). Into a terminal: dangerous (a yes with
 # voice_confirm = "dangerous"). Every typed string is logged to ~/.local/state/pimax/logs/typed.log.
+# a video file on this PC (user request 2026-10-16): ~/Downloads, ~/Videos and the XDG videos folder only
+[[intent]]
+id = "media.play"
+phrases = ["play {q}", "watch {q}", "play the movie {q}", "play the video {q}", "i want to watch {q}", "put on {q}", "open the movie {q}", "pon {q}"]
+slots = { q = "text" }
+gloss = "find a downloaded video by name (Downloads, Videos) and play it fullscreen in the video player"
+run = ["@desk", "play", "{q}"]
+safety = "safe"
+source = "user request 2026-10-16"
+
 [[intent]]
 id = "type.text"
 phrases = ["type {text}", "write {text}", "type in {text}", "escribe {text}"]
@@ -921,18 +1256,18 @@ source = "user request 2026-10-15"
 # ------------------------------------------------------------------- recording (docs/RECORD.md, `pimax record`)
 [[intent]]
 id = "vr.record.start"
-phrases = ["start recording", "start a recording", "record", "record video", "record this", "start the recording", "empieza a grabar", "graba", "grabar"]
+phrases = ["start recording", "start a recording", "begin recording", "record", "record video", "record this", "record the video", "start the recording", "empieza a grabar", "graba", "grabar"]
 gloss = "record a video of what the headset shows"
-run = ["{pimax}", "record", "start"]
+run = ["{pimax}", "record", "start", "--brief"]   # the saved settings (app Recording page); answers "Recording"
 safety = "safe"
 source = "vr"
 output = true
 
 [[intent]]
 id = "vr.record.stop"
-phrases = ["stop recording", "stop the recording", "end recording", "end the recording", "finish recording", "para de grabar", "deja de grabar", "termina la grabacion"]
+phrases = ["stop recording", "stop the recording", "stop video recording", "end recording", "end the recording", "finish recording", "para de grabar", "deja de grabar", "termina la grabacion"]
 gloss = "stop recording and save the video"
-run = ["{pimax}", "record", "stop"]
+run = ["{pimax}", "record", "stop", "--brief"]   # answers "Saved: pimax-....mp4"; never touches the VR session
 safety = "safe"
 source = "vr"
 output = true

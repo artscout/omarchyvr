@@ -105,6 +105,7 @@ pub fn live(a: &[String]) {
     // itself after a broker restart or a camera drop (pimax_cam::resilient); `reopens` counts those.
     let mut beat = Beat::default();
     let mut gen = src.generation();
+    let mut inhand_checked = 0u64;
     loop {
         if t_start.elapsed().as_secs_f64() > secs {
             break;
@@ -119,6 +120,15 @@ pub fn live(a: &[String]) {
             beat.beat_ns = now;
             beat.source_up = src.up();
             w.beat(beat);
+        }
+        // Monado's in-hand status (PIMAX_CTRL_INHAND): a controller lying on the desk is not looked for
+        if now.saturating_sub(inhand_checked) >= 100_000_000 {
+            inhand_checked = now;
+            let w = shm::inhand_wanted(&shm::inhand_status_path());
+            if w != tracker.wanted {
+                eprintln!("live: looking for left {}, right {} (Monado in-hand status)", if w[0] { "yes" } else { "no" }, if w[1] { "yes" } else { "no" });
+                tracker.wanted = w;
+            }
         }
         let fr = match src.next(500) {
             Ok(Some(f)) => f,
@@ -142,6 +152,9 @@ pub fn live(a: &[String]) {
             continue;
         }
         beat.led_frames += 1;
+        if !tracker.wanted[0] && !tracker.wanted[1] {
+            continue; // both controllers put down: no blob work at all
+        }
         let frame_ns = fr.host_ts_ns;
         let t0 = Instant::now();
         let rows = frame::tile_rows(Some(&m), fr.data, fr.stride);

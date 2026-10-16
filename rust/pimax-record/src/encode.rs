@@ -112,6 +112,72 @@ pub fn quality_args(enc: Encoder, codec: Codec, q: Quality) -> Vec<String> {
     }
 }
 
+/// PulseAudio source names (PipeWire's pulse server understands them): what the default output plays, and the default mic.
+pub const MONITOR_SRC: &str = "@DEFAULT_MONITOR@";
+pub const MIC_SRC: &str = "@DEFAULT_SOURCE@";
+
+/// The audio inputs (ffmpeg inputs 1 and 2): the output's monitor, then the mic. Empty without audio.
+pub fn audio_inputs(s: &Settings) -> Vec<String> {
+    let mut a = Vec::new();
+    if !s.audio {
+        return a;
+    }
+    let mut src = vec![MONITOR_SRC];
+    if s.mic {
+        src.push(MIC_SRC);
+    }
+    for d in src {
+        a.extend(["-thread_queue_size", "1024", "-f", "pulse", "-i", d].iter().map(|x| x.to_string()));
+    }
+    a
+}
+
+/// Stream mapping and the audio codec: AAC 160k stereo 48 kHz (both sources mixed at full level, not halved).
+pub fn audio_output(s: &Settings) -> Vec<String> {
+    let v = |x: &[&str]| x.iter().map(|y| y.to_string()).collect::<Vec<_>>();
+    if !s.audio {
+        return v(&["-map", "0:v:0", "-an"]);
+    }
+    let mut a = if s.mic {
+        v(&["-filter_complex", "[1:a][2:a]amix=inputs=2:duration=longest:normalize=0,aresample=async=1000,apad[a]", "-map", "0:v:0", "-map", "[a]"])
+    } else {
+        v(&["-af", "aresample=async=1000,apad", "-map", "0:v:0", "-map", "1:a:0"])
+    };
+    a.extend(v(&["-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2", "-shortest"]));
+    a
+}
+
+/// A 0.3 s test read of a PulseAudio source: Ok, or why it cannot be recorded.
+pub fn probe_audio(ffmpeg: &Path, src: &str) -> Result<(), String> {
+    let mut child = Command::new(ffmpeg)
+        .args(["-hide_banner", "-loglevel", "error", "-nostdin", "-f", "pulse", "-i", src, "-t", "0.3", "-f", "null", "-"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    let t = Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(st)) if st.success() => return Ok(()),
+            Ok(Some(_)) => {
+                let mut err = String::new();
+                if let Some(mut e) = child.stderr.take() {
+                    let _ = io::Read::read_to_string(&mut e, &mut err);
+                }
+                return Err(err.lines().last().unwrap_or("ffmpeg failed").trim().to_string());
+            }
+            Ok(None) if t.elapsed() > Duration::from_secs(4) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err("timed out".into());
+            }
+            Ok(None) => std::thread::sleep(Duration::from_millis(20)),
+            Err(e) => return Err(e.to_string()),
+        }
+    }
+}
+
 /// The full ffmpeg command line for raw RGBA `w`x`h` frames at `fps` on stdin -> `out`.
 pub fn ffmpeg_args(enc: Encoder, s: &Settings, w: u32, h: u32, out: &Path) -> Vec<String> {
     let mut a: Vec<String> = ["-hide_banner", "-loglevel", "warning", "-nostdin", "-y"].iter().map(|x| x.to_string()).collect();
@@ -127,13 +193,19 @@ pub fn ffmpeg_args(enc: Encoder, s: &Settings, w: u32, h: u32, out: &Path) -> Ve
             s.fps.to_string(),
             "-i".into(),
             "pipe:0".into(),
-            "-an".into(),
+        ]
+        .into_iter(),
+    );
+    a.extend(audio_inputs(s));
+    a.extend(
+        [
             "-c:v".into(),
             enc.name(s.codec).into(),
         ]
         .into_iter(),
     );
     a.extend(quality_args(enc, s.codec, s.quality));
+    a.extend(audio_output(s));
     a.extend(
         [
             "-pix_fmt".into(),
@@ -167,6 +239,8 @@ pub struct Ffmpeg {
     pub encoder: Encoder,
     pub out: PathBuf,
     pub frames: u64,
+    /// The sound input never ends by itself: `finish` ends ffmpeg with SIGINT soon after the video is in.
+    audio: bool,
 }
 
 impl Ffmpeg {
@@ -187,7 +261,7 @@ impl Ffmpeg {
         }
         let mut child = cmd.spawn()?;
         let stdin = child.stdin.take();
-        Ok(Ffmpeg { child, stdin, started: Instant::now(), encoder: enc, out: out.to_path_buf(), frames: 0 })
+        Ok(Ffmpeg { child, stdin, started: Instant::now(), encoder: enc, out: out.to_path_buf(), frames: 0, audio: s.audio })
     }
 
     /// Write one frame (blocks while ffmpeg is behind: the shared-memory ring then fills and the tap drops frames,
@@ -214,6 +288,8 @@ impl Ffmpeg {
         drop(self.stdin.take());
         let t0 = Instant::now();
         let mut sent_int = false;
+        // a live sound input never reaches its end: give the video 2 s to drain, then SIGINT (ffmpeg flushes and closes the file)
+        let grace = if self.audio { grace.min(Duration::from_secs(2)) } else { grace };
         loop {
             if let Ok(Some(st)) = self.child.try_wait() {
                 return if st.success() { "ok".into() } else { st.to_string() };
@@ -280,5 +356,27 @@ mod tests {
         assert!(j.contains("-movflags +frag_keyframe+empty_moov+default_base_moof -f mp4 /v/x.mp4"), "{j}");
         assert!(j.contains("-g 120"), "{j}");
         assert!(j.contains("-pix_fmt yuv420p"), "{j}");
+        // sound is on by default: the output's monitor mapped as the audio stream, AAC
+        assert!(j.contains("-f pulse -i @DEFAULT_MONITOR@"), "{j}");
+        assert!(j.contains("-map 0:v:0 -map 1:a:0 -c:a aac -b:a 160k -ar 48000 -ac 2 -shortest"), "{j}");
+        assert!(!j.contains("-an"), "{j}");
+    }
+
+    #[test]
+    fn audio_off_and_mic_on_change_the_inputs_and_the_mapping() {
+        let off = ffmpeg_args(Encoder::Cpu, &Settings { audio: false, ..Settings::default() }, 640, 480, Path::new("/v/x.mp4")).join(" ");
+        assert!(!off.contains("pulse") && off.contains("-map 0:v:0 -an"), "{off}");
+        let mic = ffmpeg_args(Encoder::Cpu, &Settings { mic: true, ..Settings::default() }, 640, 480, Path::new("/v/x.mp4")).join(" ");
+        assert!(mic.contains("-i @DEFAULT_MONITOR@") && mic.contains("-i @DEFAULT_SOURCE@"), "{mic}");
+        assert!(mic.contains("amix=inputs=2") && mic.contains("-map [a]"), "{mic}");
+        // the mic alone never exists: it is a mix with the output
+        let only_mic = audio_inputs(&Settings { audio: false, mic: true, ..Settings::default() });
+        assert!(only_mic.is_empty());
+    }
+
+    #[test]
+    fn the_default_high_quality_is_cq_20_with_a_50m_ceiling() {
+        let q = quality_args(Encoder::Nvenc, Codec::H264, Settings::default().quality).join(" ");
+        assert!(q.contains("-cq 20") && q.contains("-maxrate 50M"), "{q}");
     }
 }

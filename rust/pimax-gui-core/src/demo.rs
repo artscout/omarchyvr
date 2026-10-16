@@ -48,7 +48,7 @@ fn service_binary(slam: bool, eye: bool) -> Vec<u8> {
     }
     if eye {
         // the full build (.claude/CLAUDE.md section 3): eye, controllers, anchor, the IMU gate
-        b.extend_from_slice(b"PIMAX_EYE\0PIMAX_CTRL_TRACK\0origin_gate_mm\0PIMAX_ANCHOR\0");
+        b.extend_from_slice(b"PIMAX_EYE\0PIMAX_CTRL_TRACK\0origin_gate_mm\0PIMAX_ANCHOR\0PIMAX_CTRL_INHAND\0");
     }
     b
 }

@@ -12,6 +12,46 @@ use std::path::{Path, PathBuf};
 /// The conf.d file the launcher writes.
 pub const CONF_NAME: &str = "50-pimax-app.yaml";
 
+/// Number badges on the VR screens (`screen_numbers` of WayVR; numbering in docs/SCREENS.md: 1 main, 2 left, 3 right,
+/// 4 up, 5 up-left, 6 up-right).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ScreenNumbers {
+    /// Never shown.
+    Off,
+    /// Shown for about 5 s when a screen is added or moved, or when voice hears "Max" or a screen command.
+    #[default]
+    OnDemand,
+    /// Always shown.
+    Always,
+}
+
+impl ScreenNumbers {
+    /// The word in the settings file and in `wayvrctl screen-numbers`.
+    pub fn key(self) -> &'static str {
+        match self {
+            ScreenNumbers::Off => "off",
+            ScreenNumbers::OnDemand => "ondemand",
+            ScreenNumbers::Always => "always",
+        }
+    }
+    /// The word in WayVR's YAML.
+    pub fn yaml_key(self) -> &'static str {
+        match self {
+            ScreenNumbers::OnDemand => "on_demand",
+            o => o.key(),
+        }
+    }
+    /// Parse a settings word (`off`, `ondemand` / `on_demand` / `on-demand` / `on demand`, `always`).
+    pub fn parse(v: &str) -> Option<ScreenNumbers> {
+        match v.trim().to_lowercase().replace(['_', '-', ' '], "").as_str() {
+            "off" | "false" | "no" | "never" => Some(ScreenNumbers::Off),
+            "ondemand" | "demand" | "auto" => Some(ScreenNumbers::OnDemand),
+            "always" | "on" | "true" | "yes" => Some(ScreenNumbers::Always),
+            _ => None,
+        }
+    }
+}
+
 /// The settings (defaults = what the launcher writes without them).
 #[derive(Debug, Clone, PartialEq)]
 pub struct WayvrSettings {
@@ -47,6 +87,9 @@ pub struct WayvrSettings {
     /// Debug: axes at each controller's aim (ray origin) and grip pose (`controller_axes`; red X, green Y, blue =
     /// ray direction), to check in the headset that the ray leaves the controller tip.
     pub controller_axes: bool,
+    /// Number badges (1-6) at the top centre of each VR screen: off, on demand (default) or always
+    /// (`screen_numbers`; `wayvrctl screen-numbers ...` changes it in a running session).
+    pub screen_numbers: ScreenNumbers,
     /// The screen the voice captions sit under (`PIMAX_CAPTIONS_SCREEN` for WayVR; None = the first screen).
     pub captions_screen: Option<String>,
 }
@@ -68,6 +111,7 @@ impl Default for WayvrSettings {
             controllers_in_work: false,
             controller_models: true,
             controller_axes: false,
+            screen_numbers: ScreenNumbers::OnDemand,
             captions_screen: None,
         }
     }
@@ -135,6 +179,10 @@ impl WayvrSettings {
                 "grab_size_max" => s.grab_size_max = f(&mut warn).unwrap_or(s.grab_size_max),
                 "grab_dist_min" => s.grab_dist_min = f(&mut warn).unwrap_or(s.grab_dist_min),
                 "grab_dist_max" => s.grab_dist_max = f(&mut warn).unwrap_or(s.grab_dist_max),
+                "screen_numbers" => match ScreenNumbers::parse(v) {
+                    Some(m) => s.screen_numbers = m,
+                    None => warn.push(format!("line {}: screen_numbers wants off, ondemand or always, not {v:?}", n + 1)),
+                },
                 "captions_screen" => s.captions_screen = Some(v.to_string()).filter(|x| !x.is_empty()),
                 _ => warn.push(format!("line {}: unknown key {k}", n + 1)),
             }
@@ -159,6 +207,7 @@ impl WayvrSettings {
         o += &format!("controllers_in_work = {}\n", self.controllers_in_work);
         o += &format!("controller_models = {}\n", self.controller_models);
         o += &format!("controller_axes = {}\n", self.controller_axes);
+        o += &format!("screen_numbers = {}\n", self.screen_numbers.key());
         if let Some(s) = &self.captions_screen {
             o += &format!("captions_screen = {s}\n");
         }
@@ -204,7 +253,7 @@ impl WayvrSettings {
              world_lock_grab: {}\nworld_lock_pin: {}\ngrab_keep_apparent_size: {}\ngrab_dist_rate: {:.3}\n\
              grab_size_min: {:.3}\ngrab_size_max: {:.3}\ngrab_dist_min: {:.3}\ngrab_dist_max: {:.3}\n\
              enable_keyboard: {}\ngaze_pointer: {}\nhide_grab_help: {}\ncontrollers_in_work: {}\n\
-             show_controller_models: {}\ncontroller_axes: {}\n",
+             show_controller_models: {}\ncontroller_axes: {}\nscreen_numbers: {}\n",
             self.world_lock_grab,
             self.world_lock_pin,
             self.grab_keep_apparent_size,
@@ -218,7 +267,8 @@ impl WayvrSettings {
             self.hide_grab_help,
             self.controllers_in_work,
             self.controller_models,
-            self.controller_axes
+            self.controller_axes,
+            self.screen_numbers.yaml_key()
         )
     }
 }
@@ -281,6 +331,12 @@ mod tests {
         assert!(y.contains("show_controller_models: true\n") && y.contains("controller_axes: false\n"));
         let (m, w) = WayvrSettings::parse("controller_models = off\ncontroller_axes = on\n");
         assert!(w.is_empty() && !m.controller_models && m.controller_axes);
+        assert!(y.contains("screen_numbers: on_demand\n"), "default: on demand");
+        let (m, w) = WayvrSettings::parse("screen_numbers = always\n");
+        assert!(w.is_empty() && m.screen_numbers == ScreenNumbers::Always && m.yaml().contains("screen_numbers: always\n"));
+        assert_eq!(WayvrSettings::parse(&m.render()).0, m);
+        assert_eq!(ScreenNumbers::parse("On demand"), Some(ScreenNumbers::OnDemand));
+        assert_eq!(WayvrSettings::parse("screen_numbers = maybe\n").1.len(), 1);
         let (_, w) = WayvrSettings::parse("bogus = 1\ngaze_pointer = maybe\ngrab_dist_max = nan\nnoequals\n");
         assert_eq!(w.len(), 4, "{w:?}");
         assert_eq!(settings_path(&|k| (k == "HOME").then(|| "/home/u".to_string())), PathBuf::from("/home/u/.config/pimax/wayvr-desk.conf"));

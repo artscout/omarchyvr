@@ -87,6 +87,9 @@ pub struct Tracker {
     frame_no: u64,
     body: Body,
     pub stats: Stats,
+    /// Slots to look for (left, right). A controller put down (Monado's PIMAX_CTRL_INHAND status) is neither tracked
+    /// nor searched, and fixes assigned to it are dropped: less CPU, and its LEDs on the desk are never published.
+    pub wanted: [bool; 2],
 }
 
 /// One tracked hand this frame.
@@ -121,6 +124,7 @@ impl Tracker {
             frame_no: 0,
             body: Body::default(),
             stats: Stats::default(),
+            wanted: [true, true],
         }
     }
 
@@ -264,6 +268,10 @@ impl Tracker {
         let mut used: Vec<Vec<bool>> = obs.iter().map(|o| vec![false; o.px.len()]).collect();
         let mut tracked: Vec<(usize, Found, bool)> = Vec::new();
         for slot in 0..2 {
+            if !self.wanted[slot] {
+                self.prev[slot] = None;
+                continue;
+            }
             let Some(st) = self.prev[slot] else { continue };
             self.stats.tries += 1;
             if let Some((f, few)) = self.track_slot(rig, &obs, &used, &st, frame_ns) {
@@ -305,7 +313,8 @@ impl Tracker {
         // every third LED frame (CPU)
         let idle = tracked.is_empty() && frame_ns.saturating_sub(self.last_fix_ns) > 2_000_000_000;
         let mut searched = Vec::new();
-        if tracked.len() < 2 && (!idle || self.frame_no % 3 == 0) {
+        let missing = (0..2).any(|s| self.wanted[s] && !tracked.iter().any(|(t, _, _)| *t == s));
+        if missing && (!idle || self.frame_no % 3 == 0) {
             let pre: Vec<Found> = tracked.iter().map(|(_, f, _)| f.clone()).collect();
             let got = solve_frame(
                 lf,
@@ -341,6 +350,9 @@ impl Tracker {
             };
             self.stats.unassigned += (got.len() - assigned.len()) as u64;
             for (ci, slot) in assigned {
+                if !self.wanted[slot] {
+                    continue;
+                }
                 searched.push(slot);
                 tracked.push((slot, got[ci].clone(), false));
             }

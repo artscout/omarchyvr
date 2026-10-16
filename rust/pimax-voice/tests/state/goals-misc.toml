@@ -1,0 +1,95 @@
+# Sound, music, view, recording and the rest: one state change each, nothing else.
+
+[[goal]]
+id = "volume-up"
+why = "Louder; nothing else."
+expect = ["volume up"]
+worlds = { easy = "e1", medium = "m4", hard = "h6" }
+says = ["turn the volume up", "make it louder", "volumes up"]
+
+[[goal]]
+id = "volume-30"
+why = "Volume to 30 percent."
+expect = ["volume 30"]
+worlds = { easy = "e1", medium = "m4", hard = "h6" }
+says = ["set the volume to 30 percent", "volume thirty"]
+
+[[goal]]
+id = "mute"
+why = "Sound off."
+expect = ["muted"]
+worlds = { easy = "e1", medium = "m4", hard = "h6" }
+says = ["mute", "mute the sound please"]
+
+[[goal]]
+id = "next-song"
+why = "The next track."
+expect = ["music next"]
+worlds = { easy = "e1", medium = "m4", hard = "h6" }
+set = { easy = { music = "playing" }, medium = { music = "playing" }, hard = { music = "playing" } }
+says = ["next song", "skip this song", "necks song"]
+
+[[goal]]
+id = "passthrough-on"
+why = "See the room again."
+expect = ["passthrough normal"]
+worlds = { easy = "e1", medium = "mcin", hard = "h6c" }
+set = { easy = { passthrough = "off" }, medium = { passthrough = "off" }, hard = { passthrough = "off" } }
+says = ["let me see my room", "passthrough on", "pass through on please"]
+
+[[goal]]
+id = "dim-room"
+why = "A darker view of the room."
+expect = ["darker"]
+worlds = { easy = "e1", medium = "m4", hard = "h6" }
+says = ["dim the room a bit", "make the room darker"]
+
+[[goal]]
+id = "sky"
+why = "The sky background."
+expect = ["skybox default"]
+worlds = { easy = "e1", medium = "m4", hard = "h6" }
+says = ["sky background", "put the sky behind the screens"]
+
+[[goal]]
+id = "captions-off"
+why = "Captions off."
+expect = ["captions off"]
+worlds = { easy = "e1", medium = "m4", hard = "h6" }
+says = ["captions off", "hide the captions"]
+
+[[goal]]
+id = "record-start"
+why = "Start recording the headset view."
+expect = ["recording on"]
+worlds = { easy = "e1", medium = "m4", hard = "h6" }
+says = ["start recording", "record this"]
+
+[[goal]]
+id = "record-stop"
+why = "Stop recording."
+expect = ["recording off"]
+worlds = { easy = "e1", medium = "m4", hard = "h6" }
+set = { easy = { recording = true }, medium = { recording = true }, hard = { recording = true } }
+says = ["stop recording", "stop the recording please"]
+
+[[goal]]
+id = "reminder"
+why = "A reminder in 10 minutes."
+expect = ["event reminder 10"]
+worlds = { easy = "e1", medium = "m4", hard = "h6" }
+says = ["remind me in 10 minutes to stretch", "set a reminder in ten minutes to stretch"]
+
+[[goal]]
+id = "fps"
+why = "The performance counter on."
+expect = ["fps on"]
+worlds = { easy = "e1", medium = "m4", hard = "h6" }
+says = ["show fps", "show the performance"]
+
+[[goal]]
+id = "assistant"
+why = "Assistant mode: every screen on demand and captions."
+expect = ["preset assistant", "all stay"]
+worlds = { easy = "e3", medium = "mcin", hard = "h6c" }
+says = ["turn on assistant mode", "go into assistant mode"]

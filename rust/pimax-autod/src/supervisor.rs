@@ -9,7 +9,7 @@ use pimax_components::reconcile::{reconcile, Plan, Step};
 use pimax_components::state::{Notice, Outcome, World};
 use pimax_components::util::{write_atomic, Roots};
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// How a process was started (captured from /proc while it ran), so a crashed leaf restarts the same way.
 #[derive(Debug, Clone, PartialEq)]
@@ -217,6 +217,12 @@ impl Supervisor {
     }
 }
 
+/// ai.toml's `voice_local_models` (None: not set or no file).
+pub fn local_models_switch(ai_toml: &Path) -> Option<bool> {
+    let text = std::fs::read_to_string(ai_toml).ok()?;
+    pimax_config::ai::AiConfig::parse(&text).ok()?.voice_local_models
+}
+
 /// What a launcher start (`<session dir>/start-argv.txt`: kind, args) asks for. The argv is authoritative for the
 /// launcher's own flags (an absent opt-in flag means off); what the launcher has no flag for (ai_server,
 /// floor_follow, eye_laser) comes from `base` (pimaxd.toml).
@@ -270,13 +276,15 @@ pub fn desired_from_argv(kind: &str, args: &[String], base: &pimax_components::m
 pub struct Files {
     pub dir: PathBuf,
     pub safe_flag: PathBuf,
+    /// ai.toml: "Local models: On / Off" decides whether ai.server is wanted in Work (the app's Local AI page).
+    pub ai_toml: PathBuf,
     last_intent: String,
     last_gate: String,
 }
 
 impl Files {
     pub fn new(r: &Roots) -> Files {
-        Files { dir: r.pimaxd_dir(), safe_flag: r.config.join("safe-mode"), last_intent: String::new(), last_gate: String::new() }
+        Files { dir: r.pimaxd_dir(), safe_flag: r.config.join("safe-mode"), ai_toml: r.config.join("ai.toml"), last_intent: String::new(), last_gate: String::new() }
     }
     pub fn gate_path(&self) -> PathBuf {
         self.dir.join("gpu-gate")
@@ -286,6 +294,10 @@ impl Files {
     /// the intent (at start-up).
     pub fn load(&mut self, w: &mut World, startup: bool) {
         w.safe_mode = self.safe_flag.exists();
+        // the app's "Local models" switch (when set) wins over pimaxd.toml's ai_server
+        if let Some(on) = local_models_switch(&self.ai_toml) {
+            w.desired.ai_server = on;
+        }
         let disk = Gate::load(&self.gate_path(), &w.gate.boot_id);
         if disk.level > w.gate.level {
             let why = disk.evidence.last().cloned().unwrap_or_else(|| "latched by the launcher".into());

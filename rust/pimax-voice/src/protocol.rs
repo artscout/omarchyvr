@@ -81,6 +81,9 @@ pub enum Command {
     /// Stop feeding audio to the recogniser (the open segment is dropped).
     Pause,
     Resume,
+    /// The finals said before the first command client was there (sent once, to the first client asking;
+    /// `pimax-voice act` asks when it starts: it starts ~12 s after the listener, live 2026-10-16).
+    Backlog,
 }
 
 #[derive(Serialize)]

@@ -52,7 +52,12 @@ const HELP: &str = "pimax-voice <command> [options]   local voice-to-text (nothi
       the built-in tests/fixtures/aibench.tsv, real and mangled transcripts) through the full route (matcher,
       fuzzy, model), nothing executed (hyprctl/gaze are read live). Prints accuracy, asks, wrong actions and
       p50/p95 latency (end of transcript -> decision). --url: another local server (.../v1/chat/completions).
-  audit [--out FILE.html] [--live] [--json-out FILE] [--label TEXT] [--url URL] [--pause-ms 1000] [--remote [--max 40] [--action-model M]] [--log]
+  audit --state [--variant NAME|FILE] [--subset N --seed S] [--split dev|held|all] [--tier T] [--only TEXT] [--no-ai] [--list] [--snapshot]
+      THE QUALITY MEASURE: each case starts from a desk state (screens, apps, tabs, gaze), runs the words through the
+      whole pipeline against a simulator of that desk and is scored on the end state reached, nothing else changed
+      (docs/VOICE-STATE-TESTS.md). Writes analysis/voice-state-audit.html, appends analysis/voice-experiments.csv.
+  audit [--out FILE.html] [--live] [--json-out FILE] [--label TEXT] [--url URL] [--pause-ms 1000] [--remote [--max 40] [--action-model M]] [--hard [--max 40]] [--log]
+      A fast SMOKE TEST of intent names (not the quality measure: see audit --state).
       every intent: its first catalogue phrase, an ASR-mangled copy and the natural phrasings of
       tests/fixtures/audit.tsv through the full route (exact, fuzzy, model) in dry run; pass / ask / fail, slots,
       latency, as an HTML page; --pause-ms between model requests (keeps the CPU free). --live also types for real
@@ -60,6 +65,15 @@ const HELP: &str = "pimax-voice <command> [options]   local voice-to-text (nothi
       --remote: ai.toml's remote voice provider (two stages): only the phrases the matcher leaves to the model, at
       most --max (40) spread over the intents, paced by --pause-ms; prints the pass rate, p50/p95 latency and the
       total cost (usage.cost). Dry run: nothing is executed, typed or clicked; --live is refused.
+      --hard: the same selection of phrases for any provider (the local two-stage benchmark, docs/AI.md 16).
+  routerbench [--fixture FILE.tsv] [--hard] [--max N] [--label held-out] [--out TRAIN.jsonl]
+      stage 1 only: ai.toml's two-stage router (Lara, port 8081, or PIMAX_AI_ROUTER_BASE) classifies every
+      audit phrase; prints top-1 accuracy, how often the right category is among the ones the act request gets,
+      the matcher's own guess for comparison, and p50/p95 latency. Nothing runs. --label held-out: only the
+      natural phrasings (not in the training rows); --out: write Laya training rows from the catalogue instead.
+  ai-mode [local-toggle|local-on|local-off|preset-next|low|medium|high|next|simple|two-stage|online|show]
+      AI runs on (the Work desk watch's AI button): saves it in ai.toml ([use] voice and voice_local only),
+      starts the local AI in that shape (pimax-ai up) and prints the mode; a running act switches by itself.
   aiprompt WORDS...                      print the compact model request for these words (no live context)
   bench [--clips DIR] [--threads 1,2,4] [--partial-ms 640,0] [--out FILE.md] [--gap 1.5] [--noise 0.002]
       the pipeline on the voicebench clips, in real time through the live driver: end of speech -> final, CPU
@@ -73,7 +87,11 @@ engine and VAD options (listen, transcribe, bench):
   one long utterance in the bench
   --endpoint-ms 480 (silence that ends an utterance)  --partial-ms 640 (0 = no partials)  --max-s 20
   --intents FILE.json|none (extra command rules; built-in: hud.clear, vr.recenter)
-  --engine parakeet|whisper  (whisper needs a build with --features whisper: --whisper-model FILE [--gpu] [--lang en])
+  --engine auto|parakeet|whisper-server|whisper   (default auto: ai.toml's `asr`, set on the app's Local AI page)
+      auto = Parakeet on the processor (with hotwords; --no-hotwords turns them off) or, when asr is auto/gpu, the
+      large Whisper on the GPU through whisper-server (--asr-port 8082, --asr-timeout-ms 4000) with Parakeet as the
+      fallback while the server is down. whisper = in-process whisper.cpp (needs a build with --features whisper:
+      --whisper-model FILE [--gpu] [--lang en])
 environment: PIMAX_VOICE_SOCKET overrides the socket path.";
 
 static STOP: AtomicBool = AtomicBool::new(false);
@@ -118,6 +136,9 @@ struct Opts {
     max_s: u32,
     intents: Option<String>,
     engine: String,
+    no_hotwords: bool,
+    asr_port: u16,
+    asr_timeout_ms: u64,
     whisper_model: Option<PathBuf>,
     gpu: bool,
     lang: Option<String>,
@@ -140,6 +161,8 @@ struct Opts {
     live: bool,
     /// audit: only phrases the remote provider gets (at most `max`), dry run
     remote: bool,
+    /// audit --hard: only the phrases the matcher leaves to the model (the remote benchmark's 40), any provider.
+    hard: bool,
     max: Option<usize>,
     /// audit: keep ai.log (requests, answers, costs; keys redacted)
     log: bool,
@@ -186,7 +209,10 @@ fn parse(args: &[String]) -> Result<Opts, String> {
         partial_ms: vec![640],
         max_s: 20,
         intents: None,
-        engine: "parakeet".into(),
+        engine: "auto".into(),
+        no_hotwords: false,
+        asr_port: pimax_config::ai::ASR_PORT,
+        asr_timeout_ms: 4000,
         whisper_model: None,
         gpu: false,
         lang: None,
@@ -208,6 +234,7 @@ fn parse(args: &[String]) -> Result<Opts, String> {
         fixture: None,
         live: false,
         remote: false,
+        hard: false,
         max: None,
         log: false,
         action_model: None,
@@ -254,6 +281,9 @@ fn parse(args: &[String]) -> Result<Opts, String> {
             "--max-s" => o.max_s = val(a)?.parse().map_err(|_| "bad --max-s")?,
             "--intents" => o.intents = Some(val(a)?),
             "--engine" => o.engine = val(a)?,
+            "--no-hotwords" => o.no_hotwords = true,
+            "--asr-port" => o.asr_port = val(a)?.parse().map_err(|_| "bad --asr-port")?,
+            "--asr-timeout-ms" => o.asr_timeout_ms = val(a)?.parse().map_err(|_| "bad --asr-timeout-ms")?,
             "--whisper-model" => o.whisper_model = Some(PathBuf::from(val(a)?)),
             "--gpu" => o.gpu = true,
             "--lang" => o.lang = Some(val(a)?),
@@ -277,6 +307,7 @@ fn parse(args: &[String]) -> Result<Opts, String> {
             "--fixture" => o.fixture = Some(PathBuf::from(val(a)?)),
             "--live" => o.live = true,
             "--remote" => o.remote = true,
+            "--hard" => o.hard = true,
             "--log" => o.log = true,
             "--action-model" => o.action_model = Some(val(a)?),
             "--max" => o.max = Some(val(a)?.parse().map_err(|_| "--max N")?),
@@ -297,12 +328,44 @@ fn parse(args: &[String]) -> Result<Opts, String> {
     Ok(o)
 }
 
+fn parakeet_spec(o: &Opts, threads: i32, hotwords: bool) -> EngineSpec {
+    EngineSpec::Parakeet {
+        lib: o.lib.clone(),
+        model_dir: o.model.clone(),
+        threads,
+        hotwords: (hotwords && !o.no_hotwords).then_some(pimax_voice::engine::HOTWORD_SCORE),
+    }
+}
+
+/// What `--engine auto` means: ai.toml's `asr` (Auto / Small / Large) and the Local models switch.
+fn auto_engine(o: &Opts, threads: i32) -> EngineSpec {
+    let cfg = pimax_config::ai::AiConfig::load().unwrap_or_default();
+    let large = match cfg.asr {
+        pimax_config::ai::Asr::Cpu => false,
+        pimax_config::ai::Asr::Gpu => true,
+        // Auto: the large model belongs to the local models (Work only); without them there is no server to ask
+        pimax_config::ai::Asr::Auto => cfg.local_models_on(),
+    };
+    let cpu = parakeet_spec(o, threads, true);
+    if large {
+        EngineSpec::WhisperServer {
+            port: o.asr_port,
+            timeout_ms: o.asr_timeout_ms,
+            fallback: Box::new(cpu),
+        }
+    } else {
+        cpu
+    }
+}
+
 fn engine_spec(o: &Opts, threads: i32) -> Result<EngineSpec, String> {
     match o.engine.as_str() {
-        "parakeet" => Ok(EngineSpec::Parakeet {
-            lib: o.lib.clone(),
-            model_dir: o.model.clone(),
-            threads,
+        "auto" => Ok(auto_engine(o, threads)),
+        "parakeet" => Ok(parakeet_spec(o, threads, true)),
+        "whisper-server" => Ok(EngineSpec::WhisperServer {
+            port: o.asr_port,
+            timeout_ms: o.asr_timeout_ms,
+            fallback: Box::new(parakeet_spec(o, threads, true)),
         }),
         #[cfg(feature = "whisper")]
         "whisper" => {
@@ -323,7 +386,7 @@ fn engine_spec(o: &Opts, threads: i32) -> Result<EngineSpec, String> {
             let _ = (&o.whisper_model, o.gpu, &o.lang);
             Err("this build has no whisper engine (cargo build --features whisper)".into())
         }
-        other => Err(format!("unknown engine {other:?} (parakeet, whisper)")),
+        other => Err(format!("unknown engine {other:?} (auto, parakeet, whisper-server, whisper)")),
     }
 }
 
@@ -386,6 +449,7 @@ fn load_intents(o: &Opts) -> Result<Intents, String> {
 fn cmd_listen(o: &Opts) -> Result<(), String> {
     install_signals();
     let spec = engine_spec(o, o.threads[0])?;
+    eprintln!("pimax-voice: engine: {} (--engine {})", spec.name(), o.engine);
     let vad = make_vad(o)?;
     let core = Core::new(vad, seg_config(o, o.partial_ms[0]));
     let vad_name = core.vad_name();
@@ -656,35 +720,7 @@ fn actor(o: &Opts) -> Result<Actor, String> {
     }
     // the AI agent with tools: ~/.config/pimax/ai.toml (voice_ai = off | fallback | always; no file = off)
     let ai_toml = pimax_config::ai::default_path().unwrap_or_else(pimax_voice::llm::ai_path);
-    let wv = a.wayvrctl.clone();
-    let mut debug_cfg = true;
-    match pimax_voice::agent::Agent::from_ai_toml(&ai_toml, &a.cat, &wv) {
-        Ok(Some(ag)) => {
-            debug_cfg = ag.settings.debug;
-            eprintln!(
-                "voice: AI agent: {} ({}, {}, {} tools, ask below {:.0}% confidence, debug {})",
-                ag.provider.describe(),
-                ag.settings.mode.id(),
-                match ag.style() {
-                    pimax_voice::agent::Style::Compact => "compact".to_string(),
-                    pimax_voice::agent::Style::Tools => "tool calling".to_string(),
-                    pimax_voice::agent::Style::TwoStage => format!(
-                        "two stages: classify, then act with the category's tools; fallback {}",
-                        ag.fallback.as_ref().map(|f| f.describe()).unwrap_or_else(|| "the matcher".into())
-                    ),
-                },
-                ag.tools.len(),
-                ag.settings.confidence * 100.0,
-                if ag.settings.debug { "on" } else { "off" }
-            );
-            if !o.dry_run {
-                ag.warm_up();
-            }
-            a.agent = Some(ag);
-        }
-        Ok(None) => eprintln!("voice: AI agent off ({})", ai_toml.display()),
-        Err(e) => eprintln!("voice: AI agent off: {}", pimax_voice::agent::redact(&e)),
-    }
+    let debug_cfg = load_agent(&mut a, &ai_toml, o.dry_run);
     // the debug line under the captions: "Max, debug on/off" wins over voice_ai_debug
     a.debug = act::debug_enabled(debug_cfg);
     // voice_confirm (none by default: every command runs at once; everything is logged)
@@ -711,6 +747,159 @@ fn runner(o: &Opts, a: &Actor) -> Box<dyn Runner> {
     }
 }
 
+/// (Re)load the AI agent from ai.toml into the actor; returns `voice_ai_debug`. Used at start and whenever the file
+/// changes (the app's or the watch's "AI runs on" switch): between two commands, so nothing in flight is cut.
+fn load_agent(a: &mut Actor, ai_toml: &std::path::Path, dry_run: bool) -> bool {
+    let wv = a.wayvrctl.clone();
+    let mut debug_cfg = true;
+    a.agent = None;
+    match pimax_voice::agent::Agent::from_ai_toml(ai_toml, &a.cat, &wv) {
+        Ok(Some(ag)) => {
+            debug_cfg = ag.settings.debug;
+            eprintln!(
+                "voice: AI agent: {} [{}] ({}, {}, {} tools, ask below {:.0}% confidence, debug {})",
+                ag.describe(),
+                ag.mode_label(),
+                ag.settings.mode.id(),
+                match ag.style() {
+                    pimax_voice::agent::Style::Compact => "compact".to_string(),
+                    pimax_voice::agent::Style::Tools => "tool calling".to_string(),
+                    pimax_voice::agent::Style::TwoStage => format!(
+                        "two stages: classify, then act with the category's tools; fallback {}",
+                        ag.fallback.as_ref().map(|f| f.describe()).unwrap_or_else(|| "the matcher".into())
+                    ),
+                },
+                ag.tools.len(),
+                ag.settings.confidence * 100.0,
+                if ag.settings.debug { "on" } else { "off" }
+            );
+            if !dry_run {
+                ag.warm_up();
+            }
+            a.agent = Some(ag);
+        }
+        Ok(None) => eprintln!("voice: AI agent off ({})", ai_toml.display()),
+        Err(e) => eprintln!("voice: AI agent off: {}", pimax_voice::agent::redact(&e)),
+    }
+    debug_cfg
+}
+
+/// The watch's "AI runs on" row (WayVR, Work desk): shown, with the current mode and, with two stages, the router
+/// and action model buttons. In the background (wayvrctl).
+fn watch_ai_label(wayvrctl: Option<&str>, text: &str) {
+    let Some(wv) = wayvrctl.map(str::to_string) else { return };
+    let cfg = pimax_config::ai::AiConfig::load().unwrap_or_default();
+    let cmds = watch_commands(text, &cfg);
+    std::thread::spawn(move || {
+        for args in cmds {
+            let _ = std::process::Command::new(&wv).args(&args).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).status();
+        }
+    });
+}
+
+/// The wayvrctl commands of [`watch_ai_label`].
+fn watch_commands(_text: &str, cfg: &pimax_config::ai::AiConfig) -> Vec<Vec<String>> {
+    use pimax_config::ai::RunsOn;
+    let online = cfg.runs_on() == RunsOn::Online;
+    let on = cfg.local_models_on() && !online && cfg.voice_ai != pimax_config::ai::VoiceAi::Off;
+    let mode = if online { "AI: Online".to_string() } else { format!("Local AI: {}", if on { "On" } else { "Off" }) };
+    let preset = cfg.preset().map(|p| p.name()).unwrap_or("Custom");
+    let m = |el: &str, rest: &[&str]| {
+        let mut v: Vec<String> = ["panel-modify", "watch", el].iter().map(|s| s.to_string()).collect();
+        v.extend(rest.iter().map(|s| s.to_string()));
+        v
+    };
+    vec![
+        m("btn_ai_mode", &["set-text", "--", &mode]),
+        m("btn_ai_preset", &["set-text", "--", preset]),
+        m("pimax_ai_models", &["set-visible", if on { "1" } else { "0" }]),
+        m("pimax_ai_root", &["set-visible", "1"]),
+    ]
+}
+
+fn mtime(p: &std::path::Path) -> Option<std::time::SystemTime> {
+    std::fs::metadata(p).and_then(|m| m.modified()).ok()
+}
+
+/// `pimax-voice ai-mode [next|simple|two-stage|online|show]`: the watch button's command. Saves "AI runs on" in
+/// ai.toml (`[use] voice` and `voice_local` only; keys untouched), brings the local AI to that shape
+/// (`pimax-ai up`, detached), and prints the new mode. The running `act` sees the file change by itself.
+fn cmd_ai_mode(o: &Opts) -> Result<(), String> {
+    use pimax_config::ai::{AiConfig, RunsOn};
+    let path = pimax_config::ai::default_path().ok_or("no HOME")?;
+    let mut cfg = AiConfig::load_from(&path)?;
+    let arg = o.positional.first().map(String::as_str).unwrap_or("show");
+    if arg == "show" {
+        println!("AI: {}", cfg.runs_on().short());
+        return Ok(());
+    }
+    let (want, note) = ai_mode_apply(&mut cfg, arg)?;
+    if o.dry_run {
+        println!("dry run: ai.toml not written; would be AI: {}", want.short());
+        return Ok(());
+    }
+    cfg.save_to(&path)?;
+    if want != RunsOn::Online && cfg.local_models_on() {
+        // the local AI follows (detached: the watch button returns at once)
+        let _ = std::process::Command::new("pimax-ai").arg("up").stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn();
+    }
+    if let Some(n) = note {
+        println!("{n}");
+    }
+    println!("AI: {}", want.short());
+    Ok(())
+}
+
+/// `ai-mode ARG` on the config: next | simple | two-stage | online | router-next | action-next. Returns the mode and
+/// a line about a changed model. Only `[use] voice`, `voice_local` and `[local_two_stage]` change.
+fn ai_mode_apply(cfg: &mut pimax_config::ai::AiConfig, arg: &str) -> Result<(pimax_config::ai::RunsOn, Option<String>), String> {
+    use pimax_config::ai::RunsOn;
+    let mut note = None;
+    let online = cfg.runs_on() == RunsOn::Online;
+    match arg {
+        // the watch (user decision 2026-10-16): Local AI On / Off and Low / Medium / High
+        "local-toggle" | "local-on" | "local-off" => {
+            let on = match arg {
+                "local-on" => true,
+                "local-off" => false,
+                _ => !(cfg.local_models_on() && !online),
+            };
+            cfg.set_local_models(on, false)?;
+            return Ok((cfg.runs_on(), Some(format!("Local AI: {}", if on { "On" } else { "Off" }))));
+        }
+        "preset-next" | "low" | "medium" | "high" => {
+            let p = match pimax_config::ai::Preset::parse(arg) {
+                Some(p) => p,
+                None => cfg.preset().unwrap_or(pimax_config::ai::Preset::Medium).next(),
+            };
+            cfg.set_preset(p);
+            if !cfg.local_models_on() || online {
+                cfg.set_local_models(true, false)?;
+            }
+            return Ok((cfg.runs_on(), Some(format!("Local AI: {}", p.name()))));
+        }
+        _ => {}
+    }
+    let want = match arg {
+        "next" => cfg.next_runs_on(),
+        "router-next" | "action-next" => {
+            // the next router / action model of the two-stage lists (the watch's model buttons)
+            let router = arg == "router-next";
+            let list: &[pimax_config::ai::LocalModel] = if router { &pimax_config::ai::ROUTER_MODELS } else { &pimax_config::ai::ACTION_MODELS };
+            let t = cfg.local_two_stage.get_or_insert_with(Default::default);
+            let cur = if router { &mut t.router } else { &mut t.action };
+            let i = list.iter().position(|m| m.id == cur.as_str()).unwrap_or(0);
+            *cur = list[(i + 1) % list.len()].id.to_string();
+            let label = pimax_config::ai::local_model(cur).map(|m| m.label).unwrap_or("");
+            note = Some(format!("{}: {label}", if router { "router" } else { "action model" }));
+            cfg.runs_on()
+        }
+        x => RunsOn::parse(x).ok_or_else(|| format!("ai-mode {x}: local-toggle, local-on, local-off, preset-next, low, medium, high, next, simple, two-stage, online, router-next, action-next or show"))?,
+    };
+    cfg.set_runs_on(want)?;
+    Ok((want, note))
+}
+
 /// Voice commands from the listener's final transcripts.
 fn cmd_act(o: &Opts) -> Result<(), String> {
     use std::time::{Duration, Instant};
@@ -718,9 +907,29 @@ fn cmd_act(o: &Opts) -> Result<(), String> {
     let mut r = runner(o, &a);
     let path = socket(o);
     let (tx, rx) = mpsc::channel::<Event>();
+    // "Max, cancel" / "stop" while a task of several steps runs: the task stops before its next step, and the words
+    // never reach the command loop (they are no new goal)
+    let (busy, cancel, wake) = (a.task_busy.clone(), a.task_cancel.clone(), a.cat.wake.words.clone());
+    // the first connection asks for the finals said before act was there (it starts ~12 s after the listener; the
+    // first command of the live session 2026-10-16 was lost so); a reconnect never replays
+    let mut first = true;
     std::thread::spawn(move || loop {
         let tx2 = tx.clone();
-        let _ = server::subscribe(&path, move |e| tx2.send(e).is_ok());
+        let (busy, cancel, wake) = (busy.clone(), cancel.clone(), wake.clone());
+        let ask = if first { Some(Command::Backlog) } else { None };
+        let r = server::subscribe_with(&path, ask, move |e| {
+            if let Event::Final { text, .. } = &e {
+                if busy.load(Ordering::SeqCst) && pimax_voice::command::is_cancel(text, &wake) {
+                    cancel.store(true, Ordering::SeqCst);
+                    eprintln!("voice: {text:?} -> cancel the running task");
+                    return true;
+                }
+            }
+            tx2.send(e).is_ok()
+        });
+        if r.is_ok() {
+            first = false;
+        }
         if tx.send(Event::Pong).is_err() {
             break;
         }
@@ -732,7 +941,32 @@ fn cmd_act(o: &Opts) -> Result<(), String> {
         a.cat.enabled().count(),
         if o.dry_run { ", DRY RUN" } else { "" }
     );
+    let ai_toml = pimax_config::ai::default_path().unwrap_or_else(pimax_voice::llm::ai_path);
+    let mut seen = mtime(&ai_toml);
+    let mut checked = Instant::now();
+    let label = |a: &Actor| format!("AI: {}", a.agent.as_ref().map(|g| g.mode_label()).unwrap_or("off"));
+    if !o.dry_run {
+        watch_ai_label(Some(a.wayvrctl.as_str()), &label(&a));
+    }
     while !STOP.load(Ordering::Relaxed) {
+        // "AI runs on" switched (app or watch): a new agent between two commands
+        if checked.elapsed() >= Duration::from_secs(2) {
+            checked = Instant::now();
+            let m = mtime(&ai_toml);
+            if m != seen {
+                seen = m;
+                let before = a.agent.as_ref().map(|g| g.mode_label());
+                a.debug = act::debug_enabled(load_agent(&mut a, &ai_toml, o.dry_run));
+                let now = label(&a);
+                eprintln!("voice: ai.toml changed: {now}");
+                if before != a.agent.as_ref().map(|g| g.mode_label()) {
+                    r.toast(&now);
+                }
+                if !o.dry_run {
+                    watch_ai_label(Some(a.wayvrctl.as_str()), &now);
+                }
+            }
+        }
         match rx.recv_timeout(Duration::from_millis(250)) {
             Ok(Event::Final { text, .. }) => {
                 if let Some(id) = a.hear(&text, Instant::now(), r.as_mut()) {
@@ -1084,6 +1318,112 @@ fn cmd_aibench(o: &Opts) -> Result<(), String> {
 }
 
 /// The audit over every intent (dry run), optionally live checks, as an HTML page.
+/// The phrases the matcher leaves to the model (exact, near-exact and noise never reach it), at most `max` spread
+/// over the intents.
+fn hard_cases(cat: &Catalogue, cases: &[pimax_voice::audit::Case], max: usize) -> Vec<pimax_voice::audit::Case> {
+    use pimax_voice::audit;
+    use std::time::Instant;
+    let mut probe = Actor::new(cat.clone(), None, ActState::default());
+    probe.confirm = pimax_config::ai::VoiceConfirm::None;
+    let left: Vec<audit::Case> = cases
+        .iter()
+        .filter(|c| {
+            probe.reset();
+            let mut r = BenchRunner { ran: vec![] };
+            let out = probe.hear(&format!("Max {}", c.heard), Instant::now(), &mut r);
+            let t = probe.trace.clone().unwrap_or_default();
+            t.route != "noise" && (out.is_none() || t.asked)
+        })
+        .cloned()
+        .collect();
+    audit::spread(&left, max)
+}
+
+/// `routerbench`: stage 1 alone over the audit phrases.
+fn cmd_routerbench(o: &Opts) -> Result<(), String> {
+    use pimax_voice::audit;
+    use pimax_voice::remote::{self, category_of_intent, Category};
+    use std::time::{Duration, Instant};
+    let cat = Catalogue::load_default()?;
+    let fixture = match &o.fixture {
+        Some(f) => std::fs::read_to_string(f).map_err(|e| format!("{}: {e}", f.display()))?,
+        None => audit::FIXTURE.to_string(),
+    };
+    let mut cases = audit::cases(&cat, &fixture);
+    let truth = |want: &str| if want == "none" || want.is_empty() { Category::Other } else { category_of_intent(want.trim_start_matches("ai:")) };
+    if let Some(out) = &o.out {
+        // --out FILE.jsonl: Laya training rows from the catalogue (the audit's natural phrasings stay out)
+        let mut text = String::new();
+        let q = serde_json::json!({"category": {"type": "choice", "instructions": pimax_voice::router::LAYA_INSTRUCTIONS, "criteria": pimax_voice::router::laya_criteria()}});
+        let train = audit::train_cases(&cat);
+        for c in &train {
+            text += &serde_json::json!({"state": pimax_voice::router::laya_body(&c.heard, "lara")["state"], "questions": q, "expected": {"category": truth(&c.want).id()}}).to_string();
+            text.push('\n');
+        }
+        std::fs::write(out, text).map_err(|e| format!("{}: {e}", out.display()))?;
+        println!("{} training rows -> {}", train.len(), out.display());
+        return Ok(());
+    }
+    if o.hard {
+        cases = hard_cases(&cat, &cases, o.max.unwrap_or(40));
+    } else if o.label.as_deref() == Some("held-out") {
+        cases.retain(|c| c.kind == "natural");
+    }
+    let cfg = pimax_config::ai::AiConfig::load()?;
+    let mut rt = pimax_voice::router::from_config(&cfg).ok_or("ai.toml: voice_local is not \"two-stage\"")?;
+    let sys = remote::classify_system();
+    let (mut top, mut inset, mut guess_ok, mut n, mut errs, mut union) = (0, 0, 0, 0, 0, 0);
+    let mut ms: Vec<u64> = Vec::new();
+    let mut ntools: Vec<usize> = Vec::new();
+    let tools = pimax_voice::agent::tools(&cat);
+    for c in &cases {
+        let want = truth(&c.want);
+        let words = pimax_voice::command::words(&c.heard);
+        let cands = pimax_voice::fuzzy::candidates(&cat, &words, 3);
+        let g: Vec<Category> = remote::local_guess(&words, &cands).into_iter().map(|g| g.0).collect();
+        let t0 = Instant::now();
+        let res = rt.classify(&c.heard, "", &sys, Duration::from_secs(10));
+        let t = t0.elapsed().as_millis() as u64;
+        n += 1;
+        guess_ok += usize::from(g.first() == Some(&want));
+        match res {
+            Ok(cl) => {
+                ms.push(t);
+                let cats = cl.cats();
+                let both = remote::with_guess(&cats, &g);
+                union += usize::from(both.contains(&want));
+                top += usize::from(cl.category == want);
+                inset += usize::from(cats.contains(&want));
+                ntools.push(remote::subset(&tools, &cats).len());
+                let mark = if cl.category == want { "ok " } else if cats.contains(&want) { "in " } else { "BAD" };
+                println!("{mark} {t:4}ms {:12} -> {:28} {}", want.id(), cats.iter().map(|c| c.id()).collect::<Vec<_>>().join(",") + &format!(" {:.2}", cl.confidence), c.heard);
+            }
+            Err(e) => {
+                errs += 1;
+                println!("ERR {t:4}ms {e}");
+            }
+        }
+    }
+    ms.sort();
+    ntools.sort();
+    let pct = |v: &[u64], q: f64| v.get(((v.len().max(1) - 1) as f64 * q).round() as usize).copied().unwrap_or(0);
+    let pc = |x: usize| 100.0 * x as f64 / n.max(1) as f64;
+    println!(
+        "routerbench {} ({} phrases{}): top-1 {top} ({:.0}%), right category offered {inset} ({:.0}%), with the matcher's guess {union} ({:.0}%), matcher guess top-1 {guess_ok} ({:.0}%), errors {errs}; p50 {} ms, p95 {} ms; tools offered median {}",
+        rt.describe(),
+        n,
+        if o.hard { ", hard" } else { "" },
+        pc(top),
+        pc(inset),
+        pc(union),
+        pc(guess_ok),
+        pct(&ms, 0.5),
+        pct(&ms, 0.95),
+        ntools.get(ntools.len() / 2).copied().unwrap_or(0)
+    );
+    Ok(())
+}
+
 fn cmd_audit(o: &Opts) -> Result<(), String> {
     use pimax_voice::agent::Agent;
     use pimax_voice::audit;
@@ -1095,31 +1435,18 @@ fn cmd_audit(o: &Opts) -> Result<(), String> {
     };
     let mut cases = audit::cases(&cat, &fixture);
     let wv = o.wayvrctl.to_string_lossy().into_owned();
-    if o.remote {
+    if o.remote || o.hard {
         if o.live {
-            return Err("--remote is a dry run only: no --live".into());
+            return Err("--remote / --hard are dry runs only: no --live".into());
         }
         // the phrases the matcher leaves to the model (exact, near-exact and noise never reach a provider)
-        let mut probe = Actor::new(cat.clone(), None, ActState::default());
-        probe.confirm = pimax_config::ai::VoiceConfirm::None;
         if o.fixture.is_some() {
             // a given fixture: only its phrases
             cases.retain(|c| c.kind == "natural");
         }
-        let left: Vec<audit::Case> = cases
-            .iter()
-            .filter(|c| {
-                probe.reset();
-                let mut r = BenchRunner { ran: vec![] };
-                let out = probe.hear(&format!("Max {}", c.heard), Instant::now(), &mut r);
-                // without a model: nothing ran or a "Did you mean" question = the model's job
-                let t = probe.trace.clone().unwrap_or_default();
-                t.route != "noise" && (out.is_none() || t.asked)
-            })
-            .cloned()
-            .collect();
-        cases = audit::spread(&left, o.max.unwrap_or(40));
-        eprintln!("audit: remote: {} of {} phrases reach the model, {} picked", left.len(), audit::cases(&cat, &fixture).len(), cases.len());
+        let all = cases.len();
+        cases = hard_cases(&cat, &cases, o.max.unwrap_or(40));
+        eprintln!("audit: {} of {all} phrases picked among those the matcher leaves to the model", cases.len());
     }
     let ai_toml = pimax_config::ai::default_path().unwrap_or_else(pimax_voice::llm::ai_path);
     let mut ag = Agent::from_ai_toml(&ai_toml, &cat, &wv)?;
@@ -1127,6 +1454,7 @@ fn cmd_audit(o: &Opts) -> Result<(), String> {
         a.provider = pimax_voice::agent::Provider::new("audit", pimax_voice::agent::Wire::OpenAi, u, pimax_voice::agent::LOCAL_MODEL, None, Box::new(pimax_voice::agent::Curl));
     }
     if let Some(a) = ag.as_mut() {
+        a.dry_run = true;
         if !o.log {
             a.log = None;
         }
@@ -1141,7 +1469,7 @@ fn cmd_audit(o: &Opts) -> Result<(), String> {
     } else if o.remote {
         return Err("--remote: no voice AI (ai.toml voice_ai is off or missing)".into());
     }
-    let label = o.label.clone().unwrap_or_else(|| ag.as_ref().map(|a| a.provider.describe()).unwrap_or_else(|| "no AI".into()));
+    let label = o.label.clone().unwrap_or_else(|| ag.as_ref().map(|a| a.describe()).unwrap_or_else(|| "no AI".into()));
     let mut a = Actor::new(cat, None, ActState::default());
     a.agent = ag;
     a.confirm = pimax_config::ai::VoiceConfirm::None; // the user's default: no questions
@@ -1159,7 +1487,7 @@ fn cmd_audit(o: &Opts) -> Result<(), String> {
         let t = a.trace.clone().unwrap_or_default();
         let (verdict, why) = audit::judge_full(c, ran.as_deref(), t.asked, &t.slots, &t.decision, &t.result);
         eprintln!("audit: {verdict:4} {:28} {:44} -> {:6} {} {} {ms} ms {why}", c.want, c.heard, t.route, ran.as_deref().unwrap_or("-"), t.decision);
-        json += &serde_json::json!({"want": c.want, "heard": c.heard, "kind": c.kind, "route": t.route, "ran": ran, "asked": t.asked, "decision": t.decision, "slots": t.slots, "ms": ms, "verdict": verdict, "why": why, "cost": t.cost}).to_string();
+        json += &serde_json::json!({"want": c.want, "heard": c.heard, "kind": c.kind, "route": t.route, "ran": ran, "asked": t.asked, "decision": t.decision, "slots": t.slots, "ms": ms, "verdict": verdict, "why": why, "cost": t.cost, "prompt": t.prompt}).to_string();
         json.push('\n');
         if let Some(x) = t.cost {
             costs.push(x);
@@ -1171,7 +1499,7 @@ fn cmd_audit(o: &Opts) -> Result<(), String> {
             // space the model requests out: a burst keeps llama-server on every CPU thread and the desktop lags
             std::thread::sleep(std::time::Duration::from_millis(o.pause_ms));
         }
-        out.push(audit::Outcome { case: c.clone(), route: t.route, ran: ran.unwrap_or_else(|| "-".into()), asked: t.asked, decision: t.decision, slots: t.slots, result: t.result, ms, verdict, why });
+        out.push(audit::Outcome { case: c.clone(), route: t.route, ran: ran.unwrap_or_else(|| "-".into()), asked: t.asked, decision: t.decision, slots: t.slots, result: t.result, ms, verdict, why, prompt: t.prompt });
     }
     let live = if o.live { audit_live()? } else { Vec::new() };
     let (p, ak, f, n) = audit::tally(&out);
@@ -1359,7 +1687,15 @@ fn run(args: &[String]) -> Result<(), String> {
     let Some(cmd) = args.first() else {
         return Err(HELP.into());
     };
-    let o = parse(&args[1..])?;
+    // the state audit has its own options (src/statetest.rs)
+    if cmd == "audit" && args.iter().any(|a| a == "--state") {
+        return pimax_voice::statetest::cli(&args[1..]);
+    }
+    let mut o = parse(&args[1..])?;
+    if o.engine == "auto" && !matches!(cmd.as_str(), "listen" | "transcribe") {
+        // benchmarks and tools measure one fixed engine
+        o.engine = "parakeet".into();
+    }
     match cmd.as_str() {
         "listen" => cmd_listen(&o),
         "transcribe" => cmd_transcribe(&o),
@@ -1386,6 +1722,8 @@ fn run(args: &[String]) -> Result<(), String> {
         "bench" => cmd_bench(&o),
         "aibench" => cmd_aibench(&o),
         "audit" => cmd_audit(&o),
+        "routerbench" => cmd_routerbench(&o),
+        "ai-mode" => cmd_ai_mode(&o),
         "aiprompt" => {
             // the compact request body for some words (no live context): for debugging and the docs
             let cat = Catalogue::load_default()?;
@@ -1415,5 +1753,47 @@ fn main() -> ExitCode {
             eprintln!("pimax-voice: {e}");
             ExitCode::FAILURE
         }
+    }
+}
+
+#[cfg(test)]
+mod watch_tests {
+    #[test]
+    fn the_watch_buttons_cycle_and_keep_the_keys() {
+        use pimax_config::ai::{AiConfig, RunsOn};
+        let mut c = AiConfig::parse("[use]\nvoice = \"local\"\n[providers.local]\nkind = \"openai-compatible\"\nbase_url = \"http://127.0.0.1:8080/v1\"\n[providers.or]\nkind = \"openai-compatible\"\nbase_url = \"https://openrouter.ai/api/v1\"\napi_key = \"sk-or-v1-TEST\"\n").unwrap();
+        assert_eq!(super::ai_mode_apply(&mut c, "next").unwrap().0, RunsOn::TwoStage);
+        assert_eq!(super::ai_mode_apply(&mut c, "next").unwrap().0, RunsOn::Online);
+        assert_eq!(super::ai_mode_apply(&mut c, "next").unwrap().0, RunsOn::Simple);
+        assert_eq!(super::ai_mode_apply(&mut c, "two-stage").unwrap().0, RunsOn::TwoStage);
+        let (m, n) = super::ai_mode_apply(&mut c, "action-next").unwrap();
+        assert_eq!((m, c.two_stage().action.as_str()), (RunsOn::TwoStage, "qwen3.5-9b"));
+        assert!(n.unwrap().starts_with("action model: Qwen3.5-9B"));
+        super::ai_mode_apply(&mut c, "router-next").unwrap();
+        assert_eq!(c.two_stage().router, "laya");
+        assert!(super::ai_mode_apply(&mut c, "sideways").is_err());
+        // the watch: Local AI On / Off and the presets
+        let (_, n) = super::ai_mode_apply(&mut c, "local-toggle").unwrap();
+        assert_eq!((n.as_deref(), c.local_models_on()), (Some("Local AI: Off"), false));
+        super::ai_mode_apply(&mut c, "local-toggle").unwrap();
+        assert!(c.local_models_on());
+        super::ai_mode_apply(&mut c, "low").unwrap();
+        assert_eq!((c.preset(), c.two_stage().gpu_layers), (Some(pimax_config::ai::Preset::Low), Some(0)));
+        super::ai_mode_apply(&mut c, "preset-next").unwrap();
+        assert_eq!(c.preset(), Some(pimax_config::ai::Preset::Medium));
+        assert!(c.render().contains("sk-or-v1-TEST"), "the key stays");
+    }
+
+    #[test]
+    fn the_watch_row() {
+        let mut cfg = pimax_config::ai::AiConfig::parse("voice_local = \"two-stage\"\nvoice_local_models = true\n[local_two_stage]\npreset = \"high\"\nrouter = \"lara\"\naction = \"qwen3.5-9b\"\n").unwrap();
+        let c = super::watch_commands("", &cfg);
+        let j: Vec<String> = c.iter().map(|v| v.join(" ")).collect();
+        assert_eq!(j[0], "panel-modify watch btn_ai_mode set-text -- Local AI: On");
+        assert_eq!(j[1], "panel-modify watch btn_ai_preset set-text -- High");
+        assert_eq!(j[2], "panel-modify watch pimax_ai_models set-visible 1");
+        cfg.voice_local_models = Some(false);
+        let j: Vec<String> = super::watch_commands("", &cfg).iter().map(|v| v.join(" ")).collect();
+        assert!(j[0].ends_with("Local AI: Off") && j[2].ends_with("set-visible 0"), "the preset button only when on");
     }
 }

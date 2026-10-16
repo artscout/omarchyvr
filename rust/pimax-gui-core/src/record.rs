@@ -95,6 +95,10 @@ pub enum Opt {
     Fps,
     /// Low / medium / high.
     Quality,
+    /// 0 = no sound, 1 = what you hear.
+    Audio,
+    /// 0 = off, 1 = your microphone mixed in.
+    Mic,
 }
 
 /// Apply choice `i` of `opt` to `s` (false: out of range).
@@ -109,9 +113,11 @@ pub fn apply_choice(s: &mut Settings, opt: Opt, i: usize) -> bool {
             Some(q) => s.quality = *q,
             None => return false,
         },
+        Opt::Audio => s.audio = i == 1,
+        Opt::Mic => s.mic = i == 1,
     }
     i < match opt {
-        Opt::Eyes => 2,
+        Opt::Eyes | Opt::Audio | Opt::Mic => 2,
         _ => 3,
     }
 }
@@ -409,11 +415,12 @@ mod tests {
     #[test]
     fn choices_round_trip_through_the_settings() {
         let mut s = Settings::default();
-        for (opt, i) in [(Opt::Eyes, 1), (Opt::Fps, 2), (Opt::Quality, 2)] {
+        for (opt, i) in [(Opt::Eyes, 1), (Opt::Fps, 2), (Opt::Quality, 2), (Opt::Audio, 0), (Opt::Mic, 1)] {
             assert!(apply_choice(&mut s, opt, i));
         }
         assert_eq!((eyes_index(&s), fps_index(&s), quality_index(&s)), (1, 2, 2));
         assert_eq!((s.eyes, s.fps, s.quality), (Eyes::Both, 72, Quality::High));
+        assert!(!s.audio && s.mic);
         assert!(!apply_choice(&mut s, Opt::Fps, 3));
         assert!(!apply_choice(&mut s, Opt::Eyes, 2));
         assert_eq!(s.fps, 72);

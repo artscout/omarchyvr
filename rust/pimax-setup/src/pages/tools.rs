@@ -31,9 +31,9 @@ fn action_label(a: &Action) -> String {
 
 /// Draw the page.
 pub fn show(ui: &mut Ui, app: &mut PimaxApp) {
-    card(ui, |ui| {
-        ui.label(RichText::new("Tools").size(24.0).strong());
-        note(ui, "Text tools open in your terminal ($TERMINAL, else foot, alacritty, kitty). Device tools wait for the headset lock. Tools that need their own Monado start it with pimax vr start and stop it with pimax vr stop --grace 30.");
+    ui.horizontal(|ui| {
+        widgets::title(ui, "Tools");
+        widgets::help(ui, "Text tools open in your terminal ($TERMINAL, else foot, alacritty, kitty). Device tools wait for the headset lock. Tools that need their own Monado start it with pimax vr start and stop it with pimax vr stop --grace 30.");
     });
     let mut click: Option<Click> = None;
     let busy = app.core.busy();
@@ -41,18 +41,15 @@ pub fn show(ui: &mut Ui, app: &mut PimaxApp) {
     for t in ToolId::ALL {
         if t.section() != section {
             section = t.section();
-            ui.add_space(10.0);
-            ui.label(RichText::new(section).size(18.0).strong());
+            ui.add_space(4.0);
+            widgets::caption(ui, section);
         }
-        ui.add_space(4.0);
         let avail = app.core.tool_availability(t);
         let session_here = app.core.session_tool.as_ref().is_some_and(|s| s.tool == t);
         card(ui, |ui| {
             ui.horizontal(|ui| {
                 title(ui, t.title());
-                for r in t.rows() {
-                    widgets::row_tag(ui, Some(*r));
-                }
+                widgets::help(ui, t.about());
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if t == ToolId::SteamRuntime {
                         return;
@@ -69,7 +66,11 @@ pub fn show(ui: &mut Ui, app: &mut PimaxApp) {
                     }
                 });
             });
-            note(ui, t.about());
+            ui.horizontal_wrapped(|ui| {
+                for r in t.rows() {
+                    widgets::row_tag(ui, Some(*r));
+                }
+            });
             options(ui, app, t, avail.needs_consent);
             for b in &avail.blockers {
                 ui.horizontal_wrapped(|ui| {

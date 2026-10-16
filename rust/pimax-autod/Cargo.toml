@@ -21,4 +21,5 @@ path = "src/bin/pimaxd.rs"
 pimax = { workspace = true }
 pimax-proto = { workspace = true, features = ["std"] }
 pimax-components = { path = "../pimax-components" }
+pimax-config = { path = "../pimax-config" }
 libc = { workspace = true }

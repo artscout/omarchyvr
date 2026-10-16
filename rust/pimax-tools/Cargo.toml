@@ -24,6 +24,7 @@ pimax-autod = { path = "../pimax-autod" }
 pimax-components = { path = "../pimax-components" }
 pimax-record = { path = "../pimax-record" }
 pimax-config = { path = "../pimax-config" }
+pimax-backgrounds = { path = "../pimax-backgrounds" }
 
 [dev-dependencies]
 flate2 = { workspace = true }

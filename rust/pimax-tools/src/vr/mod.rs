@@ -72,7 +72,7 @@ use std::time::Duration;
 
 /// Usage text of the `vr` subcommands.
 pub const USAGE: &str = "usage: pimax vr <command> [options]
-  start [--fps 72|90] [--6dof [--ctrl-track] [--hands [--hands-roles]]] [--perf] [--anchor] [--dump DIR [--dump-frames 100,300]] [--wait] [--dry-run] [--force] [--debug] [--no-set-runtime]
+  start [--fps 72|90] [--6dof [--ctrl-track] [--hands [--hands-roles]]] [--controllers always|when-held|off] [--no-eye] [--perf] [--anchor] [--dump DIR [--dump-frames 100,300]] [--wait] [--dry-run] [--force] [--debug] [--no-set-runtime]
         [--no-notify] [--monado-build DIR] [--connector NAME] [--mode N] [--timeout SECS]
       the connector is found by the headset's EDID (PVR 0xD242 / product 0x1019) unless --connector is given; the
       preflight also warns when monado-service lacks cap_sys_nice and prints the setcap line for its path.
@@ -85,6 +85,8 @@ pub const USAGE: &str = "usage: pimax vr <command> [options]
       --ctrl-track (with --6dof): optical 6DoF controllers, same as `desk start --ctrl-track`: `pimax-ctrltrack live
       --source broker` (started after the service, stopped by pid by `vr stop` before the service) and PIMAX_CTRL_TRACK=1
       for Monado; [--ctrltrack-bin P]. Ignored with --wait. See `pimax desk` help for the details.
+      --controllers (default always for games): when-held = controllers shown only while in the hand
+      (PIMAX_CTRL_INHAND=auto, docs/CONTROLLERS-INHAND.md), always, off.
       --hands (with --6dof; also `desk start --hands`): camera hand tracking (Monado's Mercury, XR_EXT_hand_tracking +
       XR_EXT_hand_interaction), off by default. Sets PIMAX_HANDS=mercury on the one Monado build (another build only
       with --hands-build DIR / PIMAX_HANDS_BUILD; an explicit --monado-build is used as given).
@@ -141,9 +143,9 @@ pub const USAGE: &str = "usage: pimax vr <command> [options]
       (recognise the room, put floor + centre + forward in place; state in $XDG_RUNTIME_DIR/pimax-room.status);
       steamvr on: before SteamVR starts, its room setup (chaperone_info.vrchap, universe 2 of driver_monado) gets the
       play area and walls of the room setup. docs/ROOM-SETUP.md.
-  gamemode [status|on|off|sunshine on|off|budget auto|6|8|restore]   (GUI: Game mode, Compositor time budget)
-      on (default): `vr start` pauses the local AI (pimax-ai stop); `sunshine on` (default OFF, stops game streaming) also
-      pauses Sunshine (systemctl --user stop); Stop (or `restore`) starts exactly what was paused again. budget: U_PACING_COMP_MIN_TIME_MS for the next start (auto = Monado's 3 ms).
+  gamemode [status|on|off|budget auto|6|8|restore]   (GUI: Game mode, Compositor time budget)
+      on (default): `vr start` pauses the local AI (pimax-ai stop); Sunshine is never stopped or paused;
+      Stop (or `restore`) starts exactly what was paused again. budget: U_PACING_COMP_MIN_TIME_MS for the next start (auto = Monado's 3 ms).
   display [status|image standard|bright|brighter|backlight 20..100|apply]   (GUI: Brightness)
   audio [status|on|off|mic-on|mic-off|mic-test|speaker-test]      (GUI: Sound in headset, Headset microphone, Test microphone, Test headset sound)
       saves ~/.config/pimax/audio.toml. While VR runs (Play, Work, SteamVR) the headset speaker (DisplayPort audio:
@@ -152,6 +154,7 @@ pub const USAGE: &str = "usage: pimax vr <command> [options]
       mic-test records 3 s from the headset microphone, prints the level and plays it back on the current output.
       speaker-test plays a short chime on the headset speaker only (refuses with the reason when it is not there).
   steam-setup [status|on|off]      (GUI: Ready check > Steam for VR games)
+  steam-restart [--wait SECS]      close a Steam that carries SteamVR's settings (steam -shutdown, clean env, by pid; the app asks first)
       PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1 for Steam itself, so every game reaches Monado without launch options:
       ~/.local/share/applications/steam.desktop (from the next Steam start) and ~/.config/environment.d (from the
       next log in). off removes only our files. Exit code 3 from status when not set up.
@@ -356,6 +359,11 @@ pub fn run(mut a: Args) -> CliResult {
             let sixdof = sixdof::parse(&mut a, &real_env, &mut opts, &home, build_given, Some(pimax_config::paths::src_dir(&home).join("monado-eye/build")));
             // --ctrl-track: optical controllers (needs --6dof); shared with `desk start`
             let ctrl_track = sixdof::parse_ctrl_track(&mut a, &real_env, &mut opts, &home, &sixdof)?;
+            // --controllers: games keep the controllers always shown unless the user switched it (Play's own switch)
+            let _controllers = sixdof::parse_controllers(&mut a, &real_env, &mut opts, pimax_config::ctrl_inhand::CtrlMode::Always)?;
+            // eye tracking, visual only (default on when the eye build and calibration exist; --no-eye): PIMAX_EYE=1
+            let eye_build = pimax_config::paths::src_dir(&home).join("monado-eye/build");
+            let (eye_mode, eye_note) = eye_desk::parse(a.flag("--eye"), a.flag("--no-eye"), &mut opts, &eye_build, build_given, &real_env);
             // --hands: camera hands (Mercury); may move the Monado build to the hands build (docs/HANDS.md)
             let hands_opt = hands::parse(&mut a, &real_env, &mut opts, &home, build_given, sixdof.is_some())?;
             // --perf: wrist readout (minimal WayVR overlay without screens + pimax-perf); Monado gets PIMAX_PERF_FILE
@@ -376,6 +384,12 @@ pub fn run(mut a: Args) -> CliResult {
             };
             reject_leftovers(&a)?;
             hands::print_note(&hands_opt, "pimax vr");
+            if eye_mode == eye_desk::EyeMode::Off {
+                // only the reason that matters to the user (the eye build is in use but not calibrated)
+                if let Some(n) = eye_note.filter(|n| n.contains("calibration")) {
+                    verr!("pimax vr: {n}");
+                }
+            }
             auto_connector(&mut opts);
             if !opts.dry_run {
                 if let Err(e) = supervise::record_argv(&opts.session_dir, "vr", &daemon::argv_for_record(&argv0)) {
@@ -641,6 +655,15 @@ pub fn run(mut a: Args) -> CliResult {
             reject_leftovers(&a)?;
             let home = PathBuf::from(real_env("HOME").unwrap_or_default());
             audio::cli(&what, arg.as_deref(), &home).map_err(CliError::new)
+        }
+        "steam-restart" => {
+            let wait = match a.opt_parse::<u64>("--wait")? {
+                Some(w) if (1..=900).contains(&w) => Duration::from_secs(w),
+                Some(_) => return Err(CliError::usage("--wait must be a number of seconds (1..900)")),
+                None => steamvr::SHUTDOWN_WAIT,
+            };
+            reject_leftovers(&a)?;
+            steamvr::restart_cli(wait)
         }
         "steam-setup" => {
             let what = if a.0.first().is_some_and(|x| !x.starts_with('-')) { a.0.remove(0) } else { "status".into() };

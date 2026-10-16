@@ -15,6 +15,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use super::config::StartOptions;
+pub use pimax_config::eye::EyeSettings;
 
 /// The conf.d file (sorts after the app's `50-pimax-app.yaml`, so silent mode wins over its `gaze_pointer`).
 pub const CONF_NAME: &str = "55-eye.yaml";
@@ -86,26 +87,30 @@ pub fn parse(
 }
 
 /// The conf.d YAML for a mode (None = no file).
-pub fn conf_yaml(mode: EyeMode) -> Option<&'static str> {
+/// `Silent` is visual only: never a pointer, and `gaze_target` (what `wayvrctl gaze` and voice read) only when the
+/// developer setting `targeting` is on in `eye.conf`.
+pub fn conf_yaml(mode: EyeMode, set: &EyeSettings) -> Option<String> {
     match mode {
         EyeMode::Off => None,
-        EyeMode::Silent => Some(
-            "# written by `pimax desk start` (eye tracking silently on; --no-eye turns it off, --eye = gaze pointer); do not edit\n\
-             gaze_pointer: false\ngaze_target: true\ngaze_laser: true\ngaze_laser_style: dot\ngaze_laser_alpha: 0.35\n\
+        EyeMode::Silent => Some(format!(
+            "# written by `pimax desk start` (eye tracking, visual only: never a pointer; ~/.config/pimax/eye.conf, --no-eye turns it off); do not edit\n\
+             gaze_pointer: false\ngaze_target: {}\ngaze_laser: {}\ngaze_laser_style: dot\ngaze_laser_alpha: 0.35\n\
              gaze_fixation_ms: 200\n",
-        ),
+            set.targeting, set.dot
+        )),
         EyeMode::Pointer => Some(
             "# written by `pimax desk start --eye` (gaze pointer as configured, plus `wayvrctl gaze`); do not edit\n\
-             gaze_target: true\ngaze_fixation_ms: 200\n",
+             gaze_target: true\ngaze_fixation_ms: 200\n"
+                .to_string(),
         ),
     }
 }
 
 /// Write or remove `conf.d/55-eye.yaml`. Returns a note for the start output.
-pub fn apply_conf(wayvr_home: &Path, mode: EyeMode) -> io::Result<Option<String>> {
+pub fn apply_conf(wayvr_home: &Path, mode: EyeMode, set: &EyeSettings) -> io::Result<Option<String>> {
     let conf_d = wayvr_home.join("config/wayvr/conf.d");
     let f = conf_d.join(CONF_NAME);
-    let Some(y) = conf_yaml(mode) else {
+    let Some(y) = conf_yaml(mode, set) else {
         if f.exists() {
             std::fs::remove_file(&f)?;
         }
@@ -113,10 +118,10 @@ pub fn apply_conf(wayvr_home: &Path, mode: EyeMode) -> io::Result<Option<String>
     };
     std::fs::create_dir_all(&conf_d)?;
     let tmp = conf_d.join(".55-eye.yaml.tmp");
-    std::fs::write(&tmp, y)?;
+    std::fs::write(&tmp, &y)?;
     std::fs::rename(&tmp, &f)?;
     Ok(Some(match mode {
-        EyeMode::Silent => "eye tracking silently on: a dim gaze dot, `wayvrctl gaze` for voice (no pointer; --no-eye turns it off)".into(),
+        EyeMode::Silent => if set.dot { "eye tracking on, visual only: a dim gaze dot (never a pointer; --no-eye turns it off)".into() } else { "eye tracking on, visual only (gaze dot off in eye.conf)".into() },
         _ => "eye tracking on with the gaze pointer (--eye); `wayvrctl gaze` reports the target".into(),
     }))
 }
@@ -161,26 +166,28 @@ mod tests {
 
     #[test]
     fn conf_files_have_unique_keys_and_silent_has_no_pointer() {
-        let s = conf_yaml(EyeMode::Silent).unwrap();
-        assert!(s.contains("gaze_pointer: false\n") && s.contains("gaze_laser: true\n") && s.contains("gaze_target: true\n"));
-        for y in [s, conf_yaml(EyeMode::Pointer).unwrap()] {
+        let s = conf_yaml(EyeMode::Silent, &EyeSettings::default()).unwrap();
+        assert!(s.contains("gaze_pointer: false\n") && s.contains("gaze_laser: true\n") && s.contains("gaze_target: false\n"), "visual only: no targeting by default");
+        let dev = conf_yaml(EyeMode::Silent, &EyeSettings { dot: false, targeting: true }).unwrap();
+        assert!(dev.contains("gaze_target: true\n") && dev.contains("gaze_laser: false\n") && dev.contains("gaze_pointer: false\n"));
+        for y in [s, conf_yaml(EyeMode::Pointer, &EyeSettings::default()).unwrap()] {
             let keys: Vec<&str> = y.lines().filter(|l| !l.starts_with('#')).map(|l| l.split(':').next().unwrap()).collect();
             let mut u = keys.clone();
             u.sort();
             u.dedup();
             assert_eq!(u.len(), keys.len(), "{y}");
         }
-        assert!(!conf_yaml(EyeMode::Pointer).unwrap().contains("gaze_pointer"));
-        assert!(conf_yaml(EyeMode::Off).is_none());
+        assert!(!conf_yaml(EyeMode::Pointer, &EyeSettings::default()).unwrap().contains("gaze_pointer"));
+        assert!(conf_yaml(EyeMode::Off, &EyeSettings::default()).is_none());
     }
 
     #[test]
     fn apply_writes_and_removes() {
         let h = crate::vr::test_dir("eye-desk");
         let f = h.join("config/wayvr/conf.d").join(CONF_NAME);
-        assert!(apply_conf(&h, EyeMode::Silent).unwrap().unwrap().contains("silently"));
-        assert_eq!(std::fs::read_to_string(&f).unwrap(), conf_yaml(EyeMode::Silent).unwrap());
-        assert!(apply_conf(&h, EyeMode::Off).unwrap().is_none());
+        assert!(apply_conf(&h, EyeMode::Silent, &EyeSettings::default()).unwrap().unwrap().contains("visual only"));
+        assert_eq!(std::fs::read_to_string(&f).unwrap(), conf_yaml(EyeMode::Silent, &EyeSettings::default()).unwrap());
+        assert!(apply_conf(&h, EyeMode::Off, &EyeSettings::default()).unwrap().is_none());
         assert!(!f.exists());
         let _ = std::fs::remove_dir_all(h);
     }

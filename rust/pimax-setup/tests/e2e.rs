@@ -8,40 +8,22 @@
 mod common;
 
 use common::Ui;
+use eframe::egui;
 use eframe::egui::accesskit::Role;
 use pimax_gui_core::app::Page;
 use pimax_gui_core::crash::{self, Kind};
 use pimax_setup::app::{LogsTab, SetupTab};
 use std::time::Duration;
 
-const NAV: [&str; 8] = ["Home", "Ready", "Tools", "Logs", "Profiles", "AI", "System", "Onboarding"];
-
-/// The rows of Home (ids and titles).
-const ROWS: [(&str, &str); 11] = [
-    ("row-quality", "Quality / Performance"),
-    ("row-optics", "Optics / Display"),
-    ("row-tracking", "Tracking"),
-    ("row-eye", "Eye tracking"),
-    ("row-desktop", "Desktop / WayVR"),
-    ("row-room", "Room"),
-    ("row-voice", "Voice"),
-    ("row-video", "Video recording"),
-    ("row-auto", "Auto mode"),
-    ("row-runtime", "VR mode / Runtime"),
-    ("row-developer", "Developer"),
+/// The sidebar's entries (never clicked by the sweep of a page: they leave it). "Developer" also keeps the sweep off
+/// the Developer mode switch, which would hide the advanced pages.
+const NAV: [&str; 16] = [
+    "Home", "Display", "Tracking", "Room", "Desktop", "Backgrounds", "Recording", "Local AI", "AI", "Ready", "Developer", "Tools", "Logs", "Profiles", "System",
+    "Onboarding",
 ];
 
 fn nav_label(p: Page) -> &'static str {
-    match p {
-        Page::Desk => "Home",
-        Page::Setup => "Ready",
-        Page::Tools => "Tools",
-        Page::Logs => "Logs",
-        Page::Profiles => "Profiles",
-        Page::Ai => "AI",
-        Page::System => "System",
-        Page::Onboarding => "Onboarding",
-    }
+    pimax_setup::app::page_label(p)
 }
 
 /// Go to a page through the navigation.
@@ -63,17 +45,7 @@ fn all_pages(ui: &mut Ui) -> usize {
         let mut skip: Vec<&str> = NAV.to_vec();
         match p {
             Page::Desk => {
-                // every row open, everything inside clicked; then the row headers themselves
-                ui.h.state_mut().ui.open_rows = ROWS.iter().map(|(id, _)| *id).collect();
-                ui.frames(12, Duration::from_millis(15), "rows opening");
-                skip.extend(ROWS.iter().map(|(_, t)| *t));
                 total += ui.click_everything(&skip);
-                ui.h.state_mut().core.page = Page::Desk;
-                ui.frames(3, Duration::from_millis(10), "home again");
-                for (_, t) in ROWS {
-                    ui.click(Role::Button, t, 0);
-                    total += 1;
-                }
                 // a mock headset in the picker
                 ui.h.state_mut().ui.model = Some("8kx");
                 ui.frames(3, Duration::from_millis(10), "mock headset");
@@ -173,10 +145,9 @@ fn every_page_and_widget_in_demo_mode_stays_responsive() {
     );
     let clicks = all_pages(&mut ui);
     assert!(clicks > 100, "only {clicks} widgets were clicked");
-    // the report dialog (Home > Developer) writes a real (temporary) report in demo mode
-    go(&mut ui, Page::Desk);
-    ui.h.state_mut().ui.open_rows = vec!["row-developer"];
-    ui.frames(12, Duration::from_millis(15), "developer row");
+    // the report dialog (the Developer page) writes a real (temporary) report in demo mode
+    go(&mut ui, Page::Developer);
+    ui.frames(3, Duration::from_millis(15), "developer page");
     assert!(ui.click(Role::Button, "Report a problem...", 0), "{:?}", ui.widgets());
     assert!(ui.h.state().ui.report_open);
     assert!(ui.click(Role::Button, "Create report", 0));
@@ -223,4 +194,27 @@ fn running_session_and_the_crash_dialog() {
     assert!(ui.h.state().core.job.is_none(), "demo mode started a job");
     ui.assert_responsive();
     let _ = std::fs::remove_dir_all(&ui.dir);
+}
+
+/// The "?" opens its text on a click and closes on a second click or Esc (hover is unreliable in the headset).
+#[test]
+fn the_question_mark_opens_on_click_and_closes_on_click_or_esc() {
+    let mut ui = Ui::new("help-click", false, std::time::Duration::ZERO);
+    ui.wait_facts();
+    go(&mut ui, Page::LocalAi);
+    ui.frames(4, std::time::Duration::from_millis(10), "local ai");
+    let open = |ui: &Ui| egui::Popup::is_any_open(&ui.h.ctx);
+    assert!(!open(&ui));
+    assert!(ui.click(Role::Button, "Help", 1), "the top bar has the first Help, the \"?\" marks follow");
+    ui.frames(1, std::time::Duration::from_millis(10), "popup");
+    assert!(open(&ui), "a click opens the popup");
+    assert!(ui.click(Role::Button, "Help", 1));
+    ui.frames(3, std::time::Duration::from_millis(10), "popup closed");
+    assert!(!open(&ui), "a second click closes it");
+    assert!(ui.click(Role::Button, "Help", 1));
+    ui.frames(3, std::time::Duration::from_millis(10), "popup");
+    assert!(open(&ui));
+    ui.h.key_press(egui::Key::Escape);
+    ui.frames(3, std::time::Duration::from_millis(10), "esc");
+    assert!(!open(&ui), "Esc closes it");
 }

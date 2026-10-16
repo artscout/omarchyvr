@@ -15,6 +15,8 @@ pub struct Status {
     pub fps: u32,
     pub quality: String,
     pub encoder: String,
+    /// What is mixed into the sound: "" (none), "output" or "output+mic".
+    pub audio: String,
     pub width: u32,
     pub height: u32,
     /// Frames written to the encoder (duplicates included: the file is constant frame rate).
@@ -33,7 +35,7 @@ pub struct Status {
 impl Status {
     pub fn to_text(&self) -> String {
         format!(
-            "state={}\npid={}\nfile={}\nstarted_unix={:.1}\neyes={}\nfps={}\nquality={}\nencoder={}\nwidth={}\nheight={}\n\
+            "state={}\npid={}\nfile={}\nstarted_unix={:.1}\neyes={}\nfps={}\nquality={}\nencoder={}\naudio={}\nwidth={}\nheight={}\n\
              frames={}\ndropped_tap={}\ndropped_ring={}\nduplicated={}\nnote={}\nupdated_unix={:.1}\n",
             self.state,
             self.pid,
@@ -43,6 +45,7 @@ impl Status {
             self.fps,
             self.quality,
             self.encoder,
+            self.audio,
             self.width,
             self.height,
             self.frames,
@@ -69,6 +72,7 @@ impl Status {
                 "fps" => s.fps = n() as u32,
                 "quality" => s.quality = v.into(),
                 "encoder" => s.encoder = v.into(),
+                "audio" => s.audio = v.into(),
                 "width" => s.width = n() as u32,
                 "height" => s.height = n() as u32,
                 "frames" => s.frames = n(),
@@ -106,7 +110,7 @@ impl Status {
         let len = format!("{}:{:02}", (secs / 60.0) as u64, secs as u64 % 60);
         match self.state.as_str() {
             "recording" => format!(
-                "recording {len} to {} ({} eye(s), {}x{} at {} fps, {} quality, {}; dropped {} + {}, repeated {})",
+                "recording {len} to {} ({} eye(s), {}x{} at {} fps, {} quality, {}, sound: {}; dropped {} + {}, repeated {})",
                 self.file,
                 if self.eyes == "both" { 2 } else { 1 },
                 self.width,
@@ -114,6 +118,7 @@ impl Status {
                 self.fps,
                 self.quality,
                 self.encoder,
+                if self.audio.is_empty() { "none" } else { &self.audio },
                 self.dropped_tap,
                 self.dropped_ring,
                 self.duplicated

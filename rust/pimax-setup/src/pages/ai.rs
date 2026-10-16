@@ -7,7 +7,7 @@ use crate::theme::{self, icon};
 use crate::widgets::{self, card, caption, chip, inset, note, pal, spinner, title};
 use eframe::egui::{self, RichText, Ui};
 use pimax_config::ai::{Feature, Kind, Provider, Secret, VoiceAi, VoiceConfirm, CLAUDE_MODELS};
-use pimax_gui_core::ai::{key_status, KeyChoice, TEST_PROMPT};
+use pimax_gui_core::ai::{key_status, KeyChoice, RunsOn, TEST_PROMPT};
 
 /// The provider being added or edited (UI state; the key text is wiped when the editor closes).
 #[derive(Debug, Clone, Default)]
@@ -95,17 +95,15 @@ pub fn show(ui: &mut Ui, app: &mut PimaxApp) {
     let p = theme::pal(ui);
     card(ui, |ui| {
         ui.horizontal(|ui| {
-            ui.label(RichText::new("AI").size(24.0).family(theme::heading(ui)).color(p.text));
+            title(ui, "AI");
+            widgets::help(ui, "The language models voice control and Autofix use: Claude, OpenAI, any OpenAI-compatible service, or a model running on this PC (ollama, llama-server, LM Studio).");
             if app.core.demo {
                 chip(ui, "demo: nothing is read, written or sent", pal(ui).info);
             }
         });
-        note(ui, "The language models voice control and Autofix use: Claude, OpenAI, any OpenAI-compatible service, or a model running on this PC (ollama, llama-server, LM Studio).");
-        ui.add_space(4.0);
-        widgets::inset(ui, |ui| {
+        ui.horizontal(|ui| {
             caption(ui, "What is sent where");
-            note(ui, &format!("This page sends nothing by itself. Test connection sends one fixed line (\"{TEST_PROMPT}\") to that provider, nothing from this PC. Autofix sends its redacted bundle (Setup > Autofix shows it) only when you press Send. Voice control sends the words you say to the provider picked for it. A local model keeps everything on this PC."));
-            note(ui, "Keys are saved in ~/.config/pimax/ai.toml, readable only by you (mode 600), or kept for this session only when you untick \"Save the key\" (then voice control, a separate program, cannot use them).");
+            widgets::help(ui, &format!("This page sends nothing by itself. Test connection sends one fixed line (\"{TEST_PROMPT}\") to that provider, nothing from this PC. Autofix sends its redacted bundle (Setup > Autofix shows it) only when you press Send. Voice control sends the words you say to the provider picked for it. A local model keeps everything on this PC.\n\nKeys are saved in ~/.config/pimax/ai.toml, readable only by you (mode 600), or kept for this session only when you untick \"Save the key\" (then voice control, a separate program, cannot use them)."));
         });
         if let Some(e) = &app.core.ai.error {
             ui.label(RichText::new(format!("{e}: fix or remove the file; the app does not overwrite it.")).color(p.fail));
@@ -126,22 +124,15 @@ pub fn show(ui: &mut Ui, app: &mut PimaxApp) {
         });
         return;
     }
-    ui.add_space(8.0);
     runs_on(ui, app);
     if !app.core.state.dev_mode {
         return;
     }
-    ui.add_space(8.0);
     voice(ui, app);
-    ui.add_space(8.0);
     local_model(ui, app);
-    ui.add_space(8.0);
     providers(ui, app);
-    ui.add_space(8.0);
     choices(ui, app);
-    ui.add_space(8.0);
     local(ui, app);
-    ui.add_space(8.0);
     actions(ui, app);
 }
 
@@ -152,20 +143,20 @@ fn runs_on(ui: &mut Ui, app: &mut PimaxApp) {
     let is_online = app.core.ai_voice_online();
     card(ui, |ui| {
         let p = theme::pal(ui);
-        title(ui, "AI runs on");
-        let mut names: Vec<&str> = vec!["This PC (local)"];
-        if online.is_some() {
-            names.push("Online (OpenRouter)");
-        }
-        let cur = usize::from(is_online && online.is_some());
-        if let Some(i) = widgets::selector(ui, icon::ROBOT, "AI runs on", &names, cur, true) {
-            app.core.ai_set_runs_on(i == 1);
-        }
-        note(ui, if is_online {
-            "Online: a command the offline matcher does not know goes to OpenRouter in two steps. Exact phrases still run on this PC. Your words and the names of your windows are sent."
-        } else {
-            "This PC: the offline matcher and the local model. Nothing you say leaves this PC."
+        ui.horizontal(|ui| {
+            title(ui, "AI runs on");
+            widgets::help(ui, "The voice control in VR switches by itself; the Work desk's watch has the same switch (AI button).");
         });
+        let now = app.core.ai_runs_on();
+        let local_on = app.core.ai.config.local_models_on();
+        ui.label(RichText::new(match (now, local_on) {
+            (RunsOn::Online, _) => "Online: Jev sorts the command, an action model acts (OpenRouter).".to_string(),
+            (_, true) => format!("This PC: local models in Work ({}).", app.core.ai.config.preset().map(|p| p.name()).unwrap_or("chosen by hand")),
+            (_, false) => "Offline commands only (local models off).".to_string(),
+        }).size(13.0).color(p.text));
+        if widgets::ibutton(ui, icon::ROBOT, "Local AI page", true).on_hover_text("Local models On / Off, Low / Medium / High, Online").clicked() {
+            app.core.page = pimax_gui_core::app::Page::LocalAi;
+        }
         if !is_online && online.is_some() {
             let mut b = app.core.ai.config.voice_online_backup.unwrap_or(true);
             if ui.checkbox(&mut b, "Use online if the local model is not running").changed() {
@@ -178,6 +169,9 @@ fn runs_on(ui: &mut Ui, app: &mut PimaxApp) {
             app.core.ai_set_voice_ai(if on { VoiceAi::Fallback } else { VoiceAi::Off });
         }
         let target = if is_online { online } else { local };
+        if now == RunsOn::TwoStage {
+            return;
+        }
         match target {
             None => note(ui, "No provider of this kind is set up yet."),
             Some(name) => {
@@ -206,7 +200,6 @@ fn runs_on(ui: &mut Ui, app: &mut PimaxApp) {
 /// Voice control's use of a model and the privacy switch.
 fn voice(ui: &mut Ui, app: &mut PimaxApp) {
     card(ui, |ui| {
-        let p = theme::pal(ui);
         title(ui, "Voice control with AI");
         let mode = app.core.ai.config.voice_ai;
         let mut on = mode != VoiceAi::Off;
@@ -241,10 +234,9 @@ fn voice(ui: &mut Ui, app: &mut PimaxApp) {
             VoiceConfirm::Always => "Say \"yes\" to confirm every voice command.",
         });
         let mut strip = app.core.ai.config.strip_titles;
-        if widgets::toggle(ui, &mut strip, "Do not send window titles (privacy)", true).changed() {
+        if widgets::switch_row(ui, &mut strip, "No window titles", Some("Privacy: window control sends the names of your apps and, unless this is on, their window titles (which can show a file or page name)."), true).changed() {
             app.core.ai_set_strip_titles(strip);
         }
-        ui.label(RichText::new("Window control sends the names of your apps and, unless this is on, their window titles (which can show a file or page name).").size(12.0).color(p.dim));
         egui::CollapsingHeader::new("Advanced").id_salt("ai-advanced").show(ui, |ui| advanced(ui, app));
         // the voice command audit (pimax-voice audit, dry run): every command and natural phrasings
         let busy = app.core.busy();
@@ -312,12 +304,13 @@ fn voice_provider(ui: &mut Ui, app: &mut PimaxApp) {
         None => {}
     }
     if !r.local() {
-        note(ui, "Remote, in two steps: the intent model sorts the command (screens, apps, tabs, typing, ...) from your words and a one-line summary, then the action model gets only that kind's tools and the state they need, and acts. If it fails or takes longer than the timeout, the local model answers instead (when it runs), else the offline matcher.");
-        ui.label(
-            RichText::new("Sent after \"Max ...\", to the intent model: your words, the number of VR screens, the focused app's name, the side and preset. To the action model, only what that kind of command needs: your words, the focused app, and for screens and apps your VR screens with their apps (names and, unless the privacy switch is on, titles) and what you look at; for tabs and the browser your apps; for presets, passthrough, recording and captions the VR session state (and for undo your last 5 commands). Never sent: audio, screenshots, file contents, URLs, process ids.")
-                .size(12.0)
-                .color(p.dim),
-        );
+        ui.horizontal_wrapped(|ui| {
+            caption(ui, "Remote, two steps");
+            widgets::help(ui, "Remote, in two steps: the intent model sorts the command (screens, apps, tabs, typing, ...) from your words and a one-line summary, then the action model gets only that kind's tools and the state they need, and acts. If it fails or takes longer than the timeout, the local model answers instead (when it runs), else the offline matcher.");
+            ui.add_space(8.0);
+            caption(ui, "What is sent");
+            widgets::help(ui, "Sent after \"Max ...\", to the intent model: your words, the number of VR screens, the focused app's name, the side and preset. To the action model, only what that kind of command needs: your words, the focused app, and for screens and apps your VR screens with their apps (names and, unless the privacy switch is on, titles) and what you look at; for tabs and the browser your apps; for presets, passthrough, recording and captions the VR session state (and for undo your last 5 commands). Never sent: audio, screenshots, file contents, URLs, process ids.");
+        });
     }
 }
 
@@ -380,7 +373,7 @@ fn local_model(ui: &mut Ui, app: &mut PimaxApp) {
                 }
             }
         });
-        note(ui, "pimax-ai runs Qwen3.5 with llama.cpp on 127.0.0.1:8080 (4B on the GPU, 2B on the CPU). Nothing you say leaves this PC when voice control uses it.");
+        widgets::status(ui, "pimax-ai: Qwen3.5 with llama.cpp on 127.0.0.1:8080, on this PC.", p.faint);
         match &status {
             Some(Err(e)) => {
                 ui.label(RichText::new(e).size(12.0).color(p.warn));
@@ -405,9 +398,6 @@ fn local_model(ui: &mut Ui, app: &mut PimaxApp) {
                         ui.label(RichText::new("VRAM: not reported (nvidia-smi)").size(12.0).color(p.faint));
                     }
                     ui.horizontal_wrapped(|ui| {
-                        if widgets::ibutton(ui, icon::LIGHTNING, "Test", !busy).on_hover_text("pimax-ai test: one tiny request, prints the latency").clicked() {
-                            act = Some("test");
-                        }
                         if widgets::ibutton(ui, icon::STOP, "Stop", !busy).on_hover_text("pimax-ai stop").clicked() {
                             act = Some("stop");
                         }
@@ -425,15 +415,6 @@ fn local_model(ui: &mut Ui, app: &mut PimaxApp) {
                     if let Some(w) = warn {
                         ui.label(RichText::new(w).size(12.0).color(p.warn));
                     }
-                }
-                match &app.core.localai.test {
-                    Some(Ok(l)) => {
-                        ui.label(RichText::new(format!("{} {l}", icon::CHECK_CIRCLE)).size(12.0).color(p.ok));
-                    }
-                    Some(Err(e)) => {
-                        ui.label(RichText::new(e).size(12.0).color(p.warn));
-                    }
-                    None => {}
                 }
                 match app.core.localai_provider() {
                     Some(n) => {
@@ -457,7 +438,6 @@ fn local_model(ui: &mut Ui, app: &mut PimaxApp) {
         Some("gpu") => app.core.localai_start(true),
         Some("cpu") => app.core.localai_start(false),
         Some("stop") => app.core.localai_stop(),
-        Some("test") => app.core.localai_test(),
         Some("build") => app.core.localai_build(),
         Some("use") => {
             if let Err(e) = app.core.localai_use() {

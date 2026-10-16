@@ -49,7 +49,7 @@ pub fn intro(s: Step) -> &'static str {
         Step::Ipd => "Measure the distance between your pupils with the eye tracker and set the lenses once (pimax-eye ipd in a terminal: wear the headset, press a to apply, q to save and quit).",
         Step::Pair => "Pair each controller once: press Pair, then hold the controller's pairing buttons until it connects (at most one try per hand every 30 s).",
         Step::EyeCal => "Calibrate eye tracking: pimax-eyecal starts its own VR session; keep your head still and follow the dots with your eyes, then save.",
-        Step::Room => "Map your room once so the windows come back to the same real spot (Room on the Home page: walk slowly, look around, come back past where you started).",
+        Step::Room => "Map your room once so the windows come back to the same real spot (the Room page: walk slowly, look around, come back past where you started).",
         Step::Done => "Everything is set up. Skipped steps stay on this page; Home starts desk mode or VR.",
     }
 }
@@ -162,7 +162,7 @@ impl AppCore {
             }
             Step::Udev => match (self.facts.udev_rule, self.facts.doctor_level("udev")) {
                 (Some(true), Some(pimax_doctor::Level::Ok) | None) => None,
-                (Some(true), _) => Some("The rule is installed but the headset nodes are not writable yet: Restart headset (on Home), then Check again.".into()),
+                (Some(true), _) => Some("The rule is installed but the headset nodes are not writable yet: Restart headset (top bar), then Check again.".into()),
                 (Some(false), _) => Some("The installed udev rule differs from the repository's.".into()),
                 (None, _) => Some("The udev rule is not installed yet.".into()),
             },
@@ -287,8 +287,8 @@ impl AppCore {
             Step::EyeCal => self.run_tool(ToolId::EyeCalibration),
             Step::Pair => {}
             Step::Room => {
-                // the Room row on Home (owned by the room setup page); its maps complete this step
-                self.page = Page::Desk;
+                // the Room page; its maps complete this step
+                self.page = Page::Room;
                 self.room_requested = true;
             }
             Step::Done => self.finish_onboarding(),

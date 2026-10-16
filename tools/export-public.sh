@@ -7,9 +7,10 @@
 #
 # 1. takes the files committed at HEAD (never the working tree) that public-manifest.txt allows
 #    ("+" globs, "-" globs win, "= DEST <- SRC" synthetic stand-ins);
-# 2. scrubs: same-length masks for headset/controller serials in text and in gzip fixtures (ASCII and UTF-16LE),
+# 2. scrubs: the login name -> "user" (and user@mau -> user@host), same-length masks for headset/controller serials in text and in gzip fixtures (ASCII and UTF-16LE),
 #    the exporting user's home path, e-mail addresses in Monado patch headers -> the public identity;
-# 3. applies the user-facing branding (omarchyvr) to the README, app window title, desktop entry and PKGBUILD;
+# 3. moves ("> DEST <- SRC") leave symlinks at the old paths: ai/ for agent files, patches/nvidia for the NVIDIA patches;
+#    applies the user-facing branding (omarchyvr) to the README, app window title, desktop entry and PKGBUILD;
 # 4. scans: gitleaks (if installed) + our own patterns (provider keys, serials, e-mail addresses, home paths,
 #    machine values read from the private config: AI keys and the shared-drive UUID, compared by value and never
 #    printed) + an extension deny-list; prints counts and paths only;
@@ -46,7 +47,7 @@ python3 -I - "$STAGE" "$OUT" "$REPO/public-manifest.txt" "$HEAD" <<'PY'
 import gzip, io, os, re, shutil, sys
 from pathlib import PurePosixPath
 stage, out, manifest, head = sys.argv[1:5]
-inc, exc, repl = [], [], []
+inc, exc, repl, moves = [], [], [], []
 for raw in open(manifest, encoding="utf-8"):
     l = raw.split("#", 1)[0].strip() if not raw.lstrip().startswith("#") else ""
     if not l:
@@ -57,6 +58,9 @@ for raw in open(manifest, encoding="utf-8"):
         exc.append(l[2:].strip())
     elif l.startswith("~ "):
         continue
+    elif l.startswith("> "):
+        dest, src = [x.strip() for x in l[2:].split("<-")]
+        moves.append((dest, src))
     elif l.startswith("= "):
         dest, src = [x.strip() for x in l[2:].split("<-")]
         repl.append((dest, src))
@@ -85,6 +89,33 @@ for dest, src in repl:
     d = os.path.join(out, dest)
     os.makedirs(os.path.dirname(d), exist_ok=True)
     shutil.copy2(s, d)
+# moves: the file goes to DEST, a relative symlink stays at SRC (old paths and tools keep working)
+for dest, src in moves:
+    s = os.path.join(stage, src)
+    if not os.path.isfile(s):
+        sys.exit(f"manifest: move source missing at HEAD: {src}")
+    d = os.path.join(out, dest)
+    os.makedirs(os.path.dirname(d), exist_ok=True)
+    shutil.copy2(s, d)
+    o = os.path.join(out, src)
+    if os.path.lexists(o):
+        os.remove(o)
+    os.makedirs(os.path.dirname(o), exist_ok=True)
+    os.symlink(os.path.relpath(d, os.path.dirname(o)), o)
+# links inside the moved Markdown files: a target that is not in ai/ but is in docs/ gets ../docs/
+aidir = os.path.join(out, "ai")
+for n in os.listdir(aidir) if os.path.isdir(aidir) else []:
+    if not n.endswith(".md") or n == "README.md":
+        continue
+    p = os.path.join(aidir, n); t = open(p, encoding="utf-8").read()
+    def fix(m):
+        tgt = m.group(1); base = tgt.split("#")[0]
+        if not base or os.path.exists(os.path.join(aidir, base)) or not os.path.exists(os.path.join(out, "docs", base)):
+            return m.group(0)
+        return "](../docs/" + tgt + ")"
+    nt = re.sub(r"\]\((?!https?:|#|\.\./|mailto:|/)([^)\s]+)\)", fix, t)
+    if nt != t:
+        open(p, "w", encoding="utf-8").write(nt)
 print(f"   {len(kept)} of {len(files)} committed files allowed, {len(repl)} synthetic stand-ins")
 
 # ---- scrub ---------------------------------------------------------------------------------------------------
@@ -141,6 +172,10 @@ for root, dirs, names in os.walk(out):
             nb = mask_bytes(b)
             if len(home) > 6:
                 nb = nb.replace(home + b"/", b"/home/user/").replace(home, b"/home/user")
+            if len(user) > 3:
+                nb = nb.replace(b"https://github.com/" + user + b"-pimax-re", b"https://github.com/laughtt/omarchyvr")
+                nb = nb.replace(user + b"@mau", b"user@host")
+                nb = re.sub(rb"\b" + re.escape(user) + rb"\b", b"user", nb)
             nb = re.sub(rb"(?mi)(Copyright (?:\(c\) )?\d{4}(?:-\d{4})?,? )" + re.escape(user) + rb"\b[^\n]*", rb"\1laughtt", nb)
             if n.endswith(".patch"):
                 nb = re.sub(rb"(?m)^(From|Signed-off-by|Co-authored-by): [^\n<]*<[^>\n]+@(?!users\.noreply\.github\.com|anthropic\.com)[^>\n]+>", lambda m: m.group(1) + b": " + ident, nb)
@@ -172,6 +207,10 @@ def readme(s):
     lines = s.split("\n", 1)
     return "# omarchyvr: Pimax Dream Air VR on Linux (Omarchy / Arch)\n\n" + NOTICE + lines[1]
 edit("README.md", readme)
+def agents(s):
+    s = s.replace("`docs/AI-KNOWLEDGE.md`", "`ai/AI-KNOWLEDGE.md`").replace("`docs/LESSONS.md`", "`ai/LESSONS.md`")
+    return s.replace("Before any work, read:", "Everything an agent uses is in `ai/` (see `ai/README.md`). Before any work, read:", 1)
+edit("AGENTS.md", agents)
 edit("rust/pimax-setup/src/window.rs", lambda s: s.replace('.with_title("Pimax")', '.with_title("omarchyvr")'))
 edit("rust/pimax-setup/src/app.rs", lambda s: s.replace('RichText::new("Pimax").size(21.0)', 'RichText::new("omarchyvr").size(21.0)'))
 edit("linux/pimax.desktop", lambda s: re.sub(r"(?m)^Name=Pimax$", "Name=omarchyvr", s).replace(

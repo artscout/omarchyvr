@@ -1,12 +1,24 @@
-//! The Record card on Home: what to record (eyes, frame rate, quality), Start / Stop, the live "REC" indicator and
-//! the last file. The logic is `pimax_gui_core::record`; this only draws.
+//! The Recording page: the video (eyes, frame rate, quality, Start / Stop, the live "REC" indicator and the last
+//! file) and the tracking data takes. The logic is `pimax_gui_core::record`; this only draws.
 use crate::app::PimaxApp;
 use crate::theme::{self, icon};
-use crate::widgets::{self, caption, card, kv, title, Kind};
+use crate::pages::two_columns;
+use crate::widgets::{self, caption, kv, Kind};
 use eframe::egui::{self, RichText, Ui};
 use pimax_gui_core::record::{self, Indicator, Opt};
 
-/// Draw the card.
+/// The Recording page.
+pub fn show(ui: &mut Ui, app: &mut PimaxApp) {
+    two_columns(ui, 380.0, |i, ui| {
+        if i == 0 {
+            card_ui(ui, app);
+        } else {
+            widgets::section(ui, "Tracking data", Some("Cameras, controller logs and the session log of one take, in a folder of its own, to compare with Windows. Works during Play, Work or SteamVR and never disturbs them (docs/RECORD.md)."), |ui| tracking_ui(ui, app));
+        }
+    });
+}
+
+/// The video card.
 pub fn card_ui(ui: &mut Ui, app: &mut PimaxApp) {
     app.core.want_record();
     let p = theme::pal(ui);
@@ -16,13 +28,7 @@ pub fn card_ui(ui: &mut Ui, app: &mut PimaxApp) {
     let op = app.core.record.op;
     let pending = app.core.record_busy();
     let session = app.core.live.service.is_some();
-    card(ui, |ui| {
-        ui.horizontal(|ui| {
-            ui.label(RichText::new(icon::VIDEO_CAMERA).size(16.0).color(p.dim));
-            title(ui, "Record");
-        });
-        caption(ui, "Video: what the headset shows");
-        ui.add_space(4.0);
+    widgets::section(ui, "Video", Some("What the headset shows, as a video in ~/Videos/pimax: 30 fps, high quality, with sound. Needs a running session. You can also say: Max, start recording / stop recording."), |ui| {
         let can_edit = !active && !pending;
         if let Some(i) = widgets::selector(ui, icon::EYE, "Eyes", &record::EYES, record::eyes_index(&s), can_edit) {
             app.core.record_set(Opt::Eyes, i);
@@ -32,6 +38,14 @@ pub fn card_ui(ui: &mut Ui, app: &mut PimaxApp) {
         }
         if let Some(i) = widgets::selector(ui, icon::SLIDERS, "Quality", &record::QUALITY, record::quality_index(&s), can_edit) {
             app.core.record_set(Opt::Quality, i);
+        }
+        let mut sound = s.audio;
+        if widgets::switch_row(ui, &mut sound, "Sound", Some("What you hear in the headset is recorded into the video."), can_edit).changed() {
+            app.core.record_set(Opt::Audio, sound as usize);
+        }
+        let mut mic = s.mic;
+        if widgets::switch_row(ui, &mut mic, "Microphone", Some("Also records your voice, mixed with the sound. Needs Sound on."), can_edit && s.audio).changed() {
+            app.core.record_set(Opt::Mic, mic as usize);
         }
         ui.add_space(6.0);
         let w = ui.available_width();
@@ -94,10 +108,6 @@ pub fn card_ui(ui: &mut Ui, app: &mut PimaxApp) {
         if let Some(e) = &app.core.record.settings_error {
             ui.label(RichText::new(e).color(p.warn).size(12.0));
         }
-        ui.add_space(10.0);
-        ui.separator();
-        ui.add_space(6.0);
-        tracking_ui(ui, app);
     });
 }
 
@@ -106,15 +116,12 @@ fn tracking_ui(ui: &mut Ui, app: &mut PimaxApp) {
     use record::tracking::{self as tr, View};
     app.core.want_track();
     let p = theme::pal(ui);
-    caption(ui, "Tracking data: cameras, controller logs and the session log, to compare with Windows");
     let view = app.core.record.track.clone().unwrap_or(View::Idle { last: None });
     let busy = app.core.task_busy("track-op");
     let rec = matches!(view, View::Recording { .. });
     let scen: Vec<&str> = tr::SCENARIOS.iter().map(|s| s.1).collect();
     let durs: Vec<&str> = tr::DURATIONS.iter().map(|s| s.1).collect();
-    ui.horizontal(|ui| {
-        ui.label(RichText::new(icon::CROSSHAIR).color(p.dim));
-        ui.label(RichText::new("Scenario").color(p.dim));
+    widgets::setting(ui, "Scenario", None, |ui| {
         ui.add_enabled_ui(!rec && !busy, |ui| {
             egui::ComboBox::from_id_salt("track-scenario").selected_text(scen[app.core.record.track_scenario.min(scen.len() - 1)]).show_ui(ui, |ui| {
                 for (i, l) in scen.iter().enumerate() {

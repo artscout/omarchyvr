@@ -54,6 +54,9 @@ pub enum SlotType {
     Name,
     /// A VR screen side: left, right, up, main (middle, center, top, above, down, ...; `windows::slot_word`).
     Side,
+    /// A VR screen by number (1 main, 2 left, 3 right, 4 up, 5 up-left, 6 up-right; docs/SCREENS.md), by side, or
+    /// `here` (the screen looked at / focused): `windows::screen_value`.
+    Screen,
 }
 
 /// One intent.
@@ -75,6 +78,9 @@ pub struct Intent {
     pub enabled: bool,
     #[serde(default)]
     pub confirm: bool,
+    /// Always asks for a spoken "yes", whatever `voice_confirm` says (stopping the session).
+    #[serde(default)]
+    pub ask_always: bool,
     #[serde(default)]
     pub say: String,
     #[serde(default)]
@@ -239,6 +245,11 @@ pub fn slot_names(s: &str) -> Vec<String> {
 
 impl Catalogue {
     /// The built-in catalogue plus the user's file if it exists.
+    /// Every literal word of the enabled intents' phrases (normalised), fillers out.
+    pub fn vocabulary(&self) -> std::collections::BTreeSet<String> {
+        self.enabled().flat_map(|i| i.phrases.iter()).flat_map(|p| crate::command::words(&p.replace(['{', '}'], " "))).filter(|w| !crate::command::FILLERS.contains(&w.as_str())).collect()
+    }
+
     pub fn load_default() -> Result<Catalogue, String> {
         let user = user_path();
         let text = match std::fs::read_to_string(&user) {
@@ -363,12 +374,12 @@ mod tests {
         assert_eq!(rows, want);
         assert!(c.get("omarchy.lock").unwrap().confirm);
         assert_eq!(c.enabled().count(), c.intents.len());
-        assert_eq!(c.intents.len(), 106); // + vr.input.controllers/hands (prefer-hands) // + win.screen.goto/move/nudge/closer/farther/bigger/smaller, win.organize/together (VR screens) // + voice.debug.on/off, typing, keys, browser, + win.ws.new/ws.close/focus.gaze/move.here/merge.here
+        assert_eq!(c.intents.len(), 141); // + vr.input.show_controllers/hide_controllers (PIMAX_CTRL_INHAND) // + win.app.open/here // + win.close.named (no app closes unless named) // + vr.screens.hide/hide_others, win.screen.scale, vr.session.stop (live 2026-10-16 b) // + vr.screens.numbers/numbers_hide/numbers_always (WayVR badges) // + screen numbers: win.screen.put_from/move_all/move_n/goto_n/swap/adjust/list_n/open_n, win.layout.save(_as)/restore(_as), omarchy.volume.set // + win.screen.put/put_n, vr.preset.exit_cinema, media.play (agent mode) // + vr.screens.count/more/one_more/add, win.screen.open/gather (2026-10-16) // + vr.input.controllers/hands (prefer-hands) // + win.screen.goto/move/nudge/closer/farther/bigger/smaller, win.organize/together (VR screens) // + voice.debug.on/off, typing, keys, browser, + win.ws.new/ws.close/focus.gaze/move.here/merge.here
         // window control: user request 2026-10-15; the destructive ones ask for a spoken yes
         for id in ["win.close", "win.ws.close", "win.tab.close"] {
             assert!(c.get(id).unwrap().confirm && c.get(id).unwrap().safety == "careful", "{id}");
         }
-        assert!(c.intents.iter().filter(|i| i.id.starts_with("win.")).all(|i| i.source == "user request 2026-10-15"));
+        assert!(c.intents.iter().filter(|i| i.id.starts_with("win.")).all(|i| i.source.starts_with("user request 2026-10-1")));
     }
 
     #[test]

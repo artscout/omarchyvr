@@ -6,7 +6,7 @@
 //! failure modes follow WayVR's `config.rs` (branch eye-gaze) as read for this page.
 use crate::machine::Machine;
 use crate::paths::Paths;
-pub use pimax_tools::vr::wayvr_conf::{WayvrSettings, CONF_NAME};
+pub use pimax_tools::vr::wayvr_conf::{ScreenNumbers, WayvrSettings, CONF_NAME};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -276,6 +276,10 @@ pub enum Ctl {
     GazeLaser(bool),
     /// Controllers in Work in the running session (`wayvrctl controllers on|off`).
     Controllers(bool),
+    /// Screen number badges mode in the running session (`wayvrctl screen-numbers off|ondemand|always`).
+    ScreenNumbers(crate::wayvr::ScreenNumbers),
+    /// Show the screen number badges now for a few seconds (`wayvrctl screen-numbers flash`).
+    FlashScreenNumbers,
 }
 
 impl Ctl {
@@ -303,6 +307,8 @@ impl Ctl {
             Ctl::Panel { panel, element, visible } => vec![s("panel-modify"), s(panel), s(element), s("set-visible"), if *visible { s("1") } else { s("0") }],
             Ctl::GazeLaser(on) => vec![s("gaze-laser"), if *on { s("on") } else { s("off") }],
             Ctl::Controllers(on) => vec![s("controllers"), if *on { s("on") } else { s("off") }],
+            Ctl::ScreenNumbers(m) => vec![s("screen-numbers"), s(m.key())],
+            Ctl::FlashScreenNumbers => vec![s("screen-numbers"), s("flash")],
         }
     }
 
@@ -319,6 +325,12 @@ impl Ctl {
             Ctl::Panel { panel, visible, .. } => format!("{} {panel}", if *visible { "Show" } else { "Hide" }),
             Ctl::GazeLaser(on) => format!("Eye laser {}", if *on { "on" } else { "off" }),
             Ctl::Controllers(on) => (if *on { "Controllers on" } else { "Hands only" }).into(),
+            Ctl::ScreenNumbers(m) => format!("Screen numbers: {}", match m {
+                ScreenNumbers::Off => "off",
+                ScreenNumbers::OnDemand => "on demand",
+                ScreenNumbers::Always => "always",
+            }),
+            Ctl::FlashScreenNumbers => "Show screen numbers".into(),
         }
     }
 }

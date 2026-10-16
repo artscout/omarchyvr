@@ -16,9 +16,9 @@ It has been measured on recordings only. No live session has run it yet (see "Li
 
 ## Turning it on
 
-In the app: Home > Tracking > **Camera hands** and **Hands replace controllers**; Play starts with them. The switch is
+In the app: Tracking > Hands > **Camera hands** and **Hands as controllers** (developer mode; Camera hands is also in Home > Quick settings); Play starts with them. The switch is
 greyed out (with the reason) while the build lacks `PIMAX_HT_HZ` or the models are missing. The guided live test is
-Home > Tracking > **Start the hand test** (docs/PLAY.md). The CLI below is the engine behind it.
+Tracking > Tests > **Start the hand test** (docs/PLAY.md). The CLI below is the engine behind it.
 
 ```sh
 pimax desk start --6dof --hands                 # desk mode with camera hands
@@ -64,7 +64,7 @@ when no hand is tracked (the pointer is then simply absent).
 * WayVR knows a camera hand from a controller-emulated hand through `XR_EXT_hand_tracking_data_source`: its pointer
   hand trackers ask for the unobstructed source only. Without camera hands (no `--hands`) nothing changes.
   The thresholds have not been tuned on live hands yet.
-* Switch: Home > Tracking > **Use controllers in Work**, OFF by default (user decision 2026-10-15: "in Work hands by
+* Switch: Tracking > **Controllers in Work** (also on Home's Tracking card), OFF by default (user decision 2026-10-15: "in Work hands by
   default, no controllers at all, never, unless toggled on"). Off: the controllers are ignored ENTIRELY (rays,
   buttons, triggers, sticks, grabs), also while no hand is tracked; there is no fallback. On: controllers work too, a
   tracked controller wins and a tracked camera hand fills in for a controller that is not tracked. It is saved in

@@ -1,0 +1,7 @@
+# The current pipeline (Lara on, everything else at baseline) with Qwen3.5-2B Q4_K_M as the action model on port 8092.
+# A llama-server for it must run there (same runtime and flags as the user's 4B on 8080, alias pimax-local).
+name = "qwen35-2b"
+notes = "Qwen3.5-2B Q4_K_M, Lara on"
+[model]
+endpoint = "http://127.0.0.1:8092/v1/chat/completions"
+alias = "pimax-local"

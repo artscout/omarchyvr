@@ -15,3 +15,5 @@ the_example_file_is_exactly_the_built_in_default
 vr::session::tests::a_second_start_while_one_is_in_progress_is_refused_without_touching_anything
 # pimax-capi: C session against the fake headset is timing dependent (fails under load in the lab too)
 c_program_drives_a_full_session_against_a_fake_headset
+# pimax-tools: the hands golden prints an eye-calibration hint when the private calibration is absent (public export)
+hands_dry_run_output_matches_the_golden_files

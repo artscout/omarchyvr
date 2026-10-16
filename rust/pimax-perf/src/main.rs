@@ -1,4 +1,5 @@
-//! `pimax-perf run [--file F] [--wayvrctl P] [--overlay perf]`: stats file of Monado -> WayVR wrist panel, 2x a second.
+//! `pimax-perf run [--file F] [--wayvrctl P] [--overlay perf]`: stats file of Monado -> WayVR wrist panel, 2x a second,
+//! plus a frame-health line every 5 s on stderr (the session's perf.log; see `timeline`).
 
 use pimax_perf::{parse, Tracker, View};
 use std::path::PathBuf;
@@ -67,12 +68,23 @@ fn main() {
     }
     let t0 = Instant::now();
     let mut tracker = Tracker::new();
+    let mut timeline = pimax_perf::Timeline::new();
     let mut link = pimax_perf::wayvr::Wayvr::new(wayvrctl, &overlay);
     let mut shown: Option<(View, Instant)> = None;
     eprintln!("pimax-perf: reading {}", file.display());
     loop {
         let view = match read(&file) {
-            Some(s) => tracker.view(&s, t0.elapsed().as_secs_f64()),
+            Some(s) => {
+                let now = t0.elapsed().as_secs_f64();
+                let unix = SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .map(|d| d.as_secs_f64())
+                    .unwrap_or_default();
+                if let Some(line) = timeline.push(&s, now, unix) {
+                    eprintln!("{line}");
+                }
+                tracker.view(&s, now)
+            }
             None => View::none(),
         };
         // send on change, and every 2 s anyway (a restarted WayVR or a dead wayvrctl link must not leave a stale panel)

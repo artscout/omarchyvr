@@ -24,6 +24,17 @@ pub fn budget() -> Duration {
     }
 }
 
+/// glibc reads `/proc/sys/vm/overcommit_memory` once per process, the first time a thread's heap shrinks
+/// (`check_may_shrink_heap` in malloc): an allocator detail, not a file the app reads. Make that happen on this thread
+/// before any frame is measured, so the read(2) count of the frames is the app's own (a frame that freed a large
+/// shape list first was counted as one read otherwise).
+fn prime_glibc_heap_shrink() {
+    // 32 MB in 64 KB blocks (below the mmap threshold: from this thread's heap), then all freed: the heap's top shrinks
+    let blocks: Vec<Vec<u8>> = (0..512).map(|i| vec![i as u8; 64 * 1024]).collect();
+    std::hint::black_box(&blocks);
+    drop(blocks);
+}
+
 /// One harness.
 pub struct Ui {
     pub h: Harness<'static, PimaxApp>,
@@ -69,6 +80,7 @@ impl Ui {
         let h = Harness::builder()
             .with_size(egui::vec2(1280.0, 900.0))
             .build_ui_state(|ui, app: &mut PimaxApp| app.frame(ui), app);
+        prime_glibc_heap_shrink();
         probe.watch_this_thread();
         Ui { h, probe, times: Vec::new(), slowest: (Duration::ZERO, String::new()), dir, clicked: 0, app_reads: 0 }
     }
@@ -98,6 +110,7 @@ impl Ui {
         let h = Harness::builder()
             .with_size(egui::vec2(1280.0, 900.0))
             .build_ui_state(|ui, app: &mut PimaxApp| app.frame(ui), app);
+        prime_glibc_heap_shrink();
         probe.watch_this_thread();
         Ui { h, probe, times: Vec::new(), slowest: (Duration::ZERO, String::new()), dir, clicked: 0, app_reads: 0 }
     }

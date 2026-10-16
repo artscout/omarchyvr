@@ -40,11 +40,21 @@ remembers whether the onboarding was finished, the switches, the supersampling a
 
 ## Look
 
-After Pimax Play (reference: the Home screen of the Windows app): near-black rounded cards, an indigo accent, outline
-icons (Phosphor, only the glyphs used are compiled in), Noto Sans when the system has it; a light palette follows the
-desktop. Rows expand in place with an eased height, tabs, hover and status pills fade instead of jumping, a new page
-fades in. The window repaints only on a change or while something animates (about one frame per second when idle),
-without vsync and at most 60 frames per second.
+A dark console in the spirit of Pimax's Windows app (Pimax EVO, 2026-10-16), drawn our own way: a sidebar with the
+pages, a thin action row on top, flat cards with thin borders and small corners, small-caps labels, one indigo accent,
+outline icons (Phosphor, only the glyphs used are compiled in), Noto Sans when the system has it; a light palette
+follows the desktop. **Minimal words**: a setting is one row (its name in small caps on the left, the switch or the
+choice on the right); what it does is behind the small "?" next to it (hover, or a click: a small popup that a second click, a click elsewhere or Esc closes, so it works in the headset where hover is unreliable; one shared widget, `widgets::help`) and on the Help page. Errors and states
+stay in plain words, short. Switches, choices and status pills fade instead of jumping, a new page fades in. The
+window repaints only on a change or while something animates (about one frame per second when idle), without vsync
+and at most 60 frames per second.
+
+**Line art** (`rust/pimax-setup/assets/art/*.svg`, drawn for this project, CC-BY-4.0, no vendor artwork): the headset
+(a slim goggle from the front and a little above), the left and right controllers, the app's mark. Thin strokes:
+`currentColor` is the accent, `#9aa1b5` the theme's neutral line colour. `art.rs` reads the small SVG subset the files
+use (path, circle, ellipse, rect, line, polyline, polygon, groups with style and transform), parses the path data with
+kurbo and rasterises with vello_cpu, the CPU rasteriser egui already uses for its glyphs (no new crate), into a
+texture cached per size and colour; a greyed headset or controller means "not there".
 
 | Before | After |
 |---|---|
@@ -52,90 +62,118 @@ without vsync and at most 60 frames per second.
 
 ## Pages
 
-The top bar has the pages (Home, Setup, Tools, Logs, Profiles, AI, System; Onboarding until it is done) and Re-check; the bottom
-bar the device dots (headset, left and right controller, tracking mode), the running action or the last message, the
-output panel, Setup and Help. A round help button opens the controls guide, this document, the lessons and "Report a
-problem".
+**Sidebar**: Home, Display, Tracking, Room, Desktop, Backgrounds, Recording, Local AI, AI; Ready (with the number of
+checks to look at); in Developer mode also Developer, Tools, Logs, Profiles, System; Onboarding until it is done. At the bottom
+the **Developer** switch (shows the advanced settings and pages; saved in `gui-state.toml`).
 
-**Home.** Left: settings rows, each with its current values on the right; a click opens it in place.
+**Action row** (every page): **Games** (what Play starts games with: Monado (xrizer), or SteamVR (experimental) when
+it is installed; `~/.config/pimax/games.toml`), **Restart service**, **Restart headset**, **Room setup** (opens the
+Room page) and Re-check (the doctor checks and the kernel log again). Below 800 points of width the three buttons show
+their icons only (the name is the tooltip).
 
-| Row | What |
-|---|---|
-| Quality / Performance | Refresh rate 72/90 Hz; supersampling 0.5-2.0x (`XRT_COMPOSITOR_SCALE_PERCENTAGE`, passed to Monado by the launcher); eye tracking; foveated rendering (coming soon); the performance readout on the right wrist (`--no-perf` when off). |
-| Optics / Display | IPD 58-72 mm with Apply (moves the lenses with the captured motor command when no session runs, shows "Lenses now" from the headset, and writes `~/.config/pimax/ipd.env`, used at the next start; while a session runs the lenses do not move and the page says why), "Measure with the eye tracker" (the IPD tool); brightness (coming soon); camera auto exposure state; lens test patterns. |
-| Tracking | 6DoF (`--6dof`), optical controller tracking (`--ctrl-track`, experimental), the 6DoF and gyro calibration state now; walk test, controller recording, hands test. |
-| Eye tracking | "Eye tracking on at desk start" (on by default; with a launcher that knows `--no-eye` the app passes `--no-eye` when it is off, else `--eye` when it is on), "Eye laser" in the running session (`wayvrctl gaze-laser on|off`), the calibration file and its validated accuracy, Calibrate / Eye view / Power on eye module, the refit. |
-| Desktop / WayVR | Subtitles (below), passthrough, the desk preset (`--preset cinema\|work\|assistant`), WayVR live actions, the settings of the next start, the conf.d check, the saved layout, the controls guide (below). |
-| Room | The anchor hook (`--anchor`), Map my room / Recognise room, the AprilTag (below). |
-| Voice | Live captions (`--voice`), the screen they sit under, the voice test, the voice commands research page. |
-| Video recording | Coming soon (greyed). |
-| Auto mode | The auto mode daemon (below). |
-| VR mode / Runtime | xrizer + Monado or SteamVR (`vr_runtime_switch.sh`), the Steam launch options, the Proton note (LESSONS row 23). |
-| Developer | Logs, Setup checklist, crash reports, Report a problem, the app version and log file, what Start runs. |
+**Status bar**: the headset, the controllers (2 dots and "Controllers n/2": the ones the running session has seen),
+the tracking mode (INSIDE-OUT 6DoF, 6DoF LOST, 3DoF), the running action or the last message; Output (the job log
+panel), Ready and Help on the right.
 
-Right: the runtime selector, the tracking badge (INSIDE-OUT 6DoF, 6DoF LOST, 3DoF), the headset card with a model
-picker (the headset modules of `pimax-device`: the Dream Air is real; Dream Air SE, Crystal Light, Crystal Super and
-8KX are mocks whose capabilities read "not supported yet"; the model is matched on the USB list, an unverified id of
-a mock shows as "possibly ..."), the controller cards (connected / tracked from monado.log; battery unknown, marked
-mock in demo data; Pair, at most once per hand every 30 s), the headset menu with **Restart headset** (below) and a
-"Camera missing" state when the headset is on USB but its camera is not, **Start Desk** (`pimax desk start ...`), **Start VR** (`pimax vr start --fps N [--6dof [--ctrl-track]] [--perf]
-[--anchor]`, Monado alone for Steam and OpenXR games; the app never launches a game) and **Stop**, the preflight verdict
-with "Start anyway" when only WayVR Xid 31 faults stand in the way and the full preflight below it, a small Subtitles
-switch (live while a desk session runs, else the default of the next start), ROOM SETUP (opens the Room row), and the
-session details.
+**Home** (the dashboard):
 
-**Subtitles** (live captions of what you say, under the main screen; desk mode only, VR mode has no WayVR panel):
-"Subtitles now" acts on the running session through `pimax desk captions on|off` (the same switch as the voice
-commands "captions on/off": the flag file `$XDG_RUNTIME_DIR/pimax-voice-captions.off`; `on` also starts `pimax-voice
-listen` and `pimax-voice captions` when they are missing). A session started without voice has no captions panel in
-WayVR: the launcher says so, and the next start needs the default on. "Subtitles on when desk starts" is the default,
-saved with the app's settings: Start Desk adds `--voice`. Both are in the Desktop / WayVR row; demo mode only
+- **Headset card**: the model in capitals with its state (Connected, Streaming 72 Hz, Camera missing, Not connected),
+  the line art, Refresh (72 / 90 Hz), Render, IPD, Status, Model (the headset modules of `pimax-device`: the Dream Air
+  is real; Dream Air SE, Crystal Light, Crystal Super and 8KX are mocks whose capabilities read "not supported yet").
+  Under it **Play** (`pimax vr start ...`: Monado for Steam and OpenXR games; the app never launches a game) and
+  **Work** (`pimax desk start ...`: the WayVR desk); the running side's button becomes **Stop Play** / **Stop Work**.
+  Then what runs (side and age, render size, what game mode paused, the frame health), the preflight verdict pill
+  ("ready", "your OK", "blocked") with its reason, "Start anyway" when only WayVR Xid 31 faults stand in the way, the
+  collapsed preflight details, the readiness dots (headset, Monado cap with **Fix** when a relink dropped
+  cap_sys_nice, OpenXR runtime, last start; the sentence is the tooltip), the start-at-login note, and the headset and
+  service restart progress.
+- **Controllers card**: left and right with their line art, state, battery (unknown: Monado does not report it; mock
+  values in demo data) and **Pair**, **Unpair** (a one-line confirm), **Vibrate** (a 25 %, 300 ms buzz, also while VR
+  runs). Pair: one StartPair per click, at most one per hand every 30 s.
+- **Quick settings**: Eye tracking, Passthrough, Subtitles, Game mode, Start at login; Camera hands in Developer mode.
+- **Tracking**: the mode chip, 6DoF, Controllers in Work, the room in one line with Set up, the gyro while a session
+  runs.
+- **Sound**: Headset sound with Test sound, Headset mic with Test microphone, the input now ([AUDIO.md](AUDIO.md)).
+
+**Display**: refresh rate, render quality (Quality / Balanced / Performance, the render size under it; the render
+scale slider in Developer mode), brightness (Image: Standard / Bright / Brighter at the next start; Panel backlight
+now), performance (Game mode, Compositor budget; the wrist readout in Developer mode), the lenses (IPD
+58-72 mm with Apply, which moves the lenses when no session runs and writes `~/.config/pimax/ipd.env`; Lenses now;
+in Developer mode Measure IPD, Lens test and the camera exposure).
+
+**Tracking**: Head (6DoF; Room anchor in Developer mode), Controllers (Controllers in Work; Optical tracking in
+Developer mode), Hands (Developer mode: Camera hands, Hands as controllers), Eyes (Eye tracking, its state, Gaze dot;
+in Developer mode Gaze targets windows, Eye laser, the calibration with Calibrate / Eye view / Power on eye module and
+the refit), Tests (Developer mode: the live state, 6DoF walk test, Record controllers, Hands test, the guided hand
+test, the controller gyro fit).
+
+**Room**: room setup (below), the saved rooms, the map preview; the by-hand steps in Developer mode.
+
+**Desktop** (the Work desk): Passthrough, Preset (None / Cinema / Work / Assistant), Screen numbers, Subtitles; in
+Developer mode the number of screens, WayVR (below) and Voice (live captions, the screen they sit under, Voice test,
+AI settings, the voice commands research page).
+
+**Subtitles** (live captions of what you say, under the main screen; Work only, Play has no WayVR panel): while a desk
+session runs the switch acts on it through `pimax desk captions on|off` (the same switch as the voice commands
+"captions on/off": the flag file `$XDG_RUNTIME_DIR/pimax-voice-captions.off`; `on` also starts `pimax-voice listen`
+and `pimax-voice captions` when they are missing); otherwise it is the default of the next start (Work adds
+`--voice`). A session started without voice has no captions panel in WayVR: the launcher says so. Demo mode only
 simulates. With an older launcher (no `desk captions`) the app flips the flag file itself.
 
-**Restart service** (headset menu on Home, next to Restart headset): `pimax desk restart` or `pimax vr restart`, whichever
-started the session (`start-argv.txt` in the session dir): stop with 30 s grace, then start again with the same
-switches, as a job with a progress bar. Under the headset card: "Auto-reconnect on" and the watchdog's last log line
-while the session watchdog runs (`watchdog.pid`, `watchdog.log`; the launcher restarts a session whose Monado,
-headset or camera went away, at most 3 times in 10 minutes). Both need a launcher that has `restart` (from
-`pimax desk help`); an older one: the button says to install the current launcher.
+**Restart service** (action row): `pimax desk restart` or `pimax vr restart`, whichever started the session
+(`start-argv.txt` in the session dir): stop with 30 s grace, then start again with the same switches, as a job with a
+progress bar on Home. Under the headset card: "Auto-reconnect on" and the watchdog's last log line while the session
+watchdog runs (`watchdog.pid`, `watchdog.log`; the launcher restarts a session whose Monado, headset or camera went
+away, at most 3 times in 10 minutes). Both need a launcher that has `restart` (from `pimax desk help`); with an older
+one the button's tooltip says to install the current launcher.
 
-**Restart headset** (headset menu on Home; Setup > Checks when the camera is missing): `pimax vr reset-headset` as a
-job. It sends the headset its own restart command `58 04 28 00 00` (what Pimax Play sends), watches the USB bus (HID
-back after about 8 s, camera after about 17 s, picture after about 22 s) and shows each stage in plain words on a
-progress bar of about 30 s. If the headset ignores the command (nothing leaves USB within 15 s) the old slow restart
-(heartbeat timeout, up to 2 minutes 30) follows and the bar says so. Refused while Monado runs. The launcher's verdict line becomes one sentence ("the camera is back after 74 s", or "try Restart
-headset once more"); the app never tells anyone to unplug anything. "Camera missing" comes from the USB list (HID chip
-34a4:0044 present, camera 34a4:0014 not), read in the background with the other facts.
+**Restart headset** (action row; Setup > Checks when the camera is missing): `pimax vr reset-headset` as a job. It
+sends the headset its own restart command `58 04 28 00 00` (what Pimax Play sends), watches the USB bus (HID back
+after about 8 s, camera after about 17 s, picture after about 22 s) and shows each stage in plain words on a progress
+bar of about 30 s. If the headset ignores the command (nothing leaves USB within 15 s) the old slow restart (heartbeat
+timeout, up to 2 minutes 30) follows and the bar says so. Refused while Monado runs. The launcher's verdict line
+becomes one sentence ("the camera is back after 74 s", or "try Restart headset once more"); the app never tells anyone
+to unplug anything. "Camera missing" comes from the USB list (HID chip 34a4:0044 present, camera 34a4:0014 not), read
+in the background with the other facts.
 
-**Setup** has three tabs. **Checks**: the system checks of `pimax-device` (its own and every pimax-doctor check through
-`DoctorBridge`) grouped by area, each finding with its catalogue fix, and the applied fixes with Undo (see "Checks and
-fixes" below). **Install**: the checklist as before (pimax-doctor plus the LESSONS checks, builds, launcher, this app;
-user fixes run directly, root fixes show the documented `sudo` lines, Copy and "Run with pkexec...") plus the manual
-steps of [MANUAL-STEPS.md](MANUAL-STEPS.md) it covers: cargo, Steam and Proton (pacman lines copy only), the keepalive
-unit with its Rust drop-in, the auto mode daemon (build, user unit, dry-run `auto.toml`), the installed EDID and
-Hyprland's DP-1 line (read only: the app never edits Hyprland's config). **Autofix**: ask a language model (below).
-Home also has the eye calibration refit (Eye tracking: Refit the newest run, Save the refit, confirmed; Save waits
-until the eye build reads version 2 files), the controller gyro fit (Tracking, from the last session's logs) and
-Start / Start at login for the auto mode unit. **Tools**: each tool with what keeps it from starting and a button that resolves it.
-**Logs**: the session logs (and the app's own log), history, open issues, lessons, safety rules. **Profiles**:
-per-headset profiles and backups. **AI**: the language model providers (below). **System**: pimaxd's view of the stack (below). **Onboarding** (replaces
-the first-run wizard): below.
+**Ready** (Setup): in the simple flow the checks; in Developer mode three tabs. **Checks**: the system checks of
+`pimax-device` (its own and every pimax-doctor check through `DoctorBridge`) grouped by area, each finding with its
+catalogue fix, the VR games check, and the applied fixes with Undo (see "Checks and fixes" below). **Install**: the
+checklist (pimax-doctor plus the LESSONS checks, builds, launcher, this app; user fixes run directly, root fixes show
+the documented `sudo` lines, Copy and "Run with pkexec...") plus the manual steps of [MANUAL-STEPS.md](MANUAL-STEPS.md)
+it covers: cargo, Steam and Proton (pacman lines copy only), the keepalive unit with its Rust drop-in, the auto mode
+daemon (build, user unit, dry-run `auto.toml`), the installed EDID and Hyprland's DP-1 line (read only: the app never
+edits Hyprland's config). **Autofix**: ask a language model (below).
 
-Screenshots (demo data, `pimax-setup --screenshots docs/gui`):
+**Backgrounds**: the VR environment around you, by theme, with the resolution, Off / passthrough and Download more
+([BACKGROUNDS.md](BACKGROUNDS.md)). **Recording**: the video (eyes, frame rate, quality, Start / Stop recording, the REC
+line, the last file) and the tracking data takes ([RECORD.md](RECORD.md)). **Local AI** and **AI**: below and [AI.md](AI.md). **Developer**: Logs,
+Setup checklist, Crash reports, Report a problem, the app version and log file, What Start runs, the session details,
+Auto mode (below) and the VR runtime switch (xrizer + Monado or SteamVR, the Steam launch options, the Proton note).
+**Tools**: each tool with what keeps it from starting and a button that resolves it. **Logs**: the session logs (and
+the app's own log), history, open issues, lessons, safety rules. **Profiles**: per-headset profiles and backups.
+**System**: pimaxd's view of the stack (below). **Onboarding** (replaces the first-run wizard): below.
+
+**Help** (status bar): one short paragraph per feature, the docs (SteamVR, Render quality, WayVR controls, this
+guide), Report a problem, the onboarding again; the lessons in Developer mode.
+
+Screenshots (demo data, `pimax-setup --screenshots docs/gui`; `PIMAX_SHOT_WIDTH=900 PIMAX_SHOT_HEIGHT=560` renders
+every page at the window's minimum size):
 
 | | |
 |---|---|
 | ![Home](gui/desk-idle.png) | ![Home, running](gui/desk-running.png) |
-| ![Quality and Desktop rows](gui/home-rows.png) | ![Room and Voice rows, a mock headset](gui/home-room.png) |
-| ![Auto mode row](gui/home-auto.png) | ![Home, light](gui/desk-idle-light.png) |
+| ![Display](gui/display.png) | ![Tracking](gui/tracking.png) |
+| ![Room](gui/room.png) | ![Desktop](gui/desktop.png) |
+| ![Recording](gui/record.png) | ![Local AI](gui/local-ai.png) |
+| ![Developer](gui/developer.png) | ![Home, light](gui/desk-idle-light.png) |
 | ![Setup](gui/setup.png) | ![pkexec dialog](gui/setup-pkexec.png) |
 | ![Tools](gui/tools.png) | ![Logs](gui/logs.png) |
 | ![History](gui/history.png) | ![Lessons](gui/lessons.png) |
 | ![Setup: Checks](gui/setup-checks.png) | ![Setup: Autofix with the demo answer](gui/autofix.png) |
 | ![Onboarding: find the headset](gui/onboarding.png) | ![Onboarding: pair the controllers](gui/onboarding-pair.png) |
 | ![AI providers](gui/ai.png) | ![AI: editing a provider](gui/ai-edit.png) |
-| ![System (pimaxd)](gui/system.png) | |
-| ![Profiles](gui/profiles.png) | |
+| ![System (pimaxd)](gui/system.png) | ![Profiles](gui/profiles.png) |
 
 ## System (pimaxd)
 
@@ -180,11 +218,11 @@ job failed comes back first. **Start over** deletes the file. Help > Onboarding 
 | udev access | The `udev.install_rules` catalogue fix: the pkexec dialog with the lines first. |
 | IPD | `pimax-eye ipd --watch` in a terminal (the IPD tool; `a` sets the lens motor once). |
 | Pair the controllers | Pair left / Pair right (one StartPair through auto mode per click, at most one per hand every 30 s). |
-| Sound in headset / Test headset sound | Home: while VR runs the headset speakers (DisplayPort audio, the NVIDIA HDA card's "Pimax" port) are the default output; Stop restores it. Test headset sound plays a chime there only (docs/AUDIO.md). |
-| Headset microphone / Test microphone | Home: the headset microphone is the default input while VR runs; "Microphone: headset / other" shows the input now; Test microphone records 3 s, shows the level, plays it back (docs/AUDIO.md). |
-| Test vibration | Each controller card: a 25 %, 300 ms buzz (`pimax controllers buzz`), through the running VR session when there is one (docs/STEAMVR.md section 6). |
+| Headset sound / Test sound | Home > Sound: while VR runs the headset speakers (DisplayPort audio, the NVIDIA HDA card's "Pimax" port) are the default output; Stop restores it. Test sound plays a chime there only (docs/AUDIO.md). |
+| Headset mic / Test microphone | Home > Sound: the headset microphone is the default input while VR runs; "Input now" shows it; Test microphone records 3 s, shows the level, plays it back (docs/AUDIO.md). |
+| Vibrate | Home > Controllers, each hand: a 25 %, 300 ms buzz (`pimax controllers buzz`), through the running VR session when there is one (docs/STEAMVR.md section 6). |
 | Eye calibration | `pimax-eyecal` in its own session (the eye calibration tool). |
-| Map the room | Opens the Room row on Home (the room setup page; its maps complete the step). |
+| Map the room | Opens the Room page (its maps complete the step). |
 
 ## Checks and fixes
 
@@ -224,10 +262,15 @@ The language models the app and voice control use, in `~/.config/pimax/ai.toml` 
 - **Local model on this PC** (`pimax-ai`, [AI.md](AI.md)): the status from `pimax-ai status --json`, run in the
   background every 5 s while the tab is open: installed or not, running on the GPU or the CPU, loading or ready, VRAM
   against the 4 GiB budget. Install (4.1 GB, resumes), Start on the GPU (`serve`), Start on the CPU (`serve --cpu`),
-  Stop and Test are jobs; Start runs in its own user scope so the server outlives the app. Starting on the GPU while
+  Stop and the one Test are jobs; Start runs in its own user scope so the server outlives the app. Starting on the GPU while
   a VR session runs is allowed; the page shows the budget next to it. "Use local model for voice" adds the provider
   (openai-compatible, `http://127.0.0.1:8080/v1`, `pimax-local`) and picks it for voice control. Without the binary:
   Build pimax-ai.
+- **Local AI page, the one Test** (State card, when the models run): one button runs `pimax-ai test --all`, which checks in
+  order Lara (router), the action model, speech recognition (the large model; skipped when off) and the agent model
+  (only when the Big agent model switch is on and it is loaded). The result is one compact line per check (mark, name,
+  time); what each check found is behind its "?". There is no other test button (the old Test of the AI page's
+  single-model card and the two-stage Test are merged into it).
 - **Last AI actions**: the newest lines of `~/.local/state/pimax/logs/ai.log` (voice control's AI actions), read in the
   background every 5 s while the tab is open.
 - **Test connection**: the only network call of the tab, on click: one fixed line ("Reply with the single word OK.")
@@ -262,14 +305,14 @@ undo.
    through a temporary `git worktree` when you press Make the branch (your checkout is not touched). The push, the
    `gh pr create` and the `git format-patch` lines are printed for you to run; nothing is uploaded.
 
-## WayVR (Desktop / WayVR row)
+## WayVR (Desktop page, Developer mode)
 
 - **Now** (WayVR running): Reset screens (`wayvrctl reset-screens`), Show all / Hide all (`switch-set 1` / `0`),
   Show / hide all (`show-hide`), the captions and the wrist readout panels (`panel-modify ... set-visible`), the apps
   inside WayVR (`process-list`, stop = `process-terminate`, start = `process-launch ... floating`). Each call runs in
   the background with a 3 s timeout (WayVR's request/response commands have none).
 - **Next desk start**: grab screens into the room, the A/X pin, keep the apparent size, the WayVR keyboard, the gaze
-  pointer, the grab hint, push/pull speed, screen width and distance limits; the captions screen (Voice row). Saved to
+  pointer, the grab hint, push/pull speed, screen width and distance limits; the captions screen (Voice card). Saved to
   `~/.config/pimax/wayvr-desk.conf`; `pimax desk start` writes it as `conf.d/50-pimax-app.yaml` in the desk WayVR home
   (after the launcher's own `30-worldlock.yaml` and `35-desk.yaml`, before a preset's `60-preset.yaml`): generated
   whole, every key once, validated (WayVR panics at start on a duplicated key, a null value, `min > max` of the grab
@@ -285,9 +328,9 @@ undo.
   rewrites the file when it exits).
 - **Controls**: the numbered items of [WAYVR-CONTROLS.md](WAYVR-CONTROLS.md), and the full guide.
 
-## Room (Room row)
+## Room (Room page)
 
-The anchor hook switch adds `--anchor` (`PIMAX_ANCHOR=1`) to the next start; Monado then keeps its head poses for the
+Room setup is [ROOM-SETUP.md](ROOM-SETUP.md). In Developer mode the anchor hook switch adds `--anchor` (`PIMAX_ANCHOR=1`) to the next start; Monado then keeps its head poses for the
 room tools and applies the world offset they write, so the windows come back to the same real spot.
 **Map my room** runs `pimax-roommap build --source broker --seconds N --name NAME` with the walking instructions
 (slowly through the room, walls and fixed things, come back past the start: that closes the loop). **Recognise room**
@@ -307,13 +350,13 @@ floor; anchors; metadata). The floor drawn is `floor.toml` when stored, else det
 only (nothing is saved).
 Background: [analysis/room-map.md](../analysis/room-map.md), [analysis/anchor/README.md](../analysis/anchor/README.md).
 
-## Auto mode (Auto mode row)
+## Auto mode (Developer page)
 
 The app talks to `pimax-autod` over its socket (`$PIMAX_AUTOD_SOCKET`, else `$XDG_RUNTIME_DIR/pimax-autod.sock`;
-[AUTO-MODE.md](AUTO-MODE.md)) in the background every 2 s while the row is open: the state (unplugged ... active ...
+[AUTO-MODE.md](AUTO-MODE.md)) in the background every 2 s while the page is open: the state (unplugged ... active ...
 sleep), dry run or live, paused; the switch pauses or resumes it; Desk or Game, the game runtime (Monado + xrizer, or
 SteamVR started by hand), the preset; Start now (`wake`) and Sleep now (`sleep`). `set-mode` lasts until the daemon
-restarts. Without the daemon the row shows how to run it. **Pair left / Pair right** (controller cards and this row):
+restarts. Without the daemon the card says how to install and start it. **Pair** (Home's controllers card and this card):
 one StartPair per click through the daemon's `pair` command (approved 2026-10-14, LESSONS row 11), "Press and hold the
 controller's pairing buttons (see the Pimax manual)", a 35 s progress, the result; without the daemon the same through
 `pimax auto pair <side>`. At most one request per hand every 30 s (the button says when the next one is possible).
@@ -375,11 +418,11 @@ responding". What the app does now:
   confirmation, the loopback HTTP client against a local server, key file rules, the doctor's commands starting once
   per round, fixes.log and Undo);
 - **e2e** (`tests/e2e.rs`, egui_kittest): the real window in demo mode with its monitor and task threads, on a machine
-  whose every access is slowed down and recorded from the UI thread; every page, every Home row opened, every button,
+  whose every access is slowed down and recorded from the UI thread; every page (the sidebar), every button,
   checkbox, radio button, tab and drop-down clicked (297: every Setup tab including the demo Autofix answer, every
   onboarding step), text typed, dialogs answered, the window resized. Asserts: no machine access and no file read from
   the UI thread, no frame over 50 ms (release), no panic, nothing started. Release build: 814 frames, slowest 6.9 ms
-  (all eleven rows opening at once), p99 1.7 ms, mean 0.29 ms;
+  (before the 2026-10-16 redesign: all eleven Home rows opening at once), p99 1.7 ms, mean 0.29 ms;
 - **supervisor** (`tests/supervisor.rs`, the real binary, no display): no display (both renderers tried, then a
   report), panic (4 reports, gives up after 3 restarts), SIGSEGV (minidump of the window process), hang (watchdog
   report, kill from outside restarts it, SIGTERM ends both), single instance, unexpected exit. The deliberately
@@ -447,7 +490,7 @@ against mistakes in the app's own command builders (every builder is tested agai
 
 - `rust/pimax-gui-core` (no UI): `facts` collects the live state and the facts on the `monitor` thread; `worker` runs
   every on-demand task off the UI thread; `preflight` and `checklist` are pure functions of the facts; `tools`, `wayvr`,
-  `room`, `auto`, `headsets`, `devices` describe the rows and cards; `job` runs ordered steps (wait for Monado,
+  `room`, `auto`, `headsets`, `devices` describe the cards; `job` runs ordered steps (wait for Monado,
   re-check, run) one at a time with output through a file; `term` opens terminals; `cmd`/`safety` build and check
   commands; `applog`, `crash`, `bundle`, `redact`, `orphans`, `instance`, `upload` are the stability parts; `app::AppCore`
   holds the state and every action. The machine is behind a `Machine` trait (the doctor's `Host` plus symlinks,
@@ -455,7 +498,8 @@ against mistakes in the app's own command builders (every builder is tested agai
   Reused as libraries: `pimax-tools` (desk plan, the WayVR settings file, log parser, env watch list, Steam options),
   `pimax-doctor`, `pimax-config`.
 - `rust/pimax-setup` (UI): eframe/egui 0.36, `supervisor` + `window` processes, `theme` (palette, fonts, eased
-  animations), `widgets` (rows, pills, device cards, buttons), `pages/*`; `screenshot.rs` renders egui frames on the
+  animations), `widgets` (cards, setting rows, switches, segmented choices, pills, buttons, the sidebar entries), `art` (the line
+  art), `pages/*`; `screenshot.rs` renders egui frames on the
   CPU for `--screenshots`.
 - Size: the stripped release binary is 11.6 MB (glow on Wayland, crash handling, the core); 17.2 MB with
   `--features wgpu`, 12.6 MB with `--features x11`; it was 20.9 MB unstripped with both renderers and X11.
@@ -477,7 +521,6 @@ against mistakes in the app's own command builders (every builder is tested agai
   JSON. Contribute's branch job was
   not run against the real checkout (demo mode and tests only).
 - The manual steps the app does not cover yet are listed in [MANUAL-STEPS.md](MANUAL-STEPS.md) ("GUI coverage gaps").
-- Controller battery is not reported by Monado's log: shown as unknown. Brightness, foveated rendering and video
-  recording are mocks.
+- Controller battery is not reported by Monado's log: shown as unknown. Foveated rendering is not built (not shown).
 - NVIDIA only: on other GPUs the NVIDIA checks are skipped, nothing else is adapted (see
   `analysis/research/portability-and-calibration-gui.md`). Other Pimax headsets are mocks.

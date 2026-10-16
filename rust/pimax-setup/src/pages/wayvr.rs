@@ -1,46 +1,37 @@
-//! The Desktop / WayVR row: live actions over `wayvrctl` (reset, show/hide, panels, apps), the settings of the next
-//! desk start (`~/.config/pimax/wayvr-desk.conf`, applied by the launcher), the conf.d check, the saved screen layout
-//! and the controls guide.
+//! WayVR on the Desktop page (developer mode): subtitles, live actions over `wayvrctl` (reset, show/hide, panels,
+//! apps), the settings of the next desk start (`~/.config/pimax/wayvr-desk.conf`, applied by the launcher), the
+//! conf.d check, the saved screen layout and the controls guide; screen numbers and the captions screen for every
+//! mode.
 use crate::app::PimaxApp;
 use crate::theme::{self, icon};
-use crate::widgets::{self, caption, chip, inset, note, toggle};
+use crate::widgets::{self, chip, note, section, switch_row};
 use eframe::egui::{self, RichText, Ui};
-use pimax_gui_core::wayvr::{Ctl, LintLevel};
+use pimax_gui_core::wayvr::{Ctl, LintLevel, ScreenNumbers};
 
-/// Number of screens in the saved layout (None until read).
-pub fn screen_count(app: &PimaxApp) -> Option<usize> {
-    match &app.core.wayvr.layout {
-        Some(Ok(_)) => Some(app.core.wayvr_screens().len()),
-        _ => None,
-    }
-}
-
-/// The row body.
+/// The WayVR cards of the Desktop page (developer mode).
 pub fn body(ui: &mut Ui, app: &mut PimaxApp) {
+    let dev = app.core.state.dev_mode;
     app.core.want_wayvr();
     let p = theme::pal(ui);
     let running = app.core.live.alive("wayvr") || (app.core.demo && app.core.live.service.is_some());
-    caption(ui, "Subtitles");
-    inset(ui, |ui| {
+    section(ui, "Subtitles", Some("The same switch as the voice commands \"captions on\" and \"captions off\". Play has no WayVR panel, so subtitles are a Work feature."), |ui| {
         let busy = app.core.busy();
         match app.core.subtitles_live() {
             Some(on) => {
                 let mut v = on;
-                if widgets::toggle(ui, &mut v, "Subtitles now (what you say, under the main screen)", !busy).changed() {
+                if switch_row(ui, &mut v, "Subtitles now", Some("What you say, under the main screen of the running desk."), !busy).changed() {
                     app.core.set_subtitles(v);
                 }
             }
-            None => note(ui, "No desk session runs: the setting below decides the next start."),
+            None => widgets::status(ui, "No desk session runs: the switch below decides the next start.", p.faint),
         }
         let mut d = app.core.toggles.voice;
         let can = app.core.facts.caps.voice || d;
-        if widgets::toggle(ui, &mut d, "Subtitles on when desk starts (--voice)", can).changed() {
+        if switch_row(ui, &mut d, "At desk start", Some("Subtitles on when the desk starts (--voice)."), can).changed() {
             app.core.set_subtitles_default(d);
         }
-        note(ui, "The same switch as the voice commands \"captions on\" and \"captions off\". VR mode has no WayVR panel, so subtitles are a desk mode feature.");
     });
-    caption(ui, "Now");
-    inset(ui, |ui| {
+    section(ui, "WayVR now", None, |ui| {
         if !running {
             note(ui, "WayVR is not running: start desk mode for the live controls.");
         }
@@ -64,12 +55,16 @@ pub fn body(ui: &mut Ui, app: &mut PimaxApp) {
                     }
                 }
             });
-            ui.horizontal_wrapped(|ui| {
-                ui.label(RichText::new("Wrist readout").color(p.dim));
+            widgets::setting(ui, "Wrist readout", None, |ui| {
                 for v in [true, false] {
-                    if ui.small_button(if v { "show" } else { "hide" }).on_hover_text("panel-modify perf perf_outer set-visible (not tried in the headset yet)").clicked() {
+                    if widgets::tbutton(ui, if v { "Show" } else { "Hide" }, true).on_hover_text("panel-modify perf perf_outer set-visible (not tried in the headset yet)").clicked() {
                         app.core.wayvr_ctl(Ctl::Panel { panel: "perf", element: "perf_outer", visible: v });
                     }
+                }
+            });
+            widgets::setting(ui, "Screen numbers", None, |ui| {
+                if widgets::tbutton(ui, "Show now", true).on_hover_text("wayvrctl screen-numbers flash: the numbers 1-6 for about 5 seconds").clicked() {
+                    app.core.wayvr_ctl(Ctl::FlashScreenNumbers);
                 }
             });
             ui.horizontal_wrapped(|ui| {
@@ -106,37 +101,38 @@ pub fn body(ui: &mut Ui, app: &mut PimaxApp) {
         }
     });
 
-    caption(ui, "Next desk start");
-    inset(ui, |ui| {
+    let saved_help = format!(
+        "Saved to {}; pimax desk start writes it as conf.d/{} (WayVR reads its config once, at start).",
+        app.core.wayvr_paths.settings.display(),
+        pimax_gui_core::wayvr::CONF_NAME
+    );
+    section(ui, "Next desk start", Some(&saved_help), |ui| {
         let s = &mut app.core.wayvr.settings;
         let before = s.clone();
-        toggle(ui, &mut s.world_lock_grab, "Grab screens to place them in the room", true);
-        toggle(ui, &mut s.world_lock_pin, "A / X click pins a screen", s.world_lock_grab);
-        toggle(ui, &mut s.grab_keep_apparent_size, "Keep the apparent size when pushing away", true);
-        toggle(ui, &mut s.enable_keyboard, "WayVR keyboard", true);
-        toggle(ui, &mut s.gaze_pointer, "Gaze pointer (with eye tracking)", true);
-        toggle(ui, &mut s.hide_grab_help, "Hide the grab hint", true);
-        toggle(ui, &mut s.controllers_in_work, "Use controllers in Work (off = hands only)", true);
-        toggle(ui, &mut s.controller_models, "Show 3D controller models (like SteamVR)", true);
-        toggle(ui, &mut s.controller_axes, "Debug: show pointer and grip axes on the controllers", true);
-        egui::Grid::new("grab-limits").num_columns(2).spacing([14.0, 6.0]).show(ui, |ui| {
-            ui.label(RichText::new("Push / pull speed").color(p.dim));
+        switch_row(ui, &mut s.world_lock_grab, "Grab to place", Some("Grab a screen to place it in the room."), true);
+        switch_row(ui, &mut s.world_lock_pin, "A / X pins a screen", None, s.world_lock_grab);
+        switch_row(ui, &mut s.grab_keep_apparent_size, "Keep apparent size", Some("A screen keeps its apparent size when you push it away."), true);
+        switch_row(ui, &mut s.enable_keyboard, "Keyboard", Some("The WayVR keyboard."), true);
+        // eyes are visual only: the gaze pointer is a developer option (also overridden by the eye settings at desk start)
+        if dev {
+            switch_row(ui, &mut s.gaze_pointer, "Gaze pointer", Some("Developer: the eyes as a mouse; only with desk start --eye."), true);
+        }
+        switch_row(ui, &mut s.hide_grab_help, "Hide grab hint", None, true);
+        switch_row(ui, &mut s.controllers_in_work, "Controllers in Work", Some("Off = hands only."), true);
+        switch_row(ui, &mut s.controller_models, "Controller models", Some("A 3D controller in each hand in Work, like SteamVR shows; the pointer ray leaves its front tip."), true);
+        switch_row(ui, &mut s.controller_axes, "Pointer and grip axes", Some("Debug: coloured axes on the controllers, to check the pointer in the headset."), true);
+        widgets::setting(ui, "Push / pull speed", None, |ui| {
             ui.add(egui::Slider::new(&mut s.grab_dist_rate, 0.0..=3.0).step_by(0.1));
-            ui.end_row();
-            ui.label(RichText::new("Screen width").color(p.dim));
-            ui.horizontal(|ui| {
-                ui.add(egui::DragValue::new(&mut s.grab_size_min).range(0.1..=10.0).speed(0.05).suffix(" m"));
-                ui.label("to");
-                ui.add(egui::DragValue::new(&mut s.grab_size_max).range(0.1..=20.0).speed(0.05).suffix(" m"));
-            });
-            ui.end_row();
-            ui.label(RichText::new("Distance").color(p.dim));
-            ui.horizontal(|ui| {
-                ui.add(egui::DragValue::new(&mut s.grab_dist_min).range(0.1..=10.0).speed(0.05).suffix(" m"));
-                ui.label("to");
-                ui.add(egui::DragValue::new(&mut s.grab_dist_max).range(0.2..=30.0).speed(0.05).suffix(" m"));
-            });
-            ui.end_row();
+        });
+        widgets::setting(ui, "Screen width", None, |ui| {
+            ui.add(egui::DragValue::new(&mut s.grab_size_min).range(0.1..=10.0).speed(0.05).suffix(" m"));
+            ui.label("to");
+            ui.add(egui::DragValue::new(&mut s.grab_size_max).range(0.1..=20.0).speed(0.05).suffix(" m"));
+        });
+        widgets::setting(ui, "Distance", None, |ui| {
+            ui.add(egui::DragValue::new(&mut s.grab_dist_min).range(0.1..=10.0).speed(0.05).suffix(" m"));
+            ui.label("to");
+            ui.add(egui::DragValue::new(&mut s.grab_dist_max).range(0.2..=30.0).speed(0.05).suffix(" m"));
         });
         let bad = s.validate();
         for b in &bad {
@@ -157,18 +153,11 @@ pub fn body(ui: &mut Ui, app: &mut PimaxApp) {
         if before != app.core.wayvr.settings {
             ui.ctx().request_repaint();
         }
-        note(ui, &format!(
-            "Saved to {}; pimax desk start writes it as conf.d/{} (WayVR reads its config once, at start).",
-            app.core.wayvr_paths.settings.display(),
-            pimax_gui_core::wayvr::CONF_NAME
-        ));
         for n in &app.core.wayvr.notes {
             ui.colored_label(p.warn, n);
         }
     });
-
-    caption(ui, "Config check");
-    inset(ui, |ui| {
+    section(ui, "Config check", None, |ui| {
         if !app.core.wayvr.loaded {
             ui.horizontal(|ui| {
                 widgets::spinner(ui);
@@ -191,8 +180,7 @@ pub fn body(ui: &mut Ui, app: &mut PimaxApp) {
         note(ui, &app.core.wayvr_paths.conf_d.display().to_string());
     });
 
-    caption(ui, "Saved screen layout");
-    inset(ui, |ui| {
+    section(ui, "Saved screen layout", None, |ui| {
         match &app.core.wayvr.layout {
             None => note(ui, "None saved yet (WayVR saves it when desk mode stops)."),
             Some(Err(e)) => {
@@ -227,8 +215,7 @@ pub fn body(ui: &mut Ui, app: &mut PimaxApp) {
         });
     });
 
-    caption(ui, "Controls");
-    inset(ui, |ui| {
+    section(ui, "Controls", None, |ui| {
         if app.core.wayvr.guide.is_empty() {
             note(ui, "Grip a screen to move it; stick up/down pushes it away or pulls it closer; both grips resize; double-click B resets all screens.");
         }
@@ -242,33 +229,42 @@ pub fn body(ui: &mut Ui, app: &mut PimaxApp) {
     });
 }
 
-/// Where the captions panel goes (the Voice row): a screen of the saved layout, or the first one.
+/// "Screen numbers" (Off / On demand / Always): a number (1-6) at the top centre of each VR screen. Saved at once and
+/// sent to a running WayVR; on the Desktop page (all modes).
+pub fn screen_numbers(ui: &mut Ui, app: &mut PimaxApp) {
+    app.core.want_wayvr();
+    let loaded = app.core.wayvr.loaded; // never save over a settings file that was not read yet
+    let cur = app.core.wayvr.settings.screen_numbers;
+    const MODES: [(ScreenNumbers, &str); 3] = [(ScreenNumbers::OnDemand, "On demand"), (ScreenNumbers::Always, "Always"), (ScreenNumbers::Off, "Off")];
+    let names: Vec<&str> = MODES.iter().map(|m| m.1).collect();
+    let sel = MODES.iter().position(|m| m.0 == cur).unwrap_or(0);
+    let help = "A number at the top centre of each VR screen: 1 main, 2 left, 3 right, 4 up, 5 up-left, 6 up-right. Say \"Max, move the terminal from screen 2 to screen 4\". On demand: shown for about 5 seconds when a screen is added or moved, or when you talk to Max. A change applies at once in a running session.";
+    if let Some(i) = widgets::seg_row(ui, "Screen numbers", Some(help), &names, sel, loaded) {
+        app.core.set_screen_numbers(MODES[i].0);
+    }
+}
+
+/// Where the captions panel goes (the Voice card): a screen of the saved layout, or the first one.
 pub fn captions_screen(ui: &mut Ui, app: &mut PimaxApp) {
     app.core.want_wayvr();
-    let p = theme::pal(ui);
     let screens = app.core.wayvr_screens();
     let cur = app.core.wayvr.settings.captions_screen.clone();
-    ui.horizontal(|ui| {
-        ui.label(RichText::new("Captions under").color(p.dim));
-        let mut pick: Option<Option<String>> = None;
-        egui::ComboBox::from_id_salt("captions-screen")
-            .selected_text(cur.clone().unwrap_or_else(|| "the first screen".into()))
-            .show_ui(ui, |ui| {
-                if ui.selectable_label(cur.is_none(), "the first screen").clicked() {
-                    pick = Some(None);
+    let mut pick: Option<Option<String>> = None;
+    let help = if screens.is_empty() { Some("The screens are known once WayVR has saved a layout (after the first desk session).") } else { None };
+    widgets::setting(ui, "Captions under", help, |ui| {
+        egui::ComboBox::from_id_salt("captions-screen").selected_text(cur.clone().unwrap_or_else(|| "the first screen".into())).show_ui(ui, |ui| {
+            if ui.selectable_label(cur.is_none(), "the first screen").clicked() {
+                pick = Some(None);
+            }
+            for s in &screens {
+                if ui.selectable_label(cur.as_deref() == Some(s.as_str()), s).clicked() {
+                    pick = Some(Some(s.clone()));
                 }
-                for s in &screens {
-                    if ui.selectable_label(cur.as_deref() == Some(s.as_str()), s).clicked() {
-                        pick = Some(Some(s.clone()));
-                    }
-                }
-            });
-        if let Some(v) = pick {
-            app.core.wayvr.settings.captions_screen = v;
-            app.core.save_wayvr();
-        }
+            }
+        });
     });
-    if screens.is_empty() {
-        note(ui, "The screens are known once WayVR has saved a layout (after the first desk session).");
+    if let Some(v) = pick {
+        app.core.wayvr.settings.captions_screen = v;
+        app.core.save_wayvr();
     }
 }

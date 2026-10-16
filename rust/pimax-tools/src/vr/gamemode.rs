@@ -1,9 +1,8 @@
 //! "Game mode: free the graphics card while playing" and the "Compositor time budget".
 //!
 //! Game mode (Play only): at `vr start` the local voice AI (`pimax-ai`, llama-server on the Vulkan GPU; `pause_ai`, default on)
-//! and, ONLY when the user turned it on, the user service Sunshine (`pause_sunshine`, default OFF: it is the game streaming)
-//! are stopped the clean way (`systemctl --user stop`,
-//! `pimax-ai stop`: SIGTERM, never SIGKILL by us), what was running is written to `<session dir>/gamemode-paused.txt`,
+//! is stopped the clean way (`pimax-ai stop`: SIGTERM, never SIGKILL by us). Sunshine is NEVER stopped or paused (user rule);
+//! only an old state file that lists it is honoured at restore (start again), what was running is written to `<session dir>/gamemode-paused.txt`,
 //! and exactly that is started again at `vr stop` (and by `pimax vr gamemode restore`, which the app runs at start
 //! when no session is up: crash recovery). It is an optional step: every failure is a plain-words line, VR goes on.
 //! Desk (Work) mode never calls it.
@@ -13,7 +12,7 @@
 //! wake-up and the display time. A bigger value makes it start the frame earlier (more margin against late commits,
 //! a little more latency). `auto` = leave Monado's default. Set by [`super::config::build_env`].
 //!
-//! Settings: ~/.config/pimax/gamemode.toml (`pause_ai = true|false`, `pause_sunshine = true|false`, the old `game_mode` key = `pause_ai`; `comp_budget = "auto"|"6"|"8"`).
+//! Settings: ~/.config/pimax/gamemode.toml (`pause_ai = true|false`, the old `game_mode` key = `pause_ai`; `comp_budget = "auto"|"6"|"8"`).
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -32,15 +31,13 @@ pub const BUDGETS: [(&str, &str); 3] = [("auto", "Auto"), ("6", "6 ms"), ("8", "
 pub struct Settings {
     /// Pause the local voice AI while playing (default on).
     pub pause_ai: bool,
-    /// Pause Sunshine (stops game streaming) while playing (default OFF).
-    pub pause_sunshine: bool,
     /// "auto" | "6" | "8"
     pub comp_budget: String,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { pause_ai: true, pause_sunshine: false, comp_budget: "auto".into() }
+        Settings { pause_ai: true, comp_budget: "auto".into() }
     }
 }
 
@@ -66,9 +63,7 @@ pub fn parse_settings(t: &str) -> Settings {
     if let Some(b) = flag(value(t, "pause_ai")) {
         s.pause_ai = b;
     }
-    if let Some(b) = flag(value(t, "pause_sunshine")) {
-        s.pause_sunshine = b;
-    }
+    // `pause_sunshine` in an old file is ignored (Sunshine is never paused) and dropped at the next save.
     if let Some(b) = value(t, "comp_budget").filter(|b| BUDGETS.iter().any(|x| x.0 == *b)) {
         s.comp_budget = b.to_string();
     }
@@ -84,7 +79,7 @@ pub fn save(home: &Path, s: &Settings) -> std::io::Result<()> {
     std::fs::create_dir_all(p.parent().unwrap())?;
     std::fs::write(
         p,
-        format!("# Game mode and compositor time budget (Pimax app)\npause_ai = {}\npause_sunshine = {}\ncomp_budget = \"{}\"\n", s.pause_ai, s.pause_sunshine, s.comp_budget),
+        format!("# Game mode and compositor time budget (Pimax app)\npause_ai = {}\ncomp_budget = \"{}\"\n", s.pause_ai, s.comp_budget),
     )
 }
 
@@ -155,11 +150,6 @@ fn systemctl(t: &Tools, args: &[&str]) -> Option<bool> {
     Some(o.status.success())
 }
 
-/// The Sunshine user unit that is active now.
-fn active_sunshine(t: &Tools) -> Option<&'static str> {
-    SUNSHINE_UNITS.iter().copied().find(|u| systemctl(t, &["is-active", "--quiet", u]) == Some(true))
-}
-
 /// "gpu" | "cpu" when the local AI server runs (from `pimax-ai status`).
 fn running_ai(t: &Tools) -> Option<&'static str> {
     if !t.pimax_ai.is_file() {
@@ -177,22 +167,14 @@ fn running_ai(t: &Tools) -> Option<&'static str> {
     }
 }
 
-/// Pause the local AI and/or Sunshine (each only when its own switch is on; Sunshine is off by default). A state file already there (a restart of a running
+/// Pause the local AI (only when its switch is on; Sunshine is never touched). A state file already there (a restart of a running
 /// session) is kept: the list of what to bring back must never lose entries. Returns a plain-words line.
 pub fn on_start(s: &Settings, t: &Tools, session_dir: &Path) -> Option<String> {
-    if !s.pause_ai && !s.pause_sunshine {
+    if !s.pause_ai {
         return None;
     }
     let mut keep: Vec<String> = std::fs::read_to_string(state_file(session_dir)).map(|x| x.lines().map(String::from).collect()).unwrap_or_default();
     let mut notes = Vec::new();
-    if let Some(u) = s.pause_sunshine.then(|| active_sunshine(t)).flatten() {
-        if systemctl(t, &["stop", u]) == Some(true) {
-            keep.retain(|l| !l.starts_with("sunshine="));
-            keep.push(format!("sunshine={u}"));
-        } else {
-            notes.push("Sunshine could not be paused".to_string());
-        }
-    }
     if let Some(mode) = s.pause_ai.then(|| running_ai(t)).flatten() {
         let ok = retry_busy(|| Command::new(&t.pimax_ai).arg("stop").stdin(Stdio::null()).output()).is_ok_and(|o| o.status.success());
         if ok {
@@ -216,6 +198,32 @@ pub fn on_start(s: &Settings, t: &Tools, session_dir: &Path) -> Option<String> {
     (!out.is_empty()).then_some(out)
 }
 
+/// The arguments that bring the local AI back after a pause, or up at a Work start: `pimax-ai up` starts every slot
+/// ai.toml asks for (the action model, the router, the speech server when the video memory fits). `serve` started the
+/// action model only, so the speech server stayed down after a game-mode pause (live 2026-10-16: the whole Work
+/// session used the CPU speech fallback).
+pub fn up_args(cpu: bool) -> Vec<String> {
+    let mut v = vec!["up".to_string(), "--wait".into(), "0".into()];
+    if cpu {
+        v.push("--cpu".into());
+    }
+    v
+}
+
+/// Work with voice: bring up what ai.toml asks for when Local AI is on (`pimax-ai up --wait 0`, detached; it keeps a
+/// server that fits and starts the missing ones, the speech server included). The voice listener tries the speech
+/// server again after a pause, so it switches to it once it answers. Off: nothing.
+pub fn local_ai_up(t: &Tools, cfg: &pimax_config::ai::AiConfig) -> Option<String> {
+    if !cfg.local_models_on() {
+        return None;
+    }
+    let spawned = Command::new(&t.pimax_ai).args(up_args(false)).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn();
+    Some(match spawned {
+        Ok(_) => "local AI: starting what is missing (speech server included when it fits)".to_string(),
+        Err(e) => format!("local AI: could not run pimax-ai up: {e}"),
+    })
+}
+
 /// Start again exactly what was paused. The state file goes first; the AI is started detached (it takes a while to load).
 pub fn on_stop(t: &Tools, session_dir: &Path) -> Option<String> {
     let text = std::fs::read_to_string(state_file(session_dir)).ok()?;
@@ -230,10 +238,7 @@ pub fn on_stop(t: &Tools, session_dir: &Path) -> Option<String> {
             Some(("ai", m)) if m == "gpu" || m == "cpu" => {
                 let spawned = retry_busy(|| {
                     let mut c = Command::new(&t.pimax_ai);
-                    c.arg("serve");
-                    if m == "cpu" {
-                        c.arg("--cpu");
-                    }
+                    c.args(up_args(m == "cpu"));
                     c.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn()
                 });
                 if spawned.is_ok() { back.push("local AI") } else { failed.push("local AI") }
@@ -251,7 +256,7 @@ pub fn on_stop(t: &Tools, session_dir: &Path) -> Option<String> {
     (!out.is_empty()).then_some(out)
 }
 
-/// A monado-service or SteamVR's vrserver is alive (by process name): `restore` must not bring Sunshine back into a session.
+/// A monado-service or SteamVR's vrserver is alive (by process name): `restore` must not start the AI again into a session.
 fn session_running(proc_root: &Path) -> bool {
     std::fs::read_dir(proc_root).into_iter().flatten().flatten().any(|e| {
         e.file_name().to_string_lossy().bytes().all(|b| b.is_ascii_digit())
@@ -259,7 +264,7 @@ fn session_running(proc_root: &Path) -> bool {
     })
 }
 
-/// `pimax vr gamemode [status|on|off|sunshine on|off|budget auto|6|8|restore]`.
+/// `pimax vr gamemode [status|on|off|budget auto|6|8|restore]`.
 pub fn cli(what: &[String], home: &Path, session_dir: &Path) -> Result<(), String> {
     let mut s = load(home);
     match what.first().map(String::as_str).unwrap_or("status") {
@@ -267,15 +272,6 @@ pub fn cli(what: &[String], home: &Path, session_dir: &Path) -> Result<(), Strin
             s.pause_ai = w == "on";
             save(home, &s).map_err(|e| e.to_string())?;
             println!("Game mode (pause the local AI): {w}");
-        }
-        "sunshine" => {
-            let w = what.get(1).map(String::as_str).unwrap_or("");
-            if !matches!(w, "on" | "off") {
-                return Err("sunshine: on | off".into());
-            }
-            s.pause_sunshine = w == "on";
-            save(home, &s).map_err(|e| e.to_string())?;
-            println!("Also pause Sunshine (stops game streaming): {w}");
         }
         "budget" => {
             let b = what.get(1).map(|b| b.trim_end_matches("ms").trim().to_string()).unwrap_or_default();
@@ -298,11 +294,10 @@ pub fn cli(what: &[String], home: &Path, session_dir: &Path) -> Result<(), Strin
         }
         "status" => {
             println!("Pause the local AI: {}", if s.pause_ai { "on" } else { "off" });
-            println!("Also pause Sunshine: {}", if s.pause_sunshine { "on" } else { "off" });
             println!("Compositor time budget: {}", s.comp_budget);
             println!("{}", paused_line(session_dir).unwrap_or_else(|| "Nothing paused".into()));
         }
-        w => return Err(format!("unknown choice {w} (status|on|off|sunshine on|off|budget auto|6|8|restore)")),
+        w => return Err(format!("unknown choice {w} (status|on|off|budget auto|6|8|restore)")),
     }
     Ok(())
 }
@@ -369,19 +364,24 @@ mod tests {
     fn settings_and_budget() {
         assert_eq!(parse_settings(""), Settings::default());
         assert!(Settings::default().pause_ai);
-        assert!(!Settings::default().pause_sunshine);
         let s = parse_settings("game_mode = false # x\ncomp_budget = \"8\"");
-        assert!(!s.pause_ai && !s.pause_sunshine);
+        assert!(!s.pause_ai);
         let o = parse_settings("game_mode = true");
-        assert!(o.pause_ai && !o.pause_sunshine); // old key: AI only, never Sunshine
+        assert!(o.pause_ai); // old key: AI only
+        // an old pause_sunshine line is ignored and dropped at the next save
         let n = parse_settings("game_mode = false\npause_ai = true\npause_sunshine = true");
-        assert!(n.pause_ai && n.pause_sunshine);
+        assert!(n.pause_ai);
         assert_eq!(s.comp_budget, "8");
         assert_eq!(parse_settings("comp_budget = \"99\"").comp_budget, "auto");
         assert_eq!(budget_env("auto"), None);
         assert_eq!(budget_env("6").as_deref(), Some("6.0"));
         assert_eq!(budget_env("8").as_deref(), Some("8.0"));
         let h = crate::vr::test_dir("gm-settings");
+        let home = h.join(".config/pimax");
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::write(settings_path(&h), "pause_ai = true\npause_sunshine = true\n").unwrap();
+        save(&h, &load(&h)).unwrap();
+        assert!(!std::fs::read_to_string(settings_path(&h)).unwrap().contains("sunshine"));
         save(&h, &s).unwrap();
         assert_eq!(load(&h), s);
     }
@@ -391,24 +391,26 @@ mod tests {
         let d = crate::vr::test_dir("gm-both");
         let t = fakes(&d, "server:  pid 5 on http://127.0.0.1:8080/v1, cpu, m.gguf, ready");
         let sess = d.join("sess");
-        let both = Settings { pause_sunshine: true, ..Settings::default() };
-        let l = on_start(&both, &t, &sess).unwrap();
-        assert_eq!(l, "game mode: paused Sunshine, local AI");
-        assert_eq!(paused_line(&sess).as_deref(), Some("Paused for game mode: Sunshine, local AI"));
-        assert!(calls(&d).contains("--user stop app-dev.lizardbyte.app.Sunshine.service"));
+        let l = on_start(&Settings::default(), &t, &sess).unwrap();
+        assert_eq!(l, "game mode: paused local AI");
+        assert!(!calls(&d).contains("stop app-dev"), "Sunshine is never stopped");
         assert!(calls(&d).contains("ai stop"));
+        // a state file from an older version that stopped Sunshine: it is started again, never stopped
+        let mut st = std::fs::read_to_string(sess.join("gamemode-paused.txt")).unwrap();
+        st.push_str("sunshine=app-dev.lizardbyte.app.Sunshine.service\n");
+        std::fs::write(sess.join("gamemode-paused.txt"), st).unwrap();
         let l = on_stop(&t, &sess).unwrap();
-        assert!(l.contains("started again: Sunshine, local AI"), "{l}");
+        assert!(l.contains("started again: Sunshine, local AI") || l.contains("started again: local AI, Sunshine"), "{l}");
         assert!(paused(&sess).is_empty());
         // the AI comes back detached: give a loaded test machine time (up to 10 s)
         for _ in 0..200 {
-            if calls(&d).contains("ai serve --cpu") {
+            if calls(&d).contains("ai up --wait 0 --cpu") {
                 break;
             }
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
         assert!(calls(&d).contains("--user start app-dev.lizardbyte.app.Sunshine.service"));
-        assert!(calls(&d).contains("ai serve --cpu"));
+        assert!(calls(&d).contains("ai up --wait 0 --cpu"));
         assert_eq!(on_stop(&t, &sess), None); // nothing left to restore
     }
 
@@ -417,12 +419,11 @@ mod tests {
         let d = crate::vr::test_dir("gm-none");
         let t = fakes(&d, "server:  stopped");
         std::fs::remove_file(d.join("sun-up")).unwrap();
-        let both = Settings { pause_sunshine: true, ..Settings::default() };
-        assert_eq!(on_start(&both, &t, &d.join("s")), None);
+        assert_eq!(on_start(&Settings::default(), &t, &d.join("s")), None);
         assert!(!calls(&d).contains("stop"));
         let d = crate::vr::test_dir("gm-off");
         let t = fakes(&d, "server:  pid 5, gpu (all layers)");
-        let off = Settings { pause_ai: false, pause_sunshine: false, ..Settings::default() };
+        let off = Settings { pause_ai: false, ..Settings::default() };
         assert_eq!(on_start(&off, &t, &d.join("s")), None);
         assert_eq!(calls(&d), "");
     }
@@ -434,9 +435,8 @@ mod tests {
         let sess = d.join("s");
         std::fs::create_dir_all(&sess).unwrap();
         std::fs::write(sess.join("gamemode-paused.txt"), "ai=gpu\n").unwrap();
-        let both = Settings { pause_sunshine: true, ..Settings::default() };
-        on_start(&both, &t, &sess).unwrap(); // Sunshine up, AI already paused by the first start
-        assert_eq!(paused_line(&sess).as_deref(), Some("Paused for game mode: local AI, Sunshine"));
+        let both = Settings::default();
+        assert_eq!(on_start(&both, &t, &sess), Some("game mode: paused local AI".into())); // AI already paused by the first start: kept
         let none = Tools { systemctl: d.join("nope"), pimax_ai: d.join("nope2"), proc_root: d.join("proc") };
         assert_eq!(on_start(&both, &none, &d.join("s2")), None);
     }

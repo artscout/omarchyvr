@@ -111,11 +111,14 @@ pub struct Settings {
     pub debug: bool,
     /// `voice_ai_confidence` (0..1, default 0.6): below it the agent asks "Did you mean ...?" instead of acting.
     pub confidence: f64,
+    /// `voice_agent` (default true): a request that is a goal ("set up work: terminals left, browser middle") runs
+    /// step by step, looking at the desktop after each step ([`Agent::goal`]).
+    pub goal: bool,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { mode: Mode::Fallback, strip_titles: false, timeout: None, gaze: true, log: true, style: None, debug: true, confidence: 0.6 }
+        Settings { mode: Mode::Fallback, strip_titles: false, timeout: None, gaze: true, log: true, style: None, debug: true, confidence: 0.6, goal: true }
     }
 }
 
@@ -142,6 +145,9 @@ impl Settings {
         }
         if let Some(b) = t.get("voice_ai_debug").and_then(|v| v.as_bool()) {
             s.debug = b;
+        }
+        if let Some(b) = t.get("voice_agent").and_then(|v| v.as_bool()) {
+            s.goal = b;
         }
         if let Some(x) = t.get("voice_ai_confidence").and_then(|v| v.as_float().or_else(|| v.as_integer().map(|i| i as f64))) {
             s.confidence = x.clamp(0.0, 1.0);
@@ -432,6 +438,365 @@ impl Provider {
     }
 }
 
+/// Two stages on this PC: the model's own confidence above which Lara does not overrule it (8 of 9).
+pub const LARA_TRUST: f64 = 0.85;
+
+/// Agent mode: most steps of a goal, and its time.
+pub const GOAL_STEPS: usize = 10; // the user's cap (2026-10-16)
+pub const GOAL_TIME: Duration = Duration::from_secs(30);
+
+/// Is a request a goal of several steps rather than one command? A goal word ("set up", "let's", "I want to watch",
+/// "get ready", "prepare", "arrange") with more than one thing to do (a comma, "and", "then"), or a long request
+/// with "and" / "then" / two commas. "I want to watch a film" alone is one command. The heard text keeps the
+/// speech-to-text's commas (`last_raw`).
+pub fn is_goal(request: &str) -> bool {
+    let w = command::words(request);
+    let content = w.iter().filter(|x| !command::FILLERS.contains(&x.as_str())).count();
+    let joined = format!(" {} ", w.join(" "));
+    let cue = [" set up ", " setup ", " let's ", " lets ", " let us ", " i want to watch ", " get ready ", " prepare ", " arrange ", " get everything ", " lay out "].iter().any(|c| joined.contains(c));
+    let commas = request.matches(',').count();
+    let several = crate::nlu::wants_plan(request) || commas >= 2;
+    (cue && (several || commas >= 1 || content >= 8)) || (several && content >= 10)
+}
+
+/// Fix what a small model is known to confuse: "exit cinema" for "cinema mode" (without a word for leaving it).
+pub fn sanity(d: &mut crate::nlu::Decision, request: &str) {
+    let w = command::words(request);
+    let has = |xs: &[&str]| w.iter().any(|x| xs.contains(&x.as_str()));
+    match d.intent.as_str() {
+        // leaving words next to "cinema" ("exit cinema", "cinema off"); "cinema mode and then passthrough off" enters it
+        "vr.preset.exit_cinema" => {
+            let near = w.iter().enumerate().filter(|(_, x)| x.starts_with("cinema")).any(|(i, _)| {
+                w[i.saturating_sub(3)..(i + 3).min(w.len())].iter().any(|x| matches!(x.as_str(), "exit" | "leave" | "out" | "stop" | "end" | "off" | "quit" | "sal" | "close" | "back"))
+            });
+            if !near {
+                d.intent = "vr.preset.cinema".into();
+            }
+        }
+        // an app slot the words do not name: "put THIS app on the screen above" moves the focused app; "put A
+        // screen on the right" adds a screen
+        "win.screen.put" => {
+            let app = d.slots.get("app").cloned().unwrap_or_default();
+            let named = command::words(&app).iter().filter(|x| x.len() >= 3).any(|x| w.contains(x));
+            if !named && has(&["this", "it"]) {
+                d.intent = "win.screen.move".into();
+                d.slots.remove("app");
+            } else if !named && has(&["screen", "screens"]) {
+                d.intent = "vr.screens.add".into();
+                d.slots.remove("app");
+            }
+        }
+        // "what is on each screen" = every screen (win.list), not one
+        "win.screen.list_n" if has(&["each", "every", "all", "screens"]) => {
+            d.intent = "win.list".into();
+            d.slots.clear();
+        }
+        // "push the screen further away": no screen named = the plain step (the screen looked at)
+        "win.screen.adjust" if d.slots.get("screen").is_none_or(|x| x == "here") && !w.iter().any(|x| x.parse::<u32>().is_ok()) => {
+            let how = d.slots.get("how").cloned().unwrap_or_default();
+            let how = match how.as_str() {
+                "further" | "away" => "farther",
+                "nearer" => "closer",
+                x => x,
+            }
+            .to_string();
+            d.slots.clear();
+            if matches!(how.as_str(), "bigger" | "smaller" | "closer" | "farther") {
+                d.intent = format!("win.screen.{how}");
+            } else {
+                d.intent = "win.screen.nudge".into();
+                d.slots.insert("side".into(), how);
+            }
+        }
+        // "hide screens" names screens (numbers, sides, here); "turn off the room" is the passthrough
+        "vr.screens.hide" => {
+            let v = d.slots.get("screens").cloned().unwrap_or_default();
+            let named = command::words(&v).iter().any(|x| x.parse::<u32>().is_ok_and(|n| (1..=6).contains(&n)) || windows::slot_word(x).is_some() || matches!(x.as_str(), "here" | "this"));
+            if !named {
+                d.slots.clear();
+                d.intent = if has(&["room", "passthrough"]) { "vr.passthrough.off" } else { "none" }.into();
+            }
+        }
+        // "turn off the room" = passthrough off (black), not dimmed
+        "vr.passthrough.dim" if has(&["off"]) && !has(&["dim", "dimmer", "darker", "bit"]) => {
+            d.intent = "vr.passthrough.off".into();
+        }
+        // "open a new screen" = a new window (workspace) on a free screen, not the main one again
+        "vr.screens.add" if d.slots.get("side").is_some_and(|s| s == "main") && has(&["new"]) => {
+            d.intent = "win.ws.new".into();
+            d.slots.clear();
+        }
+        _ => {}
+    }
+}
+
+/// The grammar of one goal step: one step or `done`.
+fn goal_grammar(one: &str) -> String {
+    one.replacen(r#"plain ::= ("none""#, r#"plain ::= ("none" | "done""#, 1)
+}
+
+/// The goal lines of the user message: what to answer, the steps done, the screens now.
+fn goal_lines(done: &[(String, String)], screens: &str) -> String {
+    let mut s = String::from("GOAL MODE: the words are a goal of several steps. Answer only the NEXT one step toward it, or `done 9` when it is met. Never close an app unless asked. To watch a video: media.play first, then vr.preset.cinema, then vr.passthrough.off. Apps to screens: one win.screen.put per kind.\n");
+    if !done.is_empty() {
+        let d: Vec<String> = done.iter().enumerate().map(|(i, (a, b))| format!("{}. {a} -> {b}", i + 1)).collect();
+        s += &format!("done so far: {}\n", d.join(" | "));
+    }
+    if !screens.is_empty() {
+        s += &format!("screens now: {screens}\n");
+    }
+    s
+}
+
+/// One part of a goal (split at commas, "and", "then") and the catalogue step it most likely is.
+#[derive(Debug, Clone)]
+pub struct Part {
+    pub text: String,
+    pub hint: Option<crate::nlu::Decision>,
+    /// Sure enough to run without asking the model (an apps-to-a-screen pattern, or a near-exact phrase).
+    pub strong: bool,
+}
+
+/// The goal's parts with the closest catalogue step of each: "terminals left" -> win.screen.put side=left
+/// app=terminals; "I want to watch Dune" -> media.play q=Dune. A small model otherwise skips or repeats a part.
+pub fn goal_parts(cat: &crate::catalogue::Catalogue, heard: &str) -> Vec<Part> {
+    let mut parts: Vec<Part> = Vec::new();
+    // "swap screens 1 and 2", "from screen 2 to screen 5 and 6": an "and" before a number joins, not splits
+    let mut chunks: Vec<String> = Vec::new();
+    for c in heard.split([',', ';', ':', '?', '!']).flat_map(|p| p.split(". ")).flat_map(|p| p.split(" then ")) {
+        for (i, a) in c.split(" and ").enumerate() {
+            let first = command::words(a).first().cloned().unwrap_or_default();
+            let joins = i > 0 && (first.parse::<u32>().is_ok() || first == "screen") && !chunks.is_empty();
+            if joins {
+                let last = chunks.last_mut().expect("not empty");
+                last.push_str(" and ");
+                last.push_str(a);
+            } else {
+                chunks.push(a.to_string());
+            }
+        }
+    }
+    for (ci, c) in chunks.iter().map(String::as_str).enumerate() {
+        let raw = command::words(c);
+        let w = strip_cue(&raw);
+        // a goal's header ("set up work:", "let's get everything ready"): nothing to do of its own
+        if chunks.len() >= 2 && (w.is_empty() || (w.len() == 1 && matches!(w[0].as_str(), "work" | "everything" | "things" | "stuff" | "it" | "this"))) {
+            continue;
+        }
+        // the first part names the goal ("let's set up movie night", "prepare a recording", "let's wrap up", "get
+        // ready for a long session"): a header, unless it is a catalogue phrase as it is ("let's watch Arrival",
+        // "get ready for work"). It made the stray first step of every model (2026-10-16: "wrap up" -> put app=wrap
+        // side=up, "movie night" -> passthrough brighter, "a long session" -> media.play q=session).
+        if ci == 0 && chunks.len() >= 2 && is_header(&raw) && command::best(cat, &w).is_none() && crate::fuzzy::candidates(cat, &w, 1).first().is_none_or(|b| b.score < 0.75 || !b.complete) {
+            continue;
+        }
+        if w.iter().filter(|x| !command::FILLERS.contains(&x.as_str())).count() == 0 {
+            continue;
+        }
+        let text = c.trim().to_string();
+        // a catalogue phrase as it is ("swap screens 1 and 2", "move the terminal from here to screen 4")
+        let best = command::best(cat, &w).filter(|m| !NOT_TOOLS.contains(&m.id.as_str()));
+        // "go to the next workspace" is no "focus {app}": a free-text match loses to a close phrase without one
+        let free = |id: &str| cat.get(id).is_some_and(|i| i.slots.values().any(|t| matches!(t, crate::catalogue::SlotType::Text)));
+        let best = match best {
+            Some(m) if free(&m.id) => match crate::fuzzy::candidates(cat, &w, 3).into_iter().find(|c| !c.free_text && c.complete && c.score >= 0.85) {
+                Some(c) => Some(command::Match { id: c.id, slots: c.slots, score: 0 }),
+                None => Some(m),
+            },
+            b => b,
+        };
+        if let Some(m) = best {
+            let strong = cat.get(&m.id).is_some_and(|i| intent_safety(i) == "safe");
+            parts.push(Part { text, hint: Some(crate::nlu::Decision { intent: m.id, confidence: 0.9, slots: m.slots }), strong });
+            continue;
+        }
+        // "terminals on screen 3", "chrome screen 2": apps to a numbered screen
+        if let Some(k) = w.iter().position(|x| x == "screen") {
+            if let Some(n) = w.get(k + 1).filter(|n| windows::screen_value(n).is_ok_and(|v| v.parse::<u32>().is_ok())) {
+                let app: Vec<&str> = w[..k].iter().map(String::as_str).filter(|x| !command::FILLERS.contains(x) && !matches!(*x, "on" | "to" | "in" | "at" | "put" | "move" | "send" | "all" | "the" | "and" | "lets" | "let's")).collect();
+                if !app.is_empty() {
+                    let mut slots = std::collections::BTreeMap::new();
+                    slots.insert("screen".to_string(), n.clone());
+                    slots.insert("app".to_string(), app.join(" "));
+                    parts.push(Part { text, hint: Some(crate::nlu::Decision { intent: "win.screen.put_n".into(), confidence: 0.8, slots }), strong: true });
+                    continue;
+                }
+            }
+        }
+        // "terminals left", "YouTube up-right", "chrome on the right screen": apps to a screen
+        let side = w.iter().find_map(|x| windows::slot_word(x).filter(|s| *s != "down"));
+        let new_screen = w.iter().any(|x| matches!(x.as_str(), "more" | "add" | "new" | "another" | "nudge"));
+        if let (Some(side), false) = (side, new_screen) {
+            let app: Vec<&str> = w
+                .iter()
+                .map(String::as_str)
+                .filter(|x| windows::slot_word(x).is_none() && !command::FILLERS.contains(x) && !matches!(*x, "on" | "to" | "in" | "at" | "screen" | "screens" | "window" | "put" | "move" | "send" | "all" | "set" | "work" | "lets" | "let's" | "this" | "it" | "that" | "of"))
+                .collect();
+            if !app.is_empty() {
+                let mut slots = std::collections::BTreeMap::new();
+                slots.insert("side".to_string(), side.to_string());
+                slots.insert("app".to_string(), app.join(" "));
+                parts.push(Part { text, hint: Some(crate::nlu::Decision { intent: "win.screen.put".into(), confidence: 0.8, slots }), strong: true });
+                continue;
+            }
+        }
+        let best = crate::fuzzy::candidates(cat, &w, 1).into_iter().next().filter(|b| b.score >= 0.6 && b.complete);
+        let strong = best.as_ref().is_some_and(|b| b.score >= 0.85);
+        let hint = best.map(|b| crate::nlu::Decision { intent: b.id, confidence: b.score, slots: b.slots });
+        parts.push(Part { text, hint, strong });
+    }
+    parts
+}
+
+/// A goal's opening words ("prepare a recording", "arrange my windows", "let's wrap up"): a cue verb first.
+fn is_header(raw: &[String]) -> bool {
+    let w: Vec<&str> = raw.iter().map(String::as_str).filter(|x| !command::FILLERS.contains(x)).collect();
+    matches!(w.first().copied(), Some("prepare" | "arrange" | "lets" | "let's" | "let" | "setup")) || (w.len() >= 2 && matches!((w[0], w[1]), ("set", "up") | ("get", "ready") | ("wrap", "up") | ("get", "everything")))
+}
+
+/// A part without its goal words in front ("let's set up four screens" -> "4 screens"): the "up" of "set up" is no
+/// side.
+fn strip_cue(w: &[String]) -> Vec<String> {
+    let mut i = 0;
+    while i < w.len() {
+        let x = w[i].as_str();
+        let next = w.get(i + 1).map(String::as_str);
+        if (x == "set" && next == Some("up")) || (x == "get" && next == Some("ready")) {
+            i += 2;
+            continue;
+        }
+        if matches!(x, "lets" | "let's" | "let" | "us" | "setup" | "prepare" | "arrange" | "ok" | "okay" | "so" | "now" | "please" | "can" | "could" | "you" | "we" | "and" | "then" | "also") {
+            i += 1;
+        } else {
+            break;
+        }
+    }
+    w[i..].to_vec()
+}
+
+/// The parts as a line of the goal request: `parts: "let's enter cinema mode" ~ vr.preset.cinema | ...`.
+pub fn clause_hints(cat: &crate::catalogue::Catalogue, heard: &str) -> String {
+    let parts = goal_parts(cat, heard);
+    if parts.len() < 2 {
+        return String::new();
+    }
+    let p: Vec<String> = parts
+        .iter()
+        .map(|p| match &p.hint {
+            Some(h) => format!("\"{}\" ~ {}", p.text, h.short().replace(&format!(" {:.0}/9", (h.confidence * 9.0).round()), "")),
+            None => format!("\"{}\"", p.text),
+        })
+        .collect();
+    format!("parts: {}\n", p.join(" | "))
+}
+
+/// "1 main ws1: foot, google-chrome | 2 left ws11: empty | ...": the VR screens by number (docs/SCREENS.md) with
+/// their apps and which one is focused (`*`), for the goal loop and the list_screens tool.
+pub fn screens_line(r: &mut dyn Runner) -> String {
+    let scr = windows::vr_screens(r);
+    let clients = windows::hyprctl_json(r, "clients").ok().and_then(|j| windows::parse_clients(&j).ok()).unwrap_or_default();
+    scr.iter()
+        .map(|s| {
+            let apps: Vec<String> = clients.iter().filter(|c| c.workspace == s.ws).take(4).map(|c| windows::clean_title(&c.class)).collect();
+            format!("{} {}{} ws{}: {}", windows::screen_number(s.slot).unwrap_or(0), s.slot, if s.focused { "*" } else { "" }, s.ws, if apps.is_empty() { "empty".to_string() } else { apps.join(", ") })
+        })
+        .collect::<Vec<_>>()
+        .join(" | ")
+}
+
+/// Marks a task of several steps as running while it lives ("Max, cancel" is watched for then; act's listener
+/// thread sets the cancel flag), and clears both flags at the end.
+struct TaskGuard {
+    busy: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    on: bool,
+}
+
+impl TaskGuard {
+    fn new(actor: &Actor, on: bool) -> TaskGuard {
+        use std::sync::atomic::Ordering;
+        if on {
+            actor.task_cancel.store(false, Ordering::SeqCst);
+            actor.task_busy.store(true, Ordering::SeqCst);
+        }
+        TaskGuard { busy: actor.task_busy.clone(), cancel: actor.task_cancel.clone(), on }
+    }
+
+    fn cancelled(&self) -> bool {
+        self.on && self.cancel.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+impl Drop for TaskGuard {
+    fn drop(&mut self) {
+        use std::sync::atomic::Ordering;
+        if self.on {
+            self.busy.store(false, Ordering::SeqCst);
+            self.cancel.store(false, Ordering::SeqCst);
+        }
+    }
+}
+
+/// Is an app name the model answered really in the request? Ok = yes. Err(Some(x)) = no, but `x` (an open app's
+/// class or title word, a known site, an app family) sounds like something heard ("you 2" -> youtube); Err(None) =
+/// nothing like it. The login name and host name never count as an app (the model copied "user" from a
+/// terminal title, live 2026-10-16).
+pub fn app_grounded(value: &str, request: &str, clients: &[windows::Client]) -> Result<(), Option<String>> {
+    let heard: Vec<String> = command::words(request);
+    let digit_word = |w: &str| -> String {
+        match w {
+            "1" => "one", "2" => "two", "3" => "three", "4" => "four", "5" => "five", "6" => "six", "7" => "seven", "8" => "eight", "9" => "nine",
+            x => x,
+        }
+        .to_string()
+    };
+    // single words and adjacent pairs written together ("you two" -> youtwo)
+    let mut grams: Vec<String> = heard.iter().filter(|w| !command::FILLERS.contains(&w.as_str())).cloned().collect();
+    // a number heard for a sound: "you 2" = "youtu(be)"
+    let digit_sound = |w: &str| -> String {
+        match w {
+            "1" => "won", "2" => "tu", "4" => "for", "8" => "ate",
+            x => x,
+        }
+        .to_string()
+    };
+    for p in heard.windows(2) {
+        grams.push(format!("{}{}", digit_word(&p[0]), digit_word(&p[1])));
+        grams.push(format!("{}{}", digit_sound(&p[0]), digit_sound(&p[1])));
+    }
+    let me: Vec<String> = [std::env::var("USER").ok(), std::fs::read_to_string("/etc/hostname").ok()].into_iter().flatten().map(|x| x.trim().to_lowercase()).filter(|x| x.len() >= 3).collect();
+    let vwords: Vec<String> = command::words(value).into_iter().filter(|w| w.len() >= 3 && !command::FILLERS.contains(&w.as_str())).collect();
+    let mine = |w: &str| me.iter().any(|m| w.contains(m.as_str()));
+    let hit = |w: &str| grams.iter().any(|g| crate::fuzzy::word_sim(g, w) >= 0.8);
+    if !vwords.is_empty() && !vwords.iter().any(|w| mine(w)) && vwords.iter().any(|w| hit(w)) {
+        return Ok(());
+    }
+    // the closest real name to something heard
+    let mut names: Vec<String> = crate::desk::SITES.iter().map(|(n, _)| n.to_string()).collect();
+    names.extend(["terminal", "browser", "files", "chrome", "steam", "spotify", "obsidian", "signal"].map(String::from));
+    for c in clients {
+        names.extend(command::words(&format!("{} {}", c.class.replace(['.', '-', '_'], " "), c.title)).into_iter().filter(|w| w.len() >= 4 && w.chars().all(|ch| ch.is_alphabetic())));
+    }
+    names.retain(|n| !mine(n) && !command::FILLERS.contains(&n.as_str()));
+    let best = names
+        .iter()
+        .flat_map(|n| grams.iter().filter(|g| g.len() >= 3).map(move |g| (n, crate::fuzzy::word_sim(g, n))))
+        .filter(|(_, s)| *s >= 0.6)
+        .max_by(|a, b| a.1.total_cmp(&b.1));
+    Err(best.map(|(n, _)| n.clone()))
+}
+
+
+/// The warm-up threads' generation (one live thread: the current agent's).
+static WARM_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// One classification and one act request per category (the GPU builds its pipelines on the first requests).
+pub fn warm_two_stage(rt: &mut crate::router::Router, p: &mut Provider, nlu_system: &str, grammar: &str, class_sys: &str) -> Result<(), String> {
+    rt.classify("warm up", "", class_sys, Duration::from_secs(60))?;
+    p.complete_nlu(nlu_system, "heard: \"warm up\"", grammar, Duration::from_secs(120))?;
+    Ok(())
+}
+
 /// OpenAI Chat Completions body with tools.
 pub fn openai_body(model: &str, system: &str, msgs: &[Msg], tools: &[ToolSpec], local: bool, cloud: bool) -> Value {
     let mut m = vec![json!({"role": "system", "content": system})];
@@ -595,6 +960,10 @@ pub enum ToolKind {
     ListWindows,
     GetGaze,
     GetSession,
+    /// Apps by kind or name (all, or the one used last) from a screen to a screen (numbers, sides or "here").
+    MoveApps,
+    /// The VR screens by number with their apps.
+    ListScreens,
 }
 
 /// A tool with its safety class.
@@ -618,7 +987,8 @@ fn slot_schema(t: SlotType) -> Value {
     match t {
         SlotType::Number => json!({"type": "integer", "minimum": 1, "maximum": 999}),
         SlotType::Word => json!({"type": "string", "maxLength": 40, "description": "one plain word"}),
-        SlotType::Side => json!({"type": "string", "enum": ["left", "right", "up", "down", "main"], "description": "a VR screen side"}),
+        SlotType::Side => json!({"type": "string", "enum": ["left", "right", "up", "down", "main", "up-left", "up-right"], "description": "a VR screen side"}),
+        SlotType::Screen => json!({"type": "string", "description": "a VR screen: its number 1-6 (1 main, 2 left, 3 right, 4 up, 5 up-left, 6 up-right, the number shown on it), a side name, or \"here\" (the screen the user looks at)"}),
         SlotType::Text => json!({"type": "string", "maxLength": 120, "description": "a few plain words"}),
         SlotType::Name => json!({"type": "string", "maxLength": 60, "description": "a background name"}),
     }
@@ -690,6 +1060,15 @@ pub fn tools(cat: &Catalogue) -> Vec<Tool> {
         "safe",
     );
     add("list_windows", "All windows (id, class, title, workspace). Read-only.", obj(json!({}), &[]), ToolKind::ListWindows, "query");
+    let screen = slot_schema(SlotType::Screen);
+    add(
+        "move_apps",
+        "Move apps to a VR screen by kind or name: apps = \"terminals\", \"chrome\", \"youtube\" (a tab's window), \"the code editor\", \"this\" (the focused app) or \"everything\"; which = all (default) or one (the one used last); to = the target screen; from = only the apps on that screen. Never closes anything.",
+        obj(json!({"apps": {"type": "string", "maxLength": 60}, "which": {"type": "string", "enum": ["all", "one"]}, "to": screen, "from": screen}), &["apps", "to"]),
+        ToolKind::MoveApps,
+        "safe",
+    );
+    add("list_screens", "The VR screens by number (1 main, 2 left, 3 right, 4 up, 5 up-left, 6 up-right) with the apps on each. Read-only.", obj(json!({}), &[]), ToolKind::ListScreens, "query");
     add("get_gaze", "What the user's eyes point at now. Read-only.", obj(json!({}), &[]), ToolKind::GetGaze, "query");
     add("get_session_state", "The VR session: running, preset, background, passthrough, captions. Read-only.", obj(json!({}), &[]), ToolKind::GetSession, "query");
     v
@@ -881,6 +1260,21 @@ pub struct Context {
     pub recent: Vec<(String, String, bool)>,
     /// "this": (window id, "gaze" | "focus").
     pub this: Option<(String, &'static str)>,
+    /// The VR screens (main first) and the slots hidden by voice ("hide screen 3").
+    pub screens: Vec<windows::Screen>,
+    pub hidden: Vec<String>,
+}
+
+/// The VR screens hidden by voice (`hidden = ...` in `$XDG_RUNTIME_DIR/pimax-screens.state`, `pimax desk screens
+/// hide`).
+pub fn hidden_screens() -> Vec<String> {
+    let dir = std::env::var_os("XDG_RUNTIME_DIR").map(std::path::PathBuf::from).unwrap_or_else(std::env::temp_dir);
+    let t = std::fs::read_to_string(dir.join("pimax-screens.state")).unwrap_or_default();
+    t.lines()
+        .filter_map(|l| l.split_once('='))
+        .filter(|(k, _)| k.trim() == "hidden")
+        .flat_map(|(_, v)| v.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect::<Vec<_>>())
+        .collect()
 }
 
 impl Context {
@@ -901,7 +1295,12 @@ impl Context {
             captions: probe.captions_on(),
         };
         let this = deictic_target(g.as_ref(), focused.as_ref(), &clients);
-        Context { request: request.into(), time: probe.now(), gaze: g, focused, clients, session, recent: recent.iter().cloned().collect(), this }
+        // the screens line only for a request about screens (one more hyprctl call)
+        let rw = command::words(request);
+        let about_screens = rw.iter().any(|w| matches!(w.as_str(), "screen" | "screens" | "window" | "windows" | "number" | "numbers" | "pantalla" | "ventana") || w.parse::<u32>().is_ok_and(|n| (1..=6).contains(&n)));
+        let screens = if about_screens { windows::vr_screens(r) } else { Vec::new() };
+        let hidden = if screens.len() > 1 { hidden_screens() } else { Vec::new() };
+        Context { request: request.into(), time: probe.now(), gaze: g, focused, clients, session, recent: recent.iter().cloned().collect(), this, screens, hidden }
     }
 
     fn brief(c: &Client, strip: bool) -> Value {
@@ -993,7 +1392,7 @@ pub fn system_prompt() -> String {
      The user's words: a \"window\" is a workspace (one VR screen, with all its apps; close window = the \
      win_ws_close tool). A Hyprland window (a context window id) is an \"app\". A \"tab\" is inside an app. Without \
      a named target, the target is what the user looks at. VR screens: main (centre), left, right, up; \
-     \"close the other windows\" = show one screen (preset work-1), never close apps.\n\
+     Asking to keep a single window or screen = show one screen (preset work-1), never close apps.\n\
      Act by calling tools: usually exactly one, at most 3. Window ids must come from the context. Commands like \
      fullscreen, float or move to workspace act on the focused window: for another window call focus_window first or \
      use the window tools. Careful tools ask the user to confirm; call them anyway when asked for.\n\
@@ -1123,6 +1522,16 @@ pub struct Agent {
     nlu_grammar_one: String,
     /// The local model, used when a remote provider fails or is too slow (None: the matcher only).
     pub fallback: Option<Provider>,
+    /// Agent mode's own model (ai.toml `voice_agent_url` + `voice_agent_model`, e.g. a bigger local model on its own
+    /// port): it answers the steps of a goal; simple commands stay on the usual route. None: the usual provider.
+    pub goal_provider: Option<Provider>,
+    /// While a goal runs on [`Agent::goal_provider`]: the usual provider, to fall back to when the agent model fails.
+    goal_backup: Option<Provider>,
+    /// The agent model after a fall back (put back in place when the goal ends).
+    goal_spare: Option<Provider>,
+    /// The audit's dry run: nothing really happens, so a goal step that "fails" on this desktop (no such window)
+    /// does not end the goal; the decisions are what is checked.
+    pub dry_run: bool,
     /// The online provider used when the primary one is local and its server is not running (None: never).
     pub online_backup: Option<Provider>,
     /// pimaxd's session snapshot, cached ([`crate::remote::StateCache`]).
@@ -1131,6 +1540,16 @@ pub struct Agent {
     pub history: VecDeque<Value>,
     class_system: String,
     act_system: String,
+    /// Two stages on this PC: the router ("Lara", port 8081) classifies, `provider` (port 8080) acts
+    /// ([`crate::router`], docs/AI.md section 16). None: the classifier is `provider`'s own model (online).
+    pub router: Option<crate::router::Router>,
+    /// The catalogue (the router's grammars per category).
+    catalogue: Catalogue,
+    /// The scoped planner's system prompts, one per category set ([`crate::planner`]): the same text every time,
+    /// so llama-server reuses its cache.
+    scoped_prompts: std::collections::HashMap<String, String>,
+    /// The planner's settings (production, or the active variant's when the audit set one).
+    pub planner: crate::planner::Settings,
 }
 
 impl Agent {
@@ -1148,18 +1567,48 @@ impl Agent {
             nlu_system: crate::nlu::system_prompt(cat),
             nlu_grammar: crate::nlu::grammar(cat),
             nlu_grammar_one: crate::nlu::grammar_steps(cat, false),
+            scoped_prompts: Default::default(),
+            planner: crate::planner::Settings::current(),
             fallback: None,
+            goal_provider: None,
+            goal_backup: None,
+            goal_spare: None,
+            dry_run: false,
             online_backup: None,
             cache: crate::remote::StateCache::new(crate::remote::StateCache::default_path()),
             history: VecDeque::new(),
             class_system: crate::remote::classify_system(),
             act_system: crate::remote::act_system(),
+            router: None,
+            catalogue: cat.clone(),
+        }
+    }
+
+    /// The provider and, with two stages on this PC, the router.
+    pub fn describe(&self) -> String {
+        match &self.router {
+            Some(r) => format!("{} + {}", r.describe(), self.provider.describe()),
+            None => self.provider.describe(),
+        }
+    }
+
+    /// The AI mode in two words, for the captions and the watch: "This PC", "This PC, 2 stages", "Online".
+    pub fn mode_label(&self) -> &'static str {
+        match (self.provider.local, self.router.is_some()) {
+            (true, true) => "This PC, 2 stages",
+            (true, false) => "This PC",
+            (false, _) => "Online",
         }
     }
 
     /// How the model is asked: `voice_ai_style`, else compact for a local model and two stages for a remote one.
     pub fn style(&self) -> Style {
-        self.settings.style.unwrap_or(if self.provider.local { Style::Compact } else { Style::TwoStage })
+        match self.settings.style {
+            Some(s) => s,
+            // two stages on this PC: the simple request, filtered by the router ([`Agent::lara_filtered`])
+            None if self.provider.local => Style::Compact,
+            None => Style::TwoStage,
+        }
     }
 
     /// Remember a finished command and its result for the next requests' context (the last 5).
@@ -1228,8 +1677,28 @@ impl Agent {
                 .unwrap_or_else(|| Provider::local_default(Box::new(Curl)))
         });
         let provider_local = provider.local;
+        if provider_local && cfg.voice_local_models == Some(false) {
+            // "Local models: Off" and no online choice: no model, the offline commands only
+            return Ok(None);
+        }
         let mut a = Agent::new(settings, provider, cat);
         a.fallback = fallback;
+        // agent mode's own model (user request 2026-10-16): `voice_agent_url = "http://127.0.0.1:8083/v1/chat/completions"`,
+        // `voice_agent_model = "pimax-agent"` (OpenAI-compatible; llama-server takes the step grammar)
+        let t: toml::Table = text.parse().unwrap_or_default();
+        if let Some(url) = t.get("voice_agent_url").and_then(|v| v.as_str()).filter(|u| u.starts_with("http://") || u.starts_with("https://")) {
+            let model = t.get("voice_agent_model").and_then(|v| v.as_str()).unwrap_or(LOCAL_MODEL);
+            let key = t.get("voice_agent_api_key_env").and_then(|v| v.as_str()).and_then(env);
+            a.goal_provider = Some(Provider::new("agent", Wire::OpenAi, url, model, key, Box::new(Curl)));
+        }
+        if provider_local {
+            // two stages on this PC: the router classifies; the same server answers the simple request when the
+            // router or the act request fails
+            a.router = crate::router::from_config(&cfg);
+            if a.router.is_some() {
+                a.fallback = Some(Provider::new(&a.provider.name, a.provider.wire, &a.provider.endpoint, &a.provider.model, None, Box::new(Curl)));
+            }
+        }
         if provider_local && cfg.voice_online_backup.unwrap_or(true) {
             a.online_backup = cfg
                 .providers
@@ -1268,7 +1737,36 @@ impl Agent {
     /// Prime the local server's prompt cache (the static system prompt) in the background, now and again whenever
     /// the server becomes ready (a restart, another model): the thread polls `/health` every 3 s. Remote: nothing.
     pub fn warm_up(&self) {
+        // a reloaded agent (ai.toml changed) ends the previous warm-up thread
+        let gen = WARM_GEN.fetch_add(1, std::sync::atomic::Ordering::AcqRel) + 1;
         if !self.provider.local {
+            return;
+        }
+        if self.router.is_some() {
+            // two stages: warm both servers once they answer (a fresh Agent, so this one stays free)
+            let (name, endpoint, model) = (self.provider.name.clone(), self.provider.endpoint.clone(), self.provider.model.clone());
+            let (nsys, gram) = (self.nlu_system.clone(), self.nlu_grammar.clone());
+            let rid = crate::router::router_id(self.router.as_ref());
+            let health = health_url(&endpoint);
+            let rhealth = self.router.as_ref().map(|r| r.health_url());
+            std::thread::spawn(move || {
+                for _ in 0..200 {
+                    if WARM_GEN.load(std::sync::atomic::Ordering::Acquire) != gen {
+                        return;
+                    }
+                    let up = |h: &Option<String>| h.as_deref().is_none_or(|h| crate::llm::http("GET", h, None, Duration::from_millis(800)).is_ok());
+                    if up(&health) && up(&rhealth) {
+                        let mut p = Provider::new(&name, Wire::OpenAi, &endpoint, &model, None, Box::new(Curl));
+                        let base = std::env::var("PIMAX_AI_ROUTER_BASE").ok().filter(|b| pimax_config::ai::is_loopback(b)).unwrap_or_else(|| pimax_config::ai::ROUTER_BASE.to_string());
+                        let mut rt = crate::router::Router::new(&rid, &base, Box::new(Curl));
+                        let t0 = Instant::now();
+                        let r = warm_two_stage(&mut rt, &mut p, &nsys, &gram, &crate::remote::classify_system());
+                        eprintln!("voice: AI warm-up (two stages) {} in {} ms", if r.is_ok() { "done" } else { "failed" }, t0.elapsed().as_millis());
+                        return;
+                    }
+                    std::thread::sleep(Duration::from_secs(3));
+                }
+            });
             return;
         }
         let compact = self.compact();
@@ -1279,6 +1777,9 @@ impl Agent {
         std::thread::spawn(move || {
             let mut warm = false;
             loop {
+                if WARM_GEN.load(std::sync::atomic::Ordering::Acquire) != gen {
+                    return;
+                }
                 let ready = health.as_deref().is_none_or(|h| crate::llm::http("GET", h, None, Duration::from_millis(800)).is_ok());
                 if ready && !warm {
                     let mut p = Provider::new(&name, wire, &endpoint, &model, key.clone(), Box::new(Curl));
@@ -1329,7 +1830,22 @@ impl Agent {
             let (nsys, gram) = (self.nlu_system.clone(), self.nlu_grammar.clone());
             self.provider.complete_nlu(&nsys, "heard: \"warm up\"", &gram, Duration::from_secs(120))?;
         }
+        if self.provider.local && self.router.is_some() {
+            let sys = self.class_system.clone();
+            if let Some(rt) = self.router.as_mut() {
+                rt.classify("warm up", "", &sys, Duration::from_secs(60))?;
+            }
+        }
         Ok(t0.elapsed().as_millis() as u64)
+    }
+
+    /// Two stages on this PC: one classification and one act request per category (the GPU builds its pipelines on
+    /// the first requests; the router loads its checkpoint), so the first command is not the slow one.
+    pub fn warm_two_stage(&mut self) -> Result<(), String> {
+        match self.router.as_mut() {
+            Some(rt) => warm_two_stage(rt, &mut self.provider, &self.nlu_system, &self.nlu_grammar, &self.class_system),
+            None => Ok(()),
+        }
     }
 
     /// Decide and act for one wake-word request (`matched` = the deterministic matcher's result).
@@ -1377,6 +1893,28 @@ impl Agent {
         let t0 = Instant::now();
         let style = self.style();
         let ctx = Context::collect(&request, r, self.gaze.as_mut(), self.probe.as_mut(), actor, &self.recent, style == Style::Tools);
+        // agent mode: a goal of several steps, one step at a time (local and online alike)
+        let heard = if actor.last_raw.is_empty() { request.clone() } else { actor.last_raw.clone() };
+        if style != Style::Tools && self.settings.goal && is_goal(&heard) {
+            // agent mode's own model when configured; else online, the action model answers the steps (the intent
+            // model only classifies)
+            let own = self.goal_provider.take().map(|p| std::mem::replace(&mut self.provider, p));
+            let swapped = own.is_some();
+            self.goal_backup = own;
+            let saved = if swapped { None } else { self.provider.action_model.clone().map(|am| std::mem::replace(&mut self.provider.model, am)) };
+            let res = self.goal(actor, &ctx, cands, &heard, now, r);
+            if let Some(m) = saved {
+                self.provider.model = m;
+            }
+            if let Some(main) = self.goal_backup.take() {
+                self.goal_provider = Some(std::mem::replace(&mut self.provider, main));
+            } else if swapped {
+                self.goal_provider = self.goal_spare.take();
+            }
+            if let Some(done) = res {
+                return done;
+            }
+        }
         if style == Style::Compact {
             return self.decide(actor, &ctx, cands, now, r, t0);
         }
@@ -1404,17 +1942,54 @@ impl Agent {
     fn decide(&mut self, actor: &mut Actor, ctx: &Context, cands: &[Cand], now: Instant, r: &mut dyn Runner, t0: Instant) -> Routed {
         // the raw words (number words, case and punctuation kept: typed text and searches are copied from them)
         let heard = if actor.last_raw.is_empty() { ctx.request.clone() } else { actor.last_raw.clone() };
-        let (user, ids) = crate::nlu::user_message(ctx, cands, &heard, self.settings.strip_titles);
+        let (mut user, mut ids) = crate::nlu::user_message(ctx, cands, &heard, self.settings.strip_titles);
         let left = (t0 + self.timeout()).saturating_duration_since(Instant::now());
         let t1 = Instant::now();
-        let gram = if crate::nlu::wants_plan(&ctx.request) { &self.nlu_grammar } else { &self.nlu_grammar_one };
-        let res = self.provider.complete_nlu(&self.nlu_system, &user, gram, left);
+        let plan_ok = crate::nlu::wants_plan(&ctx.request);
+        let scoped = self.scoped(actor, ctx, cands, &heard, plan_ok, left, r);
+        // the scoped planner's answer stands unless it failed (no answer, a plan its dry run refused) or said none:
+        // then the single prompt with every tool decides (variant knob tools.fallback, on by default)
+        let fallback = crate::variant::active().map(|v| v.tools.fallback).unwrap_or(true);
+        let scoped = match scoped {
+            Some((res, lara, u, i)) => {
+                let weak = match &res {
+                    Ok(a) => a.trim_start().starts_with("none"),
+                    Err(_) => true,
+                };
+                if weak && fallback {
+                    crate::variant::honour("tools.fallback");
+                    let (res2, lara2) = self.lara_filtered(ctx, cands, &heard, &user, plan_ok, (t0 + self.timeout()).saturating_duration_since(Instant::now()));
+                    let why = match &res {
+                        Ok(_) => "none".to_string(),
+                        Err(e) => e.chars().take(40).collect(),
+                    };
+                    Some((res2, format!("{lara}({why}) all > {lara2}"), user.clone(), ids.clone()))
+                } else {
+                    Some((res, lara, u, i))
+                }
+            }
+            None => None,
+        };
+        let (res, lara) = if let Some((res, lara, u, i)) = scoped {
+            user = u;
+            ids = i;
+            (res, lara)
+        } else if self.router.is_some() {
+            self.lara_filtered(ctx, cands, &heard, &user, plan_ok, left)
+        } else {
+            let gram = if plan_ok { &self.nlu_grammar } else { &self.nlu_grammar_one };
+            (self.provider.complete_nlu(&self.nlu_system, &user, gram, left), String::new())
+        };
         let llm_ms = t1.elapsed().as_millis() as u64;
-        let mut entry = json!({"request": ctx.request, "provider": self.provider.describe(), "mode": self.settings.mode.id(), "style": "compact", "prompt": user, "llm_ms": llm_ms});
+        let mut entry = json!({"request": ctx.request, "provider": self.describe(), "mode": self.settings.mode.id(), "style": if self.router.is_some() { "two-stage" } else { "compact" }, "prompt": user, "llm_ms": llm_ms});
+        if !lara.is_empty() {
+            entry["router"] = lara.trim_end_matches(" > ").into();
+        }
         let set = |actor: &mut Actor, decision: &str| {
             if let Some(t) = actor.trace.as_mut() {
-                t.decision = decision.to_string();
+                t.decision = format!("{lara}{decision}");
                 t.llm_ms = Some(llm_ms);
+                t.prompt = user.clone();
             }
         };
         let answer = match res {
@@ -1444,6 +2019,7 @@ impl Agent {
                             d.slots.insert("q".into(), x);
                         }
                     }
+                    sanity(&mut d, &ctx.request);
                     d
                 })
                 .collect(),
@@ -1460,11 +2036,18 @@ impl Agent {
             t.slots = d.slots.clone();
         }
         entry["decision"] = shorts.join(" ; ").into();
-        // up to 3 steps, in order; a question (low confidence, a yes) or a failure ends the plan
+        // up to PLAN_MAX (4) steps, in order; a question (low confidence, a yes) or a failure ends the plan
         let mut ran: Vec<String> = Vec::new();
         let mut outcomes = Vec::new();
         let mut failed: Option<String> = None;
+        let mut says: Vec<String> = Vec::new();
+        let task = TaskGuard::new(actor, plan.len() > 1);
+        let mut cancelled = false;
         for (k, d) in plan.iter().enumerate() {
+            if k > 0 && task.cancelled() {
+                cancelled = true;
+                break;
+            }
             let call = match d.to_call(&ids) {
                 Ok(Some(c)) => c,
                 Ok(None) => continue,
@@ -1485,7 +2068,10 @@ impl Agent {
             let out = self.call_ask(actor, ctx, &call, now, r, ask.as_deref());
             outcomes.push(format!("{out:?}"));
             match &out {
-                Outcome::Done(_) | Outcome::Data(_) => ran.push(format!("ai:{}", call.name)),
+                Outcome::Done(x) | Outcome::Data(x) => {
+                    ran.push(format!("ai:{}", call.name));
+                    says.push(x.lines().next().unwrap_or_default().chars().take(40).collect());
+                }
                 Outcome::Asked(_) => {
                     ran.push(format!("ai:{}?", call.name));
                     if let Some(t) = actor.trace.as_mut() {
@@ -1498,6 +2084,17 @@ impl Agent {
                     break;
                 }
             }
+        }
+        // a plan: one line with every step's result in the headset (each step's own toast is replaced by the next)
+        drop(task);
+        if plan.len() > 1 && !says.is_empty() {
+            let steps: Vec<String> = says.iter().enumerate().map(|(i, x)| format!("{}. {x}", i + 1)).collect();
+            let tail = match &failed {
+                Some(e) => format!(" | step {} of {} failed: {e}", says.len() + 1, plan.len()),
+                None if cancelled => format!(" | cancelled after step {} of {}", says.len(), plan.len()),
+                None => String::new(),
+            };
+            r.toast(&format!("{} of {} steps: {}{tail}", says.len(), plan.len(), steps.join(" | ")));
         }
         entry["outcome"] = outcomes.into();
         entry["ms"] = (t0.elapsed().as_millis() as u64).into();
@@ -1514,6 +2111,333 @@ impl Agent {
         let id = ran.join(",");
         self.note(&ctx.request, &id, true);
         Routed::Handled(id)
+    }
+
+    /// Agent mode (user request 2026-10-16): a goal ("let's enter cinema mode, I want to watch Dune", "set up work:
+    /// terminals left, browser middle, YouTube up-right") runs one step at a time. Each round the model gets the
+    /// goal, the steps done with their results and the screens with their apps now, and answers the NEXT single
+    /// step (the catalogue's intents only, under the grammar) or `done`. At most [`GOAL_STEPS`] steps and
+    /// [`GOAL_TIME`]; "Max, cancel" / "stop" ends it between two steps; a failed step ends it; careful steps keep the
+    /// voice_confirm policy (a question ends the loop: the yes runs that step). None: the model gave no step at all
+    /// (a weak model): the request goes the usual way (one decision, or a plan).
+    fn goal(&mut self, actor: &mut Actor, ctx: &Context, cands: &[Cand], heard: &str, now: Instant, r: &mut dyn Runner) -> Option<Routed> {
+        let t0 = Instant::now();
+        let gram = goal_grammar(&self.nlu_grammar_one);
+        let mut parts = goal_parts(&actor.cat, heard);
+        let mut covered = vec![false; parts.len()];
+        let mut done: Vec<(String, String)> = Vec::new();
+        let mut ran: Vec<String> = Vec::new();
+        let mut end = String::new();
+        let task = TaskGuard::new(actor, true);
+        let mut log = Vec::new();
+        let mut skipped = 0;
+        let mut extra_asked = false;
+        let mut k = 0;
+        while k < GOAL_STEPS {
+            if task.cancelled() {
+                end = format!("Cancelled after step {k} of {}", parts.len().max(k + 1));
+                break;
+            }
+            if t0.elapsed() >= GOAL_TIME {
+                end = format!("Stopped after {k} steps (time)");
+                break;
+            }
+            let next = covered.iter().position(|c| !c);
+            let fresh = if k == 0 { ctx.clone() } else { Context::collect(&ctx.request, r, self.gaze.as_mut(), self.probe.as_mut(), actor, &self.recent, false) };
+            let (base, ids) = crate::nlu::user_message(&fresh, if k == 0 { cands } else { &[] }, heard, self.settings.strip_titles);
+            // a part sure enough runs as it is; else the model picks the next step, told which part is next
+            let mut d = match next.and_then(|n| parts[n].strong.then(|| parts[n].hint.clone()).flatten()) {
+                Some(h) => h,
+                None => {
+                    if next.is_none() && (extra_asked || parts.len() >= 2) {
+                        break; // every part done
+                    }
+                    if next.is_none() {
+                        extra_asked = true;
+                    }
+                    let focus = next.map(|n| format!("next part: \"{}\"\n", parts[n].text)).unwrap_or_default();
+                    let user = format!("{}{}{focus}\n{}", goal_lines(&done, &screens_line(r)), clause_hints(&actor.cat, heard), base);
+                    let left = GOAL_TIME.saturating_sub(t0.elapsed()).min(self.timeout());
+                    let mut res = self.provider.complete_nlu(&self.nlu_system, &user, &gram, left);
+                    if res.is_err() {
+                        // the agent model failed (not running, too slow): the usual model goes on with the goal
+                        if let Some(main) = self.goal_backup.take() {
+                            self.goal_spare = Some(std::mem::replace(&mut self.provider, main));
+                            let left = GOAL_TIME.saturating_sub(t0.elapsed()).min(self.timeout());
+                            res = self.provider.complete_nlu(&self.nlu_system, &user, &gram, left);
+                        }
+                    }
+                    let answer = match res {
+                        Ok(a) => a,
+                        Err(e) => {
+                            end = format!("Stopped: {}", if e.contains("timed out") { "the model timed out".to_string() } else { redact(&e) });
+                            break;
+                        }
+                    };
+                    log.push(answer.clone());
+                    let Ok(mut d) = crate::nlu::parse(&answer) else {
+                        end = "Stopped: an answer I could not read".into();
+                        break;
+                    };
+                    sanity(&mut d, &ctx.request);
+                    let short = d.short();
+                    let stale = d.intent == "done" || d.intent == "none" || done.iter().any(|(s, _)| *s == short);
+                    match (stale, next) {
+                        (false, _) => d,
+                        // the model has nothing for this part: its hint, else the part is skipped
+                        // (a weak fuzzy hint is no step when the model says none: "the other thing" is no gather)
+                        (true, Some(n)) => match parts[n].hint.clone().filter(|h| h.confidence >= 0.8) {
+                            Some(h) => h,
+                            None => {
+                                covered[n] = true;
+                                if k == 0 && parts.iter().all(|p| p.hint.as_ref().is_none_or(|h| h.confidence < 0.8)) && d.intent != "done" {
+                                    // nothing to do step by step: the usual path decides
+                                    drop(task);
+                                    return None;
+                                }
+                                continue;
+                            }
+                        },
+                        // no step at all: the usual path decides (one decision, or a plan)
+                        (true, None) if done.is_empty() && d.intent != "done" => {
+                            drop(task);
+                            return None;
+                        }
+                        (true, None) => break,
+                    }
+                }
+            };
+            sanity(&mut d, &ctx.request);
+            let short = d.short();
+            // "get ready for work, three screens": the same step twice runs once
+            if done.iter().any(|(s, _)| s.split(' ').next() == short.split(' ').next() && s.split(' ').skip(2).eq(short.split(' ').skip(2))) {
+                if let Some(n) = next {
+                    covered[n] = true;
+                }
+                skipped += 1;
+                if skipped >= 3 {
+                    break;
+                }
+                continue;
+            }
+            if d.intent == "type.text" && !command::words(&ctx.request).iter().any(|w| matches!(w.as_str(), "type" | "write" | "escribe" | "dictate")) {
+                // nothing to type was said: a small model copies the goal's words into type.text
+                done.push(("type.text (skipped)".into(), "nothing to type was said".into()));
+                if let Some(n) = next {
+                    covered[n] = true;
+                }
+                skipped += 1;
+                if skipped >= 2 {
+                    break;
+                }
+                continue;
+            }
+            // which part this step does: the first open one with the same step, else the next one
+            let hit = (0..parts.len()).find(|&i| !covered[i] && parts[i].hint.as_ref().is_some_and(|h| h.intent == d.intent && h.slots.get("side") == d.slots.get("side"))).or(next);
+            if let Some(n) = hit {
+                covered[n] = true;
+            }
+            let call = match d.to_call(&ids) {
+                Ok(Some(c)) => c,
+                Ok(None) => {
+                    k += 1;
+                    continue;
+                }
+                Err(e) => {
+                    end = format!("Stopped: {e}");
+                    break;
+                }
+            };
+            if k > 0 {
+                std::thread::sleep(Duration::from_millis(400));
+            }
+            let ask = (d.confidence < self.settings.confidence).then(|| {
+                let phrase = actor.cat.get(&d.intent).and_then(|i| i.phrases.first().cloned()).unwrap_or_else(|| d.intent.replace(['.', '_'], " "));
+                format!("Did you mean \"{}\"", phrase.replace(['{', '}'], ""))
+            });
+            let out = self.call_ask(actor, &fresh, &call, now, r, ask.as_deref());
+            k += 1;
+            match out {
+                Outcome::Done(x) | Outcome::Data(x) => {
+                    ran.push(format!("ai:{}", call.name));
+                    let x: String = x.lines().next().unwrap_or_default().chars().take(60).collect();
+                    r.toast(&format!("Step {k}: {x}"));
+                    done.push((short, x));
+                }
+                Outcome::Asked(_) => {
+                    ran.push(format!("ai:{}?", call.name));
+                    if let Some(t) = actor.trace.as_mut() {
+                        t.asked = true;
+                    }
+                    end = "Waiting for your yes".into();
+                    break;
+                }
+                Outcome::Refused(e) | Outcome::Failed(e) if self.dry_run => {
+                    ran.push(format!("ai:{}", call.name));
+                    done.push((short, format!("(dry run: {})", e.chars().take(50).collect::<String>())));
+                }
+                Outcome::Refused(e) | Outcome::Failed(e) => {
+                    end = format!("Step {k} failed: {e}");
+                    break;
+                }
+            }
+            if k == GOAL_STEPS {
+                end = format!("Stopped after {GOAL_STEPS} steps");
+            }
+        }
+        let _ = &mut parts;
+        // a video in cinema mode: the room goes dark unless the goal said something about it (user decision
+        // 2026-10-16: cinema = one big screen, the others hidden, passthrough off, the video fullscreen)
+        let did = |p: &str| done.iter().any(|(s, _)| s.starts_with(p));
+        if end.is_empty() && did("media.play") && did("vr.preset.cinema") && !did("vr.passthrough.") && !did("vr.backdrop.") && !task.cancelled() {
+            let d = crate::nlu::Decision { intent: "vr.passthrough.off".into(), confidence: 0.9, slots: Default::default() };
+            if let Ok(Some(call)) = d.to_call(&[]) {
+                if let Outcome::Done(x) = self.call_ask(actor, ctx, &call, now, r, None) {
+                    ran.push(format!("ai:{}", call.name));
+                    done.push((d.short(), x.lines().next().unwrap_or_default().to_string()));
+                }
+            }
+        }
+        // a mode sets its own passthrough (cinema dims the room): a background the goal asked for before it comes back
+        let pos = |p: &str| done.iter().rposition(|(s, _)| s.starts_with(p));
+        if let (Some(bg), Some(pr)) = (pos("vr.passthrough.").or_else(|| pos("vr.backdrop.")), pos("vr.preset.")) {
+            if bg < pr && !task.cancelled() {
+                if let Ok(d) = crate::nlu::parse(&done[bg].0) {
+                    if let Ok(Some(call)) = d.to_call(&[]) {
+                        let _ = self.call_ask(actor, ctx, &call, now, r, None);
+                    }
+                }
+            }
+        }
+        drop(task);
+        let steps: Vec<String> = done.iter().map(|(s, _)| s.clone()).collect();
+        if let Some(t) = actor.trace.as_mut() {
+            t.decision = format!("goal > {}", steps.join(" ; "));
+            t.route = "ai-goal".into();
+        }
+        self.log(json!({"request": ctx.request, "provider": self.describe(), "style": "goal", "answers": log, "steps": steps, "end": end, "ms": t0.elapsed().as_millis() as u64}));
+        let summary: Vec<String> = done.iter().enumerate().map(|(i, (_, x))| format!("{}. {x}", i + 1)).collect();
+        let tail = if end.is_empty() { String::new() } else { format!(" | {end}") };
+        if done.is_empty() {
+            r.toast(if end.is_empty() { "Nothing to do" } else { &end });
+        } else {
+            r.toast(&format!("Done {} step{}: {}{tail}", done.len(), if done.len() == 1 { "" } else { "s" }, summary.join(" | ")));
+        }
+        if ran.is_empty() {
+            return Some(if end.is_empty() { Routed::Ignored } else { Routed::Failed(end) });
+        }
+        let id = ran.join(",");
+        self.note(&ctx.request, &id, true);
+        Some(Routed::Handled(id))
+    }
+
+    /// The scoped planner ([`crate::planner`], user design 2026-10-16): Lara first (~30 ms), then one request with
+    /// only her categories' tools (+ the hints), that set's fixed system prompt, a grammar of the same tools and the
+    /// exact state those categories need (the World: screens by number with their apps, focus, gaze, session ...).
+    /// The answer may start with a `target:` line (variant `prompt.target_line`). The plan is dry-run on the state
+    /// snapshot first: a step that names an unknown tool or misses an input, or a plan that closes an app the words
+    /// did not name, is refused. None: not in use (scope `all`, no router, or the router failed): the usual route.
+    /// Some((answer, debug prefix, user message, window ids)).
+    #[allow(clippy::too_many_arguments, clippy::type_complexity)]
+    fn scoped(&mut self, actor: &Actor, ctx: &Context, cands: &[Cand], heard: &str, plan: bool, left: Duration, r: &mut dyn Runner) -> Option<(Result<String, String>, String, String, Vec<String>)> {
+        use crate::planner::{self, Scope};
+        let st = if crate::variant::active().is_some() { planner::Settings::current() } else { self.planner.clone() };
+        if st.scope == Scope::All || self.router.is_none() || !self.provider.local {
+            return None;
+        }
+        let words = command::words(&ctx.request);
+        let guess: Vec<crate::remote::Category> = crate::remote::local_guess(&words, cands).into_iter().map(|g| g.0).collect();
+        let class = self.router.as_mut()?.classify(heard, "", &self.class_system, left.min(Duration::from_millis(1500))).ok()?;
+        let cats = crate::remote::with_guess(&class.cats(), &guess);
+        let ids_all = planner::tool_ids(&self.catalogue, &cats, cands, &st.scope);
+        // the system prompt holds the categories' own tools (fixed per set); hints of other categories go in the
+        // user message, so the cached prompt stays the same
+        let own: Vec<String> = ids_all.iter().filter(|i| crate::remote::intent_in(i, &cats) || matches!(st.scope, Scope::All)).cloned().collect();
+        let extra: Vec<String> = ids_all.iter().filter(|i| !own.contains(i)).cloned().collect();
+        let key = format!("{}{}{}", planner::key(&cats), if st.target_line { "+target" } else { "" }, st.template.as_ref().map(|t| format!("+t{}", t.len())).unwrap_or_default());
+        let cat = self.catalogue.clone();
+        let sys = self.scoped_prompts.entry(key).or_insert_with(|| planner::system_prompt_with(st.template.as_deref(), &cat, &cats, &own, st.target_line)).clone();
+        // the state: the World snapshot, its apps renamed w1.. (the window tools' ids)
+        let mut w = crate::world::snapshot(r, &actor.wayvrctl);
+        let mut ids = Vec::new();
+        w.apps.sort_by(|a, b| (a.ws, &a.id).cmp(&(b.ws, &b.id)));
+        for (n, a) in w.apps.iter_mut().enumerate() {
+            a.name = format!("w{}", n + 1);
+            ids.push(a.id.clone());
+        }
+        let blocks: Vec<String> = if st.blocks.is_empty() { planner::blocks_for(&cats).into_iter().map(String::from).collect() } else { st.blocks.clone() };
+        let b: Vec<&str> = blocks.iter().map(String::as_str).collect();
+        let mut state = crate::world::describe(&w, &b);
+        if !extra.is_empty() {
+            let lines: Vec<String> = extra.iter().filter_map(|i| cat.get(i)).map(planner::tool_line).collect();
+            state += &format!("\nalso possible: {}", lines.join(" | "));
+        }
+        let user = planner::user_message(&state, cands, heard, st.hints);
+        let gram = planner::grammar(&cat, &ids_all, plan, st.target_line);
+        let res = self.provider.complete_nlu(&sys, &user, &gram, left).map(|a| planner::split_target(&a).1);
+        // the dry run on the snapshot
+        let offered = |id: &str| id == "none" || ids_all.iter().any(|x| x == id) || crate::nlu::WINDOW_INTENTS.iter().any(|x| x.0 == id);
+        let res = res.and_then(|a| match crate::nlu::parse_plan(&a) {
+            // the grammar keeps a local model in scope; an answer out of it (no grammar) is refused
+            Ok(steps) if steps.iter().any(|d| !offered(&d.intent)) => Err(format!("{} was not offered", steps.iter().find(|d| !offered(&d.intent)).map(|d| d.intent.as_str()).unwrap_or("?"))),
+            Ok(steps) => match planner::check(&w, &cat, &steps, heard) {
+                Ok(()) => Ok(a),
+                Err(e) => Err(format!("plan refused: {e}")),
+            },
+            Err(_) => Ok(a),
+        });
+        Some((res, format!("Lara {} scoped {} tools > ", class.short(), ids_all.len()), user, ids))
+    }
+
+    /// Two stages on this PC ("Lara", docs/AI.md section 16): the router sorts the command while the model answers the
+    /// simple request (the cached prompt, one line, a grammar of every intent). An answer of a category the router
+    /// (or the matcher's guess) names stands; otherwise the model is asked again with a grammar of only those
+    /// categories' intents, so it cannot wander into another kind of command. Router down: the model's answer alone.
+    /// Returns the answer and the debug line's prefix ("Lara system .93 > ").
+    fn lara_filtered(&mut self, ctx: &Context, cands: &[Cand], heard: &str, user: &str, plan: bool, left: Duration) -> (Result<String, String>, String) {
+        use crate::remote::{self, Category};
+        let t0 = Instant::now();
+        let words = command::words(&ctx.request);
+        let guess: Vec<Category> = remote::local_guess(&words, cands).into_iter().map(|g| g.0).collect();
+        let rt_left = left.min(Duration::from_millis(1500));
+        let pending = self.router.as_ref().and_then(|rt| rt.classify_async(heard, "", &self.class_system, rt_left));
+        let gram = if plan { self.nlu_grammar.clone() } else { self.nlu_grammar_one.clone() };
+        let spec = self.provider.complete_nlu(&self.nlu_system, user, &gram, left);
+        let class = match pending {
+            Some(h) => h.join().unwrap_or_else(|_| Err("the router thread failed".into())).and_then(|o| self.router.as_ref().map(|rt| rt.parse(&o)).unwrap_or_else(|| Err("no router".into()))),
+            None => match self.router.as_mut() {
+                Some(rt) => rt.classify(heard, "", &self.class_system, rt_left),
+                None => Err("no router".into()),
+            },
+        };
+        let class = match class {
+            Ok(c) => c,
+            Err(e) => {
+                let why = if e.contains("connect") || e.contains("(7)") { "off".to_string() } else if e.contains("timed out") { "timed out".to_string() } else { redact(&e) };
+                return (spec, format!("Lara {why} > "));
+            }
+        };
+        let cats = remote::with_guess(&class.cats(), &guess);
+        let tag = format!("Lara {} > ", class.short());
+        // a sure model (8 or 9 of 9) keeps its answer; an unsure one must stay within the router's categories. A plan
+        // of several steps ("new window and open the terminal") spans several categories while Lara names one: it
+        // stands as the model wrote it (the steps then run one after the other, section 3).
+        let fits = match &spec {
+            Ok(a) => crate::nlu::parse_plan(a).map(|p| p.len() > 1 || p.iter().all(|d| d.confidence >= LARA_TRUST || remote::intent_in(&d.intent, &cats))).unwrap_or(true),
+            Err(_) => false,
+        };
+        if fits {
+            return (spec, tag);
+        }
+        // the model's answer is of another kind: again, with only these categories' intents
+        let was = spec.as_ref().ok().and_then(|a| crate::nlu::parse_plan(a).ok()).and_then(|p| p.first().map(|d| d.intent.clone())).unwrap_or_else(|| "error".into());
+        let left2 = left.saturating_sub(t0.elapsed());
+        if left2 < Duration::from_millis(300) {
+            return (spec, format!("{tag}(late) "));
+        }
+        let sub = crate::nlu::grammar_subset(&self.catalogue, plan, &|id| remote::intent_in(id, &cats));
+        let again = self.provider.complete_nlu(&self.nlu_system, user, &sub, left2);
+        (again, format!("{tag}not {was} > "))
     }
 
     /// The model loop. Ok((id, call log)) or Err((reason, call log)).
@@ -1649,13 +2573,18 @@ impl Agent {
         };
         let tr = Instant::now();
         // stage 1 on another thread; meanwhile stage 2 with the guessed categories
-        let cbody = self.provider.classify_body(&self.class_system, &remote::classify_user(&heard, &remote::summary(&ctx, &screens, session.as_ref())));
+        let summary = remote::summary(&ctx, &screens, session.as_ref());
+        let cbody = self.provider.classify_body(&self.class_system, &remote::classify_user(&heard, &summary));
         // stage 2 runs on the action model (cheaper, with tools); the wrapper puts the intent model back
         if let Some(m) = self.provider.action_model.clone() {
             self.provider.model = m;
         }
         let left = deadline.saturating_duration_since(Instant::now());
-        let pending = self.provider.post_async(&cbody, left);
+        let pending = match &self.router {
+            // the router on this PC answers fast: half the deadline, so a hung router leaves time for the fallback
+            Some(rt) => rt.classify_async(&heard, &summary, &self.class_system, left / 2),
+            None => self.provider.post_async(&cbody, left),
+        };
         let act_sys = self.act_system.clone();
         let mut spec: Option<(String, Vec<ToolSpec>, Result<Reply, String>)> = None;
         let class_out = match pending {
@@ -1667,24 +2596,42 @@ impl Agent {
                 spec = Some((user, specs, res));
                 h.join().unwrap_or_else(|_| Err("the classifier thread failed".into()))
             }
-            None => self.provider.post(&cbody, left),
+            None => match self.router.as_mut() {
+                Some(rt) => rt.post(&heard, &summary, &self.class_system, left / 2),
+                None => self.provider.post(&cbody, left),
+            },
         };
         let class_ms = tr.elapsed().as_millis() as u64;
-        let class = class_out.and_then(|out| {
-            let rep = self.provider.parse(&out)?;
-            add(&mut cost, rep.cost);
-            remote::parse_class(&rep.text)
+        let class = class_out.and_then(|out| match &self.router {
+            Some(rt) => rt.parse(&out),
+            None => {
+                let rep = self.provider.parse(&out)?;
+                add(&mut cost, rep.cost);
+                remote::parse_class(&rep.text)
+            }
         });
         if let Some((_, _, Ok(rep))) = &spec {
             add(&mut cost, rep.cost);
         }
         let timed_out = |e: &str| if e.contains("timed out") || Instant::now() >= deadline { "timed out".to_string() } else { redact(e) };
+        let lara = if self.router.is_some() { "Lara " } else { "" };
         let class_txt = match &class {
-            Ok(c) => c.short(),
-            Err(e) => format!("class {}", timed_out(e)),
+            Ok(c) => format!("{lara}{}", c.short()),
+            Err(e) if self.router.is_some() && (e.contains("connect") || e.contains("(7)")) => "Lara off".to_string(),
+            Err(e) => format!("{lara}class {}", timed_out(e)),
         };
+        // two stages on this PC and the router failed: the simple single-model request on the same server
+        if let (Some(_), Err(e)) = (&self.router, &class) {
+            let why = timed_out(e);
+            self.log(json!({"request": ctx.request, "provider": self.describe(), "mode": self.settings.mode.id(), "style": "two-stage", "class": {"error": why}, "class_ms": class_ms, "outcome": "router failed: simple request"}));
+            return self.fall_back(actor, &ctx, cands, now, r, &class_txt, "router down", cost);
+        }
         // the categories to act on: the classifier's, else the guess (else every tool)
         let cats: Vec<Category> = match &class {
+            // several steps ("... and ...", "then"): they may be of several categories; every tool
+            _ if crate::nlu::wants_plan(&ctx.request) => vec![Category::Other],
+            // the router on this PC is a general classifier: the matcher's first guess joins its categories
+            Ok(c) if self.router.is_some() => remote::with_guess(&c.cats(), &guess),
             Ok(c) => c.cats(),
             Err(_) => guess.clone(),
         };
@@ -1719,7 +2666,7 @@ impl Agent {
                 (user, specs, res)
             }
         };
-        let mut entry = json!({"request": ctx.request, "provider": self.provider.describe(), "mode": self.settings.mode.id(), "style": "two-stage",
+        let mut entry = json!({"request": ctx.request, "provider": self.describe(), "mode": self.settings.mode.id(), "style": "two-stage",
             "class": class.as_ref().map(|c| json!({"category": c.category.id(), "confidence": c.confidence, "second": c.second.map(|x| x.id())})).unwrap_or_else(|e| json!({"error": redact(e)})),
             "guess": guess.iter().map(|c| c.id()).collect::<Vec<_>>(), "tools": specs.len(), "class_ms": class_ms, "ctx_ms": ctx_ms,
             "context": serde_json::from_str::<Value>(&user).unwrap_or_default()});
@@ -1794,7 +2741,7 @@ impl Agent {
     #[allow(clippy::too_many_arguments)]
     fn fall_back(&mut self, actor: &mut Actor, ctx: &Context, cands: &[Cand], now: Instant, r: &mut dyn Runner, class_txt: &str, why: &str, cost: Option<f64>) -> Routed {
         let name = self.provider.name.clone();
-        let head = format!("{class_txt} > {name} {why} > local");
+        let head = if self.router.is_some() { format!("{class_txt} > {why} > simple") } else { format!("{class_txt} > {name} {why} > local") };
         let set = |actor: &mut Actor, d: String| {
             if let Some(t) = actor.trace.as_mut() {
                 t.decision = d;
@@ -1813,7 +2760,8 @@ impl Agent {
         }
         std::mem::swap(&mut self.provider, &mut fb);
         let (timeout, style) = (self.settings.timeout, self.settings.style);
-        self.settings.timeout = Some(REMOTE_TIMEOUT);
+        // the remote's fallback gets the remote deadline; on this PC (Lara down) the local one
+        self.settings.timeout = Some(if self.router.is_some() { LOCAL_TIMEOUT } else { REMOTE_TIMEOUT });
         self.settings.style = Some(Style::Compact);
         let res = self.decide(actor, ctx, cands, now, r, Instant::now());
         self.settings.timeout = timeout;
@@ -1880,7 +2828,8 @@ impl Agent {
                         _ => return Outcome::Refused(format!("{id}: argument {k} missing")),
                     };
                     let val = match t {
-                        SlotType::Number | SlotType::Word | SlotType::Side => command::words(&raw).join(" "),
+                        SlotType::Number | SlotType::Word => command::words(&raw).join(" "),
+                        SlotType::Side | SlotType::Screen => command::norm_slot(*t, command::words(&raw).join(" ")),
                         SlotType::Text | SlotType::Name => raw.trim().to_string(),
                     };
                     if !command::slot_ok(*t, &val) {
@@ -1888,7 +2837,36 @@ impl Agent {
                     }
                     slots.insert(k.clone(), val);
                 }
-                let m = Match { id: id.clone(), slots, score: 0 };
+                // an app slot must come from the words heard ("can i focus you 2" is no "user"): else "Did you
+                // mean <the closest open app or site>?", or nothing (user decision 2026-10-16)
+                let mut ask_app: Option<String> = None;
+                if matches!(id.as_str(), "omarchy.focus.app" | "win.screen.open") {
+                    if let Some(v) = slots.get("app").cloned() {
+                        if let Err(sugg) = app_grounded(&v, &ctx.request, &ctx.clients) {
+                            match sugg {
+                                Some(x) => {
+                                    ask_app = Some(format!("Did you mean \"{}\"", x));
+                                    slots.insert("app".into(), x);
+                                }
+                                None => return Outcome::Refused(format!("no app called \"{v}\"")),
+                            }
+                        }
+                    }
+                }
+                let ask = ask_app.as_deref().or(ask);
+                let mut m = Match { id: id.clone(), slots, score: 0 };
+                // "close window" for a request about a VR screen hides it; else it is pinned to its workspace now
+                actor.guard(&mut m, r);
+                if let Some(why) = actor.consent(&m.id) {
+                    return Outcome::Refused(why);
+                }
+                let id = &m.id.clone();
+                let Some(intent) = actor.cat.get(id).cloned() else { return Outcome::Refused(format!("no intent {id}")) };
+                if ask_app.is_some() {
+                    if let Some(t) = actor.trace.as_mut() {
+                        t.slots = m.slots.clone();
+                    }
+                }
                 let ff = focus_first(id);
                 // the voice_confirm policy (dangerous = confirm in the catalogue, typing into a terminal, ...)
                 if actor.must_ask(&m, r) || ask.is_some() {
@@ -1949,6 +2927,9 @@ impl Agent {
                 }
             }
             ToolKind::CloseWindow => {
+                if let Some(why) = actor.consent("close_window") {
+                    return Outcome::Refused(why);
+                }
                 let w = match win("window") {
                     Ok(Some(w)) => w,
                     Ok(None) => return Outcome::Refused("window missing".into()),
@@ -2000,6 +2981,39 @@ impl Agent {
                 }
                 run_win(actor, &argv, r)
             }
+            ToolKind::MoveApps => {
+                let s = |k: &str| obj.get(k).and_then(|v| v.as_str().map(str::to_string).or_else(|| v.as_u64().map(|n| n.to_string())));
+                let apps = s("apps").unwrap_or_default();
+                if apps.trim().is_empty() || apps.chars().count() > 60 || !command::slot_ok(SlotType::Text, &apps) {
+                    return Outcome::Refused("apps: a kind or name in plain words".into());
+                }
+                let to = match s("to").map(|t| windows::screen_value(&t)) {
+                    Some(Ok(t)) => t,
+                    Some(Err(e)) => return Outcome::Refused(e),
+                    None => return Outcome::Refused("to: a screen 1-6, a side or here".into()),
+                };
+                let from = match s("from").map(|t| windows::screen_value(&t)) {
+                    Some(Ok(t)) => Some(t),
+                    Some(Err(e)) => return Outcome::Refused(e),
+                    None => None,
+                };
+                let query = match s("which").as_deref() {
+                    None | Some("all") => apps.clone(),
+                    Some("one") => format!("one {apps}"),
+                    Some(x) => return Outcome::Refused(format!("which: all or one, not {x}")),
+                };
+                let argv: Vec<String> = match &from {
+                    Some(f) => vec!["put_from".into(), f.clone(), to, query],
+                    None => vec!["put".into(), to, query],
+                };
+                if let Some(what) = ask {
+                    let conf = Confirmable { kind: ToolKind::MoveApps, args: json!({"argv": argv}), focus_first: None, request: ctx.request.clone() };
+                    actor.ask(what, PendingAction::Agent(conf), now, r);
+                    return Outcome::Asked(what.to_string());
+                }
+                run_win(actor, &argv, r)
+            }
+            ToolKind::ListScreens => Outcome::Data(screens_line(r)),
             ToolKind::ListWindows => {
                 let v: Vec<Value> = ctx.clients.iter().take(40).map(|c| Context::brief(c, self.settings.strip_titles)).collect();
                 Outcome::Data(Value::Array(v).to_string())
@@ -2097,6 +3111,15 @@ pub fn run_confirmed(actor: &mut Actor, c: &Confirmable, r: &mut dyn Runner) -> 
             }
             "ai:move_window".into()
         }
+        ToolKind::MoveApps => {
+            let argv: Vec<String> = c.args.get("argv").and_then(Value::as_array).map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect()).unwrap_or_default();
+            if matches!(argv.first().map(String::as_str), Some("put" | "put_from")) {
+                let words = actor.last_words.clone();
+                let wv = actor.wayvrctl.clone();
+                windows::execute(&argv, &words, &mut actor.ai, &wv, r);
+            }
+            "ai:move_apps".into()
+        }
         _ => "ai:none".into(),
     };
     if let Some(a) = actor.agent.as_mut() {
@@ -2143,6 +3166,8 @@ mod tests {
         dispatched: Vec<String>,
         toasts: Vec<String>,
         ran: Vec<String>,
+        /// Called on every toast (a test hook: "Max, cancel" while a goal runs).
+        on_toast: Option<Box<dyn FnMut(&str)>>,
     }
 
     const CLIENTS: &str = r#"[
@@ -2153,7 +3178,7 @@ mod tests {
 
     impl Desk {
         fn new() -> Desk {
-            Desk { active: "0xa1".into(), dispatched: vec![], toasts: vec![], ran: vec![] }
+            Desk { active: "0xa1".into(), dispatched: vec![], toasts: vec![], ran: vec![], on_toast: None }
         }
     }
 
@@ -2184,6 +3209,9 @@ mod tests {
             Ok("ok normal".into())
         }
         fn toast(&mut self, t: &str) {
+            if let Some(f) = self.on_toast.as_mut() {
+                f(t);
+            }
             self.toasts.push(t.to_string());
         }
         fn captions(&mut self, _on: bool) -> Result<(), String> {
@@ -2335,10 +3363,13 @@ mod tests {
         ag.probe = Box::new(FakeProbe);
         ag.gaze = Some(Box::new(FixedGaze(Some(gaze_on("0xc3")))));
         ag.cache = crate::remote::StateCache::new(PathBuf::from("/nonexistent/pimaxd/state.json"));
+        // these tests are about the single prompt filtered by Lara; the scoped planner has its own below
+        ag.planner.scope = crate::planner::Scope::All;
         let mut a = Actor::new(c, Some("wayvrctl".into()), Default::default());
         a.agent = Some(ag);
         a
     }
+
 
     #[test]
     fn two_stages_classify_then_act_with_only_that_categorys_tools() {
@@ -2366,7 +3397,7 @@ mod tests {
         // stage 2: the screens/apps tools only, and the whole state
         let names: Vec<&str> = bodies[1].2["tools"].as_array().unwrap().iter().map(|t| t["function"]["name"].as_str().unwrap()).collect();
         assert!(names.contains(&"move_window") && names.contains(&"win_ws_goto") && names.contains(&"voice_undo"), "{names:?}");
-        assert!(!names.contains(&"vr_preset_cinema") && !names.contains(&"key_enter") && names.len() < 30, "{names:?}");
+        assert!(!names.contains(&"vr_preset_cinema") && !names.contains(&"key_enter") && names.len() < 56, "{names:?}"); // +3 hide / hide others / scale (2026-10-16 b) // +13 screen-number, layout tools and move_apps / list_screens (2026-10-16)
         let st: Value = serde_json::from_str(bodies[1].2["messages"][1]["content"].as_str().unwrap()).unwrap();
         assert_eq!(st["category"], json!(["screens"]));
         assert_eq!(st["this"]["app"], "0xc3", "the gaze is sent even without \"this\"");
@@ -2429,6 +3460,299 @@ mod tests {
         assert_eq!(a.hear("Max I want to watch a film now", Instant::now(), &mut d), None);
         assert!(d.toasts.iter().any(|t| t.contains("Didn't get") && t.contains("openrouter timed out")), "{:?}", d.toasts);
         assert!(!d.toasts.iter().any(|t| t.contains("sk-or")));
+    }
+
+    /// Laya's answer for the local router.
+    fn laya(cat: &str, p: f64) -> String {
+        json!({"model": "laya", "answers": {"category": {"type": "choice", "choice": cat, "probabilities": {cat: p, "other": 1.0 - p}}}, "usage": {"input_tokens": 141, "output_tokens": 0}}).to_string()
+    }
+
+    /// Answers by URL: the router (Laya protocol) or the action server, from any thread.
+    #[derive(Clone)]
+    struct LocalPair {
+        router: Result<String, String>,
+        act: Vec<String>,
+        seen: std::sync::Arc<std::sync::Mutex<Vec<(String, Value)>>>,
+    }
+
+    impl Transport for LocalPair {
+        fn post(&mut self, url: &str, _h: &[String], body: &str, _t: Duration) -> Result<String, String> {
+            let v: Value = serde_json::from_str(body).unwrap();
+            let n = { let mut s = self.seen.lock().unwrap(); s.push((url.to_string(), v)); s.iter().filter(|x| !x.0.contains("systemone")).count() };
+            if url.contains("/v1/systemone") {
+                return self.router.clone();
+            }
+            Ok(self.act.get(n - 1).or(self.act.last()).cloned().unwrap_or_else(|| oa_text("none")))
+        }
+        fn fork(&self) -> Option<Box<dyn Transport + Send>> {
+            Some(Box::new(self.clone()))
+        }
+    }
+
+    /// An actor with two stages on this PC: Laya on :8081 (scripted), the action model on :8080 (scripted).
+    fn setup_local_two_stage(t: LocalPair) -> Actor {
+        // no "/v1/" in the test URLs: no /health probe
+        let p = Provider::new("local", Wire::OpenAi, "http://127.0.0.1:9/chat/completions", "pimax-local", None, Box::new(t.clone()));
+        let c = cat();
+        let mut ag = Agent::new(Settings { mode: Mode::Fallback, log: false, ..Default::default() }, p, &c);
+        assert_eq!(ag.style(), Style::Compact, "local: the simple request");
+        ag.router = Some(crate::router::Router::new("laya", "http://127.0.0.1:9", Box::new(t.clone())));
+        ag.fallback = Some(Provider::new("local", Wire::OpenAi, "http://127.0.0.1:9/chat/completions", "pimax-local", None, Box::new(t)));
+        assert_eq!((ag.style(), ag.mode_label()), (Style::Compact, "This PC, 2 stages"), "filtered by the router");
+        ag.probe = Box::new(FakeProbe);
+        ag.gaze = Some(Box::new(FixedGaze(Some(gaze_on("0xc3")))));
+        ag.cache = crate::remote::StateCache::new(PathBuf::from("/nonexistent/pimaxd/state.json"));
+        // these tests are about the single prompt filtered by Lara; the scoped planner has its own below
+        ag.planner.scope = crate::planner::Scope::All;
+        let mut a = Actor::new(c, Some("wayvrctl".into()), Default::default());
+        a.agent = Some(ag);
+        a
+    }
+
+    #[test]
+    fn the_scoped_planner_sends_only_the_category_tools_and_the_state() {
+        // Lara says screens: the model sees the screen tools, a grammar of them and the screens with their apps
+        let t = LocalPair { router: Ok(r#"{"answers":{"category":{"choice":"screens","probabilities":{"screens":0.97,"apps":0.03}}}}"#.into()), act: vec![oa_text("target: screens 3 and 4 hidden\nvr.screens.hide 9 screens=\"4,3\"")], seen: Default::default() };
+        let mut a = setup_local_two_stage(t.clone());
+        a.agent.as_mut().unwrap().planner = crate::planner::Settings { scope: crate::planner::Scope::CategoryHints, target_line: true, blocks: Vec::new(), hints: true, template: None };
+        let mut d = Desk::new();
+        let id = a.hear("Max put away the two upper screens please", Instant::now(), &mut d);
+        assert_eq!(id.as_deref(), Some("ai:vr_screens_hide"), "{:?}", a.trace);
+        let seen = t.seen.lock().unwrap().clone();
+        let act: Vec<&(String, Value)> = seen.iter().filter(|x| x.0.ends_with("/chat/completions")).collect();
+        assert_eq!(act.len(), 1);
+        let sys = act[0].1["messages"][0]["content"].as_str().unwrap();
+        let user = act[0].1["messages"][1]["content"].as_str().unwrap();
+        let gram = act[0].1["grammar"].as_str().unwrap();
+        assert!(sys.contains("vr.screens.hide") && !sys.contains("browser.search") && sys.contains("target:"), "{sys}");
+        assert!(gram.starts_with("root ::= tgt") && !gram.contains("\"type.text\""), "{}", &gram[..200]);
+        assert!(user.contains("state:") && user.contains("heard:"), "{user}");
+        assert!(a.trace.as_ref().unwrap().decision.contains("scoped"));
+        // an answer out of scope (no grammar on a test server) is refused, nothing runs
+        let t = LocalPair { router: Ok(r#"{"answers":{"category":{"choice":"screens","probabilities":{"screens":0.97,"apps":0.03}}}}"#.into()), act: vec![oa_text("type.text 9 text=\"rm -rf\"")], seen: Default::default() };
+        let mut a = setup_local_two_stage(t);
+        a.agent.as_mut().unwrap().planner = crate::planner::Settings { scope: crate::planner::Scope::CategoryHints, ..crate::planner::Settings::production() };
+        let mut d = Desk::new();
+        assert_ne!(a.hear("Max put away the two upper screens please", Instant::now(), &mut d).as_deref(), Some("ai:type_text"));
+        assert!(!d.ran.iter().any(|x| x.contains("wtype")), "{:?}", d.ran);
+    }
+
+    #[test]
+    fn local_two_stages_lara_sorts_and_the_local_model_acts() {
+        // the model's simple answer is of the router's category: it stands (one request each, side by side)
+        let t = LocalPair { router: Ok(laya("system", 0.93)), act: vec![oa_text("omarchy.volume.up 9")], seen: Default::default() };
+        let mut a = setup_local_two_stage(t.clone());
+        let mut d = Desk::new();
+        let id = a.hear("Max crank the sound a little bit", Instant::now(), &mut d);
+        assert_eq!(id.as_deref(), Some("ai:omarchy_volume_up"));
+        let seen = t.seen.lock().unwrap().clone();
+        let router: Vec<&(String, Value)> = seen.iter().filter(|x| x.0.ends_with("/v1/systemone")).collect();
+        assert_eq!(router.len(), 1, "one classification");
+        assert_eq!(router[0].1["questions"]["category"]["type"], "choice");
+        assert!(router[0].1.to_string().contains("crank the sound") && !router[0].1.to_string().contains("0xc3"), "only the words go to the router");
+        let act: Vec<&(String, Value)> = seen.iter().filter(|x| x.0.ends_with("/chat/completions")).collect();
+        assert_eq!(act.len(), 1, "no second request");
+        assert!(act[0].1["grammar"].as_str().unwrap().contains("vr.preset.cinema"), "the first request: every intent");
+        let tr = a.trace.clone().unwrap();
+        assert!(tr.decision.starts_with("Lara system .93 > omarchy.volume.up"), "{}", tr.decision);
+        assert!(tr.line(crate::act::DEBUG_WIDTH).contains("AI Lara system"), "{}", tr.line(crate::act::DEBUG_WIDTH));
+    }
+
+    #[test]
+    fn local_two_stages_lara_filters_an_answer_of_another_kind() {
+        // the model says cinema mode but is unsure (6/9), Lara says system: asked again with only system's intents
+        // (plus the guess); a sure answer (8 or 9) would stand
+        let t = LocalPair { router: Ok(laya("system", 0.97)), act: vec![oa_text("vr.preset.cinema 6"), oa_text("omarchy.volume.up 9")], seen: Default::default() };
+        let mut a = setup_local_two_stage(t.clone());
+        let mut d = Desk::new();
+        let id = a.hear("Max crank the sound a little bit", Instant::now(), &mut d);
+        assert_eq!(id.as_deref(), Some("ai:omarchy_volume_up"), "{:?}", a.trace);
+        let seen = t.seen.lock().unwrap().clone();
+        let act: Vec<&(String, Value)> = seen.iter().filter(|x| x.0.ends_with("/chat/completions")).collect();
+        assert_eq!(act.len(), 2);
+        let g2 = act[1].1["grammar"].as_str().unwrap();
+        assert!(g2.contains("omarchy.volume.up") && !g2.contains("vr.preset.cinema") && g2.contains("voice.undo"), "the second grammar: system (+ guess, undo, help)");
+        assert_eq!(act[0].1["messages"], act[1].1["messages"], "the same cached prompt");
+        let tr = a.trace.clone().unwrap();
+        assert!(tr.decision.starts_with("Lara system .97 > not vr.preset.cinema > omarchy.volume.up"), "{}", tr.decision);
+    }
+
+    #[test]
+    fn local_two_stages_run_a_plan_of_several_categories_in_order() {
+        // "new window and open the terminal": screens + apps; Lara names one category (screens, sure); the model's
+        // plan stands even though its second step is of another category, and both steps run one after the other
+        let t = LocalPair { router: Ok(laya("screens", 0.96)), act: vec![oa_text("win.ws.new 7 ; omarchy.launch.terminal 7")], seen: Default::default() };
+        let mut a = setup_local_two_stage(t.clone());
+        let mut d = Desk::new();
+        let id = a.hear("Max make a new window and then open the terminal there", Instant::now(), &mut d);
+        assert_eq!(id.as_deref(), Some("ai:win_ws_new,ai:omarchy_launch_terminal"), "{:?}", a.trace);
+        let seen = t.seen.lock().unwrap().clone();
+        let act: Vec<&(String, Value)> = seen.iter().filter(|x| x.0.ends_with("/chat/completions")).collect();
+        assert_eq!(act.len(), 1, "not asked again");
+        assert!(act[0].1["grammar"].as_str().unwrap().starts_with("root ::= one (\" ; \" one){0,3}"), "a plan may have up to 4 steps");
+        let tr = a.trace.clone().unwrap();
+        assert!(tr.decision.starts_with("Lara screens .96 > win.ws.new 7/9 ; omarchy.launch.terminal 7/9"), "{}", tr.decision);
+        // the order of the actions: the new workspace first, then the launch
+        let ws = d.dispatched.iter().position(|x| x.contains("workspace")).or_else(|| d.ran.iter().position(|x| x.contains("workspace")));
+        assert!(ws.is_some() || !d.ran.is_empty(), "{:?} {:?}", d.dispatched, d.ran);
+    }
+
+    #[test]
+    fn a_goal_runs_step_by_step_until_done_and_cancel_stops_it() {
+        assert!(is_goal("let's enter cinema mode, I want to watch Dune, it's already downloaded"));
+        assert!(is_goal("set up work: terminals left, browser middle, YouTube up-right"));
+        assert!(!is_goal("I want to watch a film now"));
+        assert!(!is_goal("cinema mode"));
+        let h = clause_hints(&crate::catalogue::Catalogue::from_texts(crate::catalogue::BUILTIN, None).unwrap(), "set up work: terminals left, browser middle, YouTube up-right");
+        assert!(h.contains("\"terminals left\" ~ win.screen.put app=terminals side=left") && h.contains("app=browser side=main") && h.contains("app=youtube side=up-right"), "{h}");
+        // three steps, then done: each step sees the ones before it
+        // "let's get ready for a movie" names the goal (a header, no step of its own: it made the stray first step of
+        // every model); "cinema mode" is a catalogue phrase and runs as it is; the model answers the rest
+        let t = LocalPair { router: Err("off".into()), act: vec![oa_text("vr.passthrough.off 9"), oa_text("omarchy.volume.up 8"), oa_text("done 9")], seen: Default::default() };
+        let mut a = setup_local_two_stage(t.clone());
+        let mut d = Desk::new();
+        let id = a.hear("Max let's get ready for a movie, cinema mode, no room and louder", Instant::now(), &mut d);
+        assert_eq!(id.as_deref(), Some("ai:vr_preset_cinema,ai:vr_passthrough_off,ai:omarchy_volume_up"), "{:?}", d.toasts);
+        let bodies: Vec<String> = t.seen.lock().unwrap().iter().filter(|x| !x.0.contains("systemone")).map(|x| x.1.to_string()).collect();
+        assert!(bodies.len() >= 1 && bodies.len() <= 3, "{}", bodies.len());
+        assert!(bodies[0].contains("GOAL MODE") && bodies[0].contains("done so far: 1. vr.preset.cinema"), "{}", bodies[0]);
+        assert!(bodies[0].contains(r#"\"done\""#), "the grammar offers done");
+        assert!(d.toasts.last().unwrap().starts_with("Done 3 steps: 1."), "{:?}", d.toasts);
+        assert!(!a.task_busy.load(std::sync::atomic::Ordering::SeqCst), "the task flag is down after the goal");
+        // "Max, cancel" heard while it runs (the listener thread sets the flag): it stops before the next step
+        let t = LocalPair { router: Err("off".into()), act: vec![oa_text("vr.preset.cinema 9"), oa_text("vr.passthrough.off 9"), oa_text("done 9")], seen: Default::default() };
+        let mut a = setup_local_two_stage(t.clone());
+        let flag = a.task_cancel.clone();
+        let mut d = Desk::new();
+        // the first model answer is the moment the task runs: cancel right after the first step
+        d.on_toast = Some(Box::new(move |x: &str| {
+            if x.starts_with("Step 1") {
+                flag.store(true, std::sync::atomic::Ordering::SeqCst);
+            }
+        }));
+        a.hear("Max let's get ready for a movie, cinema mode, no room and louder", Instant::now(), &mut d);
+        assert!(d.toasts.last().unwrap().contains("Cancelled after step 1"), "{:?}", d.toasts);
+        assert!(!d.ran.iter().any(|x| x.contains("passthrough")) && !d.toasts.iter().any(|x| x.contains("black")), "{:?}", d.toasts);
+        // a model that gives no step: the usual path (one decision)
+        let t = LocalPair { router: Err("off".into()), act: vec![oa_text("none 9"), oa_text("vr.preset.cinema 9")], seen: Default::default() };
+        let mut a = setup_local_two_stage(t);
+        let mut d = Desk::new();
+        assert_eq!(a.hear("Max let's do the thing, the other thing and that one", Instant::now(), &mut d).as_deref(), Some("ai:vr_preset_cinema"));
+    }
+
+    #[test]
+    fn a_goal_uses_the_agent_model_when_configured_and_falls_back_to_the_usual_one() {
+        let goal = "Max let's get ready for a movie, cinema mode, no room and louder";
+        // the agent model answers every step; the usual model is never asked
+        let t = LocalPair { router: Err("off".into()), act: vec![oa_text("vr.preset.work1 9")], seen: Default::default() };
+        let mut a = setup_local_two_stage(t.clone());
+        let big = Script::default();
+        big.replies.borrow_mut().extend([oa_text("vr.passthrough.off 9"), oa_text("omarchy.volume.up 8"), oa_text("done 9")]);
+        a.agent.as_mut().unwrap().goal_provider = Some(Provider::new("agent", Wire::OpenAi, "http://127.0.0.1:8083/chat/completions", "big", None, Box::new(big.clone())));
+        let mut d = Desk::new();
+        assert_eq!(a.hear(goal, Instant::now(), &mut d).as_deref(), Some("ai:vr_preset_cinema,ai:vr_passthrough_off,ai:omarchy_volume_up"));
+        assert!((1..=3).contains(&big.bodies.borrow().len()));
+        assert!(big.bodies.borrow().iter().all(|b| b.2["model"] == "big" && b.0.contains(":8083")));
+        assert!(t.seen.lock().unwrap().is_empty(), "the usual model is not asked");
+        let ag = a.agent.as_ref().unwrap();
+        assert_eq!((ag.provider.model.as_str(), ag.goal_provider.as_ref().map(|p| p.model.as_str())), ("pimax-local", Some("big")), "both back in place");
+        // the agent model is down: the usual one goes on with the goal
+        let t = LocalPair { router: Err("off".into()), act: vec![oa_text("vr.passthrough.off 9"), oa_text("omarchy.volume.up 8"), oa_text("done 9")], seen: Default::default() };
+        let mut a = setup_local_two_stage(t.clone());
+        let down = Script::default();
+        a.agent.as_mut().unwrap().goal_provider = Some(Provider::new("agent", Wire::OpenAi, "http://127.0.0.1:8083/chat/completions", "big", None, Box::new(down)));
+        let mut d = Desk::new();
+        let id = a.hear(goal, Instant::now(), &mut d);
+        assert!(id.as_deref().is_some_and(|x| x.contains("ai:vr_passthrough_off")), "{id:?} {:?}", d.toasts);
+        let ag = a.agent.as_ref().unwrap();
+        assert_eq!((ag.provider.model.as_str(), ag.goal_provider.as_ref().map(|p| p.model.as_str())), ("pimax-local", Some("big")));
+        // the keys in ai.toml
+        let c = cat();
+        let text = "voice_ai = \"fallback\"\nvoice_agent_url = \"http://127.0.0.1:8083/v1/chat/completions\"\nvoice_agent_model = \"qwen-27b\"\n";
+        let ag = Agent::from_ai_text(text, &c, &|_| None, &mut |_| {}).unwrap().unwrap();
+        let gp = ag.goal_provider.as_ref().unwrap();
+        assert_eq!((gp.endpoint.as_str(), gp.model.as_str(), gp.local), ("http://127.0.0.1:8083/v1/chat/completions", "qwen-27b", true));
+    }
+
+    #[test]
+    fn goal_parts_know_screen_numbers_and_tools_take_structured_screens() {
+        let c = crate::catalogue::Catalogue::from_texts(crate::catalogue::BUILTIN, None).unwrap();
+        let p = goal_parts(&c, "editor middle, terminals on screen 2 and swap screens 1 and 3, then move the terminal from here to screen 4");
+        let got: Vec<String> = p.iter().map(|x| x.hint.as_ref().map(|h| h.short()).unwrap_or_default()).collect();
+        assert_eq!(p.len(), 4, "{got:?}");
+        assert!(got[0].starts_with("win.screen.put ") && got[0].contains("side=main"), "{got:?}");
+        assert!(got[1].starts_with("win.screen.put_n ") && got[1].contains("screen=2") && got[1].contains("app=terminals"), "{got:?}");
+        assert!(got[2].starts_with("win.screen.swap ") && got[2].contains("b=3") && got[2].contains("screen=1"), "{got:?}");
+        assert!(got[3].starts_with("win.screen.put_from ") && got[3].contains("from=here") && got[3].contains("screen=4"), "{got:?}");
+        assert!(p.iter().all(|x| x.strong));
+        // the online tools: move_apps validates its screens and selector
+        let t = tools(&c);
+        let ma = t.iter().find(|x| x.spec.name == "move_apps").unwrap();
+        assert_eq!(ma.spec.schema["required"], json!(["apps", "to"]));
+        assert!(ma.spec.schema["properties"]["to"]["description"].as_str().unwrap().contains("1 main, 2 left"));
+        let sw = t.iter().find(|x| x.spec.name == "win_screen_swap").unwrap();
+        assert!(sw.spec.schema["properties"]["b"]["description"].as_str().unwrap().contains("here"));
+        assert!(t.iter().any(|x| x.spec.name == "list_screens" && x.safety == "query"));
+        let (mut actor, _) = setup(Wire::OpenAi, Mode::Fallback, &[], None);
+        let mut agent = actor.agent.take().unwrap();
+        let mut d = Desk::new();
+        let ctx = Context::collect("move the terminals to screen 9", &mut d, None, &mut FakeProbe, &actor, &VecDeque::new(), false);
+        let call = |args: Value| Call { id: "1".into(), name: "move_apps".into(), args };
+        let out = agent.call(&mut actor, &ctx, &call(json!({"apps": "terminals", "to": "9"})), Instant::now(), &mut d);
+        assert!(matches!(&out, Outcome::Refused(e) if e.contains("1 to 6")), "{out:?}");
+        let out = agent.call(&mut actor, &ctx, &call(json!({"apps": "terminals", "to": "2", "which": "some"})), Instant::now(), &mut d);
+        assert!(matches!(&out, Outcome::Refused(e) if e.contains("which")), "{out:?}");
+        let out = agent.call(&mut actor, &ctx, &call(json!({"apps": "terminals", "to": "left", "rm": "-rf"})), Instant::now(), &mut d);
+        assert!(matches!(&out, Outcome::Refused(e) if e.contains("unexpected argument")), "{out:?}");
+    }
+
+    #[test]
+    fn a_single_unsure_step_of_another_category_is_still_filtered() {
+        // one step only: the filter applies (the plan rule is for several steps)
+        let t = LocalPair { router: Ok(laya("tabs", 0.97)), act: vec![oa_text("win.ws.new 6"), oa_text("win.tab.new 9")], seen: Default::default() };
+        let mut a = setup_local_two_stage(t.clone());
+        let mut d = Desk::new();
+        a.hear("Max i want one extra of those", Instant::now(), &mut d);
+        let tr = a.trace.clone().unwrap();
+        assert!(tr.decision.starts_with("Lara tabs .97 > not win.ws.new > win.tab.new 9/9"), "{}", tr.decision);
+        assert_eq!(t.seen.lock().unwrap().iter().filter(|x| x.0.ends_with("/chat/completions")).count(), 2, "asked again");
+    }
+
+    #[test]
+    fn local_two_stages_without_the_router_use_the_simple_request() {
+        // Lara down: the model's own answer (the simple mode)
+        let t = LocalPair { router: Err("curl: (7) Failed to connect".into()), act: vec![oa_text("omarchy.volume.up 9")], seen: Default::default() };
+        let mut a = setup_local_two_stage(t.clone());
+        let mut d = Desk::new();
+        let id = a.hear("Max crank the sound a little bit", Instant::now(), &mut d);
+        assert_eq!(id.as_deref(), Some("ai:omarchy_volume_up"), "{:?}", a.trace);
+        let tr = a.trace.clone().unwrap();
+        assert!(tr.decision.starts_with("Lara off > omarchy.volume.up"), "{}", tr.decision);
+    }
+
+    #[test]
+    fn grammar_subsets_follow_the_categories() {
+        use crate::remote::{intent_in, Category};
+        let c = cat();
+        let g = crate::nlu::grammar_subset(&c, false, &|id| intent_in(id, &[Category::System]));
+        assert!(g.contains("omarchy.volume.up") && !g.contains("win.ws.goto") && !g.contains("focus_window") && g.contains("\"none\""));
+        let g = crate::nlu::grammar_subset(&c, false, &|id| intent_in(id, &[Category::Apps]));
+        assert!(g.contains("focus_window") && g.contains("omarchy.window.fullscreen") && !g.contains("vr.preset.cinema"));
+        assert_eq!(crate::nlu::grammar_subset(&c, true, &|_| true), crate::nlu::grammar(&c));
+    }
+
+    #[test]
+    fn local_two_stage_from_ai_toml() {
+        let t = "voice_local = \"two-stage\"\n[use]\nvoice = \"local\"\n[providers.local]\nkind = \"openai-compatible\"\nbase_url = \"http://127.0.0.1:8080/v1\"\nmodel = \"pimax-local\"\n[local_two_stage]\nrouter = \"laya\"\naction = \"qwen3.5-9b\"\n";
+        let a = Agent::from_ai_text(t, &cat(), &|_| None, &mut |_| {}).unwrap().unwrap();
+        assert_eq!((a.style(), a.mode_label()), (Style::Compact, "This PC, 2 stages"));
+        assert!(a.describe().starts_with("Lara (Laya) + local"), "{}", a.describe());
+        assert_eq!(a.router.as_ref().unwrap().health_url(), "http://127.0.0.1:8081/health");
+        assert!(a.fallback.as_ref().is_some_and(|f| f.endpoint == "http://127.0.0.1:8080/v1/chat/completions"));
+        assert!(Agent::from_ai_text(&format!("voice_local_models = false\n{t}"), &cat(), &|_| None, &mut |_| {}).unwrap().is_none(), "local models off: no agent");
+        let simple = Agent::from_ai_text(&t.replace("two-stage", "simple"), &cat(), &|_| None, &mut |_| {}).unwrap().unwrap();
+        assert_eq!((simple.style(), simple.mode_label()), (Style::Compact, "This PC"));
+        assert!(simple.router.is_none());
     }
 
     /// Answers by request kind (classifier or act), from any thread.
@@ -2571,6 +3895,20 @@ mod tests {
         let mut d = Desk::new();
         a.hear("Max get rid of it please", t, &mut d);
         assert!(d.dispatched.iter().any(|x| x.contains("close")), "{:?}", d.dispatched);
+    }
+
+    #[test]
+    fn an_app_slot_must_come_from_the_words_heard() {
+        let cl = |class: &str, title: &str| windows::Client { address: "0x1".into(), class: class.into(), title: title.into(), workspace: 1, ..Default::default() };
+        let clients = vec![cl("foot", &format!("{}@desk: ~", std::env::var("USER").unwrap_or_else(|_| "user".into()))), cl("google-chrome", "Funny cats - YouTube - Google Chrome")];
+        // live 2026-10-16: "can i focus you 2" -> app=user (the login name from a terminal title)
+        let user = std::env::var("USER").unwrap_or_else(|_| "user".into());
+        assert_eq!(app_grounded(&user, "can i focus you 2", &clients), Err(Some("youtube".into())));
+        assert_eq!(app_grounded("YouTube", "can you focus youtube in a new window", &clients), Ok(()));
+        assert_eq!(app_grounded("terminal", "focus the terminals", &clients), Ok(()));
+        let live = vec![cl("org.omarchy.agent", "Sleep process SIGABRT crash"), cl("steam", "Steam"), cl("foot", "user@host:~"), cl("pimax", "Pimax")];
+        assert_eq!(app_grounded("Steam", "can i focus you 2", &live), Err(Some("youtube".into())));
+        assert_eq!(app_grounded("YouTube - Google Chrome", "can we focus in the main window", &clients).ok(), None);
     }
 
     #[test]

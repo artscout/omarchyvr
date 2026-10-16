@@ -30,13 +30,13 @@ pub const DESK_CTRL_AIM: &str = "head";
 
 /// Usage of `pimax desk`.
 pub const USAGE: &str = "usage: pimax desk <command> [options]
-  start [--no-passthrough] [--eye|--no-eye] [--6dof [--ctrl-track] [--hands [--hands-roles]]] [--voice [--voice-hud]] [--no-perf] [--preset cinema|work-3|work-1|assistant|none] [--screens 1-4] [--anchor] [--no-auto-recover] [--settle SECS] [--passthrough-bin P] [--wayvr-bin P] [--wayvr-home DIR]
+  start [--no-passthrough] [--eye|--no-eye] [--6dof [--ctrl-track] [--hands [--hands-roles]]] [--controllers when-held|always|off] [--voice [--voice-hud]] [--no-perf] [--preset cinema|work-3|work-1|assistant|none] [--screens 1-6] [--anchor] [--no-auto-recover] [--settle SECS] [--passthrough-bin P] [--wayvr-bin P] [--wayvr-home DIR]
         [--voice-bin P] [--voice-hud-bin P] [--wayvrctl-bin P] [--perf-bin P] [--pimax-bin P]
         [+ the options of `pimax vr start`: --fps, --monado-build, --connector, --dry-run, --force, --no-notify, ...]
       monado-service (like `pimax vr start`), then pimax-passthrough run (the main OpenXR app), then WayVR as an
-      overlay (CPU screencopy config). --no-passthrough: Monado + WayVR only. Eye tracking is silently on when the
+      overlay (CPU screencopy config). --no-passthrough: Monado + WayVR only. Eye tracking (visual only: a dim dot, never input; ~/.config/pimax/eye.conf) is on when the
       eye build (~/src/monado-eye/build) and ~/.config/pimax/eye-calibration.toml exist: PIMAX_EYE=1 and
-      conf.d/55-eye.yaml (no gaze pointer, a dim gaze dot, `wayvrctl gaze` for voice; docs/EYE.md); --no-eye turns
+      conf.d/55-eye.yaml (no gaze pointer, a dim gaze dot, no voice targeting; docs/EYE.md); --no-eye turns
       it off. --eye: PIMAX_EYE=1 and the build in ~/src/monado-eye/build (unless --monado-build or
       PIMAX_MONADO_BUILD says otherwise) with the gaze pointer as configured. --6dof: live 6DoF head
       tracking: starts `pimax-cam broker` first (stopped last by `desk stop`), PIMAX_SLAM=1 PIMAX_CAM_AE=1
@@ -50,6 +50,10 @@ pub const USAGE: &str = "usage: pimax desk <command> [options]
       (4 s); back in view it slides at most 0.5 m/s. Logs gyro + optical fixes to <session dir>/ctrl-imu-{left,right}.csv
       (pimax-ctrltrack imufit / occlusion) and, with --6dof, the head IMU to head-imu.csv (Record tracking replays).
       See analysis/controller-6dof.md, analysis/linux-recordings-20261016.md.
+      --controllers (default when-held; also `pimax vr start`, default always there): when-held = a controller is
+      shown (pose, model, ray, buttons) only while it is in the hand: moved, tilted or a button touched picks it up,
+      5 s still or no reports for 1.5 s puts it down (PIMAX_CTRL_INHAND=auto for Monado, docs/CONTROLLERS-INHAND.md);
+      always = as before; off = never. Change it live with `pimax controllers use when-held|always|off`.
       Controller rays aim where you look (PIMAX_CTRL_AIM=head for Monado; set PIMAX_CTRL_AIM=level to keep the old
       straight-ahead rays); hand placement: PIMAX_CTRL_REST (desk default, legacy), see analysis/hands-desk.md.
       --hands (with --6dof): camera hand tracking (Mercury) on the one Monado build, when it has the hands code and the models
@@ -68,8 +72,9 @@ pub const USAGE: &str = "usage: pimax desk <command> [options]
       the desktop + 2 WayVR app panels from ~/.config/pimax/work-panels.conf, flat), work-1 (one flat screen),
       assistant (= --voice captions), none; written to conf.d/60-preset.yaml every start (removed with none), the
       layout is applied over wayvrctl once WayVR runs.
-      --screens N (1-4, default 4): VR screens = Hyprland outputs. The main desktop output is the centre screen; up to
-      three headless outputs PIMAX-LEFT, PIMAX-RIGHT, PIMAX-UP (the main one's size, left/right/above it) are created
+      --screens N (1-6, default 4): VR screens = Hyprland outputs. The main desktop output is the centre screen; up to
+      five headless outputs PIMAX-LEFT, PIMAX-RIGHT, PIMAX-UP, PIMAX-UPLEFT, PIMAX-UPRIGHT (the main one's size,
+      left/right/above it and above left/right) are created
       BEFORE Monado (hyprctl eval 'hl.monitor(...)' + hyprctl output create headless; ~/.config/hypr is not edited)
       and removed by `desk stop` once Monado is gone. Idempotent; stale outputs of a crashed session are removed or
       reused; if creating fails the session starts with one screen and <session dir>/screens.txt says why.
@@ -90,6 +95,16 @@ pub const USAGE: &str = "usage: pimax desk <command> [options]
       the VR screens (docs/SCREENS.md): status = the outputs and what VR shows; sync = send the visibility to WayVR
       once; watch = keep it in sync (the session's leaf process); create/remove = the outputs, refused while a
       monado-service runs (desk start/stop do this themselves).
+  screens show N | more K | add SLOT | hide N[,N..]|others [--dry-run]
+      (voice) change which VR screens show in the running session; prints ONE plain line for the headset toast and
+      exits 0, or a plain error and exits 1. show N (1-6): the main screen + the first N-1 of left, right, up,
+      up-left, up-right are pinned and shown (above 6: 6, \"That's the most: 6 screens\"). more K: the screens
+      shown now + K. add SLOT (left|right|up|up-left|up-right): that one as well. Outputs are only made by
+      `desk start` (WayVR learns them at its start), so a screen the session lacks is not made live: the line says
+      \"6 screens need Screens = 6 in the Pimax app and a Work restart\", the screens that exist are shown and the
+      recorded Screens setting is raised so a restart has them. hide N[,N..] (screen numbers 2-6 or slot names):
+      those screens no longer show, even with apps on them; hide others: only the main screen (\"close
+      everything\"). Never closes, kills or moves an app.
   restart [--session-dir DIR]
       stop with grace 30, then start again with the SAME arguments as the last `desk start` (recorded in
       <session dir>/start-argv.txt on every start). The camera is recovered automatically if it went missing.
@@ -265,6 +280,8 @@ pub fn parse_desk(
     let sixdof = sixdof::parse(a, env, &mut vr, &home, build_given, Some(eye_build.clone()));
     let ctrl_track_bin = sixdof::parse_ctrl_track(a, env, &mut vr, &home, &sixdof)?;
     let ctrl_track = ctrl_track_bin.is_some();
+    // Work: a controller is shown only while it is in the hand (PIMAX_CTRL_INHAND=auto) unless --controllers says
+    let _controllers = sixdof::parse_controllers(a, env, &mut vr, pimax_config::ctrl_inhand::CtrlMode::WhenHeld)?;
     let ctrltrack_bin = ctrl_track_bin.unwrap_or_else(|| sixdof::default_ctrltrack_bin(&home));
     let (eye_mode, eye_note) = super::eye_desk::parse(eye, no_eye, &mut vr, &eye_build, build_given, env);
     // --hands after eye and 6DoF: it may move the build to the hands build (a superset of the desk build)
@@ -524,7 +541,7 @@ pub fn start(o: &DeskOptions, d: &Deps, sp: &dyn Spawner) -> CliResult {
         Ok(None) => {}
         Err(e) => verr!("pimax desk: WARNING: the app's WayVR settings were not applied: {e}"),
     }
-    match super::eye_desk::apply_conf(&o.wayvr_home, o.eye_mode) {
+    match super::eye_desk::apply_conf(&o.wayvr_home, o.eye_mode, &pimax_config::eye::EyeSettings::load(&pimax_config::eye::default_path())) {
         Ok(n) => {
             if let Some(n) = n.or_else(|| o.eye_note.clone()) {
                 vout!("pimax desk: {n}");
@@ -594,6 +611,15 @@ pub fn start(o: &DeskOptions, d: &Deps, sp: &dyn Spawner) -> CliResult {
             false,
             &mut |l| vout!("pimax desk: preset {}: {l}", p.name()),
         );
+    }
+    // the VR background chosen in the app (Backgrounds page, `pimax-backgrounds`, "Max, set background ..."): shown
+    // once WayVR runs, over the preset's passthrough; best effort
+    let bg = pimax_backgrounds::Dirs::for_home(&home_of(d));
+    if !o.vr.dry_run && pimax_backgrounds::Setting::load(&bg).enabled {
+        match pimax_backgrounds::apply_to(&bg, &o.wayvrctl_bin, &super::preset::passthrough_socket(d.env)) {
+            Ok(m) => vout!("pimax desk: {m}"),
+            Err(e) => verr!("pimax desk: WARNING: background not applied: {e}"),
+        }
     }
     d.notifier
         .notify(false, "Pimax desk ready", "Stop with: pimax desk stop");
@@ -680,6 +706,18 @@ pub fn screens_cmd(o: &DeskOptions, what: &str, d: &Deps) -> CliResult {
         }
         other => Err(CliError::usage(format!("desk screens: status, sync, watch, create or remove, not {other}"))),
     }
+}
+
+/// `desk screens show N | more K | add SLOT | hide N,N|others` (voice): see `screens::run_show`. One plain line on stdout.
+pub fn screens_show(o: &DeskOptions, sub: &str, arg: Option<&str>, d: &Deps) -> CliResult {
+    use super::screens as sc;
+    let cmd = sc::parse_show(sub, arg).map_err(CliError::usage)?;
+    let running = !d.procs.find_by_comm(&o.vr.service_comm()).is_empty();
+    let state_file = sc::state_path(d.env);
+    let env = sc::ShowEnv { state_file: &state_file, session_dir: &o.vr.session_dir, wayvrctl: &o.wayvrctl_bin, running, dry_run: o.vr.dry_run };
+    let line = sc::run_show(&cmd, &mut sc::RealHypr, &env).map_err(CliError::new)?;
+    vout!("{line}");
+    Ok(())
 }
 
 fn home_of(d: &Deps) -> PathBuf {
@@ -968,10 +1006,19 @@ pub fn run(mut a: Args) -> CliResult {
         Some(_) => return Err(CliError::usage("--grace must be a number of seconds")),
         None => MONADO_GRACE_SECS,
     };
+    let mut screens_val: Option<String> = None;
     let screens_arg = if first == "screens" {
         match a.0.iter().position(|x| !x.starts_with("--")) {
-            Some(i) => Some(a.0.remove(i)),
-            None => return Err(CliError::usage("usage: pimax desk screens status|sync|watch|create|remove [--screens N] [--dry-run]")),
+            Some(i) => {
+                let sub = a.0.remove(i);
+                if matches!(sub.as_str(), "show" | "more" | "add" | "hide") {
+                    if let Some(j) = a.0.iter().position(|x| !x.starts_with("--")) {
+                        screens_val = Some(a.0.remove(j));
+                    }
+                }
+                Some(sub)
+            }
+            None => return Err(CliError::usage("usage: pimax desk screens status|sync|watch|create|remove [--screens N] [--dry-run] | show N | more K | add SLOT")),
         }
     } else {
         None
@@ -1059,7 +1106,10 @@ pub fn run(mut a: Args) -> CliResult {
             r
         }
         "preset" => preset_live(&o, preset_name.as_deref().unwrap_or_default(), &deps),
-        "screens" => screens_cmd(&o, screens_arg.as_deref().unwrap_or("status"), &deps),
+        "screens" => match screens_arg.as_deref() {
+            Some(sub @ ("show" | "more" | "add" | "hide")) => screens_show(&o, sub, screens_val.as_deref(), &deps),
+            what => screens_cmd(&o, what.unwrap_or("status"), &deps),
+        },
         "captions" => super::captions::run(&o, captions_arg.as_deref().unwrap_or("status"), &deps, &RealSpawner),
         _ => {
             for l in status_lines(&o, &deps) {
@@ -1082,6 +1132,14 @@ fn room_on_start(o: &DeskOptions) {
     }
     if let Some(l) = super::room::on_start(&home, &o.vr.session_dir) {
         vout!("pimax desk: {l}");
+    }
+    // voice: the local AI's missing slots (the GPU speech server) come up with Work when Local AI is on
+    if o.voice {
+        if let Ok(cfg) = pimax_config::ai::AiConfig::load() {
+            if let Some(l) = super::gamemode::local_ai_up(&super::gamemode::Tools::real(&home), &cfg) {
+                vout!("pimax desk: {l}");
+            }
+        }
     }
 }
 
@@ -1148,10 +1206,23 @@ mod tests {
         assert_eq!(
             o.vr.extra_env,
             vec![
+                ("PIMAX_CTRL_INHAND".to_string(), "auto".to_string()),
                 ("PIMAX_CTRL_AIM".to_string(), DESK_CTRL_AIM.to_string()),
                 ("PIMAX_PERF_FILE".to_string(), "/tmp/pimax-perf.stats".to_string()),
             ]
         );
+    }
+
+    #[test]
+    fn controllers_switch_reaches_monado() {
+        let env_of = |o: &DeskOptions| {
+            o.vr.extra_env.iter().find(|(k, _)| k == "PIMAX_CTRL_INHAND").map(|(_, v)| v.clone())
+        };
+        assert_eq!(env_of(&parse(&[], &[]).unwrap()).as_deref(), Some("auto"), "Work: when picked up");
+        assert_eq!(env_of(&parse(&["--controllers", "always"], &[]).unwrap()).as_deref(), Some("always"));
+        assert_eq!(env_of(&parse(&["--controllers", "off"], &[]).unwrap()).as_deref(), Some("off"));
+        assert_eq!(env_of(&parse(&[], &[("PIMAX_CTRL_INHAND", "always")]).unwrap()), None, "the caller's own wins");
+        assert!(parse(&["--controllers", "sometimes"], &[]).is_err());
     }
 
     #[test]
@@ -1321,7 +1392,8 @@ mod tests {
         assert_eq!(p[2].log, PathBuf::from("/tmp/pimax-vr-session/screens.log"));
         assert!(plan(&parse(&["--screens", "1"], &[]).unwrap()).iter().all(|s| s.name != "screens"));
         assert_eq!(parse(&["--screens", "2"], &[]).unwrap().screens, 2);
-        assert_eq!(parse(&["--screens", "5"], &[]).unwrap_err().code, 2);
+        assert_eq!(parse(&["--screens", "7"], &[]).unwrap_err().code, 2);
+        assert_eq!(parse(&["--screens", "6"], &[]).unwrap().screens, 6);
     }
 
     #[test]

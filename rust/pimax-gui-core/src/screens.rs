@@ -1,4 +1,4 @@
-//! The VR screens switch of the desk settings ("Screens", 1 to 4, `desk start --screens N`) and its readiness line:
+//! The VR screens switch of the desk settings ("Screens", 1 to 6, `desk start --screens N`) and its readiness line:
 //! what the last desk (Work) start made of the Hyprland outputs (`<session dir>/screens.txt`, written by the
 //! launcher's `vr/screens.rs`). See docs/SCREENS.md.
 use pimax_tools::vr::screens::{Report, DEFAULT, MAX, REPORT_FILE};
@@ -6,7 +6,7 @@ use std::path::Path;
 
 pub use pimax_tools::vr::screens::{DEFAULT as DEFAULT_SCREENS, MAX as MAX_SCREENS};
 
-/// A valid count (1..=4), else the default.
+/// A valid count (1..=6), else the default.
 pub fn clamp(n: u8) -> u8 {
     if (1..=MAX).contains(&n) {
         n
@@ -25,8 +25,12 @@ pub enum Level {
 
 /// The readiness line for `wanted` screens. `running`: a desk session runs now.
 pub fn readiness(session_dir: &Path, wanted: u8, running: bool) -> (Level, String) {
+    readiness_from(std::fs::read_to_string(session_dir.join(REPORT_FILE)).ok(), wanted, running)
+}
+
+/// [`readiness`] with the report text already read (the app reads it in the facts collector, not on the UI thread).
+pub fn readiness_from(text: Option<String>, wanted: u8, running: bool) -> (Level, String) {
     let wanted = clamp(wanted);
-    let text = std::fs::read_to_string(session_dir.join(REPORT_FILE)).ok();
     match (text, running) {
         (None, _) | (_, false) if wanted == 1 => (Level::Info, "VR screens: 1 (the desktop only)".into()),
         (Some(t), true) => {
@@ -111,6 +115,7 @@ mod tests {
         assert_eq!(l, Level::Warn);
         assert!(t.contains("Fewer screens than asked: 1 of 4"), "{t}");
         assert_eq!(clamp(0), 4);
+        assert_eq!((clamp(6), clamp(7)), (6, 4));
         assert_eq!(arrange_phrase(false), "put everything in its own window");
         assert_eq!(clamp(2), 2);
         let _ = std::fs::remove_dir_all(d);

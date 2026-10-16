@@ -30,7 +30,7 @@ variable once for Steam covers every game.
 
 ## 2. Games run with: Monado or SteamVR
 
-Home > "Games run with" is the switch. It is saved in `~/.config/pimax/games.toml` (`runtime = "monado"|"steamvr"`),
+"Games" at the top of the app window is the switch. It is saved in `~/.config/pimax/games.toml` (`runtime = "monado"|"steamvr"`),
 which the app and the CLI share. Engine: `pimax vr games monado|steamvr|status`.
 
 | | Monado (default) | SteamVR (experimental) |
@@ -152,7 +152,7 @@ None of these needs unplugging the headset. Stop Play closes SteamVR by pid; Res
 
 Do this when nothing else runs (no Play, no Work).
 
-1. Home > "Games run with" > **SteamVR (experimental)**. The message line says "Games run with: SteamVR".
+1. "Games" (top of the window) > **SteamVR (experimental)**. The message line says "Games run with: SteamVR".
 2. Press **Play**. The status line says "SteamVR is up". Put the headset on within a minute.
 3. Check, and say out loud or note:
    - Is the panel lit?
@@ -162,7 +162,7 @@ Do this when nothing else runs (no Play, no Work).
    - Do both controllers show and react?
 4. In SteamVR's home, open the dashboard (menu button). Then start Dungeons of Eternity from Steam.
 5. Press **Stop Play** in the app. SteamVR closes.
-6. If anything failed: Home > "Games run with" > **Monado** puts everything back. Help > Logs has
+6. If anything failed: "Games" (top of the window) > **Monado** puts everything back. Help > Logs has
    `~/.local/share/Steam/logs/vrserver.txt`, `vrcompositor.txt` and `/tmp/pimax-vr-session/steamvr-launch.log`.
 7. If all of it worked: tell the main thread to flip `DEFAULT` (section 2).
 
@@ -236,7 +236,7 @@ Pimax Play's test pulse is `58 09 07 03 19 2c 01` (right, 25 %, 300 ms). Dungeon
   If nobody takes it within 1 s the request is removed and the app says the build has no vibration support. With no
   session the command is written straight to IF0. The controller must be awake and paired.
 
-**To test in the headset:** Home > controller card > Test vibration (each hand), then a game with hits (Dungeons of
+**To test in the headset:** Home > Controllers > Vibrate (each hand), then a game with hits (Dungeons of
 Eternity). monado.log / vrserver.txt show `PIMAX_HAPTICS: first vibration (...)` once.
 
 ## Live-test fixes (2026-10-15, SteamVR mode)
@@ -270,9 +270,18 @@ game then started (10:53:43) without VR and quit. Not the cause: `LD_PRELOAD` (t
   it starts Steam through its desktop entry, `env -u … gtk-launch steam` (our `steam.desktop`, so Steam keeps
   `PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1`), and waits up to 60 s for Steam and its `steamwebhelper`. A steam://
   link from SteamVR then only goes to the running Steam. Steam's pid is kept in `<session>/steam-client.pid`.
-- **A Steam that carries SteamVR's variables is refused** in plain words (Play does not touch it): "Steam (pid …) was
-  started from inside SteamVR and still carries SteamVR's settings … Quit Steam (Steam menu > Exit), then press Play".
-- **Shims in SteamVR's PATH.** `<session>/steamvr-shim/xdg-open` and `steam` go first in SteamVR's `PATH`; they run
+- **A Steam that carries SteamVR's variables: Play asks** (2026-10-16 18:22: the Steam of 10:51 was still open, Play
+  failed with "Steam (pid 16972) was started from inside SteamVR ..."; it predated these shims, installed 18:06).
+  The app (facts `steam_tainted`, read from `/proc/PID/environ`) opens its own dialog "Steam must restart for VR.
+  Restart Steam now?" [Restart Steam] [Cancel], with a warning when a game (`reaper` process) or a download
+  (`steamapps/downloading`) seems to run. Only on yes, one job runs `pimax vr steam-restart`: `steam -shutdown`
+  through `env -u ...` (clean environment), waits up to 90 s for that pid to exit, then Play goes on and starts Steam
+  the normal way. If Steam does not exit, the job stops with "did not close within ... Nothing was forced": never a
+  signal to Steam. A clean or absent Steam is never closed. Cancel starts nothing. The CLI `pimax vr start` still
+  refuses in plain words; start at login does not start and says Play must be pressed once. No dialog in the
+  headset: at that moment no session runs, so there is nothing in the headset to show it on.
+  Tests: `restart_*`, `a_tainted_steam_is_found...`, `play_asks_before_closing_a_tainted_steam...`.
+- **Shims in SteamVR's PATH.** `<session>/steamvr-shim/xdg-open`, `steam`, `gio` and `gtk-launch` go first in SteamVR's `PATH`; they run
   the real program through `env` without SteamVR's and our variables (`STEAMVR_ONLY` + the Pimax ones) and with the
   user's own `PATH`, `QT_QPA_PLATFORM`, `LD_LIBRARY_PATH`, `LD_PRELOAD`, `QT_PLUGIN_PATH` back. So a web page or a
   Steam started from SteamVR gets the normal environment even if Steam was closed meanwhile.

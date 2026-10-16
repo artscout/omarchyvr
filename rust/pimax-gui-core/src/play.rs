@@ -15,7 +15,7 @@
 //! * Start at login (off by default, in gui-state.toml): when the app opens, the session starts only if the headset
 //!   is there, the cap is present (never a password prompt at login) and the preflight gate is clear (no reboot
 //!   needed, no GPU errors, no consent needed). Otherwise Home says why.
-use crate::app::{AppCore, DeskPhase};
+use crate::app::{AppCore, DeskPhase, Pending};
 use crate::caps;
 use crate::cmd::Cmd;
 use crate::job::{JobKind, JobSpec, Step};
@@ -40,6 +40,24 @@ pub struct PlayView {
     pub last_msg: Option<String>,
     /// The guided hand test.
     pub hand_test: crate::handtest::HandTestView,
+}
+
+/// What Play does about the running Steam.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SteamDecision {
+    /// Go on: Steam is fine, absent, or SteamVR is not in use.
+    Go,
+    /// Ask the user to restart Steam (the Play dialog).
+    AskRestart,
+}
+
+/// Only a game session with SteamVR cares: Monado games and the desk never meet SteamVR's variables.
+pub fn steam_decision(vr: bool, games_steamvr: bool, tainted: Option<&crate::facts::TaintedSteam>) -> SteamDecision {
+    if vr && games_steamvr && tainted.is_some() {
+        SteamDecision::AskRestart
+    } else {
+        SteamDecision::Go
+    }
 }
 
 /// The cap of the monado-service the next start uses.
@@ -182,6 +200,27 @@ impl AppCore {
         }
     }
 
+    /// Play with SteamVR (Games run with: SteamVR) needs a Steam that did not come from inside SteamVR.
+    pub fn steam_decision(&self, vr: bool) -> SteamDecision {
+        steam_decision(vr, self.facts.games_steamvr, self.live.steam_tainted.as_ref())
+    }
+
+    /// The dialog text for a tainted Steam: (title, body, busy warning).
+    pub fn restart_steam_text(steam: &crate::facts::TaintedSteam) -> (String, String, Option<String>) {
+        (
+            "Steam must restart for VR. Restart Steam now?".into(),
+            "Steam was started from inside SteamVR earlier and still carries its settings, so games could freeze. The app closes it the normal way (like Steam menu > Exit), waits for it to quit, then starts VR; Play starts Steam again by itself.".into(),
+            steam.busy.as_ref().map(|b| format!("Careful: {b}. Closing Steam ends it.")),
+        )
+    }
+
+    /// The dialog's Restart Steam button: close the tainted Steam politely, then start (one job; a Steam that does
+    /// not quit stops the job with plain words, nothing is forced).
+    pub fn confirm_steam_restart(&mut self) {
+        let Some(Pending::RestartSteam { vr, .. }) = self.pending.take() else { return };
+        self.launch_with(vr, true);
+    }
+
     fn launch(&mut self, vr: bool) {
         match self.phase() {
             DeskPhase::Running => return self.stop(),
@@ -195,6 +234,18 @@ impl AppCore {
                 return;
             }
         }
+        if let SteamDecision::AskRestart = self.steam_decision(vr) {
+            if let Some(steam) = self.live.steam_tainted.clone() {
+                // nothing is closed without the user's yes (the dialog in the app)
+                self.pending = Some(Pending::RestartSteam { steam, vr });
+                return;
+            }
+        }
+        self.launch_with(vr, false);
+    }
+
+    /// Start `vr` (Play) or the desk (Work); `close_steam` first closes the tainted Steam (confirmed by the user).
+    fn launch_with(&mut self, vr: bool, close_steam: bool) {
         self.state.last_vr = vr;
         let mut job = match self.play_start_job() {
             Ok(j) => j,
@@ -213,6 +264,12 @@ impl AppCore {
                 }
                 Err(e) => job.steps.insert(0, Step::Note(format!("cap_sys_nice not restored ({e}); starting anyway"))),
             }
+        }
+        if close_steam {
+            let restart = Cmd::with_args(self.launcher_bin().display().to_string(), vec!["vr".into(), "steam-restart".into()]);
+            job.steps.insert(0, Step::Note("Closing Steam (it was started from inside SteamVR), then starting VR".into()));
+            job.steps.insert(1, Step::Run(restart));
+            job.label = format!("Restart Steam, then {}", job.label);
         }
         self.save_state();
         if self.spawn(job) && vr {
@@ -279,6 +336,9 @@ impl AppCore {
         }
         if self.live.anything_running() || self.busy() {
             v.push("a session or an action is already running".into());
+        }
+        if self.steam_decision(self.state.last_vr) == SteamDecision::AskRestart {
+            v.push("Steam must be restarted for VR first (press Play in the app and answer the question)".into());
         }
         match self.cap_state() {
             CapState::Ok(_) => {}
@@ -450,6 +510,50 @@ mod tests {
         assert_eq!(r.running_side(), Some(false), "the demo session is the desk");
         r.work();
         assert!(r.message.starts_with("demo mode: would run Stop"), "{}", r.message);
+    }
+
+    fn tainted() -> crate::facts::TaintedSteam {
+        crate::facts::TaintedSteam { pid: 77, vars: vec!["SteamAppId".into()], busy: Some("a game seems to be running".into()) }
+    }
+
+    #[test]
+    fn the_steam_decision_only_asks_for_a_steamvr_game_session() {
+        use super::{steam_decision, SteamDecision::*};
+        let t = tainted();
+        assert_eq!(steam_decision(true, true, Some(&t)), AskRestart);
+        assert_eq!(steam_decision(true, true, None), Go, "clean or no Steam");
+        assert_eq!(steam_decision(true, false, Some(&t)), Go, "Monado games never meet SteamVR's variables");
+        assert_eq!(steam_decision(false, true, Some(&t)), Go, "Work (the desk) does not use SteamVR");
+    }
+
+    #[test]
+    fn play_asks_before_closing_a_tainted_steam_and_only_a_yes_closes_it() {
+        let mut a = AppCore::demo(false, store("steam-ask"));
+        a.consent_force = true;
+        a.facts.games_steamvr = true;
+        a.live.steam_tainted = Some(tainted());
+        a.play();
+        assert!(matches!(a.pending, Some(crate::app::Pending::RestartSteam { vr: true, .. })), "the dialog, nothing started: {:?}", a.pending);
+        assert!(!a.log.iter().any(|l| l.contains("steam-restart")), "nothing is closed without the yes: {:?}", a.log);
+        // Cancel: no job, no restart
+        a.cancel_pending();
+        assert!(a.pending.is_none() && !a.log.iter().any(|l| l.contains("steam-restart")));
+        // Yes: one job, the restart first, then the start
+        a.play();
+        a.confirm_steam_restart();
+        assert!(a.message.starts_with("demo mode: would run Restart Steam, then Start VR"), "{}", a.message);
+        let restart = a.log.iter().position(|l| l.contains("vr steam-restart")).expect("restart step");
+        let start = a.log.iter().position(|l| l.contains("vr start") || l.contains("Start VR") && l.contains("Run(")).unwrap_or(usize::MAX);
+        assert!(restart < start, "{:?}", a.log);
+        // a clean Steam: no dialog
+        let mut b = AppCore::demo(false, store("steam-clean"));
+        b.consent_force = true;
+        b.facts.games_steamvr = true;
+        b.play();
+        assert!(b.pending.is_none() && b.message.starts_with("demo mode: would run Start VR"), "{}", b.message);
+        let (t, body, busy) = AppCore::restart_steam_text(&tainted());
+        assert_eq!(t, "Steam must restart for VR. Restart Steam now?");
+        assert!(body.contains("closes it the normal way") && busy.unwrap().contains("a game seems to be running"));
     }
 
     #[test]

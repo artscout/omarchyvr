@@ -36,9 +36,11 @@ use serde_json::Value;
 pub const ACTIONS: &[&str] = &[
     "focus", "focus_gaze", "ws", "ws_next", "ws_prev", "ws_new", "ws_close", "move_here", "merge_here", "tab_next", "tab_prev",
     "tab", "tab_new", "tab_close", "close", "list", "ai", "screen", "move_screen", "organize", "together", "nudge",
+    "open_screen", "gather", "put", "put_from", "swap", "list_screen", "open_on", "layout_save", "layout_restore",
+    "hide_screens", "scale", "close_named", "open_app",
 ];
 /// Actions that destroy something: the catalogue refuses them unless the intent has `confirm = true`.
-pub const CAREFUL_ACTIONS: &[&str] = &["close", "tab_close", "ws_close"];
+pub const CAREFUL_ACTIONS: &[&str] = &["close", "tab_close", "ws_close", "close_named"];
 
 /// Highest workspace number voice may switch to (Omarchy binds 1..10).
 pub const MAX_WORKSPACE: u32 = 10;
@@ -120,6 +122,10 @@ const APP_ALIASES: &[(&str, &[&str])] = &[
     ("code", &["code", "zed"]),
     ("chat", &["signal", "slack", "discord", "telegram"]),
     ("pimax", &["pimax"]),
+    ("video", &["mpv", "vlc", "celluloid"]),
+    ("movie", &["mpv", "vlc", "celluloid"]),
+    ("film", &["mpv", "vlc", "celluloid"]),
+    ("player", &["mpv", "vlc", "celluloid"]),
 ];
 
 /// Words that say nothing about the app.
@@ -434,15 +440,21 @@ fn plural(n: usize) -> String {
     format!("{n} app{}", if n == 1 { "" } else { "s" })
 }
 
-/// How many apps "close window" would close (the gazed, else focused workspace).
-pub fn close_count(r: &mut dyn Runner, wayvrctl: &str) -> Option<usize> {
-    let ws = target_workspace(r, wayvrctl)?;
+/// The workspace "close window" means now (the gazed, else the focused one): pinned before the question, so the
+/// yes closes this one and no other.
+pub fn close_target(r: &mut dyn Runner, wayvrctl: &str) -> Option<i64> {
+    target_workspace(r, wayvrctl)
+}
+
+/// How many apps "close window" would close (`ws` when pinned, else the gazed, else focused workspace).
+pub fn close_count(r: &mut dyn Runner, wayvrctl: &str, ws: Option<i64>) -> Option<usize> {
+    let ws = ws.or_else(|| target_workspace(r, wayvrctl))?;
     clients_on(r, ws).ok().map(|c| c.len())
 }
 
 /// The spoken-yes prompt of `ws_close`: "Close window 3 (4 apps)".
-pub fn close_prompt(r: &mut dyn Runner, wayvrctl: &str) -> Option<String> {
-    let ws = target_workspace(r, wayvrctl)?;
+pub fn close_prompt(r: &mut dyn Runner, wayvrctl: &str, ws: Option<i64>) -> Option<String> {
+    let ws = ws.or_else(|| target_workspace(r, wayvrctl))?;
     let n = clients_on(r, ws).ok()?.len();
     Some(format!("Close window {ws} ({})", plural(n)))
 }
@@ -468,9 +480,10 @@ fn ws_new(r: &mut dyn Runner, wayvrctl: &str) {
     }
 }
 
-/// Close the workspace being looked at: every client of it.
-fn ws_close(r: &mut dyn Runner, wayvrctl: &str) {
-    let Some(ws) = target_workspace(r, wayvrctl) else { return r.toast("No window to close") };
+/// Close a workspace: every client of it. `pinned`: the workspace named when the command was heard (and in the
+/// question); only its apps close, whatever is looked at now. None: the one looked at, else the focused one.
+fn ws_close(pinned: Option<i64>, r: &mut dyn Runner, wayvrctl: &str) {
+    let Some(ws) = pinned.or_else(|| target_workspace(r, wayvrctl)) else { return r.toast("No window to close") };
     let clients = match clients_on(r, ws) {
         Ok(c) => c,
         Err(e) => return r.toast(&format!("Close: {e}")),
@@ -499,6 +512,70 @@ fn close_one(r: &mut dyn Runner, wayvrctl: &str) {
     };
     match close_window(r, &target.0) {
         Ok(()) => r.toast(&format!("Closed {}", target.1)),
+        Err(e) => r.toast(&format!("Close failed: {e}")),
+    }
+}
+
+/// Words of a close request that name no app ("close this app", "quit the program").
+pub fn names_no_app(w: &str) -> bool {
+    crate::command::words(w).iter().all(|x| {
+        crate::command::FILLERS.contains(&x.as_str())
+            || matches!(x.as_str(), "this" | "it" | "that" | "app" | "application" | "program" | "window" | "one" | "1" | "current" | "here" | "close" | "closed" | "quit" | "exit" | "kill" | "shut" | "down" | "off" | "now" | "get" | "rid" | "of" | "remove" | "delete" | "away" | "go" | "make")
+    })
+}
+
+/// "all windows", "every app", "the screens": more than one app, or no app at all (a VR screen).
+pub fn names_many(q: &str) -> bool {
+    crate::command::words(q).iter().any(|x| matches!(x.as_str(), "all" | "every" | "everything" | "windows" | "apps" | "programs" | "screen" | "screens" | "workspace" | "session" | "vr"))
+}
+
+/// "Close Spotify", "close the video", "close YouTube" (user rule 2026-10-16: no app closes unless the user names
+/// it): the app the words name by class, kind or alias closes. A name only a browser TAB carries (YouTube in Chrome)
+/// closes that tab, never the browser. Several apps of that kind: the one looked at or focused among them, else
+/// nothing closes and the user is asked which. A name nothing carries: nothing closes.
+fn close_named(query: &str, r: &mut dyn Runner, wayvrctl: &str) {
+    let q: String = crate::command::words(query).into_iter().filter(|x| !crate::command::FILLERS.contains(&x.as_str()) && !matches!(x.as_str(), "close" | "closed" | "quit" | "exit" | "kill" | "shut" | "down" | "off")).collect::<Vec<_>>().join(" ");
+    if q.is_empty() || names_no_app(&q) {
+        return close_one(r, wayvrctl);
+    }
+    if names_many(&q) {
+        return r.toast("Closing many apps at once is not done by voice: nothing closed");
+    }
+    let clients = match hyprctl_json(r, "clients").and_then(|j| parse_clients(&j)) {
+        Ok(c) => c,
+        Err(e) => return r.toast(&format!("Close: {e}")),
+    };
+    // "the youtube tab": a tab, never the app
+    let tab_words = crate::command::words(&q).iter().any(|x| matches!(x.as_str(), "tab" | "page" | "site" | "website"));
+    let apps: Vec<&Client> = if tab_words { Vec::new() } else { clients.iter().filter(|c| c.workspace > 0 && address_ok(&c.address) && app_score(c, &q) >= 75).collect() };
+    if apps.is_empty() {
+        let tq: String = crate::command::words(&q).into_iter().filter(|x| !matches!(x.as_str(), "tab" | "page" | "site" | "website")).collect::<Vec<_>>().join(" ");
+        let site = crate::desk::site_url(&tq).map(|(n, _)| n).unwrap_or_else(|| tq.clone());
+        if !tq.is_empty() && clients.iter().any(|c| is_browser(&c.class)) {
+            // the browser window whose active tab it is, else look through the browsers' tabs
+            let shown = clients.iter().find(|c| is_browser(&c.class) && crate::desk::title_has(&c.title, &site)).cloned();
+            let found = match shown {
+                Some(c) => focus_address(r, &c.address).is_ok(),
+                None => crate::desk::find_tab(&site, true, r).unwrap_or(false) && hyprctl_json(r, "activewindow").ok().and_then(|j| parse_active(&j).ok().flatten()).is_some_and(|c| is_browser(&c.class)),
+            };
+            if found {
+                return tab(Tab::Close, r);
+            }
+        }
+        return r.toast(&format!("No {q} open: nothing closed"));
+    }
+    let target = if apps.len() == 1 {
+        apps[0].clone()
+    } else {
+        let gazed = gaze_at(r, wayvrctl).and_then(|t| t.window).map(|w| w.address);
+        let focused = hyprctl_json(r, "activewindow").ok().and_then(|j| parse_active(&j).ok().flatten()).map(|w| w.address);
+        match apps.iter().find(|c| Some(&c.address) == gazed.as_ref()).or_else(|| apps.iter().find(|c| Some(&c.address) == focused.as_ref())) {
+            Some(c) => (*c).clone(),
+            None => return r.toast(&format!("{} {q} are open: look at the one to close and say \"close this\"", apps.len())),
+        }
+    };
+    match close_window(r, &target.address) {
+        Ok(()) => r.toast(&format!("Closed {}", target.class)),
         Err(e) => r.toast(&format!("Close failed: {e}")),
     }
 }
@@ -583,6 +660,8 @@ pub fn slot_word(w: &str) -> Option<&'static str> {
         "right" | "derecha" | "write" | "rite" => Some("right"),
         "up" | "top" | "upper" | "above" | "arriba" | "app" => Some("up"),
         "main" | "middle" | "center" | "centre" | "front" | "central" | "principal" | "centro" => Some("main"),
+        "upleft" | "up-left" | "topleft" | "top-left" | "upperleft" | "upper-left" => Some("up-left"),
+        "upright" | "up-right" | "topright" | "top-right" | "upperright" | "upper-right" => Some("up-right"),
         "down" | "below" | "bottom" | "abajo" => Some("down"),
         _ => None,
     }
@@ -592,9 +671,16 @@ pub fn slot_word(w: &str) -> Option<&'static str> {
 pub fn neighbour(from: &str, side: &str) -> Option<&'static str> {
     Some(match (from, side) {
         (_, "main") => "main",
-        ("main", "left") | ("up", "left") => "left",
-        ("main", "right") | ("up", "right") => "right",
-        ("main", "up") | ("left", "up") | ("right", "up") => "up",
+        ("main", "left") => "left",
+        ("main", "right") => "right",
+        ("main", "up") => "up",
+        ("left", "up") => "up-left",
+        ("right", "up") => "up-right",
+        ("up-left", "right") | ("up-right", "left") => "up",
+        ("up-left", "down") => "left",
+        ("up-right", "down") => "right",
+        ("up", "left") => "up-left",
+        ("up", "right") => "up-right",
         ("left", "right") | ("right", "left") | ("up", "down") => "main",
         _ => return None,
     })
@@ -625,7 +711,7 @@ pub fn vr_screens(r: &mut dyn Runner) -> Vec<Screen> {
     if let Some(m) = main {
         out.push(screen(m, "main"));
     }
-    for (slot, n) in [("left", "PIMAX-LEFT"), ("right", "PIMAX-RIGHT"), ("up", "PIMAX-UP")] {
+    for (slot, n) in [("left", "PIMAX-LEFT"), ("right", "PIMAX-RIGHT"), ("up", "PIMAX-UP"), ("up-left", "PIMAX-UPLEFT"), ("up-right", "PIMAX-UPRIGHT")] {
         if let Some(m) = arr.iter().filter(usable).find(|m| name(m) == n) {
             out.push(screen(m, slot));
         }
@@ -662,6 +748,7 @@ fn screen_new(r: &mut dyn Runner) -> bool {
         return false;
     }
     r.screens_on_demand();
+    r.screen_unhide(screen_number(free.slot).unwrap_or(0));
     match dispatch(r, &format!("hl.dsp.focus({{ monitor = \"{}\" }})", free.output)) {
         Ok(()) => r.toast(&format!("New window: {}", label(free.slot))),
         Err(e) => r.toast(&format!("New window: {e}")),
@@ -669,20 +756,548 @@ fn screen_new(r: &mut dyn Runner) -> bool {
     true
 }
 
-/// "Go to the left screen": focus that screen.
-fn screen_goto(side: &str, r: &mut dyn Runner) {
-    let Some(want) = slot_word(side).filter(|s| *s != "down") else { return r.toast(&format!("Screens are left, right, up and main, not \"{side}\"")) };
-    let scr = vr_screens(r);
-    if scr.len() <= 1 && want != "main" {
-        return r.toast(ONE_SCREEN);
+/// A free VR screen (no app on its workspace), left, right, up, up-left, up-right in that order. None: no extras,
+/// or all busy. When all are busy and fewer than 6 screens exist, `pimax desk screens more 1` adds one first.
+fn free_screen(r: &mut dyn Runner) -> Option<Screen> {
+    let find = |r: &mut dyn Runner| -> Option<Screen> {
+        let scr = vr_screens(r);
+        if scr.len() <= 1 {
+            return None;
+        }
+        let apps = hyprctl_json(r, "clients").and_then(|j| parse_clients(&j)).map(|c| app_counts(&c)).unwrap_or_default();
+        scr.into_iter().skip(1).find(|s| apps.get(&s.ws).copied().unwrap_or(0) == 0 && monitor_ok(&s.output))
+    };
+    if let Some(s) = find(r) {
+        return Some(s);
     }
-    let Some(t) = scr.iter().find(|s| s.slot == want) else { return r.toast(&format!("No {} (Screens in the Pimax app)", label(want))) };
+    if vr_screens(r).len() < 6 && r.run(&["pimax".into(), "desk".into(), "screens".into(), "more".into(), "1".into()], true).is_ok() {
+        return find(r);
+    }
+    None
+}
+
+/// What a spoken app name means for "in a new window": an open app (by class or title), a browser tab, a site, or
+/// an app family to launch.
+pub fn launch_for(query: &str) -> Option<Vec<String>> {
+    let q = query.trim().to_lowercase();
+    let q = q.trim_start_matches("the ").trim_start_matches("a ");
+    Some(match q {
+        "terminal" | "terminals" | "a terminal" | "console" | "shell" | "foot" => vec!["omarchy-launch-terminal".into()],
+        "browser" | "chrome" | "google chrome" | "the browser" | "a browser" | "web browser" | "chromium" => vec!["omarchy-launch-browser".into(), "--new-window".into()],
+        "files" | "file manager" | "nautilus" => vec!["omarchy-launch-nautilus".into()],
+        _ => return None,
+    })
+}
+
+/// The URL of the focused browser tab, through the clipboard (Ctrl+L, Ctrl+C, Escape); the clipboard is restored.
+fn tab_url(r: &mut dyn Runner) -> Option<String> {
+    let saved = r.run(&["wl-paste".into(), "-n".into()], true).ok();
+    key(r, "CTRL", "L").ok()?;
+    key(r, "CTRL", "C").ok()?;
+    let _ = key(r, "", "Escape");
+    std::thread::sleep(std::time::Duration::from_millis(120));
+    let url = r.run(&["wl-paste".into(), "-n".into()], true).ok().map(|u| u.trim().to_string());
+    if let Some(old) = saved.filter(|o| !o.is_empty()) {
+        let _ = r.run(&["wl-copy".into(), "--".into(), old], true);
+    }
+    url.filter(|u| (u.starts_with("https://") || u.starts_with("http://")) && u.len() < 2000 && !u.chars().any(char::is_whitespace))
+}
+
+/// "Open YouTube in a new window" (user decision 2026-10-16): the app goes to a free VR screen of its own, which is
+/// focused. A browser tab moves alone: its URL is copied, the tab closed, and the URL opened in a new browser window
+/// there (the page reloads). Another app moves whole. Not open: a site opens there in a new browser window, a known
+/// app family ("terminal") starts there.
+fn open_screen(query: &str, r: &mut dyn Runner) {
+    let query = query.trim();
+    if query.is_empty() {
+        return r.toast("Which app?");
+    }
+    let clients = match hyprctl_json(r, "clients").and_then(|j| parse_clients(&j)) {
+        Ok(c) => c,
+        Err(e) => return r.toast(&format!("Windows: {e}")),
+    };
+    let site = crate::desk::site_url(query);
+    let title_hit = clients.iter().filter(|c| is_browser(&c.class)).find(|c| crate::desk::title_has(&c.title, query)).cloned();
+    let app_hit = if title_hit.is_none() && site.is_none() { find_app(&clients, query, None).cloned() } else { None };
+    // a hidden tab of the browser (YouTube open but not the active tab): bring it to the front first
+    let tab_hit = match (&title_hit, &app_hit, &site) {
+        (None, None, Some((name, _))) if clients.iter().any(|c| is_browser(&c.class)) => {
+            if crate::desk::find_tab(name, true, r).unwrap_or(false) {
+                hyprctl_json(r, "activewindow").ok().and_then(|j| parse_active(&j).ok().flatten()).filter(|c| is_browser(&c.class))
+            } else {
+                None
+            }
+        }
+        _ => None,
+    };
+    let Some(free) = free_screen(r) else {
+        // a full desk never blocks an app that is open: it shows where it is
+        if let Some(c) = app_hit.clone().or_else(|| title_hit.clone()).or_else(|| tab_hit.clone()) {
+            return match reveal(r, &c) {
+                Ok(()) => r.toast(&format!("No free screen: {} shown where it is", c.class)),
+                Err(e) => r.toast(&format!("Focus failed: {e}")),
+            };
+        }
+        return r.toast("No free screen (6 at most): say \"organize\" or close one");
+    };
+    let name = site.as_ref().map(|(n, _)| capital(n)).unwrap_or_else(|| query.to_string());
+    let on = label(free.slot);
+    r.screens_on_demand();
+    r.screen_unhide(screen_number(free.slot).unwrap_or(0));
+    if let Some(tab) = title_hit.or(tab_hit) {
+        // the tab alone: copy its address, close it, open it in a new window on the free screen
+        if focus_address(r, &tab.address).is_err() {
+            return r.toast("Could not focus the browser");
+        }
+        let url = tab_url(r).or_else(|| site.as_ref().map(|(_, u)| u.clone()));
+        let Some(url) = url else {
+            // no address: the whole browser window moves instead
+            return match move_to(r, &tab.address, free.ws) {
+                Ok(()) => r.toast(&format!("{} on {on}", tab.class)),
+                Err(e) => r.toast(&format!("Move failed: {e}")),
+            };
+        };
+        let _ = key(r, "CTRL", "W");
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        if let Err(e) = dispatch(r, &format!("hl.dsp.focus({{ monitor = \"{}\" }})", free.output)) {
+            return r.toast(&format!("Screen: {e}"));
+        }
+        return match r.run(&["omarchy-launch-browser".into(), "--new-window".into(), url], false) {
+            Ok(_) => r.toast(&format!("{name} on {on}")),
+            Err(e) => r.toast(&format!("Browser: {e}")),
+        };
+    }
+    if let Some(app) = app_hit {
+        return match move_to(r, &app.address, free.ws) {
+            Ok(()) => r.toast(&format!("{} on {on}", app.class)),
+            Err(e) => r.toast(&format!("Move failed: {e}")),
+        };
+    }
+    let argv = match (&site, launch_for(query)) {
+        (Some((_, url)), _) => vec!["omarchy-launch-browser".to_string(), "--new-window".into(), url.clone()],
+        (None, Some(a)) => a,
+        (None, None) => return r.toast(&format!("No app called \"{query}\" is open")),
+    };
+    if let Err(e) = dispatch(r, &format!("hl.dsp.focus({{ monitor = \"{}\" }})", free.output)) {
+        return r.toast(&format!("Screen: {e}"));
+    }
+    match r.run(&argv, false) {
+        Ok(_) => r.toast(&format!("{name} on {on}")),
+        Err(e) => r.toast(&format!("Open: {e}")),
+    }
+}
+
+/// The apps a spoken kind names ("terminals", "the command line", "browsers", "chrome windows", a class).
+pub fn kind_filter(query: &str) -> Box<dyn Fn(&Client) -> bool> {
+    let w = crate::command::words(query);
+    let has = |xs: &[&str]| w.iter().any(|x| xs.contains(&x.as_str()));
+    if has(&["terminal", "terminals", "console", "consoles", "shell", "shells", "foot", "kitty", "command", "commands", "cli", "clis"]) {
+        Box::new(|c: &Client| Kind::of(&c.class) == Kind::Terminal)
+    } else if has(&["browser", "browsers", "chrome", "chromes", "firefox", "tabs", "web"]) {
+        Box::new(|c: &Client| Kind::of(&c.class) == Kind::Browser)
+    } else {
+        let q = query.to_string();
+        Box::new(move |c: &Client| app_score(c, &q) >= 75)
+    }
+}
+
+/// Screen numbers (docs/SCREENS.md, the single source of truth; the same order as `pimax desk screens show N` and
+/// the number badge WayVR draws on each screen): 1 main, 2 left, 3 right, 4 up, 5 up-left, 6 up-right. A number
+/// belongs to its slot, so screen 4 is always the up screen, also when screens 2 and 3 are hidden.
+pub const SCREEN_ORDER: [&str; 6] = ["main", "left", "right", "up", "up-left", "up-right"];
+
+/// The number of a slot (1 = main ... 6 = up-right).
+pub fn screen_number(slot: &str) -> Option<usize> {
+    SCREEN_ORDER.iter().position(|s| *s == slot).map(|i| i + 1)
+}
+
+/// "screen 3 (right)", "screen 1 (main)".
+pub fn screen_label(slot: &str) -> String {
+    match screen_number(slot) {
+        Some(n) => format!("screen {n} ({slot})"),
+        None => label(slot),
+    }
+}
+
+/// What a spoken screen means: `3` / `three` / `screen 3` (a number), a side (`left`, `up-right`, `middle`), or
+/// `here` / `this` / `current` (the screen looked at, else the focused one). The canonical slot value: `1`..`6`,
+/// a slot name, or `here`. Err: the words in plain English.
+pub fn screen_value(v: &str) -> Result<String, String> {
+    let w = crate::command::words(v);
+    let w: Vec<&str> = w.iter().map(String::as_str).filter(|x| !matches!(*x, "the" | "screen" | "window" | "number" | "pantalla" | "no")).collect();
+    let joined = w.join(" ");
+    match w.as_slice() {
+        [x] if x.parse::<usize>().is_ok() => {
+            let n: usize = x.parse().unwrap_or(0);
+            if (1..=6).contains(&n) {
+                Ok(n.to_string())
+            } else {
+                Err(format!("Screens are numbered 1 to 6, not {n}"))
+            }
+        }
+        ["here"] | ["this"] | ["current"] | ["this", "1"] | ["this", "one"] | ["aqui"] => Ok("here".into()),
+        _ => match slot_word(&joined.replace(' ', "")).or_else(|| slot_word(&joined)) {
+            Some("down") => Err("There is no screen below the main one".into()),
+            Some(s) => Ok(s.to_string()),
+            None => Err(format!("Screens are 1 to 6 (1 main, 2 left, 3 right, 4 up, 5 up-left, 6 up-right), not \"{}\"", v.trim())),
+        },
+    }
+}
+
+/// The VR screen a spoken screen means (see [`screen_value`]); "here" = the gazed screen, else the focused one.
+pub fn find_screen(target: &str, r: &mut dyn Runner, wayvrctl: &str) -> Result<Screen, String> {
+    let v = screen_value(target)?;
+    let scr = vr_screens(r);
+    if v == "here" {
+        let ws = target_workspace(r, wayvrctl);
+        return scr.iter().find(|s| Some(s.ws) == ws).or_else(|| scr.iter().find(|s| s.focused)).cloned().ok_or_else(|| "I can't tell which screen is here".to_string());
+    }
+    let slot = match v.parse::<usize>() {
+        Ok(n) => SCREEN_ORDER[n - 1],
+        Err(_) => SCREEN_ORDER.iter().copied().find(|s| *s == v).unwrap_or("main"),
+    };
+    if scr.len() <= 1 && slot != "main" {
+        return Err(ONE_SCREEN.into());
+    }
+    scr.iter().find(|s| s.slot == slot).cloned().ok_or_else(|| {
+        let n = screen_number(slot).unwrap_or(1);
+        format!("No {} now (say \"{n} screens\", or Screens = 6 in the Pimax app)", screen_label(slot))
+    })
+}
+
+/// The number badges on the VR screens (WayVR `wayvrctl screen-numbers flash [N]`, about 5 s; N highlighted).
+/// Never fatal: an older wayvrctl without the command changes nothing.
+pub fn badges(r: &mut dyn Runner, wayvrctl: &str, n: Option<usize>) {
+    let mut argv = vec![wayvrctl.to_string(), "screen-numbers".into(), "flash".into()];
+    if let Some(n) = n.filter(|n| (1..=6).contains(n)) {
+        argv.push(n.to_string());
+    }
+    let _ = r.run(&argv, false);
+}
+
+/// Which of the matching apps a spoken selector picks: every one (the default, "all the terminals"), or the one
+/// used last ("the newest terminal", "one terminal", "the last chrome"). The selector words are taken out of the
+/// query.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Which {
+    All,
+    One,
+}
+
+pub fn which_of(query: &str) -> (Which, String) {
+    let w = crate::command::words(query);
+    // "one" is "1" after words(): "this one", "one terminal"
+    let one = w.iter().any(|x| matches!(x.as_str(), "newest" | "latest" | "last" | "recent" | "one" | "1" | "single"));
+    let rest: Vec<&str> = w.iter().map(String::as_str).filter(|x| !matches!(*x, "newest" | "latest" | "last" | "recent" | "one" | "1" | "single" | "all" | "every" | "each" | "the" | "my" | "of")).collect();
+    (if one { Which::One } else { Which::All }, rest.join(" "))
+}
+
+/// Everything ("all the apps", "everything", "all windows"): no kind filter.
+fn is_everything(q: &str) -> bool {
+    let w = crate::command::words(q);
+    !w.is_empty() && w.iter().all(|x| matches!(x.as_str(), "everything" | "all" | "apps" | "app" | "windows" | "programs" | "the" | "of" | "it" | "todo" | "stuff"))
+}
+
+/// The apps a spoken query names among `clients` (kind, name, a browser tab's title, "this" = the focused app,
+/// "everything"), the one used last first.
+fn select<'a>(clients: &'a [Client], query: &str, focused: Option<&Client>) -> Vec<&'a Client> {
+    let (which, q) = which_of(query);
+    let mut of: Vec<&Client> = if matches!(q.as_str(), "this" | "it" | "this app" | "that" | "") && !is_everything(query) {
+        clients.iter().filter(|c| focused.is_some_and(|f| f.address == c.address)).collect()
+    } else if is_everything(query) {
+        clients.iter().filter(|c| c.workspace > 0).collect()
+    } else {
+        let f = kind_filter(&q);
+        let v: Vec<&Client> = clients.iter().filter(|c| c.workspace > 0 && f(c)).collect();
+        if v.is_empty() {
+            // a browser tab by title ("YouTube up-right"): its window
+            clients.iter().filter(|c| is_browser(&c.class) && crate::desk::title_has(&c.title, &q)).collect()
+        } else {
+            v
+        }
+    };
+    of.retain(|c| address_ok(&c.address));
+    of.sort_by_key(|c| c.focus);
+    if which == Which::One {
+        of.truncate(1);
+    }
+    of
+}
+
+/// "Put all the terminals on the left screen", "move Chrome to screen 3", "move the terminal from here to screen 4"
+/// (user requests 2026-10-16): the apps of that kind or name (on screen `from` only, when given) go to that VR
+/// screen, which shows; the other apps stay. The focus stays where it was.
+fn put(target: &str, from: Option<&str>, query: &str, r: &mut dyn Runner, wayvrctl: &str) {
+    let query = query.trim();
+    let clients = match hyprctl_json(r, "clients").and_then(|j| parse_clients(&j)) {
+        Ok(c) => c,
+        Err(e) => return r.toast(&format!("Windows: {e}")),
+    };
+    let to = match find_screen(target, r, wayvrctl) {
+        Ok(s) => s,
+        Err(e) => return r.toast(&e),
+    };
+    let src = match from.map(|f| find_screen(f, r, wayvrctl)) {
+        Some(Ok(s)) => Some(s),
+        Some(Err(e)) => return r.toast(&e),
+        None => None,
+    };
+    let focused = hyprctl_json(r, "activewindow").ok().and_then(|j| parse_active(&j).ok().flatten());
+    let pool: Vec<Client> = clients.iter().filter(|c| src.as_ref().is_none_or(|s| s.ws == c.workspace)).cloned().collect();
+    let of = select(&pool, query, focused.as_ref());
+    let what = if is_everything(query) { "apps".to_string() } else { which_of(query).1 };
+    let what = if what.is_empty() || what == "this" || what == "it" { "the app".to_string() } else { what };
+    let where_ = screen_label(to.slot);
+    if of.is_empty() {
+        return r.toast(&match &src {
+            Some(s) => format!("No {what} on {}", screen_label(s.slot)),
+            None => format!("No {what} open"),
+        });
+    }
+    let moving: Vec<&&Client> = of.iter().filter(|c| c.workspace != to.ws).collect();
+    if moving.is_empty() {
+        return r.toast(&format!("{} already on {where_}", capital(&what)));
+    }
+    r.screens_on_demand();
+    r.screen_unhide(screen_number(to.slot).unwrap_or(0));
+    let failed = moving.iter().filter(|c| send_to(r, &c.address, to.ws).is_err()).count();
+    if let Some(f) = &focused {
+        let _ = focus_address(r, &f.address);
+    }
+    let fail = if failed > 0 { format!(" ({failed} did not move)") } else { String::new() };
+    badges(r, wayvrctl, screen_number(to.slot));
+    let names = if moving.len() == 1 { moving[0].class.rsplit('.').next().unwrap_or(&moving[0].class).to_string() } else { format!("{} {what}", moving.len()) };
+    r.toast(&format!("{names} on {where_}{fail}"));
+}
+
+/// "Swap screens 1 and 2": the apps of the two screens change places (the screens stay where they are in VR).
+fn swap(a: &str, b: &str, r: &mut dyn Runner, wayvrctl: &str) {
+    let (sa, sb) = match (find_screen(a, r, wayvrctl), find_screen(b, r, wayvrctl)) {
+        (Ok(x), Ok(y)) => (x, y),
+        (Err(e), _) | (_, Err(e)) => return r.toast(&e),
+    };
+    if sa.ws == sb.ws {
+        return r.toast("That is the same screen");
+    }
+    let clients = match hyprctl_json(r, "clients").and_then(|j| parse_clients(&j)) {
+        Ok(c) => c,
+        Err(e) => return r.toast(&format!("Windows: {e}")),
+    };
+    let on = |ws: i64| -> Vec<Client> { clients.iter().filter(|c| c.workspace == ws && address_ok(&c.address)).cloned().collect() };
+    let (xa, xb) = (on(sa.ws), on(sb.ws));
+    if xa.is_empty() && xb.is_empty() {
+        return r.toast("Both screens are empty");
+    }
+    let focused = hyprctl_json(r, "activewindow").ok().and_then(|j| parse_active(&j).ok().flatten());
+    r.screens_on_demand();
+    r.screen_unhide(screen_number(sa.slot).unwrap_or(0));
+    r.screen_unhide(screen_number(sb.slot).unwrap_or(0));
+    let mut failed = 0;
+    for c in &xa {
+        failed += usize::from(send_to(r, &c.address, sb.ws).is_err());
+    }
+    for c in &xb {
+        failed += usize::from(send_to(r, &c.address, sa.ws).is_err());
+    }
+    if let Some(f) = &focused {
+        let _ = focus_address(r, &f.address);
+    }
+    let fail = if failed > 0 { format!(" ({failed} did not move)") } else { String::new() };
+    badges(r, wayvrctl, screen_number(sb.slot));
+    r.toast(&format!("Swapped {} and {}{fail}", screen_label(sa.slot), screen_label(sb.slot)));
+}
+
+/// "What's on screen 3": that screen's apps.
+fn list_screen(target: &str, r: &mut dyn Runner, wayvrctl: &str) {
+    let s = match find_screen(target, r, wayvrctl) {
+        Ok(s) => s,
+        Err(e) => return r.toast(&e),
+    };
+    badges(r, wayvrctl, screen_number(s.slot));
+    match clients_on(r, s.ws) {
+        Ok(mut v) if !v.is_empty() => {
+            v.sort_by_key(|c| c.focus);
+            let names: Vec<String> = v.iter().take(6).map(|c| format!("{} {}", c.class.rsplit('.').next().unwrap_or(&c.class), short(&clean_title(&c.title), 24)).trim().to_string()).collect();
+            r.toast(&format!("{}: {}", capital(&screen_label(s.slot)), names.join(" | ")));
+        }
+        Ok(_) => r.toast(&format!("{} is empty", capital(&screen_label(s.slot)))),
+        Err(e) => r.toast(&format!("Windows: {e}")),
+    }
+}
+
+/// "Open YouTube on screen 3", "open ~/Videos/x.mkv on the left screen", "open https://... on screen 2": that screen
+/// is focused, then the site (a new browser window), the file (its default app), or the app family starts there.
+fn open_on(target: &str, what: &str, r: &mut dyn Runner, wayvrctl: &str) {
+    let what = what.trim();
+    // an app that is open comes to that screen (a new window only when asked: "a new", "another")
+    let ww = crate::command::words(what);
+    // a terminal is always a new one ("open a terminal on screen 2"; the slot drops the article)
+    let terminal = launch_for(what).is_some_and(|a| a.first().is_some_and(|x| x == "omarchy-launch-terminal"));
+    let fresh = terminal || ww.first().is_some_and(|x| matches!(x.as_str(), "a" | "an")) || ww.iter().any(|x| matches!(x.as_str(), "new" | "another" | "second"));
+    if !fresh && !what.starts_with('/') && !what.starts_with('~') && !what.contains("://") {
+        let clients = hyprctl_json(r, "clients").and_then(|j| parse_clients(&j)).unwrap_or_default();
+        if running_app(&clients, what).is_some() {
+            return open_app(&format!("{what} on screen {target}"), r, wayvrctl);
+        }
+    }
+    let s = match find_screen(target, r, wayvrctl) {
+        Ok(s) => s,
+        Err(e) => return r.toast(&e),
+    };
+    let home = std::env::var("HOME").unwrap_or_default();
+    let path = if let Some(rest) = what.strip_prefix("~/") { format!("{home}/{rest}") } else { what.to_string() };
+    let argv: Vec<String> = if path.starts_with('/') && std::path::Path::new(&path).exists() {
+        vec!["xdg-open".into(), path]
+    } else if what.starts_with("https://") || what.starts_with("http://") {
+        if what.len() > 2000 || what.chars().any(char::is_whitespace) {
+            return r.toast("That address does not look right");
+        }
+        vec!["omarchy-launch-browser".into(), "--new-window".into(), what.to_string()]
+    } else if let Some((_, url)) = crate::desk::site_url(what) {
+        vec!["omarchy-launch-browser".into(), "--new-window".into(), url]
+    } else if let Some(a) = launch_for(what) {
+        a
+    } else {
+        return r.toast(&format!("I can open a site, an address, a file or a terminal / browser / files there, not \"{}\"", short(what, 30)));
+    };
+    if !monitor_ok(&s.output) {
+        return r.toast("Bad screen name");
+    }
+    r.screens_on_demand();
+    r.screen_unhide(screen_number(s.slot).unwrap_or(0));
+    if let Err(e) = dispatch(r, &format!("hl.dsp.focus({{ monitor = \"{}\" }})", s.output)) {
+        return r.toast(&format!("Screen: {e}"));
+    }
+    match r.run(&argv, false) {
+        Ok(_) => {
+            badges(r, wayvrctl, screen_number(s.slot));
+            r.toast(&format!("Opening {} on {}", short(what, 30), screen_label(s.slot)))
+        }
+        Err(e) => r.toast(&format!("Open: {e}")),
+    }
+}
+
+/// Saved layouts: `~/.local/state/pimax/voice-layouts.json`, `{name: [[class, title, slot], ...]}`.
+pub fn layouts_path() -> std::path::PathBuf {
+    let base = std::env::var_os("XDG_STATE_HOME").map(std::path::PathBuf::from).unwrap_or_else(|| std::path::PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".local/state"));
+    base.join("pimax/voice-layouts.json")
+}
+
+fn layout_name(n: &str) -> String {
+    let n = crate::command::words(n).into_iter().filter(|w| !matches!(w.as_str(), "the" | "my" | "layout" | "as" | "a")).collect::<Vec<_>>().join("-");
+    if n.is_empty() { "default".into() } else { n.chars().take(32).collect() }
+}
+
+/// "Save this layout (as work)": which app is on which screen.
+fn layout_save(name: &str, r: &mut dyn Runner, path: &std::path::Path) {
+    let name = layout_name(name);
+    let scr = vr_screens(r);
+    let clients = match hyprctl_json(r, "clients").and_then(|j| parse_clients(&j)) {
+        Ok(c) => c,
+        Err(e) => return r.toast(&format!("Windows: {e}")),
+    };
+    let rows: Vec<Value> = clients
+        .iter()
+        .filter_map(|c| scr.iter().find(|s| s.ws == c.workspace).map(|s| serde_json::json!([c.class, clean_title(&c.title), s.slot])))
+        .collect();
+    if rows.is_empty() {
+        return r.toast("No apps on the screens to save");
+    }
+    let mut all: serde_json::Map<String, Value> = std::fs::read_to_string(path).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
+    let n = rows.len();
+    all.insert(name.clone(), Value::Array(rows));
+    if let Some(d) = path.parent() {
+        let _ = std::fs::create_dir_all(d);
+    }
+    match std::fs::write(path, Value::Object(all).to_string()) {
+        Ok(()) => r.toast(&format!("Layout \"{name}\" saved: {n} apps")),
+        Err(e) => r.toast(&format!("Save layout: {e}")),
+    }
+}
+
+/// "Restore the layout (work)": the open apps go back to the screens they had (by class, the closest title first).
+/// Apps that are not open stay closed; nothing is started or closed.
+fn layout_restore(name: &str, r: &mut dyn Runner, path: &std::path::Path) {
+    let name = layout_name(name);
+    let all: serde_json::Map<String, Value> = std::fs::read_to_string(path).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
+    let Some(rows) = all.get(&name).and_then(Value::as_array) else {
+        let names: Vec<&String> = all.keys().collect();
+        return r.toast(&if names.is_empty() { "No saved layout: say \"save this layout\"".to_string() } else { format!("No layout \"{name}\" (saved: {})", names.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")) });
+    };
+    let scr = vr_screens(r);
+    let clients = match hyprctl_json(r, "clients").and_then(|j| parse_clients(&j)) {
+        Ok(c) => c,
+        Err(e) => return r.toast(&format!("Windows: {e}")),
+    };
+    let mut used: Vec<String> = Vec::new();
+    let mut moves: Vec<(String, i64)> = Vec::new();
+    for row in rows {
+        let (Some(class), Some(title), Some(slot)) = (row.get(0).and_then(Value::as_str), row.get(1).and_then(Value::as_str), row.get(2).and_then(Value::as_str)) else { continue };
+        let Some(s) = scr.iter().find(|s| s.slot == slot) else { continue };
+        let c = clients.iter().filter(|c| c.class == class && !used.contains(&c.address) && address_ok(&c.address)).max_by_key(|c| usize::from(clean_title(&c.title) == title));
+        if let Some(c) = c {
+            used.push(c.address.clone());
+            if c.workspace != s.ws {
+                moves.push((c.address.clone(), s.ws));
+            }
+        }
+    }
+    if moves.is_empty() {
+        return r.toast(&format!("Layout \"{name}\": everything is already in place"));
+    }
+    let focused = hyprctl_json(r, "activewindow").ok().and_then(|j| parse_active(&j).ok().flatten());
+    r.screens_on_demand();
+    let failed = moves.iter().filter(|(a, ws)| send_to(r, a, *ws).is_err()).count();
+    if let Some(f) = &focused {
+        let _ = focus_address(r, &f.address);
+    }
+    let fail = if failed > 0 { format!(" ({failed} did not move)") } else { String::new() };
+    r.toast(&format!("Layout \"{name}\" restored: {} apps moved{fail}", moves.len()));
+}
+
+/// "Move all the terminals to one window" (user decision 2026-10-16): every app of that kind joins the one in use
+/// (the focused one when it is of that kind, else the most recently used); the other apps stay where they are.
+fn gather(query: &str, r: &mut dyn Runner) {
+    let clients = match hyprctl_json(r, "clients").and_then(|j| parse_clients(&j)) {
+        Ok(c) => c,
+        Err(e) => return r.toast(&format!("Windows: {e}")),
+    };
+    let f = kind_filter(query);
+    let mut of: Vec<&Client> = clients.iter().filter(|c| c.workspace > 0 && f(c)).collect();
+    of.sort_by_key(|c| c.focus);
+    let Some(home) = of.first().map(|c| c.workspace) else { return r.toast(&format!("No {query} open")) };
+    let moving: Vec<&&Client> = of.iter().filter(|c| c.workspace != home && address_ok(&c.address)).collect();
+    if moving.is_empty() {
+        return r.toast(&format!("All {} {query} are already together", of.len()));
+    }
+    let focused = hyprctl_json(r, "activewindow").ok().and_then(|j| parse_active(&j).ok().flatten());
+    r.screens_on_demand();
+    let failed = moving.iter().filter(|c| send_to(r, &c.address, home).is_err()).count();
+    if let Some(f) = &focused {
+        let _ = focus_address(r, &f.address);
+    }
+    let scr = vr_screens(r);
+    let where_ = scr.iter().find(|s| s.ws == home).map(|s| label(s.slot)).unwrap_or_else(|| format!("window {home}"));
+    let fail = if failed > 0 { format!(" ({failed} did not move)") } else { String::new() };
+    r.toast(&format!("{} {query} together on {where_}{fail}", of.len()));
+}
+
+/// "Go to the left screen", "go to screen 3": focus that screen.
+fn screen_goto(side: &str, r: &mut dyn Runner, wayvrctl: &str) {
+    let t = match find_screen(side, r, wayvrctl) {
+        Ok(t) => t,
+        Err(e) => return r.toast(&e),
+    };
     if !monitor_ok(&t.output) {
         return r.toast("Bad screen name");
     }
     r.screens_on_demand();
+    r.screen_unhide(screen_number(t.slot).unwrap_or(0));
     match dispatch(r, &format!("hl.dsp.focus({{ monitor = \"{}\" }})", t.output)) {
-        Ok(()) => r.toast(&format!("{} (window {})", capital(&label(want)), t.ws)),
+        Ok(()) => {
+            badges(r, wayvrctl, screen_number(t.slot));
+            r.toast(&format!("{}, window {}", capital(&screen_label(t.slot)), t.ws))
+        }
         Err(e) => r.toast(&format!("Screen: {e}")),
     }
 }
@@ -694,14 +1309,38 @@ fn capital(s: &str) -> String {
 
 /// "Move this left" / "zoom in": the VR screen itself moves or changes size in space (`wayvrctl screen-nudge`):
 /// the screen looked at, else the focused one, else the main one.
-fn screen_nudge(dir: &str, r: &mut dyn Runner, wayvrctl: &str) {
-    let d = match dir.trim().to_lowercase().as_str() {
-        x @ ("closer" | "farther" | "bigger" | "smaller") => x.to_string(),
-        x => match slot_word(x) {
-            Some(s @ ("left" | "right" | "up" | "down")) => s.to_string(),
-            _ => return r.toast(&format!("Move the screen left, right, up or down, not \"{dir}\"")),
-        },
+fn screen_nudge(dir: &str, which: Option<&str>, r: &mut dyn Runner, wayvrctl: &str) {
+    // the first direction word counts: "up a bit", "a little more to the left", "further away"
+    let pick = |x: &str| -> Option<String> {
+        match x {
+            "closer" | "nearer" => Some("closer".into()),
+            "farther" | "further" | "away" => Some("farther".into()),
+            "bigger" | "larger" => Some("bigger".into()),
+            "smaller" => Some("smaller".into()),
+            x => match slot_word(x) {
+                Some(s @ ("left" | "right" | "up" | "down")) => Some(s.to_string()),
+                _ => None,
+            },
+        }
     };
+    let low = dir.trim().to_lowercase();
+    let Some(d) = pick(&low).or_else(|| crate::command::words(&low).iter().find_map(|x| pick(x))) else {
+        return r.toast(&format!("Move the screen left, right, up or down, not \"{dir}\""));
+    };
+    // a named screen ("make screen 2 bigger"), else the one looked at, else the focused one
+    if let Some(w) = which.filter(|w| !w.trim().is_empty()) {
+        let s = match find_screen(w, r, wayvrctl) {
+            Ok(s) => s,
+            Err(e) => return r.toast(&e),
+        };
+        if !monitor_ok(&s.output) {
+            return r.toast("Bad screen name");
+        }
+        return match r.run(&[wayvrctl.to_string(), "screen-nudge".into(), s.output.clone(), d.clone()], true) {
+            Ok(_) => r.toast(&format!("{}: {d}", capital(&screen_label(s.slot)))),
+            Err(e) => r.toast(&format!("Move screen: {e} (needs the new WayVR build)")),
+        };
+    }
     let gazed = gaze_at(r, wayvrctl).and_then(|t| t.monitor);
     let scr = vr_screens(r);
     let name = gazed
@@ -720,8 +1359,133 @@ fn screen_nudge(dir: &str, r: &mut dyn Runner, wayvrctl: &str) {
     }
 }
 
+/// The screen numbers a spoken list names: "4,3", "4 and 3", "three and four", "2, 3 and 5", "left", "here".
+pub fn screen_list(v: &str, r: &mut dyn Runner, wayvrctl: &str) -> Result<Vec<usize>, String> {
+    let w = crate::rules::tidy(&crate::command::words(&v.replace(',', " , ")));
+    let mut out: Vec<usize> = Vec::new();
+    let push = |n: usize, out: &mut Vec<usize>| {
+        if !out.contains(&n) {
+            out.push(n);
+        }
+    };
+    for x in w.iter().map(String::as_str).filter(|x| !matches!(*x, "and" | "," | "y" | "the" | "screen" | "screens" | "window" | "windows" | "pantalla" | "pantallas" | "number" | "numbers" | "&")) {
+        match screen_value(x)? {
+            h if h == "here" => {
+                let s = find_screen("here", r, wayvrctl)?;
+                push(screen_number(s.slot).unwrap_or(1), &mut out);
+            }
+            n => match n.parse::<usize>() {
+                Ok(n) => push(n, &mut out),
+                Err(_) => push(screen_number(&n).ok_or_else(|| format!("No screen {n}"))?, &mut out),
+            },
+        }
+    }
+    if out.is_empty() {
+        return Err("Which screens? Say their numbers, e.g. hide screens 3 and 4".into());
+    }
+    Ok(out)
+}
+
+/// "Close screen 2", "remove screens 4 and 3", "hide this screen" (user rule 2026-10-16): those VR screens HIDE
+/// (`pimax desk screens hide N,N`); their apps stay open and come back with the screen. `others`: every screen but
+/// the main one ("close everything"). Never closes an app.
+fn hide_screens(pimax: &str, what: &str, r: &mut dyn Runner, wayvrctl: &str) {
+    let what = what.trim();
+    let arg = if matches!(what, "others" | "all" | "everything") {
+        "others".to_string()
+    } else {
+        let mut n = match screen_list(what, r, wayvrctl) {
+            Ok(n) => n,
+            Err(e) => return r.toast(&e),
+        };
+        if n.contains(&1) {
+            n.retain(|x| *x != 1);
+            if n.is_empty() {
+                return r.toast("The main screen (1) always shows");
+            }
+        }
+        n.iter().map(usize::to_string).collect::<Vec<_>>().join(",")
+    };
+    let pimax = if pimax.is_empty() || pimax.starts_with('{') { "pimax" } else { pimax };
+    match r.run(&[pimax.to_string(), "desk".into(), "screens".into(), "hide".into(), arg], true) {
+        Ok(out) => r.toast(out.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or("Screens hidden")),
+        Err(e) => r.toast(&format!("Hide screens failed: {e}")),
+    }
+}
+
+/// The `screen-nudge --step` calls for a size in percent of now: WayVR scales by 1 + step (bigger) or 1 / (1 + step)
+/// (smaller), step 0.02..1, so 50% = smaller 1.0, 200% = bigger 1.0, 400% = bigger 1.0 twice, 75% = smaller 0.333.
+pub fn scale_steps(percent: u32) -> Vec<(&'static str, f32)> {
+    let p = percent.clamp(10, 400) as f32 / 100.0;
+    let (dir, mut f) = if p >= 1.0 { ("bigger", p) } else { ("smaller", 1.0 / p) };
+    let mut v = Vec::new();
+    while f > 2.0 + 1e-3 {
+        v.push((dir, 1.0));
+        f /= 2.0;
+    }
+    if f - 1.0 >= 0.02 {
+        v.push((dir, ((f - 1.0) * 1000.0).round() / 1000.0));
+    }
+    v
+}
+
+/// A spoken size in percent: "half" 50, "double" / "twice" 200, "bigger" 125, "smaller" 80, "75", "75%".
+pub fn size_percent(v: &str) -> Option<u32> {
+    let w = crate::command::words(v);
+    let t = w.iter().map(String::as_str).find(|x| !matches!(*x, "the" | "size" | "percent" | "as" | "big" | "of" | "a"))?;
+    match t {
+        "half" | "halve" => Some(50),
+        "double" | "twice" => Some(200),
+        "third" => Some(33),
+        "quarter" => Some(25),
+        "bigger" | "larger" => Some(125),
+        "smaller" => Some(80),
+        x => x.trim_end_matches('%').parse::<u32>().ok().filter(|n| (10..=400).contains(n)),
+    }
+}
+
+/// "Make all these screens half the size", "make screen 2 double the size", "all screens 75 percent" (live
+/// 2026-10-16): every VR screen (`all`) or the one named, scaled by that much (`wayvrctl screen-nudge --step`).
+fn scale(which: &str, size: &str, r: &mut dyn Runner, wayvrctl: &str) {
+    let Some(pct) = size_percent(size) else { return r.toast(&format!("How big? Say half, double or a percent, not \"{size}\"")) };
+    let which = which.trim();
+    let all = which.is_empty() || which.starts_with('{') || matches!(which, "all" | "every" | "everything" | "them" | "these");
+    let targets: Vec<Screen> = if all {
+        vr_screens(r)
+    } else {
+        match find_screen(which, r, wayvrctl) {
+            Ok(s) => vec![s],
+            Err(e) => return r.toast(&e),
+        }
+    };
+    let targets: Vec<Screen> = targets.into_iter().filter(|s| monitor_ok(&s.output)).collect();
+    if targets.is_empty() {
+        return r.toast("No VR screen to resize");
+    }
+    let steps = scale_steps(pct);
+    let mut failed = 0;
+    for s in &targets {
+        for (dir, step) in &steps {
+            if r.run(&[wayvrctl.to_string(), "screen-nudge".into(), "--step".into(), format!("{step}"), s.output.clone(), dir.to_string()], true).is_err() {
+                failed += 1;
+            }
+        }
+    }
+    let what = match pct {
+        50 => "half the size".to_string(),
+        200 => "double the size".to_string(),
+        p => format!("{p}% of the size"),
+    };
+    let who = if all { format!("All {} screens", targets.len()) } else { capital(&screen_label(targets[0].slot)) };
+    if failed > 0 {
+        r.toast(&format!("{who}: {what}, but {failed} step(s) failed (needs the new WayVR build)"));
+    } else {
+        r.toast(&format!("{who}: {what}"));
+    }
+}
+
 /// "Send this to the left screen": the focused app goes to the screen on that side of its own screen.
-fn screen_move(side: &str, r: &mut dyn Runner) {
+fn screen_move(side: &str, r: &mut dyn Runner, wayvrctl: &str) {
     let Some(side) = slot_word(side) else { return r.toast(&format!("Move left, right, up or to the main screen, not \"{side}\"")) };
     let scr = vr_screens(r);
     if scr.len() <= 1 {
@@ -734,13 +1498,19 @@ fn screen_move(side: &str, r: &mut dyn Runner) {
     };
     let from = scr.iter().find(|s| s.ws == src.workspace).map(|s| s.slot).unwrap_or("main");
     let Some(to) = neighbour(from, side) else { return r.toast(&format!("No screen {side} of {}", label(from))) };
+    // up-left / up-right exist only with 5-6 screens: else the screen below them
+    let to = if scr.iter().any(|s| s.slot == to) { to } else { to.strip_prefix("up-").and_then(slot_word).unwrap_or(to) };
     let Some(t) = scr.iter().find(|s| s.slot == to) else { return r.toast(&format!("No {} (Screens in the Pimax app)", label(to))) };
     if t.ws == src.workspace {
         return r.toast("Already there");
     }
     r.screens_on_demand();
+    r.screen_unhide(screen_number(to).unwrap_or(0));
     match move_to(r, &src.address, t.ws) {
-        Ok(()) => r.toast(&format!("{} moved to {}", src.class, label(to))),
+        Ok(()) => {
+            badges(r, wayvrctl, screen_number(to));
+            r.toast(&format!("{} moved to {}", src.class, screen_label(to)))
+        }
         Err(e) => r.toast(&format!("Move failed: {e}")),
     }
 }
@@ -757,7 +1527,7 @@ fn list_screens(scr: &[Screen], clients: &[Client]) -> String {
         let more = if v.len() > 3 { format!(" +{}", v.len() - 3) } else { String::new() };
         names.join(", ") + &more
     };
-    let mut parts: Vec<String> = scr.iter().map(|s| format!("{}: {}", capital(s.slot), apps_on(s.ws))).collect();
+    let mut parts: Vec<String> = scr.iter().map(|s| format!("{} {}: {}", screen_number(s.slot).unwrap_or(0), capital(s.slot), apps_on(s.ws))).collect();
     let mut hidden: Vec<i64> = clients.iter().map(|c| c.workspace).filter(|w| *w > 0 && !scr.iter().any(|s| s.ws == *w)).collect();
     hidden.sort_unstable();
     hidden.dedup();
@@ -1016,6 +1786,106 @@ fn focus_app(query: &str, transcript: &str, ai: &mut Option<Box<dyn LlmClient>>,
     }
 }
 
+/// Focus an app and make sure its VR screen shows (an app on a hidden screen comes into view).
+fn reveal(r: &mut dyn Runner, c: &Client) -> Result<(), String> {
+    if let Some(s) = vr_screens(r).into_iter().find(|s| s.ws == c.workspace) {
+        r.screens_on_demand();
+        r.screen_unhide(screen_number(s.slot).unwrap_or(0));
+    }
+    focus_address(r, &c.address)
+}
+
+/// Where an "open X ..." request wants X: the screen looked at ("here", "on this screen"), a side or number ("in
+/// main", "on the left screen", "on screen 3", "in the middle"), or nowhere in particular. Returns (the app words,
+/// the target as `find_screen` takes it).
+pub fn open_target(phrase: &str) -> (String, Option<String>) {
+    let w = crate::rules::tidy(&crate::command::words(phrase));
+    let mut cut = w.len();
+    let mut target = None;
+    if let Some(i) = w.iter().position(|x| x == "here") {
+        cut = i;
+        target = Some("here".to_string());
+    } else if let Some(i) = w.windows(2).position(|p| matches!(p[0].as_str(), "this" | "that") && matches!(p[1].as_str(), "screen" | "window")) {
+        cut = i;
+        target = Some("here".to_string());
+    }
+    if target.is_none() {
+        // "in main", "on the left screen", "to screen 3", "in the middle"
+        for (i, x) in w.iter().enumerate() {
+            if !matches!(x.as_str(), "in" | "on" | "to" | "onto" | "into") {
+                continue;
+            }
+            let rest: Vec<&str> = w[i + 1..].iter().map(String::as_str).filter(|x| !matches!(*x, "the" | "a" | "my" | "screen" | "window" | "one")).collect();
+            if rest.len() == 1 {
+                if let Ok(v) = screen_value(rest[0]) {
+                    cut = i;
+                    target = Some(v);
+                    break;
+                }
+            }
+        }
+    }
+    let app: Vec<&str> = w[..cut].iter().map(String::as_str).filter(|x| !crate::command::FILLERS.contains(x) && !matches!(*x, "open" | "launch" | "start" | "bring" | "up" | "show" | "put" | "get" | "move")).collect();
+    (app.join(" "), target)
+}
+
+/// The open app a name means by its class or kind (not a title word): "google chrome", "the browser", "spotify".
+pub fn running_app<'a>(clients: &'a [Client], query: &str) -> Option<&'a Client> {
+    let mut v: Vec<&Client> = clients.iter().filter(|c| c.workspace > 0 && address_ok(&c.address) && app_score(c, query) >= 75).collect();
+    v.sort_by_key(|c| c.focus);
+    v.first().copied()
+}
+
+/// "Open Google Chrome", "open chrome here", "open chrome in main" (live 2026-10-16 18:10): an app that is open
+/// shows (its hidden screen comes back) or comes to the named or looked-at screen, with the focus; a new window only
+/// when asked for one. Not open: a known family (browser, terminal, files) starts there. A full desk never blocks it.
+fn open_app(phrase: &str, r: &mut dyn Runner, wayvrctl: &str) {
+    let (q, target) = open_target(phrase);
+    let clients = match hyprctl_json(r, "clients").and_then(|j| parse_clients(&j)) {
+        Ok(c) => c,
+        Err(e) => return r.toast(&format!("Windows: {e}")),
+    };
+    if let Some(c) = running_app(&clients, &q).cloned() {
+        if let Some(t) = &target {
+            let to = match find_screen(t, r, wayvrctl) {
+                Ok(s) => s,
+                Err(e) => return r.toast(&e),
+            };
+            r.screens_on_demand();
+            r.screen_unhide(screen_number(to.slot).unwrap_or(0));
+            if c.workspace != to.ws {
+                if let Err(e) = move_to(r, &c.address, to.ws) {
+                    return r.toast(&format!("Move failed: {e}"));
+                }
+            } else if let Err(e) = focus_address(r, &c.address) {
+                return r.toast(&format!("Focus failed: {e}"));
+            }
+            badges(r, wayvrctl, screen_number(to.slot));
+            return r.toast(&format!("{} on {}", c.class, screen_label(to.slot)));
+        }
+        return match reveal(r, &c) {
+            Ok(()) => r.toast(&format!("{} (workspace {})", c.class, c.workspace)),
+            Err(e) => r.toast(&format!("Focus failed: {e}")),
+        };
+    }
+    let Some(argv) = launch_for(&q) else { return r.toast(&format!("No app called \"{q}\" is open")) };
+    if let Some(t) = &target {
+        match find_screen(t, r, wayvrctl) {
+            Ok(s) if monitor_ok(&s.output) => {
+                r.screens_on_demand();
+                r.screen_unhide(screen_number(s.slot).unwrap_or(0));
+                let _ = dispatch(r, &format!("hl.dsp.focus({{ monitor = \"{}\" }})", s.output));
+            }
+            Ok(_) => {}
+            Err(e) => return r.toast(&e),
+        }
+    }
+    match r.run(&argv, false) {
+        Ok(_) => r.toast(&format!("Opening {q}")),
+        Err(e) => r.toast(&format!("Open: {e}")),
+    }
+}
+
 /// Ask the model; focus its pick. `Ok(false)` = the model found nothing.
 fn ai_pick(clients: &[Client], transcript: &str, ai: &mut Option<Box<dyn LlmClient>>, r: &mut dyn Runner) -> Result<bool, String> {
     let c = ai.as_mut().ok_or("AI switch is off (set a provider in the AI tab)")?;
@@ -1057,7 +1927,9 @@ pub fn execute(args: &[String], transcript: &str, ai: &mut Option<Box<dyn LlmCli
         "ws_next" => workspace(r, "e+1", "Next workspace"),
         "ws_prev" => workspace(r, "e-1", "Previous workspace"),
         "ws_new" => ws_new(r, wayvrctl),
-        "ws_close" => ws_close(r, wayvrctl),
+        "ws_close" => ws_close(arg(1).parse::<i64>().ok().filter(|n| *n > 0), r, wayvrctl),
+        "hide_screens" => hide_screens(arg(1), &args[2.min(args.len())..].join(" "), r, wayvrctl),
+        "scale" => scale(arg(1), arg(2), r, wayvrctl),
         "focus_gaze" => focus_gaze(r, wayvrctl),
         "move_here" => move_here(r, wayvrctl),
         "merge_here" => merge_here(n(), r, wayvrctl),
@@ -1070,12 +1942,23 @@ pub fn execute(args: &[String], transcript: &str, ai: &mut Option<Box<dyn LlmCli
         "tab_new" => tab(Tab::New, r),
         "tab_close" => tab(Tab::Close, r),
         "close" => close_one(r, wayvrctl),
+        "close_named" => close_named(&args[1.min(args.len())..].join(" "), r, wayvrctl),
+        "open_app" => open_app(&args[1.min(args.len())..].join(" "), r, wayvrctl),
         "list" => list(r),
-        "screen" => screen_goto(arg(1), r),
-        "move_screen" => screen_move(arg(1), r),
+        "screen" => screen_goto(arg(1), r, wayvrctl),
+        "move_screen" => screen_move(arg(1), r, wayvrctl),
         "organize" => organize(r),
-        "nudge" => screen_nudge(arg(1), r, wayvrctl),
+        "nudge" => screen_nudge(arg(1), args.get(2).map(String::as_str), r, wayvrctl),
         "together" => together(r),
+        "open_screen" => open_screen(&args[1..].join(" "), r),
+        "gather" => gather(&args[1..].join(" "), r),
+        "put" => put(arg(1), None, &args[2.min(args.len())..].join(" "), r, wayvrctl),
+        "put_from" => put(arg(2), Some(arg(1)), &args[3.min(args.len())..].join(" "), r, wayvrctl),
+        "swap" => swap(arg(1), arg(2), r, wayvrctl),
+        "list_screen" => list_screen(&args[1.min(args.len())..].join(" "), r, wayvrctl),
+        "open_on" => open_on(arg(1), &args[2.min(args.len())..].join(" "), r, wayvrctl),
+        "layout_save" => layout_save(&args[1.min(args.len())..].join(" "), r, &layouts_path()),
+        "layout_restore" => layout_restore(&args[1.min(args.len())..].join(" "), r, &layouts_path()),
         "ai" => match ai_switch(transcript, ai, r) {
             Ok(true) => {}
             Ok(false) if ai.is_none() => r.toast("AI switch is off (set a provider in the AI tab)"),
@@ -1304,7 +2187,7 @@ mod tests {
         let mut m = mock(desktop(), serde_json::json!({}));
         execute(&["list".into()], "", &mut ai, "wayvrctl", &mut m);
         // one VR screen (DP-1 at 0,0 shows workspace 2): the screen with its apps, then what no screen shows
-        assert_eq!(m.toasts[0], "1 screen | Main: foot, foot | not shown: 1 (Nautilus), 3 (chromium), 4 (steam)");
+        assert_eq!(m.toasts[0], "1 screen | 1 Main: foot, foot | not shown: 1 (Nautilus), 3 (chromium), 4 (steam)");
         // no monitors known: the old window list
         m.monitors = "[]".into();
         execute(&["list".into()], "", &mut ai, "wayvrctl", &mut m);
@@ -1459,7 +2342,11 @@ mod tests {
         assert_eq!(neighbour("main", "left"), Some("left"));
         assert_eq!(neighbour("left", "right"), Some("main"));
         assert_eq!(neighbour("up", "down"), Some("main"));
-        assert_eq!(neighbour("up", "left"), Some("left"));
+        assert_eq!(neighbour("up", "left"), Some("up-left"));
+        assert_eq!(neighbour("left", "up"), Some("up-left"));
+        assert_eq!(neighbour("up-right", "down"), Some("right"));
+        assert_eq!(slot_word("upleft"), Some("up-left"));
+        assert_eq!(crate::command::words("the top right screen"), ["the", "upright", "screen"]);
         assert_eq!(neighbour("left", "left"), None);
         assert_eq!(neighbour("main", "down"), None);
         assert_eq!(neighbour("right", "main"), Some("main"));
@@ -1496,7 +2383,7 @@ mod tests {
             m.dispatched,
             ["hl.dsp.focus({ window = \"address:0x1\" })", "hl.dsp.window.move({ workspace = \"11\", follow = true })", "hl.dsp.focus({ window = \"address:0x1\" })"]
         );
-        assert_eq!(m.toasts, ["foot moved to the left screen"]);
+        assert_eq!(m.toasts, ["foot moved to screen 2 (left)"]);
         // from the left screen, "right" is the main screen; "left" is nothing
         let mut m = vr_mock(desktop(), focused("0x9", "code", 11));
         run(&mut m, &["move_screen", "right"]);
@@ -1517,14 +2404,105 @@ mod tests {
         let mut m = vr_mock(desktop(), focused("0x1", "foot", 2));
         run(&mut m, &["screen", "left"]);
         assert_eq!(m.dispatched, ["hl.dsp.focus({ monitor = \"PIMAX-LEFT\" })"]);
-        assert_eq!(m.toasts, ["The left screen (window 11)"]);
+        assert_eq!(m.toasts, ["Screen 2 (left), window 11"]);
         run(&mut m, &["screen", "sideways"]);
-        assert!(m.toasts[1].starts_with("Screens are left, right, up and main"));
+        assert!(m.toasts[1].starts_with("Screens are 1 to 6"), "{:?}", m.toasts);
+        run(&mut m, &["screen", "3"]);
+        assert_eq!(m.toasts[2], "Screen 3 (right), window 12");
         let mut wins = desktop();
         wins.push(win("0x9", "code", "x", 12, 5, &[]));
         let mut m = vr_mock(wins, focused("0x1", "foot", 2));
         run(&mut m, &["list"]);
-        assert_eq!(m.toasts[0], "4 screens | Main: foot, foot | Left: empty | Right: code | Up: empty | not shown: 1 (Nautilus), 3 (chromium), 4 (steam)");
+        assert_eq!(m.toasts[0], "4 screens | 1 Main: foot, foot | 2 Left: empty | 3 Right: code | 4 Up: empty | not shown: 1 (Nautilus), 3 (chromium), 4 (steam)");
+    }
+
+    #[test]
+    fn screen_numbers_name_the_screens_in_one_order() {
+        // docs/SCREENS.md: 1 main, 2 left, 3 right, 4 up, 5 up-left, 6 up-right (the badge, `screens show N`)
+        assert_eq!(SCREEN_ORDER.iter().map(|s| screen_number(s).unwrap()).collect::<Vec<_>>(), [1, 2, 3, 4, 5, 6]);
+        for (said, want) in [("3", "3"), ("three", "3"), ("screen five", "5"), ("the left", "left"), ("top right", "up-right"), ("middle", "main"), ("here", "here"), ("this one", "here")] {
+            assert_eq!(screen_value(said).as_deref(), Ok(want), "{said}");
+        }
+        assert!(screen_value("7").unwrap_err().contains("1 to 6"));
+        assert!(screen_value("below").is_err() && screen_value("sideways").is_err());
+        assert_eq!(which_of("the newest terminal"), (Which::One, "terminal".to_string()));
+        assert_eq!(which_of("all the terminals"), (Which::All, "terminals".to_string()));
+    }
+
+    #[test]
+    fn apps_move_by_screen_number_from_here_and_screens_swap() {
+        let wins = || {
+            let mut w = desktop();
+            w.push(win("0x9", "code", "main.rs", 12, 5, &[]));
+            w
+        };
+        // "move the terminals to screen 3": both foot windows to the right screen (workspace 12); focus comes back
+        let mut m = vr_mock(wins(), focused("0x1", "foot", 2));
+        run(&mut m, &["put", "3", "terminals"]);
+        let moves: Vec<&String> = m.dispatched.iter().filter(|d| d.contains("window.move")).collect();
+        assert_eq!(moves.len(), 2, "{:?}", m.dispatched);
+        assert!(moves.iter().all(|d| d.contains("workspace = \"12\"")));
+        assert_eq!(m.toasts.last().unwrap(), "2 terminals on screen 3 (right)");
+        assert!(m.dispatched.last().unwrap().contains("0x1"), "the focus comes back");
+        // "the newest terminal to screen 4": one, the one used last
+        let mut m = vr_mock(wins(), focused("0x1", "foot", 2));
+        run(&mut m, &["put", "4", "the newest terminal"]);
+        assert_eq!(m.dispatched.iter().filter(|d| d.contains("window.move")).count(), 1);
+        assert_eq!(m.toasts.last().unwrap(), "foot on screen 4 (up)");
+        // "move the editor from here to screen 4": here = the focused screen (main, ws 2); code is on ws 12
+        let mut m = vr_mock(wins(), focused("0x1", "foot", 2));
+        m.monitors = vr_monitors("SUNSHINE");
+        run(&mut m, &["put_from", "here", "4", "code"]);
+        assert_eq!(m.toasts.last().unwrap(), "No code on screen 1 (main)");
+        run(&mut m, &["put_from", "3", "4", "code"]);
+        assert_eq!(m.toasts.last().unwrap(), "code on screen 4 (up)");
+        // "move everything from screen 1 to screen 2"
+        let mut m = vr_mock(wins(), focused("0x1", "foot", 2));
+        run(&mut m, &["put_from", "1", "2", "everything"]);
+        assert_eq!(m.toasts.last().unwrap(), "2 apps on screen 2 (left)");
+        // a screen this session lacks, and a number out of range
+        let mut m = vr_mock(wins(), focused("0x1", "foot", 2));
+        run(&mut m, &["put", "6", "terminals"]);
+        assert!(m.toasts[0].starts_with("No screen 6 (up-right) now"), "{:?}", m.toasts);
+        run(&mut m, &["put", "9", "terminals"]);
+        assert!(m.toasts[1].contains("1 to 6"));
+        // "swap screens 1 and 3": foot x2 to 12, code to 2
+        let mut m = vr_mock(wins(), focused("0x1", "foot", 2));
+        run(&mut m, &["swap", "1", "3"]);
+        let moves: Vec<&String> = m.dispatched.iter().filter(|d| d.contains("window.move")).collect();
+        assert_eq!(moves.iter().filter(|d| d.contains("\"12\"")).count(), 2);
+        assert_eq!(moves.iter().filter(|d| d.contains("\"2\"")).count(), 1);
+        assert_eq!(m.toasts.last().unwrap(), "Swapped screen 1 (main) and screen 3 (right)");
+        // what is on screen 3
+        let mut m = vr_mock(wins(), focused("0x1", "foot", 2));
+        run(&mut m, &["list_screen", "3"]);
+        assert_eq!(m.toasts[0], "Screen 3 (right): code main.rs");
+        // open a terminal on screen 2: focus that screen first, then start it
+        let mut m = vr_mock(wins(), focused("0x1", "foot", 2));
+        run(&mut m, &["open_on", "2", "terminal"]);
+        assert_eq!(m.dispatched, ["hl.dsp.focus({ monitor = \"PIMAX-LEFT\" })"]);
+        assert_eq!(m.spawned, ["omarchy-launch-terminal"]);
+    }
+
+    #[test]
+    fn a_layout_is_saved_and_restored_without_opening_or_closing() {
+        let path = std::env::temp_dir().join(format!("pimax-layouts-{}.json", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let mut w = desktop();
+        w.push(win("0x9", "code", "main.rs", 12, 5, &[]));
+        let mut m = vr_mock(w, focused("0x1", "foot", 2));
+        layout_save("coding", &mut m, &path);
+        assert_eq!(m.toasts[0], "Layout \"coding\" saved: 3 apps");
+        // code moved to the main screen meanwhile: restore sends it back to the right screen (ws 12)
+        let mut w = desktop();
+        w.push(win("0x9", "code", "main.rs", 2, 5, &[]));
+        let mut m = vr_mock(w, focused("0x1", "foot", 2));
+        layout_restore("the coding layout", &mut m, &path);
+        assert_eq!(m.toasts.last().unwrap(), "Layout \"coding\" restored: 1 apps moved");
+        assert!(m.dispatched.iter().any(|d| d.contains("workspace = \"12\"")));
+        layout_restore("other", &mut m, &path);
+        assert!(m.toasts.last().unwrap().contains("saved: coding"));
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]
@@ -1815,7 +2793,7 @@ mod tests {
         assert_eq!(m.toasts, ["Closed window 2 (2 apps)"]);
         // the confirm prompt counts the apps
         let mut m = gazing(focused("0x1", "foot", 2));
-        assert_eq!(close_prompt(&mut m, "wayvrctl").as_deref(), Some("Close window 5 (2 apps)"));
+        assert_eq!(close_prompt(&mut m, "wayvrctl", None).as_deref(), Some("Close window 5 (2 apps)"));
         // careful gate
         assert!(CAREFUL_ACTIONS.contains(&"ws_close"));
         let c = crate::catalogue::Catalogue::from_texts(crate::catalogue::BUILTIN, None).unwrap();

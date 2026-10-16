@@ -119,7 +119,7 @@ pub fn category_of_intent(id: &str) -> Category {
     let p = |x: &str| id.starts_with(x);
     if p("win.tab.") || p("browser.tab.") {
         Category::Tabs
-    } else if p("win.ws.") || p("win.move.") || p("win.merge.") || p("win.screen") || p("win.sort") || p("vr.screen") || p("vr.recenter") || p("vr.zoom") || id == "omarchy.window.to_workspace" || id == "win.focus.gaze" || id == "win.list" {
+    } else if p("win.ws.") || p("win.move.") || p("win.merge.") || p("win.screen") || p("win.layout") || p("win.sort") || p("vr.screen") || p("vr.recenter") || p("vr.zoom") || id == "omarchy.window.to_workspace" || id == "win.focus.gaze" || id == "win.list" {
         Category::Screens
     } else if p("omarchy.window.") || p("omarchy.focus.") || p("omarchy.layout.") || p("omarchy.scratchpad.") || p("omarchy.launch") || p("win.") {
         Category::Apps
@@ -135,7 +135,7 @@ pub fn category_of_intent(id: &str) -> Category {
         Category::Recording
     } else if p("voice.") {
         Category::Captions
-    } else if p("omarchy.") || p("system.") || p("power.") {
+    } else if p("omarchy.") || p("system.") || p("power.") || p("media.") {
         Category::System
     } else {
         Category::Other
@@ -146,7 +146,7 @@ pub fn category_of_intent(id: &str) -> Category {
 pub fn categories_of(kind: &ToolKind) -> Vec<Category> {
     match kind {
         ToolKind::Intent(id) => vec![category_of_intent(id)],
-        ToolKind::FocusWindow | ToolKind::MoveWindow | ToolKind::CloseWindow | ToolKind::ListWindows => vec![Category::Screens, Category::Apps],
+        ToolKind::FocusWindow | ToolKind::MoveWindow | ToolKind::CloseWindow | ToolKind::ListWindows | ToolKind::MoveApps | ToolKind::ListScreens => vec![Category::Screens, Category::Apps],
         ToolKind::BrowserTab => vec![Category::Tabs, Category::Browser],
         ToolKind::GetGaze => vec![Category::Screens, Category::Apps, Category::Tabs],
         ToolKind::GetSession => vec![Category::Session, Category::Passthrough, Category::Recording],
@@ -206,6 +206,30 @@ pub fn local_guess(words: &[String], cands: &[Cand]) -> Vec<(Category, f64)> {
     w
 }
 
+/// May an answer of the simple request (`id`: a catalogue intent or a window tool) stand with these categories?
+pub fn intent_in(id: &str, cats: &[Category]) -> bool {
+    if id == "none" || cats.is_empty() || cats.contains(&Category::Other) || ALWAYS.contains(&id) {
+        return true;
+    }
+    match id {
+        "focus_window" | "move_window" | "close_window" => cats.contains(&Category::Screens) || cats.contains(&Category::Apps),
+        _ => cats.contains(&category_of_intent(id)),
+    }
+}
+
+/// The categories the act request gets with two stages on this PC: the router's, plus the matcher's first guess when
+/// the router did not name it (the router is a general classifier; the matcher knows this desk's words, so the union
+/// keeps the right tools in reach when either is right).
+pub fn with_guess(cats: &[Category], guess: &[Category]) -> Vec<Category> {
+    let mut v = cats.to_vec();
+    if let Some(g) = guess.first() {
+        if !v.contains(g) {
+            v.push(*g);
+        }
+    }
+    v
+}
+
 /// The classifier's answer.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Class {
@@ -213,6 +237,8 @@ pub struct Class {
     /// 0..1
     pub confidence: f64,
     pub second: Option<Category>,
+    /// A third category, when a router with probabilities (Laya) is unsure about the first two.
+    pub third: Option<Category>,
 }
 
 impl Class {
@@ -220,8 +246,10 @@ impl Class {
     pub fn cats(&self) -> Vec<Category> {
         let mut v = vec![self.category];
         if self.confidence < SURE {
-            if let Some(s) = self.second.filter(|s| *s != self.category) {
-                v.push(s);
+            for s in [self.second, self.third].into_iter().flatten() {
+                if !v.contains(&s) {
+                    v.push(s);
+                }
             }
         }
         v
@@ -329,13 +357,13 @@ pub fn parse_class(text: &str) -> Result<Class, String> {
             let category = v.get("category").and_then(Value::as_str).and_then(Category::parse).ok_or_else(|| format!("no category in {}", short(t)))?;
             let confidence = v.get("confidence").and_then(|c| c.as_f64().or_else(|| c.as_str().and_then(|s| s.trim().parse().ok()))).map(norm_conf).unwrap_or(0.5);
             let second = v.get("second").and_then(Value::as_str).and_then(Category::parse);
-            return Ok(Class { category, confidence, second });
+            return Ok(Class { category, confidence, second, third: None });
         }
     }
     let mut it = t.split(|c: char| c.is_whitespace() || c == ',' || c == ':');
     let category = it.next().and_then(Category::parse).ok_or_else(|| format!("no category in {}", short(t)))?;
     let confidence = it.find_map(|x| x.trim().parse::<f64>().ok()).map(norm_conf).unwrap_or(0.5);
-    Ok(Class { category, confidence, second: None })
+    Ok(Class { category, confidence, second: None, third: None })
 }
 
 fn norm_conf(c: f64) -> f64 {
@@ -360,12 +388,12 @@ pub fn act_system() -> String {
      The user's words (decided by the user):\n\
      - \"window\" is ALWAYS a whole VR screen (a workspace with all its apps). \"this\", \"that\" or an app's name is one \
        app. Close window = the whole screen; close this = one app.\n\
-     - \"move this left/right/up\" moves the VR screen in space; an app goes to another screen with \"send this to the \
-       left screen\" (move the app to that screen's workspace).\n\
+     - \"move this left/right/up\" moves the VR screen in space; an app goes to another screen when the user names a screen \
+       for it (move the app to that screen's workspace).\n\
      - \"tab\" is inside the app: a browser tab; in a terminal a new split on the same screen.\n\
      - \"switch\" means focus. Without a named target the target is what the user looks at (this).\n\
-     - \"go back\" = undo the last voice action. \"zoom in/out\" = a bigger or smaller VR screen, not page zoom.\n\
-     - \"put everything in its own window\" sorts apps by kind onto screens; \"put everything back together\" merges.\n\
+     - \"go back\" = undo the last voice action. zooming in or out = a bigger or smaller VR screen, not page zoom.\n\
+     - organizing the apps puts each kind of app on a screen of its own; merging puts them all back on one screen.\n\
      - Sleep, log out, reboot and shut down are allowed, they ask for a spoken yes.\n\
      Act by calling tools: usually exactly one, at most 3 in order. App ids must come from the JSON. Commands like \
      fullscreen or float act on the focused app: for another app call focus_window first. Careful tools ask the user \
@@ -619,7 +647,7 @@ mod tests {
         assert!(parse_class("I think it is about something").is_err());
         let c = parse_class("We need JSON like {\"category\": ...}. Answer: {\"category\":\"tabs\",\"confidence\":0.9,\"second\":\"none\"}").unwrap();
         assert_eq!(c.category, Category::Tabs, "the last object counts");
-        assert_eq!(Class { category: Category::Screens, confidence: 0.973, second: None }.short(), "screens .97");
+        assert_eq!(Class { category: Category::Screens, confidence: 0.973, second: None, third: None }.short(), "screens .97");
         let s = classify_schema();
         assert_eq!(s["json_schema"]["schema"]["properties"]["category"]["enum"].as_array().unwrap().len(), 11);
         assert!(classify_system().contains("passthrough:") && classify_user("liz windows", "3 VR screens, focused app foot") == "heard: \"liz windows\"\nstate: 3 VR screens, focused app foot");

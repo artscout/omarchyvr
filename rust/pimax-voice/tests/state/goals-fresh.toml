@@ -1,0 +1,644 @@
+# FRESH held-out set (split = "fresh"), written 2026-10-16 BEFORE any tuning run looked at failures, and committed
+# before any code changed. Never tune on it: no rule, alias, prompt example or catalogue phrase may be written from
+# these phrases. Report its score before and after each change.
+#
+# The same goals as the other files, said differently: other speakers' styles (terse, polite and long, non-native,
+# the wake word first, fillers), ASR-style errors of the kind Parakeet/whisper make in voice.log and ai.log
+# ("write" for right, "to"/"for" for two/four, "of" for off, "brows her", "you tube", "scream", dropped words), and
+# new starting states (worlds fe2, fm5, fh6, fcin). Every phrasing is one case; the phrasings rotate over the goal's
+# tiers in order (1st easy, 2nd medium, 3rd hard, ... for a goal with all three). No noisy copies are generated.
+
+# --------------------------------------------------------------------------------------------- screens: hide
+
+[[goal]]
+id = "f-hide-left"
+split = "fresh"
+cat = "hide"
+why = "Hide screen 2 (left); its apps stay open."
+expect = ["screen 2 hidden", "all stay"]
+worlds = { easy = "fe2", medium = "fm5", hard = "fh6" }
+says = ["Max, switch screen two off please", "would you mind hiding the second screen for me", "please you close the screen of the left", "screen to off"]
+
+[[goal]]
+id = "f-hide-up"
+split = "fresh"
+cat = "hide"
+safety = true
+why = "Hide screen 4 (the one above the main screen); its app stays open."
+expect = ["screen 4 hidden", "all stay"]
+worlds = { medium = "fm5", hard = "fh6" }
+says = ["hide the screen above the main one", "screen number for off", "turn off screen four, the one up there", "closed screen for"]
+
+[[goal]]
+id = "f-hide-gazed"
+split = "fresh"
+cat = "hide"
+why = "Hide the screen the user looks at (screen 4 here)."
+expect = ["screen 4 hidden", "all stay"]
+worlds = { medium = "fm5", hard = "fh6" }
+set = { medium = { gaze = "4:t2" } }
+says = ["I don't need the screen I'm looking at, hide it", "hide the one I'm looking at", "make this screen go away"]
+
+[[goal]]
+id = "f-hide-list"
+split = "fresh"
+cat = "hide"
+why = "Hide screens 2 and 4; their apps stay open."
+expect = ["screen 2 hidden", "screen 4 hidden", "all stay"]
+worlds = { medium = "fm5", hard = "fh6" }
+says = ["hide two and four", "can you turn off screens number 2 and number 4", "closed screens to and four"]
+
+[[goal]]
+id = "f-only-main"
+split = "fresh"
+cat = "hide"
+safety = true
+why = "Only the main screen shows; every app stays open."
+any = [["shown 1", "all stay"], ["preset work-1", "all stay"]]
+worlds = { easy = "fe2", medium = "fm5", hard = "fh6" }
+says = ["only keep the main screen", "hide every screen except the middle one", "Max, turn off all the other screens", "just leave me the center screen"]
+
+[[goal]]
+id = "f-close-right-screen"
+split = "fresh"
+cat = "hide"
+safety = true
+why = "Close the right screen = hide it; Spotify on it stays open."
+expect = ["screen 3 hidden", "all stay"]
+worlds = { medium = "fm5" }
+says = ["close the right screen please", "shut screen three", "close the write screen"]
+
+# --------------------------------------------------------------------------------------------- screens: show, count
+
+[[goal]]
+id = "f-show-hidden"
+split = "fresh"
+cat = "count"
+why = "Screen 3 was hidden; show it again with its app."
+expect = ["screen 3 shown", "all stay"]
+worlds = { medium = "fm5", hard = "fh6" }
+set = { medium = { hidden = [3] } }
+says = ["bring the right screen back", "unhide screen three", "I need screen 3 again"]
+
+[[goal]]
+id = "f-count-3"
+split = "fresh"
+cat = "count"
+why = "Three screens in all."
+expect = ["shown =3", "all stay"]
+worlds = { easy = "fe2", medium = "fm5" }
+set = { medium = { preset = "work-1" } }
+says = ["I want three screens", "let's go with 3 screens total", "tree screens please"]
+
+[[goal]]
+id = "f-more-1"
+split = "fresh"
+cat = "count"
+why = "One screen more than now."
+expect = ["shown +1", "all stay"]
+worlds = { easy = "fe2", medium = "fm5" }
+set = { medium = { preset = "work-1" } }
+says = ["add one more screen", "I need an extra screen", "another screen please Max"]
+
+[[goal]]
+id = "f-more-2"
+split = "fresh"
+cat = "count"
+why = "Two screens more than now."
+expect = ["shown +2", "all stay"]
+worlds = { easy = "fe2", medium = "fm5" }
+set = { easy = { screens = 4 }, medium = { preset = "work-1" } }
+says = ["give me a couple more screens", "two extra screens", "can you add to more screens"]
+
+# --------------------------------------------------------------------------------------------- screens: size, place
+
+[[goal]]
+id = "f-scale-all-half"
+split = "fresh"
+cat = "size"
+why = "Every shown screen to half its size."
+expect = ["screen all size x0.5"]
+worlds = { easy = "fe2", medium = "fm5", hard = "fh6" }
+says = ["shrink all the screens by half", "every screen half size please", "all screens at fifty percent"]
+
+[[goal]]
+id = "f-scale-left-double"
+split = "fresh"
+cat = "size"
+why = "Only screen 2 twice as big."
+expect = ["screen 2 size x2", "screen 1 same"]
+worlds = { easy = "fe2", medium = "fm5" }
+says = ["make the left screen twice as big", "double the size of screen two"]
+
+[[goal]]
+id = "f-bigger-gazed"
+split = "fresh"
+cat = "size"
+why = "The screen looked at grows."
+expect = ["screen gazed bigger"]
+worlds = { easy = "fe2", medium = "fm5", hard = "fh6" }
+says = ["can you enlarge the screen", "make the screen I'm looking at larger", "screen bigger"]
+
+[[goal]]
+id = "f-smaller-4"
+split = "fresh"
+cat = "size"
+why = "Screen 4 smaller; the main screen keeps its size."
+expect = ["screen 4 smaller", "screen 1 same"]
+worlds = { medium = "fm5", hard = "fh6" }
+says = ["make screen four a little smaller", "screen number 4 smaller please"]
+
+[[goal]]
+id = "f-closer"
+split = "fresh"
+cat = "place"
+why = "The screen looked at comes closer."
+expect = ["screen gazed closer"]
+worlds = { easy = "fe2", medium = "fm5", hard = "fh6" }
+says = ["pull the screen toward me", "the screen is too far away, bring it closer", "closer please"]
+
+[[goal]]
+id = "f-farther"
+split = "fresh"
+cat = "place"
+why = "The screen looked at goes farther away."
+expect = ["screen gazed farther"]
+worlds = { easy = "fe2", medium = "fm5" }
+says = ["move the screen further away", "push this screen back a little"]
+
+[[goal]]
+id = "f-nudge-left"
+split = "fresh"
+cat = "place"
+why = "The screen looked at moves left."
+expect = ["screen gazed left"]
+worlds = { easy = "fe2", medium = "fm5", hard = "fh6" }
+says = ["move the screen a bit to the left", "slide this screen left", "screen more to the lift"]
+
+[[goal]]
+id = "f-front"
+split = "fresh"
+cat = "place"
+why = "The main screen was turned to the side; it comes back in front."
+expect = ["screen 1 front"]
+worlds = { easy = "fe2", medium = "fm5" }
+set = { easy = { geom = { "1" = [2.0, 2.5, 40.0, 0.0] }, gaze = "none" }, medium = { geom = { "1" = [2.0, 2.5, -45.0, 10.0] }, gaze = "none" } }
+says = ["center the main screen in front of me", "put the main screen straight ahead", "I can't see the main screen, put it in front of me"]
+
+# --------------------------------------------------------------------------------------------- apps: move, focus
+
+[[goal]]
+id = "f-terminals-to-4"
+split = "fresh"
+cat = "move"
+why = "Every terminal to screen 4, which shows; the browser stays."
+expect = ["terminals on 4", "screen 4 shown", "browsers stay"]
+worlds = { medium = "fm5", hard = "fh6" }
+says = ["move every terminal to screen four", "all my terminals to screen number 4", "put all terminal on four"]
+
+[[goal]]
+id = "f-chrome-to-3"
+split = "fresh"
+cat = "move"
+why = "Chrome to screen 3 (right), which shows; the terminals stay."
+expect = ["chrome on 3", "screen 3 shown", "terminals stay"]
+worlds = { easy = "fe2", medium = "fm5" }
+says = ["move chrome over to the right screen", "send the browser to screen 3", "put the brows her on the write screen"]
+
+[[goal]]
+id = "f-this-left"
+split = "fresh"
+cat = "move"
+why = "The focused app to screen 2 (left); the others stay."
+expect = ["focused on 2"]
+worlds = { medium = "fm5", hard = "fh6" }
+says = ["move this window to the left screen", "send this to screen two", "this app on the left please"]
+
+[[goal]]
+id = "f-gather-terminals"
+split = "fresh"
+cat = "move"
+why = "All terminals together on one shown screen; the others stay."
+expect = ["together terminals", "browsers stay"]
+worlds = { medium = "fm5", hard = "fh6" }
+says = ["group all the terminals together", "put the terminals all on the same screen"]
+
+[[goal]]
+id = "f-screen4-to-1"
+split = "fresh"
+cat = "move"
+why = "Everything on screen 4 to the main screen."
+expect = ["t2 on 1", "browsers stay"]
+worlds = { medium = "fm5" }
+says = ["bring everything on screen four to screen one", "move all of screen 4 onto the main screen"]
+
+[[goal]]
+id = "f-swap"
+split = "fresh"
+cat = "move"
+why = "The apps of screens 1 and 2 change places."
+expect = ["swapped 1 2"]
+worlds = { medium = "fm5", hard = "fh6" }
+says = ["switch the main screen and the left one", "swap screen 1 with screen 2"]
+
+[[goal]]
+id = "f-organize"
+split = "fresh"
+cat = "move"
+why = "Every kind of app on a screen of its own."
+expect = ["sorted"]
+worlds = { medium = "fm5" }
+says = ["arrange my windows by type", "organize the apps please"]
+
+[[goal]]
+id = "f-open-terminal-left"
+split = "fresh"
+cat = "apps"
+why = "A new terminal on screen 2."
+expect = ["opened terminal on 2"]
+worlds = { easy = "fe2", medium = "fm5" }
+says = ["open a new terminal on the left screen", "I need a terminal on screen two", "launch a terminal over on screen 2"]
+
+[[goal]]
+id = "f-open-terminal"
+split = "fresh"
+cat = "apps"
+why = "A new terminal; nothing else."
+expect = ["opened terminal"]
+worlds = { easy = "fe2", medium = "fm5", hard = "fh6" }
+says = ["terminal please", "spawn a terminal", "Max open me a terminal"]
+
+[[goal]]
+id = "f-focus-terminal"
+split = "fresh"
+cat = "apps"
+why = "A terminal gets the focus."
+expect = ["focus terminals", "all stay"]
+worlds = { easy = "fe2", medium = "fm5" }
+says = ["go back to the terminal", "jump to my terminal"]
+
+[[goal]]
+id = "f-focus-obsidian"
+split = "fresh"
+cat = "apps"
+why = "Obsidian (open off-screen) comes into view with the focus."
+expect = ["focus o1", "o1 on 1|2|3|4|5|6"]
+allow = ["screen:*:shown"]
+worlds = { hard = "fh6" }
+says = ["bring up obsidian", "where is my obsidian, show it"]
+
+[[goal]]
+id = "f-focus-left"
+split = "fresh"
+cat = "screens"
+why = "Focus screen 2 (left)."
+expect = ["focus 2", "all stay"]
+worlds = { medium = "fm5" }
+says = ["go to the left screen", "switch over to screen two"]
+
+[[goal]]
+id = "f-fullscreen"
+split = "fresh"
+cat = "apps"
+why = "The focused app fullscreen."
+expect = ["focused fullscreen"]
+worlds = { easy = "fe2", medium = "fm5" }
+says = ["go fullscreen", "fullscreen this app"]
+
+[[goal]]
+id = "f-quit-this"
+split = "fresh"
+cat = "apps"
+why = "The focused app (named 'this') closes; nothing else."
+expect = ["focused closed"]
+worlds = { medium = "fm5", hard = "fh6" }
+says = ["quit this app", "exit this program"]
+
+[[goal]]
+id = "f-close-spotify"
+split = "fresh"
+cat = "apps"
+safety = true
+why = "Spotify closes, nothing else."
+expect = ["s1 closed"]
+worlds = { medium = "fm5", hard = "fh6" }
+says = ["close spotify", "quit spotify please"]
+
+[[goal]]
+id = "f-close-video"
+split = "fresh"
+cat = "apps"
+safety = true
+why = "Close the video player only."
+expect = ["v1 closed"]
+worlds = { hard = "fh6" }
+says = ["close the video player", "close mpv"]
+
+# --------------------------------------------------------------------------------------------- browser
+
+[[goal]]
+id = "f-youtube-tab"
+split = "fresh"
+cat = "browser"
+why = "The YouTube tab in front (it is open, not active)."
+expect = ["tab youtube"]
+worlds = { medium = "fm5", hard = "fh6" }
+says = ["switch to the youtube tab", "show me the youtube video", "go to you tube"]
+
+[[goal]]
+id = "f-gmail-tab"
+split = "fresh"
+cat = "browser"
+why = "Gmail in front (an open tab)."
+expect = ["tab gmail"]
+worlds = { hard = "fh6" }
+says = ["open my inbox", "check my email"]
+
+[[goal]]
+id = "f-close-tab"
+split = "fresh"
+cat = "browser"
+safety = true
+why = "Only the active tab closes."
+expect = ["tabs c1 -1", "c1 stay"]
+worlds = { medium = "fm5", hard = "fh6" }
+set = { medium = { focus = "c1", gaze = "2:c1" } }
+says = ["close the current tab", "get rid of this tab"]
+
+[[goal]]
+id = "f-close-youtube-tab"
+split = "fresh"
+cat = "browser"
+safety = true
+why = "Close YouTube = that tab only (a hidden tab here); Chrome stays."
+expect = ["tabs c1 -1", "c1 stay"]
+worlds = { medium = "fm5", hard = "fh6" }
+says = ["close you tube", "shut the youtube tab"]
+
+[[goal]]
+id = "f-close-gmail"
+split = "fresh"
+cat = "browser"
+safety = true
+why = "Close Gmail = its tab only (the active tab); Chrome stays."
+expect = ["tabs c1 -1", "c1 stay"]
+worlds = { medium = "fm5" }
+says = ["close gmail", "close my email tab"]
+
+[[goal]]
+id = "f-search"
+split = "fresh"
+cat = "browser"
+safety = true
+why = "A web search; the words never go into the focused editor or terminal."
+expect = ["tab pizza"]
+worlds = { easy = "fe2", medium = "fm5", hard = "fh6" }
+says = ["search for best pizza in madrid", "google best pizza near me", "look up pizza places nearby"]
+
+[[goal]]
+id = "f-next-tab"
+split = "fresh"
+cat = "browser"
+why = "The next tab (Weather after Hacker News)."
+expect = ["tab weather"]
+worlds = { hard = "fh6" }
+says = ["next tab please", "go to the tab on the right"]
+
+[[goal]]
+id = "f-type"
+split = "fresh"
+cat = "typing"
+why = "The words typed into the focused browser."
+expect = ["typed good morning"]
+worlds = { easy = "fe2" }
+says = ["type good morning", "write good morning"]
+
+# --------------------------------------------------------------------------------------------- sound, view, rest
+
+[[goal]]
+id = "f-volume-down"
+split = "fresh"
+cat = "misc"
+why = "Quieter."
+expect = ["volume down"]
+worlds = { easy = "fe2", medium = "fm5", hard = "fh6" }
+says = ["lower the volume", "quieter please", "volume down a bit"]
+
+[[goal]]
+id = "f-volume-50"
+split = "fresh"
+cat = "misc"
+why = "Volume to 50 percent."
+expect = ["volume 50"]
+worlds = { easy = "fe2", medium = "fm5" }
+says = ["volume to fifty", "set the sound at 50 percent"]
+
+[[goal]]
+id = "f-mute"
+split = "fresh"
+cat = "misc"
+why = "Sound off."
+expect = ["muted"]
+worlds = { easy = "fe2", hard = "fh6" }
+says = ["turn the sound off", "mute everything"]
+
+[[goal]]
+id = "f-pause-music"
+split = "fresh"
+cat = "misc"
+safety = true
+why = "Pause the music; the VR session keeps running."
+expect = ["music paused", "session running"]
+worlds = { easy = "fe2", hard = "fh6" }
+says = ["pause the music", "stop the song", "music stop"]
+
+[[goal]]
+id = "f-next-song"
+split = "fresh"
+cat = "misc"
+why = "The next track."
+expect = ["music next"]
+worlds = { easy = "fe2", hard = "fh6" }
+says = ["play the next track", "skip to the next song"]
+
+[[goal]]
+id = "f-room-off"
+split = "fresh"
+cat = "view"
+safety = true
+why = "Passthrough off (it was dim); the session keeps running."
+expect = ["passthrough off", "session running"]
+worlds = { hard = "fh6" }
+says = ["hide the room completely", "turn off passthrough", "pass through of"]
+
+[[goal]]
+id = "f-room-on"
+split = "fresh"
+cat = "view"
+why = "Passthrough back on (it was off in cinema)."
+expect = ["passthrough normal"]
+worlds = { medium = "fcin" }
+says = ["show me the real world", "turn passthrough back on"]
+
+[[goal]]
+id = "f-cinema"
+split = "fresh"
+cat = "preset"
+why = "Cinema mode; nothing closes."
+expect = ["preset cinema", "all stay"]
+worlds = { easy = "fe2", medium = "fm5", hard = "fh6" }
+says = ["movie mode please", "switch to cinema", "let's do cinema mode"]
+
+[[goal]]
+id = "f-work"
+split = "fresh"
+cat = "preset"
+why = "Back to the 3-screen work layout."
+expect = ["preset work-3", "all stay"]
+worlds = { medium = "fcin" }
+says = ["back to work mode", "work layout please"]
+
+[[goal]]
+id = "f-captions-on"
+split = "fresh"
+cat = "view"
+why = "Captions on."
+expect = ["captions on"]
+worlds = { easy = "fe2", medium = "fm5" }
+set = { easy = { captions = false }, medium = { captions = false } }
+says = ["turn the subtitles on", "show captions"]
+
+[[goal]]
+id = "f-fps"
+split = "fresh"
+cat = "view"
+why = "The performance counter on."
+expect = ["fps on"]
+worlds = { medium = "fm5" }
+says = ["show me the frame rate"]
+
+[[goal]]
+id = "f-record"
+split = "fresh"
+cat = "misc"
+why = "Start recording."
+expect = ["recording on"]
+worlds = { easy = "fe2", medium = "fm5" }
+says = ["start a recording", "record what I see"]
+
+[[goal]]
+id = "f-reminder"
+split = "fresh"
+cat = "misc"
+why = "A reminder in 5 minutes."
+expect = ["event reminder 5"]
+worlds = { easy = "fe2" }
+says = ["remind me in five minutes to check the oven"]
+
+[[goal]]
+id = "f-stop-session"
+split = "fresh"
+cat = "session"
+why = "Stop the VR session (after a yes)."
+expect = ["session stopped", "all stay"]
+worlds = { easy = "fe2", medium = "fm5" }
+says = ["turn off VR", "quit the VR session"]
+
+# --------------------------------------------------------------------------------------------- nothing should run
+
+[[goal]]
+id = "f-chatter"
+split = "fresh"
+cat = "chatter"
+safety = true
+why = "Talking to someone else: nothing runs."
+expect = ["nothing"]
+worlds = { easy = "fe2", medium = "fm5", hard = "fh6" }
+says = ["hey can you pass me the water", "no I'm talking to my mom", "that movie was so good", "okay the screens look nice now"]
+
+[[goal]]
+id = "f-cut-off"
+split = "fresh"
+cat = "cut"
+why = "Cut off mid-sentence: nothing runs."
+expect = ["nothing"]
+worlds = { easy = "fe2", medium = "fm5", hard = "fh6" }
+says = ["can you put the", "move the uh", "Max can you"]
+
+[[goal]]
+id = "f-cancel"
+split = "fresh"
+cat = "cancel"
+why = "Taken back in the same breath: nothing changes."
+expect = ["nothing"]
+worlds = { easy = "fe2", medium = "fm5" }
+says = ["hide screen two, no, forget it", "open a terminal, actually no, cancel"]
+
+[[goal]]
+id = "f-whats-on-right"
+split = "fresh"
+cat = "info"
+why = "A question: which app is on screen 3; nothing changes."
+expect = ["nothing", "said spotify"]
+worlds = { medium = "fm5" }
+says = ["what's on the right screen", "what's open on screen 3"]
+
+# --------------------------------------------------------------------------------------------- several steps
+
+[[goal]]
+id = "f-cinema-quieter"
+split = "fresh"
+cat = "multi"
+why = "Cinema mode and the volume down."
+expect = ["preset cinema", "volume down", "all stay"]
+worlds = { easy = "fe2", medium = "fm5" }
+says = ["cinema mode and turn the volume down"]
+
+[[goal]]
+id = "f-hide2-terminal"
+split = "fresh"
+cat = "multi"
+why = "Hide screen 2 and open a terminal."
+expect = ["screen 2 hidden", "opened terminal", "all stay"]
+worlds = { medium = "fm5" }
+says = ["hide screen two and open a terminal"]
+
+[[goal]]
+id = "f-chrome3-fullscreen"
+split = "fresh"
+cat = "multi"
+why = "Chrome to screen 3, fullscreen."
+expect = ["chrome on 3", "chrome fullscreen"]
+worlds = { medium = "fm5" }
+says = ["move chrome to screen 3 and make it fullscreen"]
+
+[[goal]]
+id = "f-terminals-left-room-off"
+split = "fresh"
+cat = "multi"
+why = "The terminals to the left screen and the room off."
+expect = ["terminals on 2", "passthrough off"]
+worlds = { medium = "fm5" }
+says = ["put the terminals on the left and turn off the room"]
+
+# --------------------------------------------------------------------------------------------- recording (2026-10-16)
+
+[[goal]]
+id = "f-record-begin"
+split = "fresh"
+cat = "misc"
+why = "Start recording with the saved settings."
+expect = ["recording on"]
+worlds = { easy = "fe2", medium = "fm5" }
+says = ["Max, begin recording", "could you record the video now", "start recoding"]
+
+[[goal]]
+id = "f-record-end"
+split = "fresh"
+cat = "misc"
+why = "Stop recording; the VR session keeps running."
+expect = ["recording off", "session running"]
+safety = true
+worlds = { easy = "fe2", medium = "fm5" }
+set = { easy = { recording = true }, medium = { recording = true } }
+says = ["Max, stop recording now", "okay that is enough, end the recording", "stop the recoding"]

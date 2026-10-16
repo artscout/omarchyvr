@@ -1,0 +1,41 @@
+# pimax-voice audit: the real requests of the live Work session 2026-10-16 15:49-16:00 (voice.log, voiceact.log,
+# ai.log), as heard, with what the user meant (findings: 3 of ~16 right before the fix). Then the variants the user
+# asked to work too (lists of screen numbers, all / half / double / percent, stop the session).
+# Columns: intent, phrase (the audit says "Max " before it), optional slots k=v,k=v.
+# User rules: "close screen N" HIDES that VR screen, "close everything" hides all but the main one; no app closes.
+win.screen.adjust	can you move this screen number one to the right?	screen=1,how=right
+win.screen.bigger	can you make the screen bigger?
+win.screen.nudge	can you move it to the right more?	side=right
+vr.screens.reset	can you move it in front of me, Max, the screen.
+vr.screens.reset	bring the screen in front of me
+vr.screens.more	can you do three more screens?	n=3
+win.screen.scale	can you make all these screens half the size?	screens=all,size=50
+win.screen.scale	all of them. Can you make Max, can you make all of these screens half the size?	screens=all,size=50
+win.screen.scale	make all the screens double the size	screens=all,size=200
+win.screen.scale	make all screens 75 percent	screens=all,size=75
+win.screen.scale	make screen two half the size	screens=2,size=50
+vr.screens.hide	can you remove screen number four and three?	screens=4,3
+vr.screens.hide	Can you Max can you shut down numbers screens four and three?	screens=4,3
+vr.screens.hide	close screens three and four	screens=3,4
+vr.screens.hide	hide screens 2, 3 and 5	screens=2,3,5
+vr.screens.hide	remove screen 3	screens=3
+vr.screens.hide	close down screen number two.	screens=2
+vr.screens.hide	uh closed screen number two.	screens=2
+vr.screens.hide	yes, Max, can you close screen number two?	screens=2
+vr.screens.hide	it's close at screen number two.	screens=2
+vr.screens.hide	can you close screen number two?	screens=2
+win.screen.put_n	can you move all the terminals to number three, to screen number three.	screen=3,app=terminals
+win.screen.put_n	can you move all the terminals to screen number three?	screen=3,app=terminals
+win.screen.put_n	put chrome on screen number five	screen=5,app=chrome
+vr.session.stop	can you s Max can you shut down uh work VR?
+vr.session.stop	can you stop the VR?
+vr.session.stop	shut down the session
+vr.session.stop	exit VR
+vr.session.stop	close work
+vr.screens.hide_others	close everything
+vr.screens.hide_others	closed everything.
+vr.screens.hide_others	close all the screens
+vr.record.stop	stop recording
+vr.preset.exit_cinema	exit cinema mode
+win.ws.close	close this window
+win.screen.list_n	what's on screen number two	screen=2

@@ -5,6 +5,7 @@
 //! matches the build (row 8).
 use crate::machine::{FileMeta, Machine};
 use crate::paths::Paths;
+use pimax_config::ctrl_inhand::CtrlMode;
 use pimax_tools::args::Args;
 use pimax_tools::vr::desk::{parse_desk, plan};
 use std::path::{Path, PathBuf};
@@ -40,6 +41,8 @@ pub struct LauncherCaps {
     pub hands: bool,
     /// `--screens N` (VR screens as Hyprland outputs, docs/SCREENS.md).
     pub screens: bool,
+    /// `--controllers when-held|always|off` (PIMAX_CTRL_INHAND, docs/CONTROLLERS-INHAND.md).
+    pub controllers: bool,
 }
 
 /// Parse the `pimax desk help` text.
@@ -60,6 +63,7 @@ pub fn parse_caps(usage: &str) -> LauncherCaps {
         restart: usage.lines().any(|l| l.starts_with("  restart")),
         hands: has("--hands"),
         screens: has("--screens"),
+        controllers: has("--controllers"),
     }
 }
 
@@ -125,20 +129,24 @@ pub struct DeskToggles {
     pub preset: Preset,
     /// The launcher starts eye tracking unless `--no-eye` (newer launchers; from `pimax desk help`, not saved).
     pub eye_default_on: bool,
-    /// VR screens (`--screens N`, 1 to 4; 4 = the desktop + left, right and up, shown on demand).
+    /// VR screens (`--screens N`, 1 to 6; 4 = the desktop + left, right and up, 6 adds up-left and up-right; shown on demand).
     pub screens: u8,
+    /// Controllers in Work (`desk start --controllers`, default when picked up: docs/CONTROLLERS-INHAND.md).
+    pub ctrl_work: CtrlMode,
+    /// Controllers in Play (`vr start --controllers`, default always: games expect them).
+    pub ctrl_play: CtrlMode,
 }
 
 impl Default for DeskToggles {
-    /// The user's normal setup (Work: camera hands on by default, dropped by `supported` without a hands build; Play
-    /// only gets them once the user switched them on): eye tracking, 6DoF, optical controllers, passthrough, voice, the room anchor, the
+    /// The user's normal setup (camera hands off by default since 2026-10-16: they still need work; the user switches
+    /// them on in developer mode, and Play only gets them once the user switched them on): eye tracking, 6DoF, optical controllers, passthrough, voice, the room anchor, the
     /// wrist readout, 72 Hz.
     fn default() -> Self {
         DeskToggles {
             eye: true,
             sixdof: true,
             ctrl_track: true,
-            hands: true,
+            hands: false,
             hands_roles: false,
             passthrough: true,
             voice: true,
@@ -148,6 +156,8 @@ impl Default for DeskToggles {
             preset: Preset::None,
             eye_default_on: false,
             screens: crate::screens::DEFAULT_SCREENS,
+            ctrl_work: CtrlMode::WhenHeld,
+            ctrl_play: CtrlMode::Always,
         }
     }
 }
@@ -176,8 +186,20 @@ pub fn toggles_from_argv(text: &str, base: DeskToggles) -> Option<(DeskToggles, 
         t.hands_roles = t.hands && has("--hands-roles");
     }
     t.anchor = has("--anchor");
+    // an absent --controllers is the launcher's default for that side (Work: when picked up, Play: always)
+    let ctrl = value("--controllers").and_then(CtrlMode::parse);
+    if vr {
+        t.ctrl_play = ctrl.unwrap_or(CtrlMode::Always);
+    } else {
+        t.ctrl_work = ctrl.unwrap_or(CtrlMode::WhenHeld);
+    }
+    if !vr {
+        // an absent flag is the launcher's default; `pimax desk screens show|add` raises it in the record
+        t.screens = crate::screens::clamp(value("--screens").and_then(|v| v.parse().ok()).unwrap_or(crate::screens::DEFAULT_SCREENS));
+    }
     if vr {
         t.perf = has("--perf");
+        t.eye = if has("--no-eye") { false } else if has("--eye") { true } else { base.eye_default_on || base.eye };
     } else {
         t.passthrough = !has("--no-passthrough");
         t.voice = has("--voice") || value("--preset") == Some("assistant");
@@ -241,6 +263,11 @@ impl DeskToggles {
         if !caps.no_passthrough {
             self.passthrough = true;
         }
+        if !caps.controllers {
+            // an older launcher: its own behaviour (always shown), no flag to pass
+            self.ctrl_work = CtrlMode::WhenHeld;
+            self.ctrl_play = CtrlMode::Always;
+        }
         if !caps.no_perf {
             // an older launcher has no readout at all: nothing to switch off, and no --no-perf to pass
             self.perf = true;
@@ -286,6 +313,10 @@ pub fn desk_flags(t: &DeskToggles) -> Vec<String> {
         v.push("--preset".into());
         v.push(t.preset.name().into());
     }
+    if t.ctrl_work != CtrlMode::WhenHeld {
+        v.push("--controllers".into());
+        v.push(t.ctrl_work.name().into());
+    }
     if t.screens != crate::screens::DEFAULT_SCREENS {
         v.push("--screens".into());
         v.push(crate::screens::clamp(t.screens).to_string());
@@ -314,6 +345,14 @@ pub fn vr_game_args(t: &DeskToggles, force: bool) -> Vec<String> {
     }
     if t.anchor {
         v.push("--anchor".into());
+    }
+    if t.ctrl_play != CtrlMode::Always {
+        v.push("--controllers".into());
+        v.push(t.ctrl_play.name().into());
+    }
+    // eye tracking is on by default (visual only); a launcher that knows --no-eye gets it when the switch is off
+    if !t.eye && t.eye_default_on {
+        v.push("--no-eye".into());
     }
     if force {
         v.push("--force".into());
@@ -538,20 +577,51 @@ mod tests {
         assert!(vr && t.hz90 && t.sixdof && !t.ctrl_track && t.perf && !t.voice);
         let (t, _) = toggles_from_argv("desk\n--no-eye\n--no-passthrough\n", base).unwrap();
         assert!(!t.eye && !t.passthrough && !t.sixdof);
+        let (t, _) = toggles_from_argv("desk\n--screens\n6\n", base).unwrap();
+        assert_eq!(t.screens, 6);
+        assert_eq!(toggles_from_argv("desk\n--voice\n", base).unwrap().0.screens, 4, "no flag = the default");
         assert!(toggles_from_argv("", base).is_none());
         assert!(toggles_from_argv("other\n", base).is_none());
         let d = DeskToggles::default();
         assert!(d.voice && d.ctrl_track && d.anchor && d.sixdof, "fresh defaults: the user's normal setup");
-        assert!(d.hands && !d.hands_roles, "Work: camera hands on by default, hands-replace-controllers off");
-        assert!(desk_start_args(&d, false).contains(&"--hands".to_string()));
+        assert!(!d.hands && !d.hands_roles, "Work: camera hands off by default (user 2026-10-16), hands-replace-controllers off");
+        assert!(!desk_start_args(&d, false).contains(&"--hands".to_string()));
+        let on = DeskToggles { hands: true, ..d };
+        assert!(desk_start_args(&on, false).contains(&"--hands".to_string()), "switched on: the flag");
         assert!(!desk_start_args(&d.supported(&LauncherCaps::default()), false).contains(&"--hands".to_string()), "no hands build: no flag");
+    }
+
+    #[test]
+    fn controllers_switches_round_trip() {
+        let base = DeskToggles::default();
+        assert_eq!((base.ctrl_work, base.ctrl_play), (CtrlMode::WhenHeld, CtrlMode::Always), "Work: when picked up, Play: always");
+        assert!(!desk_flags(&base).contains(&"--controllers".to_string()), "the default needs no flag");
+        assert!(!vr_game_args(&base, false).contains(&"--controllers".to_string()));
+        let w = DeskToggles { ctrl_work: CtrlMode::Always, ctrl_play: CtrlMode::WhenHeld, ..base };
+        let f = desk_flags(&w);
+        let i = f.iter().position(|x| x == "--controllers").unwrap();
+        assert_eq!(f[i + 1], "always");
+        let g = vr_game_args(&w, false);
+        let i = g.iter().position(|x| x == "--controllers").unwrap();
+        assert_eq!(g[i + 1], "when-held");
+        // the recorded start (start-argv.txt) gives the switch back, per side
+        let (t, _) = toggles_from_argv("desk\n--controllers\noff\n", base).unwrap();
+        assert_eq!((t.ctrl_work, t.ctrl_play), (CtrlMode::Off, CtrlMode::Always));
+        let (t, _) = toggles_from_argv("desk\n--6dof\n", w).unwrap();
+        assert_eq!(t.ctrl_work, CtrlMode::WhenHeld, "no flag = the launcher's Work default");
+        let (t, _) = toggles_from_argv("vr\n--controllers\nwhen-held\n", base).unwrap();
+        assert_eq!((t.ctrl_work, t.ctrl_play), (CtrlMode::WhenHeld, CtrlMode::WhenHeld));
+        // an older launcher without the flag: nothing passed
+        let old = w.supported(&LauncherCaps { desk: true, ..LauncherCaps::default() });
+        assert_eq!((old.ctrl_work, old.ctrl_play), (CtrlMode::WhenHeld, CtrlMode::Always));
+        assert!(parse_caps(USAGE_NEW).controllers);
     }
 
     #[test]
     fn command_lines() {
         let t = DeskToggles::with_eye();
         assert_eq!(desk_start_args(&t, false).join(" "), "desk start --fps 72 --eye --6dof");
-        let all = DeskToggles { eye: true, sixdof: true, ctrl_track: true, hands: false, hands_roles: false, passthrough: false, voice: true, hz90: true, perf: false, anchor: false, preset: Preset::None, eye_default_on: false, screens: 4 };
+        let all = DeskToggles { eye: true, sixdof: true, ctrl_track: true, hands: false, hands_roles: false, passthrough: false, voice: true, hz90: true, perf: false, anchor: false, preset: Preset::None, eye_default_on: false, screens: 4, ctrl_work: CtrlMode::WhenHeld, ctrl_play: CtrlMode::Always };
         // a newer launcher: eye on by default, --no-eye to turn it off
         let newer = DeskToggles { eye_default_on: true, ..all };
         assert!(!desk_flags(&newer).contains(&"--eye".to_string()));
@@ -587,7 +657,7 @@ mod tests {
         assert!(desk_flags(&two).windows(2).any(|w| w == ["--screens", "2"]));
         assert!(!desk_flags(&DeskToggles::default()).iter().any(|f| f == "--screens"), "4 is the launcher default");
         assert_eq!(two.supported(&LauncherCaps::default()).screens, 4, "an older launcher: no flag");
-        assert!(parse_caps("pimax desk ... [--screens 1-4]").screens);
+        assert!(parse_caps("pimax desk ... [--screens 1-6]").screens);
         let off = DeskToggles { perf: false, ..DeskToggles::default() };
         assert!(off.supported(&old).perf, "an older launcher has no --no-perf to pass");
         assert!(!off.supported(&parse_caps("pimax desk --no-perf")).perf);

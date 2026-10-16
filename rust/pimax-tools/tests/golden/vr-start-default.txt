@@ -22,6 +22,7 @@ would start: $ROOT/build/src/xrt/targets/service/monado-service
   XRT_COMPOSITOR_SCALE_PERCENTAGE=100
   PIMAX_LOG=info
   XR_RUNTIME_JSON=$ROOT/build/openxr_monado-dev.json
+  PIMAX_CTRL_INHAND=always
   PIMAX_DEBUG_PTRACE=1
   IPC_IGNORE_VERSION=1
   XRT_NO_STDIN=1

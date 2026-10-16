@@ -39,6 +39,9 @@ pub trait Runner {
     /// limit, so the screen it uses shows in VR (`$XDG_RUNTIME_DIR/pimax-screens.state`, read by `pimax desk screens
     /// watch`; pinned screens are kept). Nothing in dry runs and tests.
     fn screens_on_demand(&mut self) {}
+    /// A voice command that sends something to VR screen `n` (1-6) or goes there shows it: `n` leaves the hidden
+    /// list (`hidden =` in the same state file). Nothing in dry runs and tests.
+    fn screen_unhide(&mut self, _n: usize) {}
     /// "Put everything in its own window" (true) / "put everything back together" (false): whether the screens
     /// watcher keeps apps of different kinds on separate screens (`sort = on|off` in the same state file).
     fn screens_sort(&mut self, _on: bool) {}
@@ -86,6 +89,9 @@ impl Runner for Recorder<'_> {
     fn screens_on_demand(&mut self) {
         self.inner.screens_on_demand()
     }
+    fn screen_unhide(&mut self, n: usize) {
+        self.inner.screen_unhide(n)
+    }
     fn screens_sort(&mut self, on: bool) {
         self.inner.screens_sort(on)
     }
@@ -116,6 +122,8 @@ pub struct Trace {
     pub slots: BTreeMap<String, String>,
     /// What the remote model requests cost (USD, when the provider says: OpenRouter's usage.cost).
     pub cost: Option<f64>,
+    /// The exact user message the model got (the state, the hints, the words): the audit page shows it.
+    pub prompt: String,
 }
 
 /// A fuzzy candidate this good is asked about ("Did you mean ...?") when nothing else understood the request.
@@ -254,27 +262,69 @@ pub fn backdrop_plan(name: &str, skybox_dir: &str) -> (&'static str, String) {
         "dimmed" => ("dim", "off".into()),
         "black" => ("off", "off".into()),
         "sky" => ("off", "default".into()),
-        file => ("off", format!("{skybox_dir}/{file}.dds")),
+        // a picture of the background library (`pimax-backgrounds`: ~/.local/share/pimax/backgrounds), by its saved size
+        file => match pimax_backgrounds::voice_path(&pimax_backgrounds::Dirs::from_env(), file) {
+            Some(abs) => ("off", abs),
+            None => ("off", format!("{skybox_dir}/{file}.dds")),
+        },
     }
+}
+
+/// Spoken words for the library's themes: "waves" -> ocean, "space" -> universe, ...
+fn theme_words(spoken: &str) -> String {
+    let mut out: Vec<&str> = Vec::new();
+    for w in spoken.split_whitespace() {
+        let t = match w {
+            "space" | "galaxy" | "cosmos" | "stars" | "nebula" => "universe",
+            "waves" | "wave" | "sea" | "beach" | "water" | "surf" => "ocean",
+            "flower" | "floral" | "blossoms" | "garden" | "meadow" => "flowers",
+            "hawaiian" | "maui" | "maunakea" | "mauna" | "tropical" | "island" | "islands" => "hawaii",
+            "mountain" | "alps" | "alpine" | "hills" => "mountains",
+            "woods" | "trees" | "jungle" => "forest",
+            "reef" | "coral" | "sea-floor" | "diving" => "underwater",
+            "sunrise" | "dusk" | "evening" => "sunset",
+            w => w,
+        };
+        if out.last() != Some(&t) {
+            out.push(t);
+        }
+    }
+    out.join(" ")
 }
 
 /// Pick a backdrop by spoken name: exact, then the one whose name contains / is contained in the words.
 pub fn find_backdrop(list: &[String], spoken: &str) -> Option<String> {
     let norm = |s: &str| command::words(&s.replace(['_', '-'], " ")).join(" ");
     let want = norm(spoken);
-    let alias = match want.as_str() {
-        "room" | "camera" | "normal" | "passthrough on" => "passthrough",
-        "dim" | "dark room" | "dimmed passthrough" => "dimmed",
-        "none" | "nothing" | "dark" | "off" | "negro" => "black",
-        "skybox" | "space" | "default" | "cielo" => "sky",
-        _ => "",
+    // the first of these that exists (the downloaded skyboxes first, docs/VOICE.md "Background")
+    let alias: &[&str] = match want.as_str() {
+        "room" | "camera" | "normal" | "passthrough on" => &["passthrough"],
+        // "background off" = no VR background: the real room (the app's "Off / passthrough")
+        "off" | "none" | "nothing" | "no background" | "apagado" => &["passthrough"],
+        "dim" | "dark room" | "dimmed passthrough" => &["dimmed"],
+        "dark" | "negro" => &["black"],
+        "space" | "galaxy" | "stars" | "the stars" | "milky way" | "cosmos" | "the universe" => &["universe", "night-sky", "sky"],
+        "skybox" | "default" | "cielo" => &["sky"],
+        "flower field" | "flower meadow" | "meadow" | "flores" => &["flowers"],
+        "ocean" | "waves" | "the ocean" | "the sea" | "sea" | "ocean wave" => &["ocean-waves", "beach"],
+        "tropical" | "tropical beach" | "hawaiian beach" | "island" => &["hawaii", "beach"],
+        _ => &[],
     };
-    if !alias.is_empty() {
-        return list.iter().find(|n| *n == alias).cloned();
+    if let Some(f) = alias.iter().find_map(|a| list.iter().find(|n| n == a)) {
+        return Some(f.clone());
     }
+    // "flower" = "flowers", "mountain" = "mountains"
+    let stem = |s: &str| s.split_whitespace().map(|w| w.trim_end_matches('s')).collect::<Vec<_>>().join(" ");
+    let ws = stem(&want);
+    // the library's themes ("hawaii", "ocean waves", "sunset"): a name starting with the word, or the theme word
+    let themed = theme_words(&want);
     list.iter()
         .find(|n| norm(n) == want)
+        .or_else(|| list.iter().find(|n| stem(&norm(n)) == ws))
+        .or_else(|| list.iter().find(|n| norm(n).starts_with(&want)))
         .or_else(|| list.iter().find(|n| norm(n).contains(&want) || want.contains(&norm(n))))
+        .or_else(|| list.iter().find(|n| { let sn = stem(&norm(n)); !sn.is_empty() && (sn.contains(&ws) || ws.contains(&sn)) }))
+        .or_else(|| list.iter().find(|n| norm(n).starts_with(&themed)))
         .cloned()
 }
 
@@ -306,6 +356,9 @@ pub struct Actor {
     pub state: State,
     pending: Option<Pending>,
     followup_until: Option<Instant>,
+    /// A command cut off mid-sentence ("can you move uh one of the"): its words and raw text, joined with the next
+    /// sentence (within the follow-up time, without "Max").
+    held: Option<(Vec<String>, String)>,
     /// LLM fallback (None = off).
     pub llm: Option<Box<dyn FnMut(&str) -> Result<Option<Match>, String>>>,
     /// The AI agent with tools (`voice_ai` in ai.toml; None = off). See [`crate::agent`].
@@ -321,6 +374,10 @@ pub struct Actor {
     yes_given: bool,
     /// Dictation: final transcripts are typed (no wake word) until "stop dictation" or this deadline.
     dictating: Option<(Instant, bool)>,
+    /// A task of several steps runs (a plan or a goal): the listener thread watches for "Max, cancel" then.
+    pub task_busy: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// "Max, cancel" / "stop" was heard while a task ran: it stops before its next step.
+    pub task_cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 /// Dictation stops after this long without speech.
@@ -338,13 +395,14 @@ pub fn fill(arg: &str, slots: &BTreeMap<String, String>, wayvrctl: &str, pimax: 
 impl Actor {
     pub fn new(cat: Catalogue, wayvrctl: Option<String>, state: State) -> Actor {
         let wayvrctl = wayvrctl.unwrap_or_else(|| expand(&cat.paths.wayvrctl).to_string_lossy().into_owned());
-        Actor { cat, wayvrctl, state, pending: None, followup_until: None, llm: None, ai: None, last_words: String::new(), last_raw: String::new(), agent: None, debug: false, trace: None, confirm: pimax_config::ai::VoiceConfirm::Dangerous, yes_given: false, dictating: None }
+        Actor { cat, wayvrctl, state, pending: None, followup_until: None, held: None, llm: None, ai: None, last_words: String::new(), last_raw: String::new(), agent: None, debug: false, trace: None, confirm: pimax_config::ai::VoiceConfirm::Dangerous, yes_given: false, dictating: None, task_busy: Default::default(), task_cancel: Default::default() }
     }
 
     /// Forget a pending question and the "Max" follow-up window (the AI bench between phrases).
     pub fn reset(&mut self) {
         self.pending = None;
         self.followup_until = None;
+        self.held = None;
         self.dictating = None;
     }
 
@@ -381,9 +439,14 @@ impl Actor {
 
     /// Ask "Did you mean ...?" for a fuzzy candidate (a spoken "yes" runs it).
     fn ask_back(&mut self, c: &crate::fuzzy::Cand, now: Instant, r: &mut dyn Runner) -> String {
-        let m = Match { id: c.id.clone(), slots: c.slots.clone(), score: 0 };
+        if self.consent(&c.id).is_some() {
+            return String::new();
+        }
+        let mut m = Match { id: c.id.clone(), slots: c.slots.clone(), score: 0 };
+        // the yes runs what the guard allows ("close youtube" -> "close it" closes the tab named, not the browser)
+        self.guard(&mut m, r);
         if let Some(t) = self.trace.as_mut() {
-            t.slots = c.slots.clone();
+            t.slots = m.slots.clone();
         }
         let what = format!("Did you mean \"{}\"", command::words(&c.phrase).join(" "));
         self.ask(&what, PendingAction::Intent(m), now, r);
@@ -401,6 +464,8 @@ impl Actor {
         }
         if self.followup_until.is_some_and(|t| now >= t) {
             self.followup_until = None;
+            // a cut-off command nobody finished: dropped (it was not a whole command)
+            self.held = None;
         }
     }
 
@@ -421,6 +486,9 @@ impl Actor {
                 }
             } else {
                 self.dictating = Some((now + Duration::from_secs(DICTATION_IDLE_S), allow));
+                if command::strip_fillers(text).is_empty() {
+                    return Some("type.dictate.text".into()); // "uh": nothing to type
+                }
                 match crate::desk::type_text(&format!("{} ", text), allow, r) {
                     Ok(_) => {}
                     Err(e) => r.toast(&e),
@@ -445,21 +513,164 @@ impl Actor {
             }
             r.toast("Cancelled");
         }
+        // "Max" in the middle, after a pause ("Windows, can we ha... Max, can we have two more windows?")
+        let mid;
+        let text = match command::wake(text, &self.cat.wake.words) {
+            Heard::Talk if self.followup_until.is_none_or(|t| now >= t) => match command::wake_mid(text, &self.cat.wake.words) {
+                Some(m) => {
+                    mid = m;
+                    mid.as_str()
+                }
+                None => text,
+            },
+            _ => text,
+        };
+        let held = self.held.take();
+        let mut raw_prefix = String::new();
         let words = match command::wake(text, &self.cat.wake.words) {
             Heard::Talk => match self.followup_until.take() {
-                Some(t) if now < t => command::words(text),
+                Some(t) if now < t => match held {
+                    // the rest of a cut-off command: "can you move uh one of the" + "one of the screens to the right"
+                    Some((w, raw)) => {
+                        raw_prefix = raw;
+                        let mut w = w;
+                        w.extend(command::words(text));
+                        w
+                    }
+                    None => command::words(text),
+                },
                 _ => return None,
             },
             Heard::WakeOnly => {
+                // "Max": the screen numbers flash, so "screen 3" can follow (WayVR badges; ignored when missing)
+                crate::windows::badges(r, &self.wayvrctl.clone(), None);
                 self.followup_until = Some(now + Duration::from_secs_f64(self.cat.wake.followup_s.max(1.0)));
                 r.toast("Listening...");
                 return None;
             }
             Heard::Command(w) => w,
         };
+        // "can you s Max can you shut down ...": the words after the last "Max"; "screen number 3" = "screen 3"
+        let words = crate::rules::tidy(&command::after_last_wake(&words, &self.cat.wake.words));
         self.followup_until = None;
+        // a command about screens: the numbers flash (a move then highlights its target screen)
+        if words.iter().any(|w| matches!(w.as_str(), "screen" | "screens" | "window" | "windows" | "pantalla")) && !words.iter().any(|w| matches!(w.as_str(), "lock" | "screenshot")) {
+            crate::windows::badges(r, &self.wayvrctl.clone(), None);
+        }
         self.last_words = words.join(" ");
         self.last_raw = command::raw_after_wake(text, &self.cat.wake.words);
+        if !raw_prefix.is_empty() {
+            self.last_raw = format!("{raw_prefix} {}", self.last_raw.trim());
+        }
+        // "yeah put youtube ...", "so uh open ...": the opening words are no part of the command
+        let words = command::drop_openers(&words);
+        self.trace = Some(Trace { heard: self.last_words.clone(), route: "match".into(), ..Default::default() });
+        // taken back in the same breath: nothing runs ("hide screen two, no, forget it"); corrected: the correction
+        // alone counts ("two screens, no, three screens")
+        let words = match command::take_back(&words, &self.last_raw) {
+            command::TakeBack::Cancel => {
+                self.set_route("cancel");
+                r.toast("Cancelled");
+                return None;
+            }
+            command::TakeBack::Correct(tail) => {
+                self.last_raw = tail.join(" ");
+                tail
+            }
+            command::TakeBack::None => words,
+        };
+        // what the guard and the consent check read: the command words as decided on
+        self.last_words = words.join(" ");
+        // several commands in one sentence ("close screen 2 and make the main one bigger"): each clause on its own,
+        // so a rule for the first never swallows the second
+        let clauses = command::clauses(&words);
+        let goal = self.agent.as_ref().is_some_and(|a| a.settings.goal) && crate::agent::is_goal(&self.last_raw);
+        if clauses.len() >= 2 && !goal {
+            if let Some(out) = self.run_clauses(&clauses, now, r) {
+                return out;
+            }
+            return self.decide_words(words, now, r, false);
+        }
+        self.decide_words(words, now, r, true)
+    }
+
+    /// Each clause of a request of several ([`command::clauses`]): a clause a rule or an exact phrase settles runs as
+    /// such; the others go to the model one by one. None: leave the whole request to the model (a later clause points
+    /// back with "there" / "it", or no clause is settled and no model is set up).
+    fn run_clauses(&mut self, clauses: &[Vec<String>], now: Instant, r: &mut dyn Runner) -> Option<Option<String>> {
+        let raws = split_raw(&self.last_raw, clauses);
+        let mut det: Vec<Option<Match>> = Vec::new();
+        for c in clauses {
+            let m = crate::rules::screen_rule(c).or_else(|| self.exact(c, r));
+            det.push(m);
+        }
+        let back = clauses[1..].iter().any(|c| c.iter().any(|x| matches!(x.as_str(), "there" | "it" | "them" | "those" | "its" | "that")));
+        let all = det.iter().all(Option::is_some);
+        if !(all || (det.iter().any(Option::is_some) && !back && self.agent.is_some())) {
+            return None;
+        }
+        let whole_words = self.last_words.clone();
+        let whole_raw = self.last_raw.clone();
+        let mut ran: Vec<String> = Vec::new();
+        let mut decisions: Vec<String> = Vec::new();
+        let mut asked = false;
+        for (i, c) in clauses.iter().enumerate() {
+            self.last_words = c.join(" ");
+            self.last_raw = raws.get(i).cloned().unwrap_or_else(|| c.join(" "));
+            match det[i].clone() {
+                Some(m) => {
+                    decisions.push(format!("rule {}", m.id));
+                    if let Some(a) = self.agent.as_mut() {
+                        a.note(&self.last_words, &m.id, true);
+                    }
+                    ran.push(self.run_or_confirm(m, now, r));
+                }
+                None => {
+                    let out = self.decide_words(c.clone(), now, r, true);
+                    let t = self.trace.clone().unwrap_or_default();
+                    asked |= t.asked;
+                    decisions.push(format!("{} {}", t.route, t.decision));
+                    if let Some(id) = out {
+                        ran.push(id);
+                    }
+                }
+            }
+        }
+        self.last_words = whole_words.clone();
+        self.last_raw = whole_raw;
+        let mut t = self.trace.take().unwrap_or_default();
+        t.heard = whole_words;
+        t.route = "clauses".into();
+        t.decision = decisions.join(" ; ");
+        t.asked |= asked;
+        self.trace = Some(t);
+        Some((!ran.is_empty()).then(|| ran.join(",")))
+    }
+
+    /// The exact (or near-exact) phrase match of these words, after the checks a free-text slot needs; no model.
+    fn exact(&mut self, words: &[String], r: &mut dyn Runner) -> Option<Match> {
+        let mut matched = command::best(&self.cat, words);
+        if matched.as_ref().is_some_and(|m| !self.plausible(m, r)) {
+            matched = None;
+        }
+        if matched.as_ref().is_some_and(|m| m.slots.get("app").is_some_and(|v| crate::nlu::wants_plan(v))) {
+            matched = None;
+        }
+        if matched.as_ref().is_some_and(|m| m.id.starts_with("win.screen.put") && m.slots.get("app").is_some_and(|v| command::words(v).iter().all(|x| matches!(x.as_str(), "the" | "a" | "window" | "screen" | "this" | "it" | "that" | "one")))) {
+            matched = None;
+        }
+        if matched.is_none() && !self.agent.as_ref().is_some_and(|a| a.settings.mode == crate::agent::Mode::Always) {
+            let cands = crate::fuzzy::candidates(&self.cat, words, 3);
+            if let Some(c) = crate::fuzzy::confident(&cands) {
+                matched = Some(Match { id: c.id.clone(), slots: c.slots.clone(), score: 0 });
+            }
+        }
+        matched
+    }
+
+    /// One request (or one clause of several): the rules, the matcher, the model. `rules`: the screen rules may
+    /// decide (false when the words hold several clauses the rules would cut short).
+    fn decide_words(&mut self, words: Vec<String>, now: Instant, r: &mut dyn Runner, rules: bool) -> Option<String> {
         let cands = crate::fuzzy::candidates(&self.cat, &words, 3);
         self.trace = Some(Trace {
             heard: self.last_words.clone(),
@@ -467,6 +678,18 @@ impl Actor {
             cands: cands.iter().map(|c| (c.id.clone(), c.score)).collect(),
             ..Default::default()
         });
+        // VR screens by number, the session, sizes (crate::rules): decided here, never by the model (live 2026-10-16:
+        // the model dropped "to screen 3" and turned "close screen number two" into closing a workspace's apps)
+        if let Some(m) = crate::rules::screen_rule(&words).filter(|_| rules) {
+            self.set_route("rule");
+            if let Some(t) = self.trace.as_mut() {
+                t.decision = format!("rule > {}", m.id);
+            }
+            if let Some(a) = self.agent.as_mut() {
+                a.note(&self.last_words, &m.id, true);
+            }
+            return Some(self.run_or_confirm(m, now, r));
+        }
         let always = self.agent.as_ref().is_some_and(|a| a.settings.mode == crate::agent::Mode::Always);
         // exact phrase, else (not in "always" mode) a clear near-exact fuzzy hit: the fast path, no model
         let mut matched = command::best(&self.cat, &words);
@@ -476,16 +699,67 @@ impl Actor {
         if matched.as_ref().is_some_and(|m| !self.plausible(m, r)) {
             matched = None;
         }
+        // "put the terminals on the left screen and chrome on the right screen": an app slot that swallowed a second
+        // command is no match; the model makes a plan of it
+        if matched.as_ref().is_some_and(|m| m.slots.get("app").is_some_and(|v| crate::nlu::wants_plan(v))) {
+            matched = None;
+        }
+        // "move the window to the left" moves the VR screen itself (decision 3), "put this on the left" the focused
+        // app: an app slot of only "window" / "screen" / "this" names no app
+        if matched.as_ref().is_some_and(|m| m.id.starts_with("win.screen.put") && m.slots.get("app").is_some_and(|v| command::words(v).iter().all(|x| matches!(x.as_str(), "the" | "a" | "window" | "screen" | "this" | "it" | "that" | "one")))) {
+            matched = None;
+        }
         // an exact match only through a free-text slot ("focus {app}" for "focus rights") loses to a close phrase
         // without one ("focus right")
         if let Some(m) = &matched {
             let free = self.cat.get(&m.id).is_some_and(|i| i.slots.values().any(|t| matches!(t, crate::catalogue::SlotType::Text | crate::catalogue::SlotType::Name)));
             if free {
-                if let Some(c) = cands.iter().find(|c| !c.free_text && c.complete && c.score >= 0.85 && c.id != m.id) {
+                // the same length only: "move chrome from screen 2 to screen 5" is no "move screen 2 to screen 5"
+                let n = command::content(&words).len();
+                // ... and not a far weaker phrase ("move everything from screen 2 ..." for "move chrome from screen 2 ...")
+                let own = cands.iter().filter(|c| c.id == m.id).map(|c| c.score).fold(0.0, f64::max);
+                if let Some(c) = cands.iter().find(|c| !c.free_text && c.complete && c.score >= 0.85 && c.id != m.id && command::content(&command::words(&c.phrase.replace(['{', '}'], ""))).len() == n && c.score + 0.05 >= own) {
                     matched = Some(Match { id: c.id.clone(), slots: c.slots.clone(), score: 0 });
                     self.set_route("fuzzy");
                 }
             }
+        }
+        // a stray word or two the speech-to-text put in front ("sex, next background"): the rest is an exact phrase
+        // and the dropped words are no command word of the catalogue
+        if matched.is_none() {
+            let vocab = self.cat.vocabulary();
+            for k in 1..=2usize.min(words.len().saturating_sub(2)) {
+                if words[..k].iter().all(|x| !vocab.contains(x) && x.parse::<u32>().is_err()) {
+                    if let Some(m) = command::best(&self.cat, &words[k..]).filter(|m| m.score >= 2) {
+                        if self.plausible(&m, r) {
+                            self.set_route("match-trimmed");
+                            matched = Some(m);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        // "open google chrome", "launch the browser in main", "bring up spotify": an app that is open (or a family
+        // that starts) by its class or kind, never a guess (the model opened Obsidian for Chrome, live 2026-10-16)
+        if matched.is_none() {
+            let lead = words.iter().position(|x| !command::FILLERS.contains(&x.as_str()));
+            let opener = lead.is_some_and(|i| matches!(words[i].as_str(), "open" | "launch" | "start") || (words[i] == "bring" && words.get(i + 1).is_some_and(|n| n == "up")));
+            if opener && !crate::nlu::wants_plan(&words.join(" ")) {
+                let m = Match { id: "win.app.open".into(), slots: [("app".to_string(), words.join(" "))].into_iter().collect(), score: 0 };
+                if self.cat.get(&m.id).is_some() && self.plausible(&m, r) {
+                    matched = Some(m);
+                }
+            }
+        }
+        // cut off mid-sentence ("can you move all the", "can you write uh"): wait for the rest instead of guessing;
+        // a free-text slot would swallow the fragment ("type {text}" typed "uh something in the")
+        let free_slot = matched.as_ref().is_some_and(|m| self.cat.get(&m.id).is_some_and(|i| i.slots.values().any(|t| matches!(t, crate::catalogue::SlotType::Text))));
+        if command::dangling(&words) && (matched.is_none() || free_slot) && words.len() < 24 {
+            self.set_route("wait");
+            self.held = Some((words.clone(), self.last_raw.clone()));
+            self.followup_until = Some(now + Duration::from_secs_f64(self.cat.wake.followup_s.max(1.0)));
+            return None;
         }
         if matched.is_none() {
             if crate::fuzzy::is_noise(&words) {
@@ -593,7 +867,23 @@ impl Actor {
                 !w.iter().any(|x| x.chars().all(|c| c.is_ascii_digit()) || matches!(x.as_str(), "next" | "previous" | "last" | "first" | "third" | "second" | "new"))
                     && (mentions(&cs, &q) || crate::desk::site_url(&q).is_some())
             }
+            // "open google chrome (here / in main)": an open app by class or kind, or a family that starts
+            "win.app.open" | "win.app.here" => {
+                let (q, _) = crate::windows::open_target(&v("app"));
+                let cs = titles(r);
+                !q.is_empty() && (crate::windows::running_app(&cs, &q).is_some() || crate::windows::launch_for(&q).is_some())
+            }
+            // "close the door" names nothing open: the model decides (and a close it picks is guarded)
+            // "screen {screen} {how}" for "move the screen up a bit" took "up" as the screen and "bit" as how
+            "win.screen.adjust" => matches!(v("how").as_str(), "left" | "right" | "up" | "down" | "closer" | "farther" | "further" | "bigger" | "smaller" | "larger"),
+            "win.close.named" => {
+                let app = v("app");
+                let cs = titles(r);
+                !crate::windows::names_many(&app) && (crate::windows::names_no_app(&app) || crate::windows::find_app(&cs, &app, None).is_some_and(|c| crate::windows::app_score(c, &app) >= 75) || mentions(&cs, &app) || (crate::desk::site_url(&app).is_some() && cs.iter().any(|c| crate::windows::is_browser(&c.class))))
+            }
             "vr.backdrop.set" => find_backdrop(&self.backdrops(r), &v("name")).is_some(),
+            // "play some jazz" is no video file: the model decides (media keys, a search)
+            "media.play" => crate::desk::find_video(&v("q"), &crate::desk::video_dirs()).is_some(),
             _ => true,
         }
     }
@@ -606,7 +896,15 @@ impl Actor {
 
     /// Run a match, or ask for a spoken "yes" first when its intent needs one. Returns the intent id.
     pub fn run_or_confirm(&mut self, mut m: Match, now: Instant, r: &mut dyn Runner) -> String {
+        self.guard(&mut m, r);
         let id = m.id.clone();
+        if let Some(why) = self.consent(&id) {
+            r.toast(&why);
+            if let Some(t) = self.trace.as_mut() {
+                t.decision = format!("{} (refused: {why})", t.decision);
+            }
+            return format!("{id}?refused");
+        }
         self.raw_slots(&mut m);
         if let Some(t) = self.trace.as_mut() {
             t.slots = m.slots.clone();
@@ -618,6 +916,93 @@ impl Actor {
             self.execute(&m, r);
         }
         id
+    }
+
+    /// The last check before an action runs or is asked about (every route: exact, fuzzy, model, rule):
+    /// * "close window" (a workspace with its apps) never runs for a request that names a VR screen or a number
+    ///   ("close screen number two", "close window 2"): that HIDES the screen (user rule 2026-10-16), no app closes;
+    /// * "close window" is pinned to the workspace it means NOW (`ws`): the question names it and the yes closes that
+    ///   one, never the one looked at a few seconds later (live 2026-10-16: asked about window 1, the eyes had moved).
+    pub fn guard(&self, m: &mut Match, r: &mut dyn Runner) {
+        // "close one app" (the one looked at) while the words NAME something else ("close youtube", "close the
+        // video"): only what is named may close (a tab for a site), never the app that happens to be in front
+        let close_one = self.cat.get(&m.id).is_some_and(|i| i.run.first().is_some_and(|p| p == "@win") && i.run.get(1).is_some_and(|a| a == "close"));
+        if close_one && !crate::windows::names_no_app(&self.last_words) && self.cat.get("win.close.named").is_some() {
+            *m = Match { id: "win.close.named".into(), slots: [("app".to_string(), self.last_words.clone())].into_iter().collect(), score: 0 };
+            return;
+        }
+        // a model's app slot for "close <app>" must come from the words heard ("close this program" is no "code"):
+        // else the words themselves name it
+        if m.id == "win.close.named" {
+            let heard = command::words(&self.last_words);
+            let slot = m.slots.get("app").cloned().unwrap_or_default();
+            let grounded = command::words(&slot).iter().filter(|x| !command::FILLERS.contains(&x.as_str())).all(|x| heard.contains(x));
+            if !grounded {
+                m.slots.insert("app".into(), self.last_words.clone());
+            }
+        }
+        let ws_close = self.cat.get(&m.id).is_some_and(|i| i.run.first().is_some_and(|p| p == "@win") && i.run.get(1).is_some_and(|a| a == "ws_close"));
+        if !ws_close {
+            return;
+        }
+        let w = crate::rules::tidy(&command::words(&self.last_words));
+        let nums = crate::rules::numbers(&w);
+        let screen = w.iter().any(|x| matches!(x.as_str(), "screen" | "screens" | "pantalla" | "pantallas"));
+        if screen || !nums.is_empty() {
+            let v = if nums.is_empty() { "here".to_string() } else { nums.iter().map(u32::to_string).collect::<Vec<_>>().join(",") };
+            *m = Match { id: "vr.screens.hide".into(), slots: [("screens".to_string(), v)].into_iter().collect(), score: 0 };
+            return;
+        }
+        if !m.slots.get("ws").is_some_and(|v| v.parse::<i64>().is_ok()) {
+            if let Some(ws) = crate::windows::close_target(r, &self.wayvrctl) {
+                m.slots.insert("ws".into(), ws.to_string());
+            }
+        }
+    }
+
+    /// The words must ask for what a destructive or sensitive action does (user rule 2026-10-16: no app closes, the
+    /// session never stops, nothing is typed unless the user says so). Whatever route picked it (rule, matcher,
+    /// model), an action whose verb the words lack does not run: Some(why).
+    pub fn consent(&self, id: &str) -> Option<String> {
+        let w = command::words(&self.last_words);
+        let has = |xs: &[&str]| w.iter().any(|x| xs.contains(&x.as_str()));
+        let joined = format!(" {} ", w.join(" "));
+        let run = self.cat.get(id).map(|i| i.run.clone()).unwrap_or_default();
+        let win_act = if run.first().is_some_and(|p| p == "@win") { run.get(1).cloned().unwrap_or_default() } else { String::new() };
+        const CLOSE: &[&str] = &["close", "closed", "closes", "closing", "quit", "exit", "kill", "shut", "rid", "remove", "delete", "cierra", "cerrar"];
+        let closes = matches!(win_act.as_str(), "close" | "close_named" | "tab_close" | "ws_close") || id == "close_window";
+        if closes && !has(CLOSE) {
+            return Some("I only close something you ask me to close".into());
+        }
+        // a whole workspace with all its apps: only when the words say window / workspace
+        if win_act == "ws_close" && !has(&["window", "windows", "workspace", "desktop", "ventana"]) {
+            return Some("Closing a whole window needs the words: close this window".into());
+        }
+        if id == "vr.session.stop" {
+            // "stop recording" (even "stop recording the VR") ends the video, never the session
+            if has(&["record", "recording", "recorder", "recorded", "grabar", "grabando", "grabacion"]) {
+                return Some("Stopping a recording does not stop VR".into());
+            }
+            let verb = has(&["stop", "shut", "shutdown", "exit", "quit", "end", "leave", "close", "closed", "finish", "kill"]) || joined.contains(" turn off ") || joined.contains(" switch off ");
+            let what = has(&["vr", "session", "work", "headset", "virtual", "reality", "desk"]);
+            if !(verb && what) {
+                return Some("Stopping VR needs the words: stop the VR".into());
+            }
+        }
+        // an app launcher the words never name (the model opened Obsidian for "open Google Chrome", live 2026-10-16)
+        if let Some(app) = id.strip_prefix("omarchy.launch_or_focus.") {
+            let said = self.cat.get(id).map(|i| i.phrases.iter().flat_map(|p| command::words(p)).filter(|x| x.len() >= 4 && !matches!(x.as_str(), "open" | "switch" | "focus" | "show" | "launch")).collect::<Vec<_>>()).unwrap_or_default();
+            if !w.iter().any(|x| x == app || said.contains(x)) {
+                return Some(format!("You did not name {app}"));
+            }
+        }
+        if id == "omarchy.lock" && !has(&["lock", "locked", "secure", "bloquea"]) {
+            return Some("Locking needs the word lock".into());
+        }
+        if matches!(id, "type.text" | "type.dictate") && !has(&["type", "write", "typing", "dictate", "dictation", "input", "enter", "escribe", "fill"]) {
+            return Some("I only type when you say type or write".into());
+        }
+        None
     }
 
     /// Typing and search take their free text from the raw words ("type line two" types "line two", not "line 2").
@@ -653,7 +1038,7 @@ impl Actor {
         }
         // closing a window (= workspace) says how many apps go with it
         if i.run.first().is_some_and(|p| p == "@win") && i.run.get(1).is_some_and(|a| a == "ws_close") {
-            if let Some(q) = crate::windows::close_prompt(r, &self.wayvrctl) {
+            if let Some(q) = crate::windows::close_prompt(r, &self.wayvrctl, m.slots.get("ws").and_then(|v| v.parse().ok())) {
                 return Some(q);
             }
         }
@@ -662,12 +1047,16 @@ impl Actor {
 
     /// Does this match wait for "yes" under the `voice_confirm` policy?
     pub fn must_ask(&self, m: &Match, r: &mut dyn Runner) -> bool {
+        // stopping the session always asks, whatever the policy (docs/VOICE.md)
+        if self.cat.get(&m.id).is_some_and(|i| i.ask_always) {
+            return true;
+        }
         // user decision 2026-10-15: "close window" (a whole VR screen) asks only when it has 2+ apps, whatever the
         // policy says (`always` still asks); one app, or "close this" (one app), closes right away
         if self.confirm != pimax_config::ai::VoiceConfirm::Always {
             if let Some(i) = self.cat.get(&m.id).filter(|i| i.run.first().is_some_and(|p| p == "@win")) {
                 match i.run.get(1).map(String::as_str) {
-                    Some("ws_close") => return crate::windows::close_count(r, &self.wayvrctl).is_some_and(|n| n >= 2),
+                    Some("ws_close") => return crate::windows::close_count(r, &self.wayvrctl, m.slots.get("ws").and_then(|v| v.parse().ok())).is_some_and(|n| n >= 2),
                     Some("close") => return false,
                     _ => {}
                 }
@@ -738,7 +1127,15 @@ impl Actor {
             }
             Some("@win") => {
                 let transcript = self.last_words.clone();
-                crate::windows::execute(&argv[1..], &transcript, &mut self.ai, &self.wayvrctl, r)
+                let mut args = argv[1..].to_vec();
+                // "close window": the workspace pinned when it was heard (Actor::guard)
+                if args.first().is_some_and(|a| a == "ws_close") {
+                    if let Some(ws) = m.slots.get("ws") {
+                        args.truncate(1);
+                        args.push(ws.clone());
+                    }
+                }
+                crate::windows::execute(&args, &transcript, &mut self.ai, &self.wayvrctl, r)
             }
             Some(_) => self.external(&i, &argv, &say, r),
             None => {}
@@ -762,7 +1159,14 @@ impl Actor {
     }
 
     fn preset(&mut self, name: String, record: bool, say: &str, r: &mut dyn Runner) {
+        if name == "exit-cinema" {
+            return self.exit_cinema(r);
+        }
         let prev = self.state.preset.clone().unwrap_or_else(|| DEFAULT_PRESET.into());
+        // cinema mode that is on already is reused (a goal "let's enter cinema mode" twice changes nothing)
+        if name == "cinema" && self.state.preset.as_deref() == Some("cinema") {
+            return r.toast("Cinema mode is on already");
+        }
         let argv = vec![self.cat.paths.pimax.clone(), "desk".into(), "preset".into(), name.clone()];
         match r.run(&argv, true) {
             Ok(out) => {
@@ -829,11 +1233,30 @@ impl Actor {
             self.state.push("backdrop", Some(cur));
         }
         self.state.backdrop = Some(target.clone());
+        if r.live() {
+            // the app's Backgrounds page and the next Work start show the same choice
+            let _ = pimax_backgrounds::remember(&pimax_backgrounds::Dirs::from_env(), &target);
+        }
         let mut msg = format!("Background: {target}");
         if !errors.is_empty() {
             msg += &format!(" ({})", errors.join("; "));
         }
         r.toast(&msg);
+    }
+
+    /// "Exit cinema mode": the preset from before cinema comes back (with its passthrough); the undo steps since
+    /// cinema are dropped.
+    fn exit_cinema(&mut self, r: &mut dyn Runner) {
+        if self.state.preset.as_deref() != Some("cinema") {
+            return r.toast("Not in cinema mode");
+        }
+        let Some(k) = self.state.history.iter().rposition(|(k, _)| k == "preset") else {
+            return self.preset("work-3".into(), false, "Work mode", r);
+        };
+        let later: Vec<(String, String)> = self.state.history.split_off(k);
+        // the preset sets its own passthrough again (cinema dimmed or turned it off)
+        let prev = later[0].1.clone();
+        self.preset(prev.clone(), false, &format!("Cinema off: back to {prev}"), r);
     }
 
     fn undo(&mut self, r: &mut dyn Runner) {
@@ -876,6 +1299,32 @@ impl Actor {
     }
 }
 
+/// The raw text of each clause ([`command::clauses`]): the raw words cut where each later clause's first word
+/// follows "and" / "then"; the normalised words when that fails.
+pub fn split_raw(raw: &str, clauses: &[Vec<String>]) -> Vec<String> {
+    let toks: Vec<&str> = raw.split_whitespace().collect();
+    let norm: Vec<Vec<String>> = toks.iter().map(|t| command::words(t)).collect();
+    let mut out = Vec::new();
+    let mut start = 0;
+    for c in clauses.iter().skip(1) {
+        let Some(first) = c.first() else { return clauses.iter().map(|c| c.join(" ")).collect() };
+        let pos = (start + 1..toks.len()).find(|&i| norm[i].first() == Some(first) && (1..=3).any(|k| i >= k && norm[i - k].first().is_some_and(|p| matches!(p.as_str(), "and" | "then" | "also" | "plus" | "y" | "luego"))));
+        let Some(p) = pos else { return clauses.iter().map(|c| c.join(" ")).collect() };
+        // the joining words go with neither clause
+        let mut end = p;
+        while end > start && norm[end - 1].first().is_some_and(|x| command::FILLERS.contains(&x.as_str()) || matches!(x.as_str(), "and" | "then" | "also" | "plus" | "y" | "luego")) {
+            end -= 1;
+        }
+        out.push(toks[start..end].join(" ").trim_end_matches([',', '.', ';']).to_string());
+        start = p;
+    }
+    out.push(toks[start..].join(" "));
+    if out.len() != clauses.len() {
+        return clauses.iter().map(|c| c.join(" ")).collect();
+    }
+    out
+}
+
 // ------------------------------------------------------------------------------------------------- runners
 
 /// The toast of a mode switch: a mode only hides screens, so it says which apps stay open on them (from the
@@ -896,9 +1345,24 @@ pub fn screens_state_path() -> PathBuf {
     runtime_dir().join("pimax-screens.state")
 }
 
-/// The state text with `limit = 4` (every screen on demand), the other lines kept.
+/// The state text with the limit lifted to at least 4 (every screen on demand), the other lines kept. A higher
+/// limit stays: lowering 6 to 4 would hide screens 5 and 6.
 pub fn screens_unlimited(old: &str) -> String {
-    screens_state_set(old, "limit", "4")
+    let now = old.lines().find_map(|l| l.split_once('=').filter(|(k, _)| k.trim() == "limit").and_then(|(_, v)| v.trim().parse::<u8>().ok()));
+    match now {
+        Some(n) if n >= 4 => old.to_string(),
+        None if !old.trim().is_empty() => old.to_string(),
+        _ => screens_state_set(old, "limit", "4"),
+    }
+}
+
+/// The state text with screen `n` (1-6) out of the hidden list, the other lines kept.
+pub fn screens_unhidden(old: &str, n: usize) -> String {
+    let Some(slot) = crate::windows::SCREEN_ORDER.get(n.wrapping_sub(1)) else { return old.to_string() };
+    let Some(line) = old.lines().find(|l| l.split_once('=').is_some_and(|(k, _)| k.trim() == "hidden")) else { return old.to_string() };
+    let v = line.split_once('=').map(|x| x.1).unwrap_or("");
+    let keep: Vec<&str> = v.split(',').map(str::trim).filter(|x| !x.is_empty() && x != slot).collect();
+    screens_state_set(old, "hidden", &keep.join(","))
 }
 
 /// The state text with `key = value`, the other lines kept.
@@ -1136,7 +1600,9 @@ impl Runner for Real {
     }
 
     fn skyboxes(&mut self) -> Vec<String> {
-        list_skyboxes(&self.wayvr_home, &self.skybox_dir)
+        let mut v = list_skyboxes(&self.wayvr_home, &self.skybox_dir);
+        v.extend(pimax_backgrounds::voice_names(&pimax_backgrounds::Dirs::from_env()));
+        v
     }
 
     fn save_state(&mut self, s: &State) {
@@ -1147,6 +1613,10 @@ impl Runner for Real {
 
     fn screens_on_demand(&mut self) {
         write_screens_state(screens_unlimited);
+    }
+
+    fn screen_unhide(&mut self, n: usize) {
+        write_screens_state(|old| screens_unhidden(old, n));
     }
 
     fn screens_sort(&mut self, on: bool) {
@@ -1229,6 +1699,29 @@ mod tests {
     }
 
     #[test]
+    fn stop_recording_never_stops_the_session() {
+        let mut a = actor();
+        let mut r = dry();
+        let t = Instant::now();
+        for said in ["Pimax, stop recording", "Pimax, stop the recording", "Pimax, end recording"] {
+            r.lines.clear();
+            assert_eq!(a.hear(said, t, &mut r).as_deref(), Some("vr.record.stop"), "{said}");
+            assert_eq!(r.lines[0], "would run: pimax record stop --brief", "{said}");
+        }
+        assert_eq!(a.hear("Pimax, start recording", t, &mut r).as_deref(), Some("vr.record.start"));
+        assert_eq!(r.lines[r.lines.len() - 2].as_str(), "would run: pimax record start --brief");
+        // the consent check: a stop verb alone, or with recording words, is not enough for the session
+        for said in ["stop recording", "stop the recording please", "stop recording the VR", "end the recording of the session"] {
+            a.last_words = said.into();
+            assert!(a.consent("vr.session.stop").is_some(), "{said}");
+        }
+        a.last_words = "stop the VR".into();
+        assert!(a.consent("vr.session.stop").is_none());
+        a.last_words = "stop recording".into();
+        assert!(a.consent("vr.record.stop").is_none());
+    }
+
+    #[test]
     fn preset_switch_and_undo() {
         let mut a = actor();
         let mut r = dry();
@@ -1297,6 +1790,36 @@ mod tests {
     }
 
     #[test]
+    fn a_cut_off_command_waits_for_its_rest_and_max_may_come_late() {
+        // live 2026-10-16: "Max, can you move all the" ... "terminals to one window"
+        let mut a = actor();
+        let mut r = dry();
+        let t = Instant::now();
+        assert_eq!(a.hear("Max, can you move all the", t, &mut r), None);
+        assert!(r.lines.is_empty(), "nothing runs, no toast: {:?}", r.lines);
+        assert_eq!(a.trace.as_ref().unwrap().route, "wait");
+        assert_eq!(a.hear("terminals to one window.", t + Duration::from_secs(2), &mut r).as_deref(), Some("win.screen.gather"));
+        // a typed fragment is never typed: "can you write uh" waits; nothing comes: dropped
+        r.lines.clear();
+        assert_eq!(a.hear("Max can you write uh", t, &mut r), None);
+        assert_eq!(a.hear("Max can you write uh something in the", t, &mut r), None);
+        a.tick(t + Duration::from_secs(7), &mut r);
+        assert_eq!(a.hear("line comments", t + Duration::from_secs(8), &mut r), None);
+        assert!(!r.lines.iter().any(|l| l.contains("type")), "{:?}", r.lines);
+        // Max in the middle, after a pause
+        assert_eq!(a.hear("Windows, can we ha Max, can we have two more windows?", t, &mut r).as_deref(), Some("vr.screens.more"));
+        assert_eq!(a.hear("I told Max to switch to cinema", t, &mut r), None);
+        assert_eq!(a.hear("set it to max", t, &mut r), None);
+        // the new screen phrases and the live mishearings
+        assert_eq!(a.hear("Max clot screens", t, &mut r).as_deref(), Some("vr.screens.hide_others"), "user rule 2026-10-16: close screens hides them");
+        assert_eq!(a.hear("Max can we stop us through", t, &mut r).as_deref(), Some("vr.passthrough.off"));
+        assert_eq!(a.hear("Max can we focus in the main window", t, &mut r).as_deref(), Some("win.screen.goto"));
+        assert_eq!(a.hear("Max four screens", t, &mut r).as_deref(), Some("vr.screens.count"));
+        assert_eq!(a.hear("Max add a screen top left", t, &mut r).as_deref(), Some("vr.screens.add"));
+        assert!(r.lines.iter().any(|l| l.ends_with("desk screens add up-left")), "{:?}", r.lines);
+    }
+
+    #[test]
     fn lock_needs_a_spoken_yes_in_time() {
         let mut a = actor();
         let mut r = dry();
@@ -1330,7 +1853,7 @@ mod tests {
         let mut r = dry();
         let t = Instant::now();
         assert_eq!(a.hear("Pimax.", t, &mut r), None);
-        assert_eq!(r.lines, ["toast: Listening..."]);
+        assert_eq!(r.lines, ["would run: wayvrctl screen-numbers flash", "toast: Listening..."], "\"Max\" alone flashes the screen numbers");
         assert_eq!(a.hear("volume up", t + Duration::from_secs(2), &mut r).as_deref(), Some("omarchy.volume.up"));
         // the window is used once
         assert_eq!(a.hear("volume up", t + Duration::from_secs(3), &mut r), None);
@@ -1361,7 +1884,7 @@ mod tests {
         assert!(r.lines[1].contains("failed"));
         r.lines.clear();
         a.hear("Pimax reset screens", t, &mut r);
-        assert_eq!(r.lines[0], "would run: wayvrctl reset-screens");
+        assert_eq!(r.lines[..2], ["would run: wayvrctl screen-numbers flash", "would run: wayvrctl reset-screens"], "a screen command flashes the numbers first");
         r.lines.clear();
         a.hear("Pimax captions off", t, &mut r);
         assert_eq!(r.lines, ["would turn captions off", "toast: Captions off"]);
@@ -1498,6 +2021,39 @@ mod tests {
     }
 
     #[test]
+    fn downloaded_backgrounds_by_their_spoken_names() {
+        let list: Vec<String> = ["passthrough", "dimmed", "black", "sky", "flowers", "universe", "ocean-waves", "hawaii", "mountains", "city-night"].map(String::from).to_vec();
+        for (said, want) in [("flower field", "flowers"), ("flower", "flowers"), ("space", "universe"), ("galaxy", "universe"), ("ocean waves", "ocean-waves"), ("the ocean", "ocean-waves"), ("hawaii", "hawaii"), ("tropical beach", "hawaii"), ("mountain", "mountains"), ("city night", "city-night"), ("off", "passthrough"), ("black", "black")] {
+            assert_eq!(find_backdrop(&list, said).as_deref(), Some(want), "{said}");
+        }
+        assert_eq!(find_backdrop(&list, "aurora"), None);
+    }
+
+    #[test]
+    fn close_window_closes_only_the_window_named_and_never_for_a_screen() {
+        // live 2026-10-16: "close screen number two" ran win.ws.close on the window looked at and once asked "Close
+        // window 1 (2 apps)?"; the yes would have closed whatever was looked at then
+        let t = Instant::now();
+        let (mut a, mut r) = (actor(), desk());
+        a.confirm = pimax_config::ai::VoiceConfirm::None;
+        assert_eq!(a.hear("Max, close this window", t, &mut r).as_deref(), Some("win.ws.close"));
+        assert!(r.toasts.last().unwrap().contains("Close window 3 (2 apps)"), "{:?}", r.toasts);
+        // the focus moves to workspace 2 before the yes: workspace 3's apps close, never 0x1 on workspace 2
+        r.active = r#"{"address":"0x1","mapped":true,"class":"foot","title":"zsh","workspace":{"id":2},"grouped":[]}"#.into();
+        a.hear("yes", t, &mut r);
+        let closes: Vec<&String> = r.dispatched.iter().filter(|d| d.contains("close")).collect();
+        assert!(closes.iter().any(|d| d.contains("0x2")) && closes.iter().any(|d| d.contains("0x4")), "{closes:?}");
+        assert!(!closes.iter().any(|d| d.contains("0x1")), "never another window: {closes:?}");
+        // a VR screen named: it hides, no app closes, nothing to confirm
+        for said in ["Max, close screen number two", "Max, can you close down screen number two", "Max, close window 2", "Yes, Max, can you close screen number two?"] {
+            let (mut a, mut r) = (actor(), desk());
+            a.confirm = pimax_config::ai::VoiceConfirm::None;
+            assert_eq!(a.hear(said, t, &mut r).as_deref(), Some("vr.screens.hide"), "{said}");
+            assert!(!r.dispatched.iter().any(|d| d.contains("close")), "{said}: {:?}", r.dispatched);
+        }
+    }
+
+    #[test]
     fn ai_switch_runs_only_for_unmatched_commands_and_validated_picks() {
         struct Fixed(&'static str);
         impl crate::llm::LlmClient for Fixed {
@@ -1554,5 +2110,29 @@ mod tests {
         assert_eq!(j["content"], "hi \"x\"");
         assert_eq!(find_backdrop(&["passthrough".into(), "sky".into(), "mountain_lake".into()], "space"), Some("sky".into()));
         assert_eq!(find_backdrop(&["passthrough".into(), "mountain_lake".into()], "lake"), Some("mountain_lake".into()));
+    }
+
+    #[test]
+    fn library_backgrounds_by_theme_word() {
+        let l: Vec<String> = ["passthrough", "dimmed", "black", "sky", "flowers_wildflower_field", "universe_milky_way_eso", "ocean_umhlanga_sunrise", "hawaii_maunakea_sunset_1", "mountains_alps_field", "sunset_belfast_sunset"].iter().map(|s| s.to_string()).collect();
+        for (said, want) in [
+            ("flowers", "flowers_wildflower_field"),
+            ("flower", "flowers_wildflower_field"),
+            ("universe", "universe_milky_way_eso"),
+            ("ocean", "ocean_umhlanga_sunrise"),
+            ("ocean waves", "ocean_umhlanga_sunrise"),
+            ("hawaii", "hawaii_maunakea_sunset_1"),
+            ("mountain", "mountains_alps_field"),
+            ("sunset", "sunset_belfast_sunset"),
+            ("universe", "universe_milky_way_eso"),
+            ("off", "passthrough"),
+        ] {
+            assert_eq!(find_backdrop(&l, said).as_deref(), Some(want), "{said}");
+        }
+        // no library: "space" is WayVR's own sky, "off" is the room
+        let b: Vec<String> = BUILTIN_BACKDROPS.iter().map(|s| s.to_string()).collect();
+        assert_eq!(find_backdrop(&b, "space").as_deref(), Some("sky"));
+        assert_eq!(find_backdrop(&b, "flowers"), None);
+        assert_eq!(backdrop_plan("sky", "skybox"), ("off", "default".into()));
     }
 }

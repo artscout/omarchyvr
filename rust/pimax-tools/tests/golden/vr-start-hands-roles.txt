@@ -30,6 +30,7 @@ would start: $ROOT/home/src/monado-eye/build/src/xrt/targets/service/monado-serv
   VIT_SYSTEM_LIBRARY_PATH=$ROOT/home/.local/lib/libbasalt.so
   SLAM_CONFIG=$ROOT/session/basalt/pimax-basalt.toml
   PIMAX_HEAD_IMU_LOG=$ROOT/session/head-imu.csv
+  PIMAX_CTRL_INHAND=always
   PIMAX_HANDS=mercury
   PIMAX_HT_STATS=1
   PIMAX_HT_ROLES=hands

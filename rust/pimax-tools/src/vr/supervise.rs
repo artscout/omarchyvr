@@ -65,6 +65,20 @@ pub fn record_argv(dir: &Path, kind: &str, args: &[String]) -> std::io::Result<(
     Ok(())
 }
 
+/// Replace the recorded arguments in place (a live setting changed, e.g. the number of screens): atomic, and the
+/// user-stop marker is left alone. The newer mtime makes the app take the new switches over.
+pub fn rewrite_argv(dir: &Path, kind: &str, args: &[String]) -> std::io::Result<()> {
+    let mut s = String::from(kind);
+    for a in args {
+        s.push('\n');
+        s.push_str(a);
+    }
+    s.push('\n');
+    let tmp = dir.join(format!("{ARGV_FILE}.tmp"));
+    std::fs::write(&tmp, s)?;
+    std::fs::rename(tmp, dir.join(ARGV_FILE))
+}
+
 /// `(kind, args)` of the last recorded start.
 pub fn read_argv(dir: &Path) -> Option<(String, Vec<String>)> {
     let s = std::fs::read_to_string(dir.join(ARGV_FILE)).ok()?;

@@ -1,9 +1,12 @@
 //! `pimax controllers [seconds] [--raw]`: port of `linux/pimax_controllers.py`.
+//! `pimax controllers use when-held|always|off` / `status`: when the running session shows the controllers
+//! (PIMAX_CTRL_INHAND, docs/CONTROLLERS-INHAND.md).
 //! Sends only the per-slot attach burst (0x16, 0x50, 0x0a, 0x03), re-sends it when a 0x37 heartbeat shows a controller awake
 //! but silent, and prints decoded EP 0x82 reports about 10x/s per slot. No wake, no keepalive: runs next to `pimax keepalived`.
 use crate::args::Args;
 use crate::{hex, CliError, CliResult};
 use pimax::{discovery, Config, Event, Session};
+use pimax_config::ctrl_inhand::{self, CtrlMode};
 use pimax_proto::{parse_reply, ControllerReport, SLOT_LEFT};
 use std::collections::{BTreeSet, HashMap};
 use std::time::{Duration, Instant};
@@ -65,6 +68,30 @@ pub fn run(mut a: Args) -> CliResult {
         let side = a.pos::<String>(1)?.unwrap_or_default();
         let msg = pimax_autod::unpair::unpair_side(&side).map_err(CliError::new)?;
         println!("{msg}");
+        return Ok(());
+    }
+    if a.pos::<String>(0)?.as_deref() == Some("use") {
+        // `pimax controllers use when-held|always|off`: change the running session (PIMAX_CTRL_INHAND)
+        let v = a.pos::<String>(1)?.unwrap_or_default();
+        a.no_unknown_flags()?;
+        let m = CtrlMode::parse(&v).ok_or_else(|| CliError::usage("usage: pimax controllers use when-held|always|off"))?;
+        ctrl_inhand::request(&ctrl_inhand::request_path(), m, Duration::from_millis(1000)).map_err(CliError::new)?;
+        println!("controllers: {} (until the session ends; the app's switch sets the default)", m.label().to_lowercase());
+        return Ok(());
+    }
+    if a.pos::<String>(0)?.as_deref() == Some("status") {
+        a.no_unknown_flags()?;
+        match ctrl_inhand::read_status(&ctrl_inhand::status_path(), ctrl_inhand::pid_alive) {
+            Some(s) => println!(
+                "controllers {}: left {} ({}), right {} ({})",
+                s.mode.label().to_lowercase(),
+                s.left.words(),
+                s.left.why,
+                s.right.words(),
+                s.right.why
+            ),
+            None => println!("controllers: no VR session (or its Monado build has no PIMAX_CTRL_INHAND)"),
+        }
         return Ok(());
     }
     if a.pos::<String>(0)?.as_deref() == Some("buzz") {

@@ -117,7 +117,7 @@ pub fn devices(f: &Facts, live: &Live, t: &DeskToggles, demo: bool) -> Devices {
             name: model.into(),
             state: Dev::Warn,
             label: "Camera missing".into(),
-            detail: "The headset's camera did not start: Restart headset (Home) brings it back".into(),
+            detail: "The headset's camera did not start: Restart headset (top bar) brings it back".into(),
             battery: None,
         },
         (None, true) => DeviceView {

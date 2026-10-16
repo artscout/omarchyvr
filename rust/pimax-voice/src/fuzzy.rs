@@ -204,13 +204,13 @@ fn align(toks: &[Tok], w: &[String], slots: &BTreeMap<String, SlotType>) -> (f64
                     Tok::Slot(name) => {
                         let ty = slots.get(name).copied().unwrap_or(SlotType::Text);
                         let max = match ty {
-                            SlotType::Number | SlotType::Word | SlotType::Side => 1,
+                            SlotType::Number | SlotType::Word | SlotType::Side | SlotType::Screen => 1,
                             SlotType::Text | SlotType::Name => m - j,
                         };
                         for k in 1..=max.min(m - j) {
                             let val = w[j..j + k].join(" ");
                             let c = match ty {
-                                SlotType::Number | SlotType::Side => {
+                                SlotType::Number | SlotType::Side | SlotType::Screen => {
                                     if command::slot_ok(ty, &val) {
                                         0.0
                                     } else {
@@ -240,7 +240,10 @@ fn align(toks: &[Tok], w: &[String], slots: &BTreeMap<String, SlotType>) -> (f64
             if let Tok::Slot(name) = &toks[pi] {
                 let v = w[pj..j].join(" ");
                 // a side is stored in its one word: top / above -> up
-                let v = if slots.get(name) == Some(&SlotType::Side) { crate::windows::slot_word(&v).map(str::to_string).unwrap_or(v) } else { v };
+                let v = match slots.get(name) {
+                    Some(t) => command::norm_slot(*t, v),
+                    None => v,
+                };
                 vals.insert(name.clone(), v);
             }
         }
@@ -353,7 +356,7 @@ mod tests {
         let c = candidates(&cat(), &words("leaks list windows"), 3);
         assert_eq!(confident(&c).map(|c| c.id.as_str()), Some("win.list"), "{c:?}");
         // not close: no fast path
-        for t in ["open 2 more screens", "how fast is it running", "that thing with the issue tracker"] {
+        for t in ["open 2 extra displays", "how fast is it running", "that thing with the issue tracker"] {
             let c = candidates(&cat(), &words(t), 3);
             assert!(confident(&c).is_none(), "{t}: {c:?}");
         }

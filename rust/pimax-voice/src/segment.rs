@@ -23,6 +23,12 @@ pub struct SegConfig {
     pub partial_every: u32,
     /// Shortest segment that gets a partial decode.
     pub min_partial: u32,
+    /// The end-of-speech delay when the words so far stop mid-sentence ("can you move uh one of the"): the decoder
+    /// says so through [`Segmenter::set_dangling`] after the pause partial. 0 = never longer than `hangover`.
+    pub long_hangover: u32,
+    /// Non-speech frames after the last speech frame before the pause partial (a decode of everything said so far,
+    /// so the decoder can tell a finished command from a cut-off one before `hangover` runs out). 0 = none.
+    pub pause_partial: u32,
 }
 
 /// Milliseconds to whole frames (rounded up).
@@ -31,8 +37,9 @@ pub fn frames_of_ms(ms: u32) -> u32 {
 }
 
 impl Default for SegConfig {
-    /// 128 ms to open, 480 ms of silence to close, 320 ms pre-roll, 160 ms tail, 20 s max, a partial every 640 ms
-    /// once the segment is 640 ms long.
+    /// 128 ms to open, 480 ms of silence to close (1,120 ms after words that stop mid-sentence: "the", "of", "uh"),
+    /// 320 ms pre-roll, 160 ms tail, 20 s max, a partial every 640 ms once the segment is 640 ms long, and one
+    /// 64 ms into each pause.
     fn default() -> Self {
         SegConfig {
             min_speech: frames_of_ms(128),
@@ -42,6 +49,8 @@ impl Default for SegConfig {
             max_len: frames_of_ms(20_000),
             partial_every: frames_of_ms(640),
             min_partial: frames_of_ms(640),
+            long_hangover: frames_of_ms(1120),
+            pause_partial: frames_of_ms(64),
         }
     }
 }
@@ -76,6 +85,10 @@ struct Open {
     speech_len: usize,
     silence_run: u32,
     since_partial: u32,
+    /// The pause partial of this pause was sent.
+    pause_sent: bool,
+    /// The words up to this pause stop mid-sentence: wait `long_hangover`.
+    dangling: bool,
 }
 
 /// The state machine. Feed every frame with its VAD decision through [`Segmenter::push`].
@@ -128,6 +141,14 @@ impl Segmenter {
         self.open.as_ref().map(|o| o.seg)
     }
 
+    /// The decoder's verdict on a partial of segment `seg` covering its first `len` samples: do the words stop
+    /// mid-sentence? Applies only when no speech came after that partial (else the next pause asks again).
+    pub fn set_dangling(&mut self, seg: u64, len: usize, dangling: bool) {
+        if let Some(o) = self.open.as_mut().filter(|o| o.seg == seg && len >= o.speech_len) {
+            o.dangling = dangling;
+        }
+    }
+
     /// Drop the open segment and the pre-roll (pause); returns its id if one was open.
     pub fn abort(&mut self) -> Option<u64> {
         self.ring.clear();
@@ -170,10 +191,17 @@ impl Segmenter {
                 o.silence_run = 0;
                 o.speech_len = o.audio.len();
                 o.since_partial += 1;
+                o.pause_sent = false;
+                o.dangling = false;
             } else {
                 o.silence_run += 1;
+                if self.cfg.pause_partial > 0 && o.silence_run == self.cfg.pause_partial && !o.pause_sent && o.frames >= self.cfg.min_speech {
+                    o.pause_sent = true;
+                    out.push(SegEvent::Partial { seg: o.seg, audio: o.audio.clone() });
+                }
             }
-            if o.silence_run >= self.cfg.hangover {
+            let hangover = if o.dangling { self.cfg.long_hangover.max(self.cfg.hangover) } else { self.cfg.hangover };
+            if o.silence_run >= hangover {
                 let ev = self.close(o, false);
                 out.push(ev);
                 return;
@@ -233,6 +261,8 @@ impl Segmenter {
             speech_len,
             silence_run: 0,
             since_partial: frames.min(self.cfg.min_speech),
+            pause_sent: false,
+            dangling: false,
         });
         out.push(SegEvent::Start { seg, start });
     }
@@ -262,6 +292,8 @@ mod tests {
             max_len: 100,
             partial_every: 0,
             min_partial: 0,
+            long_hangover: 0,
+            pause_partial: 0,
         }
     }
 
@@ -343,6 +375,51 @@ mod tests {
             })
             .collect();
         assert_eq!(ends, vec![1, 2]);
+    }
+
+    #[test]
+    fn a_pause_partial_then_a_longer_wait_after_words_that_stop_mid_sentence() {
+        let c = SegConfig { long_hangover: 7, pause_partial: 1, ..cfg() };
+        let mut s = Segmenter::new(c);
+        let mut out = Vec::new();
+        let mut feed = |s: &mut Segmenter, pat: &str, out: &mut Vec<SegEvent>| {
+            for ch in pat.chars() {
+                s.push(&vec![0.0; FRAME], ch == '#', out);
+            }
+        };
+        // speech, then the pause partial at the first silent frame
+        feed(&mut s, "..####.", &mut out);
+        let (seg, len) = match out.last() {
+            Some(SegEvent::Partial { seg, audio }) => (*seg, audio.len()),
+            e => panic!("no pause partial: {e:?}"),
+        };
+        // "can you move all the": the decoder says the words stop mid-sentence
+        s.set_dangling(seg, len, true);
+        feed(&mut s, "....", &mut out); // 5 silent frames: past the normal hangover (3), not the long one (7)
+        assert!(s.in_speech(), "a cut-off sentence waits longer");
+        // the rest of the sentence comes: one segment with both parts
+        feed(&mut s, "###...", &mut out);
+        assert!(!s.in_speech());
+        let ends = out.iter().filter(|e| matches!(e, SegEvent::End { .. })).count();
+        assert_eq!(ends, 1);
+        // a finished command closes after the normal hangover
+        let mut s2 = Segmenter::new(c);
+        let mut out2 = Vec::new();
+        feed(&mut s2, "..####.", &mut out2);
+        if let Some(SegEvent::Partial { seg, audio }) = out2.last().cloned() {
+            s2.set_dangling(seg, audio.len(), false);
+        }
+        feed(&mut s2, "..", &mut out2);
+        assert!(!s2.in_speech());
+        // a stale verdict (speech came after the partial) is ignored
+        let mut s3 = Segmenter::new(c);
+        let mut out3 = Vec::new();
+        feed(&mut s3, "..####.", &mut out3);
+        let (seg3, len3) = match out3.last() { Some(SegEvent::Partial { seg, audio }) => (*seg, audio.len()), _ => unreachable!() };
+        feed(&mut s3, "##", &mut out3);
+        s3.set_dangling(seg3, len3, true);
+        feed(&mut s3, "...", &mut out3);
+        assert!(!s3.in_speech());
     }
 
     #[test]

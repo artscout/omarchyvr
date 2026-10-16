@@ -140,8 +140,13 @@ struct Client {
     stream: UnixStream,
 }
 
+/// Finals older than this are not replayed by [`Command::Backlog`].
+pub const BACKLOG_MAX_AGE: Duration = Duration::from_secs(30);
+
 struct Shared {
     clients: Mutex<Vec<Client>>,
+    /// Finals kept until the first [`Command::Backlog`] (then None: later finals reach the clients live only).
+    backlog: Mutex<Option<Vec<(std::time::Instant, Event)>>>,
     hello: Mutex<Event>,
     status: Mutex<Event>,
     stop: AtomicBool,
@@ -183,6 +188,7 @@ impl Server {
         listener.set_nonblocking(true).map_err(|e| e.to_string())?;
         let shared = Arc::new(Shared {
             clients: Mutex::new(Vec::new()),
+            backlog: Mutex::new(Some(Vec::new())),
             hello: Mutex::new(hello),
             status: Mutex::new(Event::Status {
                 state: State::Listening,
@@ -226,9 +232,10 @@ fn accept_loop(listener: &UnixListener, sh: &Arc<Shared>, commands: &Sender<Comm
                 // read first: a one-shot client (`pimax-voice pause`) may already be gone when we greet it
                 if let Ok(reader) = stream.try_clone() {
                     let commands = commands.clone();
+                    let sh2 = Arc::clone(sh);
                     let _ = std::thread::Builder::new()
                         .name("voice-client".into())
-                        .spawn(move || client_reader(reader, &commands));
+                        .spawn(move || client_reader(reader, &commands, &sh2));
                 }
                 let hello = sh.hello.lock().unwrap().clone();
                 let status = sh.status.lock().unwrap().clone();
@@ -244,7 +251,7 @@ fn accept_loop(listener: &UnixListener, sh: &Arc<Shared>, commands: &Sender<Comm
     }
 }
 
-fn client_reader(stream: UnixStream, commands: &Sender<Command>) {
+fn client_reader(stream: UnixStream, commands: &Sender<Command>, sh: &Arc<Shared>) {
     let mut writer = match stream.try_clone() {
         Ok(w) => w,
         Err(_) => return,
@@ -258,6 +265,15 @@ fn client_reader(stream: UnixStream, commands: &Sender<Command>) {
                     continue;
                 }
                 return;
+            }
+            Some(Command::Backlog) => {
+                // once: the finals said before the first command client came (recent ones only)
+                let kept = sh.backlog.lock().unwrap().take().unwrap_or_default();
+                for (t, e) in kept {
+                    if t.elapsed() <= BACKLOG_MAX_AGE && !send_line(&mut writer, &e) {
+                        return;
+                    }
+                }
             }
             Some(c) => {
                 if commands.send(c).is_ok() {
@@ -274,6 +290,14 @@ impl Sink for Server {
     fn emit(&self, event: &Event) {
         if matches!(event, Event::Status { .. }) {
             *self.shared.status.lock().unwrap() = event.clone();
+        }
+        if let Event::Final { text, .. } = event {
+            if let Some(b) = self.shared.backlog.lock().unwrap().as_mut() {
+                if !text.trim().is_empty() {
+                    b.retain(|(t, _)| t.elapsed() <= BACKLOG_MAX_AGE);
+                    b.push((std::time::Instant::now(), event.clone()));
+                }
+            }
         }
         let mut line = protocol::encode(event);
         line.push('\n');
@@ -299,6 +323,26 @@ impl Drop for Server {
 pub fn subscribe(path: &Path, mut f: impl FnMut(Event) -> bool) -> Result<(), String> {
     let stream =
         UnixStream::connect(path).map_err(|e| format!("connect {}: {e}", path.display()))?;
+    for line in BufReader::new(stream).lines() {
+        let line = line.map_err(|e| e.to_string())?;
+        if let Some(ev) = protocol::decode(&line) {
+            if !f(ev) {
+                break;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Like [`subscribe`], first sending `first` (e.g. [`Command::Backlog`]) on the same connection.
+pub fn subscribe_with(path: &Path, first: Option<Command>, mut f: impl FnMut(Event) -> bool) -> Result<(), String> {
+    let mut stream =
+        UnixStream::connect(path).map_err(|e| format!("connect {}: {e}", path.display()))?;
+    if let Some(c) = first {
+        let mut line = protocol::encode_command(c);
+        line.push('\n');
+        stream.write_all(line.as_bytes()).map_err(|e| e.to_string())?;
+    }
     for line in BufReader::new(stream).lines() {
         let line = line.map_err(|e| e.to_string())?;
         if let Some(ev) = protocol::decode(&line) {
@@ -405,6 +449,42 @@ mod tests {
             .contains("in use"));
         drop(server);
         assert!(!path.exists(), "socket file removed on drop");
+    }
+
+    #[test]
+    fn the_first_command_client_gets_the_finals_said_before_it_came_once() {
+        // live 2026-10-16: act started 12 s after the listener and the first command was lost
+        let path = tmp_sock("backlog");
+        let (tx, _rx) = mpsc::channel();
+        let server = Server::bind(&path, hello(), tx).unwrap();
+        let fin = |t: &str| Event::Final { seg: 1, text: t.into(), lang: None, t0: 0.0, t1: 1.0, latency_ms: 5, decode_ms: 1 };
+        server.emit(&fin("Max, move this screen to the right"));
+        server.emit(&fin(""));
+        let got = |ask: Option<Command>| -> Vec<Event> {
+            let mut v = Vec::new();
+            let (p, done) = (path.clone(), std::sync::Arc::new(AtomicBool::new(false)));
+            let d2 = done.clone();
+            let h = std::thread::spawn(move || {
+                let mut out = Vec::new();
+                let _ = subscribe_with(&p, ask, |e| {
+                    if matches!(e, Event::Final { .. }) {
+                        out.push(e);
+                    }
+                    !d2.load(Ordering::SeqCst)
+                });
+                out
+            });
+            std::thread::sleep(Duration::from_millis(400));
+            done.store(true, Ordering::SeqCst);
+            server.emit(&fin("tick"));
+            v.extend(h.join().unwrap());
+            v
+        };
+        let first = got(Some(Command::Backlog));
+        assert_eq!(first.first(), Some(&fin("Max, move this screen to the right")), "{first:?}");
+        assert!(!first.contains(&fin("")), "empty finals are not kept");
+        let again = got(Some(Command::Backlog));
+        assert!(!again.contains(&fin("Max, move this screen to the right")), "only once: {again:?}");
     }
 
     #[test]

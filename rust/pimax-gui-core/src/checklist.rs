@@ -462,6 +462,7 @@ pub fn build(facts: &Facts, live: &Live, p: &Paths) -> Vec<Item> {
                     ("eye", "Eye tracking", "PIMAX_EYE", m.eye),
                     ("ctrl-track", "Optical controller tracking", "PIMAX_CTRL_TRACK", m.ctrl_track),
                     ("anchor", "Room anchor", "PIMAX_ANCHOR", m.anchor),
+                    ("ctrl-inhand", "Controllers when picked up", "PIMAX_CTRL_INHAND", m.ctrl_inhand),
                     ("hands", "Camera hands", "PIMAX_HT_HZ", m.hands),
                 ] {
                     let level = if have { Level::Ok } else if id == "hands" { Level::Warn } else { Level::Fail };

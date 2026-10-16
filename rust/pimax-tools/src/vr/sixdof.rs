@@ -235,6 +235,27 @@ pub fn parse_ctrl_track(
     Ok(Some(bin))
 }
 
+/// `--controllers when-held|always|off` (docs/CONTROLLERS-INHAND.md): when Monado shows the controllers. Pushes
+/// PIMAX_CTRL_INHAND (auto | always | off) onto `vr.extra_env` unless the caller's environment sets it. `default`:
+/// when-held for `desk start` (Work: a controller lying on the desk is hidden), always for `vr start` (games).
+pub fn parse_controllers(
+    a: &mut Args,
+    env: &dyn Fn(&str) -> Option<String>,
+    vr: &mut StartOptions,
+    default: pimax_config::ctrl_inhand::CtrlMode,
+) -> Result<pimax_config::ctrl_inhand::CtrlMode, CliError> {
+    use pimax_config::ctrl_inhand::CtrlMode;
+    let mode = match a.opt("--controllers")? {
+        Some(v) => CtrlMode::parse(&v)
+            .ok_or_else(|| CliError::usage(format!("--controllers {v}: want when-held, always or off")))?,
+        None => default,
+    };
+    if env("PIMAX_CTRL_INHAND").is_none() {
+        vr.extra_env.push(("PIMAX_CTRL_INHAND".into(), mode.env_value().into()));
+    }
+    Ok(mode)
+}
+
 /// The controller tracker as a process to spawn (not an XR client: reads the broker, writes the pose file Monado reads).
 pub fn ctrltrack_spec(bin: &Path, s: &SixDof, session_dir: &Path) -> ProcSpec {
     comp::ctrltrack::spec(bin, &s.sock, session_dir)

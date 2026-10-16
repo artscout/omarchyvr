@@ -67,6 +67,14 @@ pub struct Core {
     zero_frames: u32,
     /// Emit `level` events.
     pub levels: bool,
+    /// The decoder's verdict on the last pause partial (segment, samples covered, words stop mid-sentence).
+    hint: Arc<Mutex<Option<(u64, usize, bool)>>>,
+}
+
+/// Does a partial transcript stop mid-sentence ("can you move uh one of the")? Then the end of speech waits longer
+/// ([`crate::segment::SegConfig::long_hangover`]).
+pub fn stops_mid_sentence(text: &str) -> bool {
+    crate::command::dangling(&crate::command::words(text))
 }
 
 impl Core {
@@ -82,7 +90,18 @@ impl Core {
             seg_events: Vec::new(),
             levels: true,
             zero_frames: 0,
+            hint: Arc::new(Mutex::new(None)),
         }
+    }
+
+    /// Where the decoding thread leaves its verdict on a partial ([`Core::set_hint`] for inline decoding).
+    pub fn hint_slot(&self) -> Arc<Mutex<Option<(u64, usize, bool)>>> {
+        Arc::clone(&self.hint)
+    }
+
+    /// A partial of segment `seg` covering `len` samples ends mid-sentence (or not).
+    pub fn set_hint(&mut self, seg: u64, len: usize, dangling: bool) {
+        self.seg.set_dangling(seg, len, dangling);
     }
 
     pub fn vad_name(&self) -> &'static str {
@@ -165,6 +184,9 @@ impl Core {
                 }));
             }
             self.zero_frames = 0;
+        }
+        if let Some((seg, len, d)) = self.hint.lock().ok().and_then(|mut h| h.take()) {
+            self.seg.set_dangling(seg, len, d);
         }
         let speech = self.vad.is_speech(frame);
         self.level_sum += frame
@@ -322,13 +344,17 @@ pub fn run_offline(
 ) {
     let mut outs = Vec::new();
     let mut evs = Vec::new();
-    let mut handle = |outs: &mut Vec<Out>, evs: &mut Vec<Event>| {
+    let mut hints: Vec<(u64, usize, bool)> = Vec::new();
+    let mut handle = |outs: &mut Vec<Out>, evs: &mut Vec<Event>, hints: &mut Vec<(u64, usize, bool)>| {
         for o in outs.drain(..) {
             match o {
                 Out::Event(e) => sink.emit(&e),
                 Out::Job(job) => {
                     let t = Instant::now();
                     let r = engine.transcribe(&job.audio);
+                    if let (false, Ok(tr)) = (job.fin, &r) {
+                        hints.push((job.seg, job.audio.len(), stops_mid_sentence(&tr.text)));
+                    }
                     job_events(&job, r, t.elapsed(), Duration::ZERO, intents, evs);
                     for e in evs.drain(..) {
                         sink.emit(&e);
@@ -339,10 +365,13 @@ pub fn run_offline(
     };
     for c in audio.chunks(chunk.max(1)) {
         core.push(c, &mut outs);
-        handle(&mut outs, &mut evs);
+        handle(&mut outs, &mut evs, &mut hints);
+        for (seg, len, d) in hints.drain(..) {
+            core.set_hint(seg, len, d);
+        }
     }
     core.finish(&mut outs);
-    handle(&mut outs, &mut evs);
+    handle(&mut outs, &mut evs, &mut hints);
 }
 
 #[derive(Default)]
@@ -425,6 +454,7 @@ pub fn run_live(
     let (ready_tx, ready_rx) = std::sync::mpsc::channel::<Result<(), String>>();
     let q2 = Arc::clone(&queue);
     let sink2 = Arc::clone(&sink);
+    let hint = core.hint_slot();
     let LiveConfig { engine, intents } = cfg;
     let decoder = std::thread::Builder::new()
         .name("voice-decode".into())
@@ -453,6 +483,10 @@ pub fn run_live(
                 let dt = t.elapsed();
                 if job.fin {
                     last_final = job.seg;
+                } else if let Ok(tr) = &r {
+                    if let Ok(mut h) = hint.lock() {
+                        *h = Some((job.seg, job.audio.len(), stops_mid_sentence(&tr.text)));
+                    }
                 }
                 job_events(&job, r, dt, waited, &intents, &mut evs);
                 for e in evs.drain(..) {
@@ -496,6 +530,8 @@ pub fn run_live(
                     queue.drop_partial();
                 }
                 Command::Resume => core.set_paused(false, &mut outs),
+                // answered by the socket server itself
+                Command::Backlog => {}
                 Command::Ping => {}
             }
             dispatch(&mut outs);

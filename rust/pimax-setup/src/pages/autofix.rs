@@ -5,7 +5,7 @@
 use crate::app::PimaxApp;
 use crate::pages::checks;
 use crate::theme::{self, icon};
-use crate::widgets::{self, card, chip, note, pal, spinner, title};
+use crate::widgets::{self, chip, pal, spinner};
 use eframe::egui::{self, RichText, Ui};
 use pimax_gui_core::autofix::fmt_bytes;
 use pimax_gui_core::device::autofix::Proposal;
@@ -14,26 +14,20 @@ use pimax_gui_core::device::autofix::Proposal;
 pub fn show(ui: &mut Ui, app: &mut PimaxApp) {
     app.core.want_autofix();
     backend(ui, app);
-    ui.add_space(8.0);
     preview(ui, app);
-    ui.add_space(8.0);
     send(ui, app);
-    ui.add_space(8.0);
     contribute(ui, app);
 }
 
 /// (a) The provider (from the AI tab).
 fn backend(ui: &mut Ui, app: &mut PimaxApp) {
     let p = theme::pal(ui);
-    card(ui, |ui| {
-        ui.horizontal(|ui| {
-            title(ui, "Autofix");
-            if app.core.demo {
-                chip(ui, "demo: nothing is sent", pal(ui).info);
-            }
-        });
-        note(ui, "A language model reads the redacted check results and logs, explains what looks wrong and may propose fixes, but only from the app's fixed catalogue. You approve each fix; root fixes still go through the pkexec dialog.");
-        ui.add_space(6.0);
+    let demo = app.core.demo;
+    widgets::section_with(ui, "Autofix", Some("A language model reads the redacted check results and logs, explains what looks wrong and may propose fixes, but only from the app's fixed catalogue. You approve each fix; root fixes still go through the pkexec dialog."), |ui| {
+        if demo {
+            chip(ui, "demo: nothing is sent", pal(ui).info);
+        }
+    }, |ui| {
         widgets::caption(ui, "Provider");
         match app.core.ai_resolve(pimax_config::ai::Feature::Autofix) {
             Ok(r) if app.core.ai.loaded => {
@@ -68,17 +62,15 @@ fn backend(ui: &mut Ui, app: &mut PimaxApp) {
 fn preview(ui: &mut Ui, app: &mut PimaxApp) {
     let bytes = app.core.autofix_bytes();
     let building = app.core.autofix.building;
-    card(ui, |ui| {
-        ui.horizontal_wrapped(|ui| {
-            title(ui, "What will be sent");
-            if let Some(n) = bytes {
-                chip(ui, &fmt_bytes(n), pal(ui).info);
-            }
-            if widgets::ismall(ui, icon::ARROWS_CLOCKWISE, "Rebuild").on_hover_text("Collect the check results and logs again").clicked() {
-                app.core.autofix_build();
-            }
-        });
-        note(ui, "Exactly this text: the instructions, the list of fixes the model may propose, and the diagnostic bundle (check results, versions, the end of the session logs). Home directory, user and host names, serial numbers, machine id, e-mail and IP addresses and API keys are replaced first.");
+    let mut rebuild = false;
+    widgets::section_with(ui, "What will be sent", Some("Exactly this text: the instructions, the list of fixes the model may propose, and the diagnostic bundle (check results, versions, the end of the session logs). Home directory, user and host names, serial numbers, machine id, e-mail and IP addresses and API keys are replaced first."), |ui| {
+        if let Some(n) = bytes {
+            chip(ui, &fmt_bytes(n), pal(ui).info);
+        }
+        if widgets::ismall(ui, icon::ARROWS_CLOCKWISE, "Rebuild").on_hover_text("Collect the check results and logs again").clicked() {
+            rebuild = true;
+        }
+    }, |ui| {
         let Some(pv) = app.core.autofix.preview.clone() else {
             ui.horizontal(|ui| {
                 spinner(ui);
@@ -104,6 +96,9 @@ fn preview(ui: &mut Ui, app: &mut PimaxApp) {
             });
         }
     });
+    if rebuild {
+        app.core.autofix_build();
+    }
 }
 
 /// (c) Send and the answer.
@@ -111,9 +106,8 @@ fn send(ui: &mut Ui, app: &mut PimaxApp) {
     let blocker = app.core.autofix_blocker();
     let backend = app.core.autofix_backend();
     let mut decide = None;
-    card(ui, |ui| {
+    widgets::section(ui, "Ask", None, |ui| {
         let p = theme::pal(ui);
-        title(ui, "Ask");
         if app.core.autofix.sending {
             ui.horizontal(|ui| {
                 spinner(ui);
@@ -198,10 +192,8 @@ fn send(ui: &mut Ui, app: &mut PimaxApp) {
 /// (d) Contribute: a local branch, printed share lines.
 fn contribute(ui: &mut Ui, app: &mut PimaxApp) {
     let busy = app.core.busy();
-    card(ui, |ui| {
+    widgets::section(ui, "Contribute", Some("Turn this machine's results into a test report others can use: a local git branch contrib/<date>-<headset> with reports/<date>-<headset>.toml and a PATCH.md (redacted). Nothing is uploaded: the push and the pull request are printed for you to run."), |ui| {
         let p = theme::pal(ui);
-        title(ui, "Contribute");
-        note(ui, "Turn this machine's results into a test report others can use: a local git branch contrib/<date>-<headset> with reports/<date>-<headset>.toml and a PATCH.md (redacted). Nothing is uploaded: the push and the pull request are printed for you to run.");
         if widgets::ibutton(ui, icon::FILE_TEXT, "Prepare a contribution", true).clicked() {
             app.core.autofix_contribute();
         }

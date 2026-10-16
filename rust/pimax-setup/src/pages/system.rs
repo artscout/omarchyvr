@@ -42,17 +42,12 @@ pub fn show(ui: &mut Ui, app: &mut PimaxApp) {
     header(ui, app, snap.as_ref(), source.as_ref(), live);
     let Some(s) = snap else { return };
     if s.needs_reboot() {
-        ui.add_space(8.0);
         reboot_banner(ui, app, &s, live);
     } else if s.gpu_caution() {
-        ui.add_space(8.0);
         gpu_banner(ui, app, &s, live);
     }
-    ui.add_space(8.0);
     session(ui, app, &s, live);
-    ui.add_space(8.0);
     components(ui, app, &s, live);
-    ui.add_space(8.0);
     events(ui, app);
 }
 
@@ -60,7 +55,8 @@ fn header(ui: &mut Ui, app: &mut PimaxApp, s: Option<&Snapshot>, source: Option<
     card(ui, |ui| {
         let p = theme::pal(ui);
         ui.horizontal_wrapped(|ui| {
-            ui.label(RichText::new("System").size(24.0).family(theme::heading(ui)).color(p.text));
+            title(ui, "System");
+            widgets::help(ui, "pimaxd watches the headset, the GPU and every part of the session, and repairs what breaks within its budgets. Observe only: it says what it would do and runs nothing (until [restart] enabled = true in ~/.config/pimax/pimaxd.toml).");
             match source {
                 Some(src) => chip(ui, &src.label(), if live { pal(ui).ok } else { pal(ui).muted }),
                 None => {
@@ -77,7 +73,6 @@ fn header(ui: &mut Ui, app: &mut PimaxApp, s: Option<&Snapshot>, source: Option<
                 chip(ui, "demo data", pal(ui).info);
             }
         });
-        note(ui, "pimaxd watches the headset, the GPU and every part of the session, and repairs what breaks within its budgets. Observe only: it says what it would do and runs nothing (until [restart] enabled = true in ~/.config/pimax/pimaxd.toml).");
         match (s, source) {
             (None, Some(Source::None)) => {
                 ui.label(RichText::new("pimaxd not running. docs/PIMAXD.md says how to run it (packaging/systemd/pimaxd.service).").color(p.warn));
@@ -96,8 +91,8 @@ fn header(ui: &mut Ui, app: &mut PimaxApp, s: Option<&Snapshot>, source: Option<
         if let Some(s) = s {
             ui.horizontal_wrapped(|ui| {
                 let mut safe = s.safe_mode;
-                let r = widgets::toggle(ui, &mut safe, "Safe mode (nothing runs automatically)", live);
-                let r = if live { r.on_hover_text("~/.config/pimax/safe-mode") } else { r.on_disabled_hover_text("Needs pimaxd running") };
+                let r = widgets::toggle(ui, &mut safe, "Safe mode", live);
+                let r = if live { r.on_hover_text("Nothing runs automatically (~/.config/pimax/safe-mode)") } else { r.on_disabled_hover_text("Needs pimaxd running") };
                 if r.changed() {
                     app.core.system_safe_mode(safe);
                 }

@@ -123,6 +123,10 @@ pub struct Settings {
     pub encoder: EncoderPref,
     /// Output directory (`~` is expanded).
     pub dir: String,
+    /// Record what the user hears (the default output's monitor) into the video.
+    pub audio: bool,
+    /// Also mix in the default microphone (only with `audio`).
+    pub mic: bool,
 }
 
 impl Default for Settings {
@@ -130,12 +134,14 @@ impl Default for Settings {
         Settings {
             eyes: Eyes::Left,
             fps: 30,
-            quality: Quality::Medium,
+            quality: Quality::High,
             scale: 0.0,
             max_height: 1080,
             codec: Codec::H264,
             encoder: EncoderPref::Auto,
             dir: "~/Videos/pimax".into(),
+            audio: true,
+            mic: false,
         }
     }
 }
@@ -146,6 +152,14 @@ pub struct SettingsError(pub String);
 impl fmt::Display for SettingsError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
+    }
+}
+
+fn parse_bool(v: &str) -> Option<bool> {
+    match v {
+        "on" | "true" | "yes" | "1" => Some(true),
+        "off" | "false" | "no" | "0" => Some(false),
+        _ => None,
     }
 }
 
@@ -183,6 +197,8 @@ impl Settings {
             }
             "codec" => self.codec = Codec::parse(v).ok_or_else(|| bad(key, v, "h264 or hevc"))?,
             "encoder" => self.encoder = EncoderPref::parse(v).ok_or_else(|| bad(key, v, "auto, nvenc or cpu"))?,
+            "audio" => self.audio = parse_bool(v).ok_or_else(|| bad(key, v, "on or off"))?,
+            "mic" => self.mic = parse_bool(v).ok_or_else(|| bad(key, v, "on or off"))?,
             "dir" => {
                 if v.is_empty() {
                     return Err(bad(key, v, "a directory"));
@@ -198,6 +214,7 @@ impl Settings {
     /// error (a typo must not silently record at the wrong settings).
     pub fn parse(text: &str) -> Result<Settings, SettingsError> {
         let mut s = Settings::default();
+        let mut has_audio = false;
         for (i, raw) in text.lines().enumerate() {
             let line = raw.split('#').next().unwrap_or("").trim();
             if line.is_empty() || line.starts_with('[') {
@@ -206,7 +223,13 @@ impl Settings {
             let (k, v) = line
                 .split_once('=')
                 .ok_or_else(|| SettingsError(format!("line {}: expected key = value", i + 1)))?;
+            has_audio |= k.trim() == "audio";
             s.set(k, v).map_err(|e| SettingsError(format!("line {}: {e}", i + 1)))?;
+        }
+        // Migration (2026-10-16): a file from before audio existed never chose "medium" on purpose (the app wrote
+        // every key), so it takes the new default, high quality. From then on the file has `audio` and is kept as is.
+        if !has_audio && s.quality == Quality::Medium {
+            s.quality = Quality::High;
         }
         Ok(s)
     }
@@ -221,7 +244,9 @@ impl Settings {
              max_height = {}\n\
              codec = \"{}\"        # h264 | hevc\n\
              encoder = \"{}\"      # auto (NVENC, else CPU) | nvenc | cpu\n\
-             dir = \"{}\"\n",
+             dir = \"{}\"\n\
+             audio = \"{}\"       # on (what you hear) | off\n\
+             mic = \"{}\"         # on = also your microphone, mixed in | off\n",
             self.eyes.name(),
             self.fps,
             self.quality.name(),
@@ -229,7 +254,9 @@ impl Settings {
             self.max_height,
             self.codec.name(),
             self.encoder.name(),
-            self.dir
+            self.dir,
+            onoff(self.audio),
+            onoff(self.mic)
         )
     }
 
@@ -285,8 +312,16 @@ impl Settings {
             self.encoder.name().into(),
             "--dir".into(),
             self.dir.clone(),
+            "--audio".into(),
+            onoff(self.audio).into(),
+            "--mic".into(),
+            onoff(self.mic).into(),
         ]
     }
+}
+
+fn onoff(b: bool) -> &'static str {
+    if b { "on" } else { "off" }
 }
 
 /// `~/.config/pimax/record.toml`.
@@ -316,9 +351,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn defaults_are_one_eye_30_fps_medium() {
+    fn defaults_are_one_eye_30_fps_high_with_sound() {
         let s = Settings::default();
-        assert_eq!((s.eyes, s.fps, s.quality, s.codec, s.encoder), (Eyes::Left, 30, Quality::Medium, Codec::H264, EncoderPref::Auto));
+        assert_eq!((s.eyes, s.fps, s.quality, s.codec, s.encoder), (Eyes::Left, 30, Quality::High, Codec::H264, EncoderPref::Auto));
+        assert!(s.audio && !s.mic);
         assert_eq!(s.request(), (1080, 0));
     }
 
@@ -333,6 +369,8 @@ mod tests {
         s.set("codec", "hevc").unwrap();
         s.set("encoder", "cpu").unwrap();
         s.set("dir", "/data/vr").unwrap();
+        s.set("audio", "off").unwrap();
+        s.set("mic", "on").unwrap();
         assert_eq!(Settings::parse(&s.to_toml()).unwrap(), s);
         assert_eq!(s.request(), (1440, 500));
     }
@@ -351,6 +389,17 @@ mod tests {
         assert_eq!(s, Settings::default(), "a rejected value changes nothing");
         let e = Settings::parse("fps = 30\nfsp = 60\n").unwrap_err();
         assert!(e.0.contains("line 2"), "{e}");
+    }
+
+    #[test]
+    fn an_old_file_without_audio_takes_the_new_defaults_but_a_new_one_keeps_its_choice() {
+        let old = Settings::parse("eyes = \"left\"\nfps = 30\nquality = \"medium\"\n").unwrap();
+        assert_eq!((old.quality, old.audio), (Quality::High, true));
+        let low = Settings::parse("quality = \"low\"\n").unwrap();
+        assert_eq!(low.quality, Quality::Low, "a low choice is kept");
+        let chosen = Settings::parse("quality = \"medium\"\naudio = \"off\"\n").unwrap();
+        assert_eq!((chosen.quality, chosen.audio), (Quality::Medium, false));
+        assert_eq!(Settings::parse("").unwrap(), Settings::default());
     }
 
     #[test]

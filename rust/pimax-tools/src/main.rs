@@ -15,6 +15,8 @@ usage: pimax <subcommand> [options]
   controllers unpair left|right            unpair one controller (58 03 05 SS)
   controllers buzz left|right [--amp 25] [--ms 300]  test vibration (58 09 07 SS AMP DUR); through the
                                            running VR session if one runs
+  controllers use when-held|always|off     when the running session shows the controllers (PIMAX_CTRL_INHAND)
+  controllers status                       in hand / put down, per controller (running session)
   calib [out.xml] [--blob F] [--save-blob F]   read the factory calibration (84 reads), inflate, diff
   video-on [fps=72] [seconds=40]           switch the panel on (changes headset state!) and tail logs
   logtail [seconds=30] [regex]             passive firmware + bridge log tail

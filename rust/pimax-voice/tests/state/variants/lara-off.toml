@@ -1,0 +1,5 @@
+# The same without the router: the model alone decides (measures what Lara adds or costs).
+name = "lara-off"
+notes = "no Lara: the action model alone"
+[router]
+lara = "off"

@@ -5,7 +5,7 @@ The room setup is the same on every start, for Monado games, WayVR (Work) and St
 
 ## What the user does (app only)
 
-Home > **Room** > Room setup. Two buttons. Both are guided **in the headset**: a text panel in front of you, the
+The **Room** page > Room setup (also the Room setup button at the top of the window). Two buttons. Both are guided **in the headset**: a text panel in front of you, the
 `pimax-hud` overlay over WayVR. Every step also goes to the app's Output panel, and the result shows in the Room row.
 If Work is not running with 6DoF and the room anchor, the button starts it first (the hand test does the same).
 

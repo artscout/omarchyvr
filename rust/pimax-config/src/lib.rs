@@ -14,7 +14,9 @@
 //!
 //! [`ai`]: the AI providers (`~/.config/pimax/ai.toml`, private) shared by the app and voice control.
 pub mod ai;
+pub mod ctrl_inhand;
 pub mod diff;
+pub mod eye;
 pub mod paths;
 pub mod setup;
 pub mod store;

@@ -1,0 +1,10 @@
+# The scoped planner as first committed: no fallback when it fails or says none (for comparison).
+name = "planner-nofallback"
+notes = "planner, no fallback to the single prompt"
+[prompt]
+blocks = ["screens", "apps", "focus", "gaze", "tabs", "session", "hints"]
+target_line = true
+[tools]
+scope = "category+hints"
+top_k = 12
+fallback = false

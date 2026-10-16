@@ -234,13 +234,18 @@ pub fn execute(st: &Step, ctx: &Ctx, reaped: &Sender<Reaped>) -> Outcome {
         }
         (Act::Start, "keepalive") => res(run(&["systemctl".into(), "--user".into(), "restart".into(), "pimax-keepalived.service".into()], Duration::from_secs(30), ctx)),
         (Act::Start, "ai.server") => {
+            // `up` starts what ai.toml asks for: the simple model (same mode as last time) or, with two stages, the
+            // router plus the action model fitted to the free VRAM next to this session (docs/AI.md 16)
             let mode = std::fs::read_to_string(ctx.roots.ai_state.join("llama-server.pid")).unwrap_or_default();
-            let mut a = vec!["pimax-ai".to_string(), "serve".into()];
+            // --wait 100: returns ("still loading") before this step's 120 s deadline
+            let mut a = vec!["pimax-ai".to_string(), "up".into(), "--wait".into(), "100".into()];
             if mode.lines().any(|l| l.trim() == "mode=cpu") {
                 a.push("--cpu".into());
             }
             res(run(&a, Duration::from_secs(120), ctx))
         }
+        // the router and the VRAM watch go with the model
+        (Act::Stop, "ai.server") => res(run(&["pimax-ai".to_string(), "down".into()], Duration::from_secs(30), ctx)),
         (Act::Start, id) => match &ctx.captured {
             Some(c) => match respawn(id, c, ctx, reaped) {
                 Ok(pid) => {

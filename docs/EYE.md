@@ -5,19 +5,30 @@ host-side per-eye calibration in `~/.config/pimax/eye-calibration.toml` (v1: acc
 Monado exposes `XR_EXT_eye_gaze_interaction`; WayVR (`~/src/wayvr`, branch `eye-gaze`) reads it.
 Background: `analysis/eye-gaze-full.md`, `analysis/eye-precision.md`, `analysis/wayvr-gaze.md`.
 
-## Silent eye tracking (default)
+## Eye tracking: always on, visual only (user decision 2026-10-16)
 
-The gaze is **not a cursor**. It never hovers, clicks or moves the mouse. You see a small, dim dot where your eyes
-land, and voice commands can ask what you are looking at. Two examples:
+Eye tracking is on in every session when the eye build and `~/.config/pimax/eye-calibration.toml` exist. If it is not
+calibrated it simply does not run (the app says "Not calibrated"); if it cannot start, VR keeps running without it.
 
-* "Max, close this": the window you look at;
-* "Max, move that to workspace 2": the window you looked at while speaking.
+**It is only a visual effect.** You see a small, dim dot where your eyes land on the WayVR screens (Work). The gaze is
+never a pointer: it does not hover, click, select, scroll, move the mouse or target a window for voice. Nothing is drawn
+in Play/SteamVR (no overlay there); Monado just runs the tracker (`PIMAX_EYE=1`) when the eye build is the one in use.
 
-### Modes (`pimax desk start`)
+App: the Pimax app Home, row "Eye tracking (visual only)": the switch (saved, `--no-eye` in the start arguments when
+off), a plain status line (Off / Running / Not calibrated / Not available / Not running) and "Show the gaze dot in Work"
+(`dot=` in `~/.config/pimax/eye.conf`, default on). Developer mode adds "gaze may target windows for voice"
+(`targeting=on`, default off: then `gaze_target: true` is written and `wayvrctl gaze` / `pimax-voice gaze` work as below)
+and the old gaze pointer toggle (only with `pimax desk start --eye`).
+In WayVR, `wayvrctl gaze` answers `tracking: false` unless `gaze_target` or `gaze_pointer` is on, so the dot alone never
+feeds voice targeting.
+
+The text below describes the developer path (targeting on).
+
+### Modes (`pimax desk start`; `pimax vr start` also takes `--no-eye` and sets `PIMAX_EYE=1` the same way)
 
 | flags | when | Monado | WayVR (`conf.d/55-eye.yaml`) |
 |---|---|---|---|
-| none | the eye build (`~/src/monado-eye/build`, the default Monado build when it is built) **and** the calibration file exist | `PIMAX_EYE=1` | `gaze_pointer: false`, `gaze_target: true`, `gaze_laser: true` (dot, alpha 0.35) |
+| none | the eye build (`~/src/monado-eye/build`, the default Monado build when it is built) **and** the calibration file exist | `PIMAX_EYE=1` | `gaze_pointer: false`, `gaze_target: false` (true with `targeting=on`), `gaze_laser: true` (false with `dot=off`; dot, alpha 0.35) |
 | none | otherwise | – | file removed; the start output says why |
 | `--eye` | always (the old meaning) | `PIMAX_EYE=1`, eye build unless `--monado-build`/`PIMAX_MONADO_BUILD` | `gaze_target: true` only; the pointer stays as `20-gaze.yaml` / the app set it |
 | `--no-eye` | always | – | file removed |

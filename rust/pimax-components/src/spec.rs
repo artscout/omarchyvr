@@ -28,7 +28,7 @@ pub enum Scope {
     Always,
     /// Only while a session runs.
     Session,
-    /// On its own toggle, with or without a session (ai.server).
+    /// On its own toggle, with or without a session (none since ai.server became Work-only, 2026-10-16).
     Own,
 }
 
@@ -105,8 +105,10 @@ fn voice_desk(d: &Desired) -> bool {
 fn voicehud(d: &Desired) -> bool {
     d.voice && d.voicehud
 }
+/// The local AI models run in Work (desk) sessions only, never in Play / SteamVR (user decision 2026-10-16): a
+/// switch from Work to Play stops them.
 fn ai(d: &Desired) -> bool {
-    d.ai_server
+    d.ai_server && desk(d)
 }
 fn laser(d: &Desired) -> bool {
     desk(d) && eye_on(d) && d.eye_laser
@@ -485,16 +487,16 @@ pub static SPECS: &[Spec] = &[
     },
     Spec {
         id: "ai.server",
-        label: "Local AI model (llama-server)",
+        label: "Local AI models (Work only)",
         kind: Kind::Process,
         deps: &[],
         toggle: Toggle::Live,
         class: Class::Leaf,
-        ladder: &[r(Level::L2, "pimax-ai start (same mode), at most 3 per 30 min"), TELL],
+        ladder: &[r(Level::L2, "pimax-ai up (the saved shape), at most 3 per 30 min"), TELL],
         grace: g(60.0, 3.0, 0.0, 0.0),
         gpu: false,
         pid: Some(PidSpec { file: "llama-server.pid", comm: "llama-server", root: PidRoot::AiState }),
-        scope: Scope::Own,
+        scope: Scope::Session,
         rule: ai,
     },
     Spec {
@@ -596,6 +598,16 @@ pub fn toggle_ids(key: &str) -> &'static [Id] {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn local_ai_runs_in_work_sessions_only() {
+        let s = super::spec("ai.server").unwrap();
+        assert_eq!(s.scope, Scope::Session, "never without a session");
+        let work = Desired { ai_server: true, mode: crate::model::Mode::Desk, ..Desired::default() };
+        let play = Desired { mode: crate::model::Mode::Vr, ..work.clone() };
+        assert!((s.rule)(&work) && !(s.rule)(&play), "Play / SteamVR never load the models");
+        assert!(!(s.rule)(&Desired { ai_server: false, ..work }), "the Local models switch off");
+    }
+
     use super::*;
 
     #[test]

@@ -1,0 +1,13 @@
+# Agent-mode model comparison (docs/AI.md section 18): longer goals of 3 to 8 steps, wording that does not copy the catalogue. want = every step in order. Columns: intents, phrase.
+vr.preset.work3 ; win.screen.put ; win.screen.put ; win.screen.put ; vr.passthrough.dim	get ready for work, three screens, terminals on the left, browser in the middle, youtube on the right, and dim the room
+media.play ; vr.preset.cinema ; vr.passthrough.off ; vr.fps.show	let's set up movie night, play Dune, cinema mode, turn off the passthrough, and show the frame rate
+vr.fps.show ; voice.captions.off ; vr.record.start	prepare a recording, show the fps, turn the captions off and start recording
+vr.record.stop ; vr.preset.exit_cinema ; vr.passthrough.on ; vr.fps.hide	let's wrap up, stop recording, exit cinema mode, turn the passthrough back on, and hide the fps
+vr.input.controllers ; vr.recenter ; vr.passthrough.off	let's get ready to play, switch to controllers, recenter the view and turn the passthrough off
+win.screen.gather ; win.layout.save ; win.ws.next	arrange my windows, gather the terminals, save the layout and go to the next workspace
+omarchy.media.play_pause ; vr.passthrough.dim ; vr.screens.reset	let's take a break, pause the music, dim the room, and reset the screens
+voice.captions.on ; win.ws.new ; win.tab.new	prepare for a call, turn the captions on, open a new window, and open a new tab
+vr.preset.work3 ; vr.passthrough.brighter ; vr.backdrop.next ; vr.input.controllers ; vr.fps.show	get ready for a long session: three screens, brighter room, next backdrop, controllers, and show the fps
+vr.preset.work3 ; win.screen.put ; win.screen.put ; win.screen.put ; vr.passthrough.dim ; vr.fps.show ; voice.captions.on ; win.layout.save	let's get everything ready, three screens, terminals left, chrome right, youtube up-right, dim the room, show the fps, captions on and save the layout
+win.screen.swap ; win.layout.save	let's rearrange, swap screens 2 and 3, and save the layout
+win.screen.put_n ; win.screen.put_n ; vr.passthrough.off	set up my screens: terminals on screen 2, chrome on screen 3, and turn off the room

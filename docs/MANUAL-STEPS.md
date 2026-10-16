@@ -61,7 +61,7 @@ ln -sfn ~/src/monado-eye/build/openxr_monado-dev.json ~/.config/openxr/1/active_
 ### 1.6 OpenVR runtime (SteamVR / xrizer)
 `analysis/tools/vr_runtime_switch.sh xrizer` points `~/.config/openvr/openvrpaths.vrpath` at xrizer; `... steamvr` restores SteamVR. Undo state is in `~/.config/pimax-vr-backup/`. Once SteamVR runs it rewrites openvrpaths.vrpath itself, so re-run `xrizer` after that.
 - Root: no. Source: analysis/steamvr-games.md, analysis/steamvr-native-linux.md.
-- GUI: yes. Home > VR mode / Runtime and Tools > Steam runtime (xrizer, SteamVR, status).
+- GUI: yes. Developer > VR runtime and Tools > Steam runtime (xrizer, SteamVR, status).
 
 ### 1.7 NVIDIA 2Heads1OR patches (root)
 Status checked 2026-10-15 by `ls` only: the pacman hooks are installed. `/etc/pacman.d/hooks/` holds `65-nvidia-pimax-patch.hook` and `75-nvidia-pimax-verify.hook` (both dated Oct 14), next to `90-mkinitcpio-install.hook` and `99-omarchy-limine.hook`. `/usr/local/lib/pimax/` holds `nvidia-patch-reapply.sh` and the three patches. STATUS.md still says "pending", which is stale. I did not verify the file contents against the templates.
@@ -146,7 +146,7 @@ systemctl --user daemon-reload && systemctl --user start pimax-autod
 cp ~/pimax-re/packaging/auto.toml.example ~/.config/pimax/auto.toml   # dry_run = true by default
 ```
 - Root: no. Source: docs/AUTO-MODE.md, packaging/systemd/pimax-autod.service.
-- GUI: yes. Setup > Install > Auto mode daemon builds it and installs the unit and the dry-run `auto.toml` (the `cp` line). Home > Auto mode then has Start and Start at login.
+- GUI: yes. Setup > Install > Auto mode daemon builds it and installs the unit and the dry-run `auto.toml` (the `cp` line). Developer > Auto mode then has Start and Start at login.
 
 ## 4. Daily start and stop
 
@@ -216,14 +216,14 @@ pimax vr stop --all --grace 30 # also stops other monado-service processes of yo
 - Run the app (eye build, desk/VR stopped, worn): `pimax-eyecal` (keys: space/a next, r redo, y save, p pursuit).
 - Refit an existing run (pending for run `eyecal-20261014-103635`, which reaches 2.38 deg against 3.08 deg saved): `pimax-eyecal --refit ~/.local/share/pimax/eye-calibration/eyecal-20261014-103635.json` (prints the table), then `--write ~/.config/pimax/eye-calibration.toml` to save. The old file is kept as `.bak-<utc>`. Needs a Monado relink (v2 format) and setcap first.
 - Device-side calibration (blob 0x456 and the other 0x3f2/0x407/0x42e/0x3fc ops) stays off until the user approves it. Sending the blob once made the chip stop.
-- GUI: yes. Home > Eye tracking > Refit the newest run prints the table, and Save the refit writes the calibration after a confirmation. Save stays off until the eye build reads version 2 files (checked in the binary). The eye calibration file is shown in Setup (docs/GUI.md row 18).
+- GUI: yes. Tracking > Eyes (developer mode) > Refit the newest run prints the table, and Save the refit writes the calibration after a confirmation. Save stays off until the eye build reads version 2 files (checked in the binary). The eye calibration file is shown in Setup (docs/GUI.md row 18).
 
 ### 6.3 Controller gyro (imufit)
 - After a 6DoF desk session with controllers, the logs are in `/tmp/pimax-vr-session/ctrl-imu-{left,right}.csv`.
 - Fit and save: `~/pimax-re/rust/target/release/pimax-ctrltrack imufit /tmp/pimax-vr-session/ctrl-imu-*.csv --save` (writes `~/.config/pimax/ctrl-imu.json`). Without `--save` it only prints.
 - The fit also saves every 30 s and at shutdown.
 - Source: analysis/controller-6dof.md.
-- GUI: yes. Home > Tracking > Fit controller gyros and Save the fit (after a confirmation), when the last session left logs.
+- GUI: yes. Tracking > Tests (developer mode) > Fit controller gyros and Save the fit (after a confirmation), when the last session left logs.
 
 ### 6.4 Room map (persistent, no tag)
 - Script: `tools/room-test.sh`. Default: build the map if missing, restart desk (`--6dof --ctrl-track --preset work --anchor`), relocalize and apply.
@@ -294,7 +294,7 @@ pimax auto set-mode desk|game --runtime monado|steamvr --preset cinema
 - Daemon: `pimax-autod run` (dry run unless `~/.config/pimax/auto.toml` says `dry_run = false`); config check: `pimax-autod config`.
 - Live checklist: analysis/auto-mode-live-checklist.md.
 - `pimax-autod visor-probe` is LIVE TEST ONLY (sends the Windows 0x2c read). Not a daily step.
-- Root: no. GUI: yes. Home > Auto mode sets Desk or Game, the runtime (Monado or SteamVR) and the preset. Setup > Install installs the unit.
+- Root: no. GUI: yes. Developer > Auto mode sets Desk or Game, the runtime (Monado or SteamVR) and the preset. Setup > Install installs the unit.
 
 ## GUI coverage gaps
 
@@ -306,18 +306,18 @@ Checked against the app's code (pimax-gui-core, pimax-setup) on 2026-10-15. Root
 | 2 | Hyprland DP-1 monitor line (1.2) | no | partly: read-only check of `~/.config/hypr`, the line to add or remove | none: the app never edits Hyprland's config |
 | 3 | udev rule install (1.3) | yes | yes: Install, Checks and the onboarding step run the documented lines through pkexec (reload, trigger) | none |
 | 4 | Keepalive drop-in and enable (1.4) | no | yes: Install > Keepalive unit (link, Rust drop-in, daemon-reload, enable; only while idle) | none |
-| 5 | OpenVR runtime switch xrizer/SteamVR (1.6) | no | yes: Home > VR mode / Runtime, Tools > Steam runtime | none |
+| 5 | OpenVR runtime switch xrizer/SteamVR (1.6) | no | yes: Developer > VR runtime, Tools > Steam runtime | none |
 | 6 | NVIDIA pacman hooks and patches (1.7) | yes | yes: hooks and patch state; install and reapply through pkexec | none |
 | 7 | Packages: rust, steam, Proton (1.8) | yes | partly: cargo, Steam and Proton are checked; pacman lines copy only | none: the app runs no package installs |
-| 8 | Eye tracker power-on (1.9) | no | yes: Power on eye module (Tools, Home > Eye tracking) | auto-enable after a power cycle (daemon side, planned) |
+| 8 | Eye tracker power-on (1.9) | no | yes: Power on eye module (Tools, Tracking > Eyes) | auto-enable after a power cycle (daemon side, planned) |
 | 9 | setcap after every Monado relink (2) | yes | yes: getcap per build every 10 s, the setcap dialog right after the app's own rebuild, pkexec | none |
 | 10 | Build and install tools (3.1-3.3) | no | yes: Install > Rust tools, pimax launcher, this app (build, install to `~/.local/bin`) | none (`pimax-autod` runs from the workspace build) |
-| 11 | Auto-mode unit install (3.5) | no | yes: Install > Auto mode daemon; Home > Auto mode: Start, Start at login | none |
+| 11 | Auto-mode unit install (3.5) | no | yes: Install > Auto mode daemon; Developer > Auto mode: Start, Start at login | none |
 | 12 | Steam launch options (5) | no | partly: the line with Copy; `PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1 %command%` once the launcher set `active_runtime.json` | writing Steam's `localconfig.vdf`: not planned (Steam rewrites it while it runs) |
-| 13 | Eye calibration refit and save (6.2) | no | yes: Home > Eye tracking: Refit the newest run, Save the refit (confirmed, old file kept) | none |
-| 14 | Controller gyro imufit --save (6.3) | no | yes: Home > Tracking: Fit controller gyros, Save the fit (confirmed) | none |
+| 13 | Eye calibration refit and save (6.2) | no | yes: Tracking > Eyes: Refit the newest run, Save the refit (confirmed, old file kept) | none |
+| 14 | Controller gyro imufit --save (6.3) | no | yes: Tracking > Tests: Fit controller gyros, Save the fit (confirmed) | none |
 | 15 | Refit path for Monado relink v2 format (6.2) | yes | yes: Save stays off until the eye build reads version 2 files, with the rebuild and setcap steps | none |
-| 16 | Auto-mode `set-mode --runtime steamvr` (8.2) | no | yes: Home > Auto mode: Desk or Game, runtime, preset | none |
+| 16 | Auto-mode `set-mode --runtime steamvr` (8.2) | no | yes: Developer > Auto mode: Desk or Game, runtime, preset | none |
 
 ## Sources
 - memory/pimax-linux-re.md; README.md; STATUS.md; HISTORY.md; NEXT-STEPS.md

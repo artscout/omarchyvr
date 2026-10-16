@@ -1,0 +1,98 @@
+# Goals of several steps (agent mode and plans): the end state of the whole request counts, in any order of steps.
+
+[[goal]]
+id = "cinema-dune"
+src = "live 2026-10-16 (agent mode)"
+why = "Cinema mode and Dune playing (downloaded); nothing closes."
+expect = ["preset cinema", "playing dune", "all stay"]
+worlds = { easy = "e1", medium = "m4", hard = "h6" }
+live = ["let's enter cinema mode i want to watch dune it's already downloaded"]
+says = ["cinema mode and play dune", "uh I wanna watch Dune in cinema mode"]
+
+[[goal]]
+id = "arrival-room-off"
+why = "Arrival playing, cinema mode, the room hidden."
+expect = ["playing arrival", "preset cinema", "passthrough off", "all stay"]
+worlds = { easy = "e1", medium = "m3", hard = "h6" }
+set = { hard = { drop_apps = ["v1"] } }
+says = ["let's watch Arrival, cinema mode, and turn off the room"]
+
+[[goal]]
+id = "work-layout"
+src = "live 2026-10-16 (agent mode)"
+why = "Terminals on the left screen, the browser on the main one, YouTube on the up-right screen."
+expect = ["terminals on 2", "alone youtube"]
+any = [["c1 on 1"], ["new:browser on 6"]]
+worlds = { easy = "m6", medium = "m6", hard = "h6" }
+set = { easy = { add_apps = ["t2 foot 3 ~/src/wayvr"] }, medium = { add_apps = ["t2 foot 3 ~/src/wayvr", "t3 foot 1 title=btop"] }, hard = { drop_apps = ["t5", "v1"] } }
+live = ["set up work terminals left browser middle youtube upright"]
+says = ["set up work: terminals left, browser middle, YouTube up-right"]
+
+[[goal]]
+id = "four-screens-term-left-chrome-right"
+src = "live 2026-10-16 (agent mode)"
+why = "Four screens; the terminals on the left, Chrome on the right."
+expect = ["shown 1,2,3,4", "terminals on 2", "chrome on 3"]
+worlds = { easy = "e4", medium = "m4", hard = "h6c" }
+set = { easy = { preset = "work-1" }, medium = { preset = "work-1" }, hard = { drop_apps = ["t5"] } }
+live = ["let's set up 4 screens the terminals on the left and chrome on the right"]
+says = ["four screens please, terminals left and chrome right"]
+
+[[goal]]
+id = "terminals-left-chrome-right"
+why = "Two moves in one sentence."
+expect = ["terminals on 2", "chrome on 3"]
+worlds = { easy = "e3", medium = "m3", hard = "h6" }
+set = { easy = { add_apps = ["c1 google-chrome 1 tabs=YouTube*"] }, hard = { drop_apps = ["t5"] } }
+says = ["put the terminals on the left screen and chrome on the right screen", "terminals to the left and the browser to the right"]
+
+[[goal]]
+id = "two-more-and-chrome-there"
+why = "Two more screens, and Chrome alone on one of the new ones."
+expect = ["shown +2"]
+any = [["chrome on 2"], ["chrome on 3"]]
+allow = ["app:*:ws"]
+worlds = { easy = "e3", medium = "m3", hard = "m6" }
+set = { easy = { preset = "work-1", add_apps = ["c1 google-chrome 1 tabs=YouTube*"] }, medium = { preset = "work-1" }, hard = { preset = "work-1" } }
+says = ["two more screens and put chrome there"]
+
+[[goal]]
+id = "hide-2-and-bigger"
+why = "Hide screen 2 and make the main screen bigger."
+expect = ["screen 2 hidden", "screen 1 bigger", "all stay"]
+worlds = { easy = "e3c", medium = "m4", hard = "h6" }
+says = ["close screen 2 and make the main one bigger", "hide the left screen, then make the main screen bigger"]
+
+[[goal]]
+id = "exit-cinema-room-on"
+why = "Leave cinema mode and see the room again."
+expect = ["passthrough normal", "all stay"]
+any = [["preset work-3"], ["preset work-1"], ["preset assistant"]]
+worlds = { easy = "mcin", medium = "mcin", hard = "h6c" }
+set = { easy = { passthrough = "off" } }
+says = ["let's exit cinema mode and turn the passthrough back on", "out of cinema mode and show me the room"]
+
+[[goal]]
+id = "cancel-midway"
+cat = "cancel"
+why = "The user takes it back in the same breath: nothing may change."
+expect = ["nothing"]
+worlds = { easy = "e3", medium = "m4", hard = "h6" }
+says = ["put the terminals on screen three, no wait, cancel that", "close screen two, uh no, never mind", "make all the screens bigger. Max, cancel."]
+
+[[goal]]
+id = "corrects-himself"
+why = "The last request wins: two screens, no, three."
+expect = ["shown =3", "all stay"]
+worlds = { easy = "e3", medium = "m4", hard = "h6c" }
+set = { easy = { preset = "work-1" }, medium = { preset = "work-1" } }
+says = ["two screens, no, three screens", "give me two more screens, actually three screens in all"]
+
+[[goal]]
+id = "hide-others-and-terminals-main"
+why = "Everything on the main screen: the terminals join it and the other screens hide; no app closes."
+# (fixed 2026-10-16: "all stay" contradicted "terminals on 1"; the non-terminals stay)
+expect = ["terminals on 1", "shown 1", "browsers stay", "pimax stay"]
+worlds = { easy = "e3", medium = "m4", hard = "h6" }
+set = { easy = { add_apps = ["t2 foot 2 ~/src/wayvr"] }, hard = { drop_apps = ["t5"] } }
+says = ["bring the terminals to the main screen and hide the others"]

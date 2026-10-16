@@ -72,6 +72,30 @@ pub struct SttConfig {
     pub joiner: PathBuf,
     pub tokens: PathBuf,
     pub threads: i32,
+    /// Hotwords (one per line) and their score: switches decoding to `modified_beam_search` with a BPE vocabulary
+    /// (`bpe_vocab`: `token<TAB>-id` per line, built from `tokens.txt`). None: greedy search.
+    pub hotwords: Option<Hotwords>,
+}
+
+/// Contextual biasing for a transducer (docs/AI.md section 17).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Hotwords {
+    pub file: PathBuf,
+    pub bpe_vocab: PathBuf,
+    pub score: f32,
+}
+
+/// The sentencepiece-style vocabulary sherpa-onnx wants for BPE hotwords, from a `tokens.txt` (`token id` per line).
+pub fn bpe_vocab_from_tokens(tokens: &str) -> String {
+    let mut o = String::new();
+    for l in tokens.lines() {
+        if let Some((t, i)) = l.rsplit_once(' ') {
+            if let Ok(i) = i.trim().parse::<i64>() {
+                o += &format!("{t}\t-{i}\n");
+            }
+        }
+    }
+    o
 }
 
 impl SttConfig {
@@ -83,6 +107,7 @@ impl SttConfig {
             joiner: dir.join("joiner.int8.onnx"),
             tokens: dir.join("tokens.txt"),
             threads,
+            hotwords: None,
         }
     }
 }
@@ -102,7 +127,8 @@ impl Recognizer {
         let tok = path_cstr(&cfg.tokens)?;
         let provider = cstr("cpu")?;
         let model_type = cstr("nemo_transducer")?;
-        let method = cstr("greedy_search")?;
+        let method = cstr(if cfg.hotwords.is_some() { "modified_beam_search" } else { "greedy_search" })?;
+        let hot = cfg.hotwords.as_ref().map(|h| Ok::<_, Error>((path_cstr(&h.file)?, path_cstr(&h.bpe_vocab)?, cstr("bpe")?))).transpose()?;
         let mut c = ffi::SherpaOnnxOfflineRecognizerConfig::default();
         c.feat_config.sample_rate = 16000;
         c.feat_config.feature_dim = 80;
@@ -114,6 +140,12 @@ impl Recognizer {
         c.model_config.provider = provider.as_ptr();
         c.model_config.model_type = model_type.as_ptr();
         c.decoding_method = method.as_ptr();
+        if let (Some(h), Some((file, vocab, unit))) = (&cfg.hotwords, &hot) {
+            c.hotwords_file = file.as_ptr();
+            c.hotwords_score = h.score;
+            c.model_config.modeling_unit = unit.as_ptr();
+            c.model_config.bpe_vocab = vocab.as_ptr();
+        }
         // SAFETY: `c` points to NUL-terminated strings that outlive the call; the library copies what it needs.
         let ptr = unsafe { lib.api.SherpaOnnxCreateOfflineRecognizer(&c) };
         if ptr.is_null() {
@@ -298,6 +330,14 @@ mod tests {
     fn missing_library_is_a_clean_error() {
         let e = Lib::load(Path::new("/nonexistent/libsherpa-onnx-c-api.so")).err().unwrap();
         assert!(e.0.contains("/nonexistent"), "{e}");
+    }
+
+    #[test]
+    fn bpe_vocab_is_token_tab_minus_id() {
+        let v = bpe_vocab_from_tokens("<unk> 0\n<|nospeech|> 1\n▁the 42\nbad line\n");
+        assert_eq!(v, "<unk>\t-0\n<|nospeech|>\t-1\n▁the\t-42\n");
+        let c = SttConfig::from_dir(Path::new("/m"), 2);
+        assert!(c.hotwords.is_none(), "greedy search by default");
     }
 
     #[test]

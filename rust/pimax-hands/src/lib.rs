@@ -9,6 +9,7 @@
 //! * [`mapping`]: input -> curl mapping, thumb state machine, curl -> joint curls (Monado's layout)
 //! * [`pose`]: grip pose -> wrist offset (inverse of Monado's `ht_ctrl_emu` grip rule)
 //! * [`rest`]: where the untracked controllers are assumed to be (aim / grip pose from the head orientation)
+//! * [`inhand`]: is a controller in the hand or lying on the desk (PIMAX_CTRL_INHAND), C ABI `include/pimax_inhand.h`
 //! * [`touch`]: grip of a tracked controller from its aim (Oculus Touch / Quest 2 geometry, same as SteamVR)
 //! * [`demo`]: scripted input for end-to-end tests without a human
 //! * [`ffi`]: the C ABI (`include/pimax_hands.h`)
@@ -23,6 +24,9 @@ pub mod filter;
 pub mod fuse;
 #[allow(unsafe_code)]
 pub mod fuse_ffi;
+pub mod inhand;
+#[allow(unsafe_code)]
+pub mod inhand_ffi;
 pub mod mapping;
 pub mod pose;
 pub mod report;

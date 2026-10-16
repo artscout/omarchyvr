@@ -42,7 +42,8 @@ pub fn show(ui: &mut Ui, app: &mut PimaxApp) {
     let module = app.core.onboarding_module();
     card(ui, |ui| {
         ui.horizontal(|ui| {
-            ui.label(RichText::new("Set up your headset").size(24.0).family(theme::heading(ui)).color(theme::pal(ui).text));
+            title(ui, "Set up your headset");
+            widgets::help(ui, &format!("{}: each step can be run, skipped and resumed later.", module.descriptor().name));
             if module.is_mock() {
                 chip(ui, "not supported yet", pal(ui).warn);
             }
@@ -52,7 +53,6 @@ pub fn show(ui: &mut Ui, app: &mut PimaxApp) {
                 }
             });
         });
-        note(ui, &format!("{}: each step can be run, skipped and resumed later.", module.descriptor().name));
         ui.add_space(6.0);
         ui.horizontal_wrapped(|ui| {
             for (i, s) in steps.iter().enumerate() {
@@ -72,7 +72,6 @@ pub fn show(ui: &mut Ui, app: &mut PimaxApp) {
             }
         });
     });
-    ui.add_space(8.0);
     card(ui, |ui| {
         let st = app.core.onboarding.progress.state(step);
         ui.horizontal(|ui| {
@@ -113,12 +112,12 @@ pub fn show(ui: &mut Ui, app: &mut PimaxApp) {
                 if r.clicked() {
                     app.core.onboarding_next();
                 }
-                if ui.button("Skip").on_hover_text("Go on; the step stays listed as skipped").clicked() {
+                if widgets::tbutton(ui, "Skip", true).on_hover_text("Go on; the step stays listed as skipped").clicked() {
                     app.core.onboarding_skip();
                 }
             }
             let first = steps.first() == Some(&step);
-            if ui.add_enabled(!first, egui::Button::new("Back")).clicked() {
+            if widgets::tbutton(ui, "Back", !first).clicked() {
                 app.core.onboarding_back();
             }
         });
@@ -230,7 +229,7 @@ fn body(ui: &mut Ui, app: &mut PimaxApp, step: Step) {
             } else {
                 ui.label(RichText::new(format!("Maps: {}", maps.join(", "))).color(pal(ui).ok));
             }
-            note(ui, "Open Room setup shows the Room row on Home (map, recognise, AprilTag).");
+            note(ui, "Open Room setup shows the Room page (map, recognise, AprilTag).");
         }
         Step::Done => {
             let steps = app.core.onboarding_steps();

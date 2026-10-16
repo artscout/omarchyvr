@@ -29,8 +29,15 @@ impl T {
         self.dir.join("run/rec.shm")
     }
     fn recorder(&self, extra: &[&str]) -> Child {
-        Command::new(env!("CARGO_BIN_EXE_pimax-record"))
-            .args(["run", "--encoder", "cpu", "--max-height", "240", "--fps", "30", "--dir"])
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_pimax-record"));
+        // XDG_RUNTIME_DIR below is a temp dir: point PulseAudio (PipeWire) at the real socket so the sound can be read
+        if let Some(real) = std::env::var_os("XDG_RUNTIME_DIR") {
+            let sock = Path::new(&real).join("pulse/native");
+            if sock.exists() {
+                cmd.env("PULSE_SERVER", format!("unix:{}", sock.display()));
+            }
+        }
+        cmd.args(["run", "--encoder", "cpu", "--max-height", "240", "--fps", "30", "--dir"])
             .arg(self.dir.join("out"))
             .args(extra)
             .env("PIMAX_RECORD_SHM", self.ring())
@@ -135,9 +142,16 @@ fn sigint_finishes_a_playable_constant_rate_mp4() {
     let (codec, dur, frames) = probe(&files[0]);
     assert_eq!(codec, "h264");
     // 3 s at 30 fps; the dropped frames were filled by repeats (constant rate)
-    assert!((85..=92).contains(&frames), "{frames} frames");
-    assert!((dur - 3.0).abs() < 0.2, "{dur} s");
+    // (the first ~0.3 s is lost to opening the sound input when audio is on)
+    assert!((75..=92).contains(&frames), "{frames} frames");
+    assert!((dur - 3.0).abs() < 0.5, "{dur} s");
     assert!(st.duplicated >= 10, "{st:?}");
+    // default settings: 30 fps, and sound when the machine has an audio output to read (else a notice, never a failure)
+    let streams = Command::new("ffprobe").args(["-v", "error", "-show_entries", "stream=codec_type,codec_name,avg_frame_rate", "-of", "csv=p=0"]).arg(&files[0]).output().unwrap();
+    let streams = String::from_utf8_lossy(&streams.stdout).to_string();
+    assert!(streams.contains("h264,video,30/1"), "{streams}");
+    assert_eq!(streams.contains("aac"), !st.audio.is_empty(), "audio stream vs status {st:?}: {streams}");
+    eprintln!("streams: {streams} audio={:?}", st.audio);
     assert!(!t.ring().exists(), "the ring file is removed");
     assert!(std::fs::read_to_string(t.dir.join("session/record.events")).unwrap().contains("saved "));
 }
@@ -158,7 +172,7 @@ fn monado_going_away_finishes_the_file_by_itself() {
     assert!(st.note.contains("Monado stopped"), "{st:?}");
     let (codec, dur, _) = probe(&t.mp4s()[0]);
     assert_eq!(codec, "h264");
-    assert!((dur - 1.5).abs() < 0.2, "{dur}");
+    assert!((dur - 1.5).abs() < 0.5, "{dur}");
 }
 
 #[test]

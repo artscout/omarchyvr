@@ -29,13 +29,13 @@
 + rust/**
 + libpimax/**
 + linux/**
-+ monado/**
+# Monado: the fork repository replaces the old patch folder; only a pointer stays
+= monado/README.md <- tools/export-extra/monado-README.md
+= patches/README.md <- tools/export-extra/patches-README.md
 + packaging/**
 + windows/**
 + tools/export-public.sh
 + tools/make-synthetic-calib.py
-+ tools/room-test.sh
-+ tools/voice-test.sh
 + tools/known-test-failures.txt
 # personal helpers (Claude login transfer, USB stick, shared-drive defaults)
 - tools/make-transfer-stick.ps1
@@ -52,10 +52,34 @@
 = rust/pimax-cam/tests/fixtures/headset-calibration.xml <- rust/fixtures/synthetic/headset-calibration.xml
 = rust/pimax-eye/data/replay-frames.txt <- rust/fixtures/synthetic/replay-frames.txt
 
+# ---- ai/: everything an AI agent uses (moved or copied here by the export; symlinks stay at the old paths) ---------
++ ai/**
+= ai/CLAUDE.md <- .claude/CLAUDE.md
+> ai/AI-KNOWLEDGE.md <- docs/AI-KNOWLEDGE.md
+> ai/LESSONS.md <- docs/LESSONS.md
+> ai/VOICE-DECISIONS.md <- docs/VOICE-DECISIONS.md
+> ai/scripts/voice-test.sh <- tools/voice-test.sh
+> ai/scripts/room-test.sh <- tools/room-test.sh
+
+# ---- patches/nvidia: our NVIDIA kernel-module patches, re-apply script, hooks (symlinks stay in linux/) -------------
+> patches/nvidia/nvidia-2h1or-viewport.patch <- linux/nvidia-2h1or-viewport.patch
+> patches/nvidia/nvidia-2h1or-flip-fix.patch <- linux/nvidia-2h1or-flip-fix.patch
+> patches/nvidia/nvidia-evo-makeroom-bounded-wait.patch <- linux/nvidia-evo-makeroom-bounded-wait.patch
+> patches/nvidia/nvidia-patch-reapply.sh <- linux/nvidia-patch-reapply.sh
+> patches/nvidia/nvidia-pimax-patch.hook <- linux/nvidia-pimax-patch.hook
+> patches/nvidia/nvidia-pimax-verify.hook <- linux/nvidia-pimax-verify.hook
+> patches/nvidia/test_nvidia_patch_reapply.sh <- linux/test_nvidia_patch_reapply.sh
+= patches/nvidia/README.md <- tools/export-extra/nvidia-README.md
+
 # ---- docs ------------------------------------------------------------------------------------------------------
 + docs/**
 # a screenshot of Pimax Play (their UI)
 - docs/gui/inspiration/**
+# lab test diary with install dates and status of the user's own headset session
+- docs/TEST-PLAN-*.md
+# lab-only analysis reports and experiment tables (voice experiments on the user's own sessions)
+- analysis/voice-*.html
+- analysis/voice-experiments.csv
 
 # ---- analysis: protocol, display, tracking findings and their tools (D6) ---------------------------------------
 + analysis/tools/**

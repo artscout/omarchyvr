@@ -3,10 +3,10 @@
 vr.preset.cinema	put on cinema mode
 vr.preset.cinema	i want to watch a movie
 vr.preset.cinema	make it a movie theater
-vr.preset.work3	give me three screens
-vr.preset.work3	open two more screens
+vr.screens.count	give me three screens	n=3
+vr.screens.more	open two more screens	n=2
 vr.preset.work3	switch to the work layout
-vr.preset.work1	close the other two screens
+vr.screens.hide_others	close the other two screens	# user rule 2026-10-16: hides, no app closes
 vr.preset.work1	i only need one screen
 vr.preset.work1	just one flat screen please
 vr.preset.assistant	turn on assistant mode
@@ -27,6 +27,18 @@ vr.backdrop.previous	go back to the previous background
 vr.backdrop.previous	the last background again
 vr.backdrop.set	sky background	name=sky
 vr.backdrop.set	set the background to black	name=black
+vr.backdrop.set	set background flowers	name=flowers
+vr.backdrop.set	set background universe	name=universe
+vr.backdrop.set	set background ocean	name=ocean
+vr.backdrop.set	set background hawaii	name=hawaii
+vr.backdrop.set	set the background to sunset	name=sunset
+vr.backdrop.set	put on a mountains background	name=mountains
+vr.backdrop.set	set background to ocean waves	name=ocean waves
+vr.backdrop.next	next background
+vr.backdrop.next	switch to the next background
+vr.passthrough.on	background off
+vr.passthrough.on	turn the background off
+vr.passthrough.on	no background
 vr.screens.reset	where did my screens go
 vr.screens.reset	bring my screens back
 vr.recenter	center the view
@@ -34,6 +46,8 @@ vr.recenter	re center everything
 vr.input.controllers	let me use the controllers again
 vr.input.controllers	give the pointer back to the controllers
 vr.input.controllers	controllers should win over my hands
+vr.input.show_controllers	show me the controllers all the time
+vr.input.hide_controllers	hide the controllers, I am typing
 vr.input.hands	let my hands be the pointer
 vr.input.hands	go back to hand pointing
 vr.input.hands	hands should win over the controllers
@@ -109,6 +123,9 @@ win.list	which windows are open
 win.ai.switch	go to the app where i was reading about monado
 win.close	close this app
 win.close	quit this program
+win.close.named	quit the files app
+win.app.open	bring up the file manager app
+win.app.here	bring the file manager here
 win.ws.close	close this window
 win.ws.close	close the window i'm in
 win.ws.new	open a new window
@@ -242,3 +259,63 @@ win.organize	separate all my apps
 win.organize	sort my apps onto the screens
 win.together	put everything back together
 win.together	merge all the apps on one screen
+# VR screen count, new screen for an app, apps of one kind together (user decisions 2026-10-16)
+vr.screens.count	i want four screens	n=4
+vr.screens.count	show me two screens	n=2
+vr.screens.more	can you add two more screens	n=2
+vr.screens.more	give me one more screen	n=1
+vr.screens.one_more	i need another screen
+vr.screens.add	put a screen on the right	side=right
+vr.screens.add	add a screen top right	side=up-right
+win.screen.open	open spotify in a new window	app=spotify
+win.screen.open	give the terminal its own screen	app=terminal
+win.screen.gather	put all my terminals together on one screen	app=terminals
+win.screen.gather	gather all the browsers	app=browsers
+# apps to a named screen, a video, leaving cinema (agent mode, user request 2026-10-16)
+win.screen.put	put all the terminals on the left screen	app=terminals,side=left
+win.screen.put	move chrome to the right screen	app=chrome,side=right
+win.screen.put	put youtube on the top right screen	side=up-right
+win.screen.put_n	move chrome to screen 3	app=chrome,screen=3
+vr.preset.exit_cinema	get me out of cinema mode
+vr.preset.exit_cinema	leave the cinema
+media.play	play the movie dune	q=dune
+voice.cancel	cancel that please
+# screen numbers (1 main, 2 left, 3 right, 4 up, 5 up-left, 6 up-right), from here to there, richer tools (2026-10-16)
+win.screen.put_n	put all my terminals on screen two	app=terminals,screen=2
+win.screen.put_n	the newest terminal to screen five	screen=5
+win.screen.put_from	move the terminal from here to screen 4	app=terminal,from=here,screen=4
+win.screen.put_from	move chrome from screen 2 to screen 5	app=chrome,from=2,screen=5
+win.screen.move_all	move everything from screen two to screen five	from=2,screen=5
+win.screen.move_all	from screen 3 to screen 1	from=3,screen=1
+win.screen.move_n	send this to screen 6	screen=6
+win.screen.move_n	can you move this app to screen three	screen=3
+win.screen.goto_n	go to screen four	screen=4
+win.screen.goto_n	jump to screen 2	screen=2
+win.screen.swap	swap screens 1 and 2	screen=1,b=2
+win.screen.swap	swap screen three with screen four	screen=3,b=4
+win.screen.adjust	make screen 2 bigger	screen=2,how=bigger
+win.screen.adjust	bring screen one closer	screen=1,how=closer
+win.screen.list_n	what's on screen 3	screen=3
+win.screen.open_n	open youtube on screen 3	app=youtube,screen=3
+win.screen.open_n	start a terminal on screen two	screen=2
+win.layout.save	remember this layout please
+win.layout.save_as	save this layout as coding	name=coding
+win.layout.restore	put the apps back where they were
+win.layout.restore_as	restore the coding layout	name=coding
+omarchy.volume.set	set the volume to 40	n=40
+vr.screens.numbers	can you show me the screen numbers
+vr.screens.numbers_hide	hide the numbers on the screens
+vr.screens.numbers_always	keep the screen numbers on please
+omarchy.volume.set	volume 70 percent	n=70
+# plans: several tools one after the other (user question 2026-10-16); every step must run, in order
+win.ws.goto ; omarchy.window.fullscreen	go to workspace two and make it fullscreen	n=2
+win.ws.new ; omarchy.launch.terminal	make a new window and then open the terminal there
+win.tab.next ; browser.reload	go to the next tab and then reload the page
+omarchy.volume.down ; omarchy.media.next	turn the volume down and skip this song
+vr.preset.cinema ; vr.passthrough.dim	switch to cinema mode then dim the room
+omarchy.screenshot ; vr.record.start	take a screenshot and then start recording
+vr.screens.hide	close screen number two	screens=2
+vr.screens.hide	remove screens three and four	screens=3,4
+vr.screens.hide_others	close everything
+win.screen.scale	make all these screens half the size	screens=all,size=50
+vr.session.stop	shut down work vr

@@ -37,6 +37,7 @@ would start: $ROOT/build/src/xrt/targets/service/monado-service
   XRT_COMPOSITOR_SCALE_PERCENTAGE=100
   PIMAX_LOG=info
   XR_RUNTIME_JSON=$ROOT/build/openxr_monado-dev.json
+  PIMAX_CTRL_INHAND=auto
   PIMAX_CTRL_AIM=head
   PIMAX_PERF_FILE=$ROOT/run/pimax-perf.stats
   PIMAX_DEBUG_PTRACE=1

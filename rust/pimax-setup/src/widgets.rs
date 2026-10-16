@@ -1,9 +1,10 @@
-//! Drawing helpers shared by the pages, in the Pimax Play style of [`crate::theme`]: rounded cards, pills whose
-//! colour fades, rows that expand with an eased height, device cards, big action buttons, a throttled spinner.
-use crate::theme::{self, icon, Palette, R_CARD, R_ROW, R_SMALL, T_EXPAND, T_HOVER};
-use eframe::egui::{self, Align, Color32, CornerRadius, Frame, Id, Layout, Margin, Rect, RichText, Sense, Stroke, Ui, UiBuilder, WidgetInfo, WidgetType};
+//! Drawing helpers shared by the pages, in the look of [`crate::theme`]: flat cards with a small-caps title, setting
+//! rows (label on the left, the control on the right, details behind a "?"), switches, segmented choices, pills
+//! whose colour fades, big action buttons, a throttled spinner.
+use crate::theme::{self, caps, icon, Palette, R_CARD, R_ROW, R_SMALL, T_HOVER};
+use eframe::egui::{self, Align, Color32, CornerRadius, Frame, Id, Layout, Margin, Rect, RichText, Sense, Stroke, Ui, WidgetInfo, WidgetType};
 use pimax_doctor::Level;
-use pimax_gui_core::devices::{Battery, Dev, DeviceView};
+use pimax_gui_core::devices::Dev;
 use pimax_gui_core::preflight::Sev;
 
 /// State colours for the current theme (the pages' short names for [`theme::Palette`]).
@@ -69,32 +70,32 @@ pub fn dev_color(p: &Palette, d: Dev) -> Color32 {
     }
 }
 
-/// A small rounded label with a tinted background.
+/// A small tag: capitals in a thin frame of its colour.
 pub fn chip(ui: &mut Ui, text: &str, color: Color32) {
     Frame::new()
-        .fill(color.gamma_multiply(0.14))
-        .stroke(Stroke::new(1.0, color.gamma_multiply(0.45)))
-        .corner_radius(CornerRadius::same(255))
-        .inner_margin(Margin::symmetric(9, 2))
+        .fill(color.gamma_multiply(0.10))
+        .stroke(Stroke::new(1.0, color.gamma_multiply(0.55)))
+        .corner_radius(CornerRadius::same(3))
+        .inner_margin(Margin::symmetric(6, 1))
         .show(ui, |ui| {
-            ui.label(RichText::new(text).color(color).size(11.5).strong());
+            ui.label(caps(text, 10.0, color).strong());
         });
 }
 
-/// A status pill: a dot and a label in a dark capsule; the colour fades when the state changes.
+/// A status pill: a dot and the state in capitals in a thin frame; the colour fades when the state changes.
 pub fn pill(ui: &mut Ui, id: Id, text: &str, color: Color32) -> egui::Response {
     let c = theme::fade(ui, id, color);
     let p = theme::pal(ui);
     Frame::new()
-        .fill(if p.dark { Color32::from_rgba_unmultiplied(255, 255, 255, 10) } else { Color32::from_rgba_unmultiplied(0, 0, 0, 10) })
-        .stroke(Stroke::new(1.0, c.gamma_multiply(0.35)))
-        .corner_radius(CornerRadius::same(255))
-        .inner_margin(Margin::symmetric(10, 3))
+        .fill(c.gamma_multiply(0.08))
+        .stroke(Stroke::new(1.0, c.gamma_multiply(0.6)))
+        .corner_radius(CornerRadius::same(3))
+        .inner_margin(Margin::symmetric(7, 2))
         .show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 6.0;
-                dot(ui, c, 3.5);
-                ui.label(RichText::new(text).size(12.0).color(p.text));
+                ui.spacing_mut().item_spacing.x = 5.0;
+                dot(ui, c, 3.0);
+                ui.label(caps(text, 10.5, p.text));
             });
         })
         .response
@@ -137,14 +138,15 @@ pub fn row_tag(ui: &mut Ui, row: Option<u8>) {
     }
 }
 
-/// A card: rounded, a hairline, the card colour.
+/// The frame of a card.
+pub fn card_frame(p: &Palette) -> Frame {
+    Frame::new().fill(p.card).stroke(Stroke::new(1.0, p.stroke)).corner_radius(CornerRadius::same(R_CARD)).inner_margin(Margin::same(16))
+}
+
+/// A card: flat, a hairline, the card colour.
 pub fn card<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
     let p = theme::pal(ui);
-    Frame::new()
-        .fill(p.card)
-        .stroke(Stroke::new(1.0, p.stroke))
-        .corner_radius(CornerRadius::same(R_CARD))
-        .inner_margin(Margin::same(16))
+    card_frame(&p)
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             add(ui)
@@ -152,13 +154,80 @@ pub fn card<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
         .inner
 }
 
-/// An inset box inside a card (an expanded row's groups).
+/// A card with a small-caps title (and a "?" when `help` is given).
+pub fn section<R>(ui: &mut Ui, title_text: &str, help_text: Option<&str>, add: impl FnOnce(&mut Ui) -> R) -> R {
+    section_with(ui, title_text, help_text, |_| {}, add)
+}
+
+/// A card with a title, a "?" and something on the right of the title (a chip, a button).
+pub fn section_with<R>(ui: &mut Ui, title_text: &str, help_text: Option<&str>, right: impl FnOnce(&mut Ui), add: impl FnOnce(&mut Ui) -> R) -> R {
+    card(ui, |ui| {
+        title_row(ui, title_text, help_text, right);
+        ui.add_space(6.0);
+        add(ui)
+    })
+}
+
+/// The title line of a card: the title, a "?", and `right` aligned to the right.
+pub fn title_row(ui: &mut Ui, title_text: &str, help_text: Option<&str>, right: impl FnOnce(&mut Ui)) {
+    ui.horizontal(|ui| {
+        ui.set_min_height(22.0);
+        title(ui, title_text);
+        if let Some(h) = help_text {
+            help(ui, h);
+        }
+        at_right(ui, &format!("title {title_text}"), right);
+    });
+}
+
+/// In a horizontal row: `add` placed so that it ends at the row's right edge, its widgets still left to right (a
+/// right-to-left layout would turn pills, segmented choices and sliders around). The width comes from the previous
+/// frame; the first frame draws it right after what is on the left. `key` tells the rows of one card apart (sibling
+/// rows share their `Ui::id`): their label.
+pub fn at_right<R>(ui: &mut Ui, key: &str, add: impl FnOnce(&mut Ui) -> R) -> R {
+    // sibling Uis share their id (egui): the same label twice on a page is told apart by its order in this pass
+    let base = ui.id().with(("at-right", key));
+    let pass = ui.ctx().cumulative_pass_nr();
+    let nth = ui.ctx().data_mut(|d| {
+        let seen = d.get_temp_mut_or_default::<(u64, std::collections::HashMap<Id, u32>)>(Id::new("at-right-seen"));
+        if seen.0 != pass {
+            *seen = (pass, Default::default());
+        }
+        let n = seen.1.entry(base).or_insert(0);
+        *n += 1;
+        *n
+    });
+    let id = base.with(nth);
+    let avail = ui.available_width();
+    let prev: f32 = ui.ctx().data(|d| d.get_temp(id)).unwrap_or(avail);
+    // a point of slack: a row that is exactly as wide as the room left would wrap its last item
+    let gap = (avail - prev - 1.0).max(0.0);
+    if gap > 0.0 {
+        ui.add_space(gap);
+    }
+    let r = ui.scope(|ui| {
+        ui.spacing_mut().item_spacing.x = 6.0;
+        // a slider and its value box fit in what the label leaves
+        let sw = ui.spacing().slider_width.min((avail - 140.0).max(48.0));
+        ui.spacing_mut().slider_width = sw;
+        ui.horizontal(add).inner
+    });
+    let used = r.response.rect.width();
+    if (used - prev).abs() > 0.5 {
+        ui.ctx().data_mut(|d| d.insert_temp(id, used));
+        ui.ctx().request_repaint();
+    }
+    r.inner
+}
+
+/// An inset box inside a card.
 pub fn inset<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
     let p = theme::pal(ui);
     Frame::new()
         .fill(p.inset)
-        .corner_radius(CornerRadius::same(R_SMALL + 2))
-        .inner_margin(Margin::same(12))
+        .stroke(Stroke::new(1.0, p.stroke))
+        .corner_radius(CornerRadius::same(R_SMALL))
+        .inner_margin(Margin::same(10))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             add(ui)
@@ -166,14 +235,230 @@ pub fn inset<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
         .inner
 }
 
-/// Section title inside a card.
+/// The title of a card, in small caps.
 pub fn title(ui: &mut Ui, text: &str) {
-    ui.label(RichText::new(text).size(15.0).family(theme::heading(ui)).color(theme::pal(ui).text));
+    ui.label(caps(text, 14.0, theme::pal(ui).text).family(theme::heading(ui)));
 }
 
-/// A small uppercase label over a group.
+/// A small-caps label over a group.
 pub fn caption(ui: &mut Ui, text: &str) {
-    ui.label(RichText::new(text.to_uppercase()).size(10.5).color(theme::pal(ui).faint).strong());
+    ui.label(caps(text, 10.5, theme::pal(ui).faint).strong());
+}
+
+/// Open the next "?" that is drawn (for the screenshot of an open popup).
+pub fn open_next_help(ctx: &egui::Context) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::new("open-next-help"), true));
+}
+
+/// The "?" next to a label, the one help widget of the app: the explanation shows on hover and, for the headset
+/// (WayVR: hover is unreliable there), in a small popup that a click opens and closes; a click elsewhere or Esc
+/// closes it.
+pub fn help(ui: &mut Ui, text: &str) -> egui::Response {
+    let p = theme::pal(ui);
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(15.0, 15.0), Sense::click());
+    // screenshots: `open_next_help` opens the next "?" drawn
+    if ui.ctx().data_mut(|d| d.remove_temp::<bool>(egui::Id::new("open-next-help"))).unwrap_or(false) {
+        egui::Popup::open_id(ui.ctx(), egui::Popup::default_response_id(&resp));
+    }
+    let open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&resp));
+    let c = if resp.hovered() || open { p.text } else { p.faint };
+    ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, icon::QUESTION, egui::FontId::proportional(13.0), c);
+    resp.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, "Help"));
+    let shown = egui::Popup::from_toggle_button_response(&resp)
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+        .show(|ui| {
+            ui.set_max_width(360.0);
+            ui.label(text);
+        })
+        .is_some();
+    if shown {
+        resp
+    } else {
+        resp.on_hover_ui(|ui| {
+            ui.set_max_width(360.0);
+            ui.label(text);
+        })
+    }
+}
+
+/// A setting row: the label (small caps, a "?" when `help` is given) on the left, `control` on the right (its
+/// widgets left to right).
+pub fn setting<R>(ui: &mut Ui, label: &str, help_text: Option<&str>, control: impl FnOnce(&mut Ui) -> R) -> R {
+    let p = theme::pal(ui);
+    ui.horizontal(|ui| {
+        ui.set_min_height(24.0);
+        ui.label(caps(label, 11.0, p.text));
+        if let Some(h) = help_text {
+            help(ui, h);
+        }
+        at_right(ui, &format!("setting {label}"), control)
+    })
+    .inner
+}
+
+/// A switch alone (accessible name: `label`).
+pub fn switch(ui: &mut Ui, on: &mut bool, label: &str, enabled: bool) -> egui::Response {
+    let p = theme::pal(ui);
+    let (w, h): (f32, f32) = (30.0, 16.0);
+    let (rect, mut resp) = ui.allocate_exact_size(egui::vec2(w, h.max(20.0)), if enabled { Sense::click() } else { Sense::hover() });
+    if resp.clicked() {
+        *on = !*on;
+        resp.mark_changed();
+    }
+    resp.widget_info(|| WidgetInfo::selected(WidgetType::Checkbox, enabled, *on, label));
+    let t = theme::ease(ui, resp.id.with("knob"), *on, 0.16);
+    if ui.is_rect_visible(rect) {
+        let track = Rect::from_center_size(rect.center(), egui::vec2(w, h));
+        let off_c = if p.dark { Color32::from_rgb(44, 48, 62) } else { Color32::from_rgb(205, 210, 222) };
+        let mut fill = theme::mix(off_c, p.accent, t);
+        let mut knob = theme::mix(if p.dark { Color32::from_rgb(150, 156, 172) } else { Color32::WHITE }, Color32::WHITE, t);
+        if !enabled {
+            fill = fill.gamma_multiply(0.45);
+            knob = knob.gamma_multiply(0.55);
+        }
+        let painter = ui.painter();
+        painter.rect_filled(track, CornerRadius::same(255), fill);
+        let x = egui::lerp((track.left() + h / 2.0)..=(track.right() - h / 2.0), t);
+        painter.circle_filled(egui::pos2(x, track.center().y), h / 2.0 - 3.0, knob);
+    }
+    resp
+}
+
+/// A setting row with a switch on the right.
+pub fn switch_row(ui: &mut Ui, on: &mut bool, label: &str, help_text: Option<&str>, enabled: bool) -> egui::Response {
+    setting(ui, label, help_text, |ui| switch(ui, on, label, enabled))
+}
+
+/// An on/off switch. In a column it is a setting row ([`switch_row`]: the label left, the switch right); in a line
+/// of other controls the switch comes first and its label after it.
+pub fn toggle(ui: &mut Ui, on: &mut bool, label: &str, enabled: bool) -> egui::Response {
+    if ui.layout().is_vertical() && !label.is_empty() {
+        return switch_row(ui, on, label, None, enabled);
+    }
+    let p = theme::pal(ui);
+    let font = egui::FontId::proportional(13.5);
+    let text_w = if label.is_empty() { 0.0 } else { ui.fonts_mut(|f| f.layout_no_wrap(label.to_string(), font.clone(), p.text).size().x) + 9.0 };
+    let (w, h) = (30.0, 16.0);
+    let (rect, mut resp) = ui.allocate_exact_size(egui::vec2(w + text_w, 22.0), if enabled { Sense::click() } else { Sense::hover() });
+    if resp.clicked() {
+        *on = !*on;
+        resp.mark_changed();
+    }
+    resp.widget_info(|| WidgetInfo::selected(WidgetType::Checkbox, enabled, *on, label));
+    let t = theme::ease(ui, resp.id.with("knob"), *on, 0.16);
+    if ui.is_rect_visible(rect) {
+        let track = Rect::from_min_size(egui::pos2(rect.left(), rect.center().y - h / 2.0), egui::vec2(w, h));
+        let off_c = if p.dark { Color32::from_rgb(44, 48, 62) } else { Color32::from_rgb(205, 210, 222) };
+        let mut fill = theme::mix(off_c, p.accent, t);
+        let mut knob = theme::mix(if p.dark { Color32::from_rgb(150, 156, 172) } else { Color32::WHITE }, Color32::WHITE, t);
+        let mut text_c = p.text;
+        if !enabled {
+            fill = fill.gamma_multiply(0.45);
+            knob = knob.gamma_multiply(0.55);
+            text_c = p.faint;
+        }
+        let painter = ui.painter();
+        painter.rect_filled(track, CornerRadius::same(255), fill);
+        let x = egui::lerp((track.left() + h / 2.0)..=(track.right() - h / 2.0), t);
+        painter.circle_filled(egui::pos2(x, track.center().y), h / 2.0 - 3.0, knob);
+        if !label.is_empty() {
+            painter.text(egui::pos2(track.right() + 9.0, rect.center().y), egui::Align2::LEFT_CENTER, label, font, text_c);
+        }
+    }
+    resp
+}
+
+/// Width of a segmented choice.
+fn seg_width(ui: &Ui, options: &[&str]) -> f32 {
+    let font = egui::FontId::proportional(11.0);
+    options
+        .iter()
+        .map(|o| ui.fonts_mut(|f| f.layout_no_wrap(o.to_uppercase(), font.clone(), Color32::WHITE).size().x) + o.chars().count() as f32 * theme::CAPS_SPACING + 18.0)
+        .sum()
+}
+
+/// A segmented choice: the options side by side, the chosen one filled. Returns the clicked option.
+pub fn seg(ui: &mut Ui, id: &str, options: &[&str], selected: usize, enabled: bool) -> Option<usize> {
+    seg_inner(ui, id, options, selected, enabled, true)
+}
+
+/// [`seg`], wrapping to more lines (`wrap`) or always on one line (next to a label that left room for it).
+fn seg_inner(ui: &mut Ui, id: &str, options: &[&str], selected: usize, enabled: bool, wrap: bool) -> Option<usize> {
+    let p = theme::pal(ui);
+    let mut clicked = None;
+    let id = Id::new(("seg", id));
+    ui.scope(|ui| {
+        ui.spacing_mut().item_spacing.x = 0.0;
+        let layout = if wrap { Layout::left_to_right(Align::Center).with_main_wrap(true) } else { Layout::left_to_right(Align::Center) };
+        // like ui.horizontal: one row tall to start with, so Align::Center centres in the row
+        ui.allocate_ui_with_layout(egui::vec2(ui.available_width(), 24.0), layout, |ui| {
+            ui.spacing_mut().item_spacing = egui::vec2(0.0, 4.0);
+            let n = options.len();
+            for (i, o) in options.iter().enumerate() {
+                let on = i == selected;
+                let text = caps(o, 11.0, p.text);
+                let galley = egui::WidgetText::from(text).into_galley(ui, Some(egui::TextWrapMode::Extend), f32::INFINITY, egui::TextStyle::Button);
+                let (rect, resp) = ui.allocate_exact_size(egui::vec2(galley.size().x + 18.0, 24.0), if enabled { Sense::click() } else { Sense::hover() });
+                resp.widget_info(|| WidgetInfo::selected(WidgetType::RadioButton, enabled, on, *o));
+                let t = theme::ease(ui, id.with(i), on, 0.16);
+                let hover = theme::ease(ui, id.with(("h", i)), enabled && resp.hovered() && !on, T_HOVER);
+                if ui.is_rect_visible(rect) {
+                    let r = CornerRadius {
+                        nw: if i == 0 { R_SMALL } else { 0 },
+                        sw: if i == 0 { R_SMALL } else { 0 },
+                        ne: if i + 1 == n { R_SMALL } else { 0 },
+                        se: if i + 1 == n { R_SMALL } else { 0 },
+                    };
+                    let fill = theme::mix(theme::mix(Color32::TRANSPARENT, p.card_hover, hover), p.accent.gamma_multiply(0.55), t);
+                    let stroke = theme::mix(p.stroke_strong, p.accent, t);
+                    ui.painter().rect(rect, r, fill, Stroke::new(1.0, stroke), egui::StrokeKind::Inside);
+                    let col = if !enabled {
+                        p.faint
+                    } else {
+                        theme::mix(p.dim, if p.dark { Color32::WHITE } else { p.text }, t.max(hover))
+                    };
+                    ui.painter().galley(rect.center() - galley.size() / 2.0, galley, col);
+                }
+                if resp.clicked() && !on {
+                    clicked = Some(i);
+                }
+            }
+        });
+    });
+    clicked
+}
+
+/// A setting row with a segmented choice; the choice goes under the label when the row is too narrow.
+pub fn seg_row(ui: &mut Ui, label: &str, help_text: Option<&str>, options: &[&str], selected: usize, enabled: bool) -> Option<usize> {
+    let label_w = ui.fonts_mut(|f| f.layout_no_wrap(label.to_uppercase(), egui::FontId::proportional(11.0), Color32::WHITE).size().x) + 40.0;
+    if label_w + seg_width(ui, options) + 12.0 <= ui.available_width() {
+        setting(ui, label, help_text, |ui| seg_inner(ui, label, options, selected, enabled, false))
+    } else {
+        let p = theme::pal(ui);
+        ui.horizontal(|ui| {
+            ui.label(caps(label, 11.0, p.text));
+            if let Some(h) = help_text {
+                help(ui, h);
+            }
+        });
+        seg(ui, label, options, selected, enabled)
+    }
+}
+
+/// The old name of [`seg_row`] (the icon is no longer drawn).
+pub fn selector(ui: &mut Ui, _ic: &str, caption_text: &str, options: &[&str], selected: usize, enabled: bool) -> Option<usize> {
+    seg_row(ui, caption_text, None, options, selected, enabled)
+}
+
+/// A key and its value side by side (the headset card): the key in small caps, the value in plain text.
+pub fn kv_row(ui: &mut Ui, key: &str, key_w: f32, add: impl FnOnce(&mut Ui)) {
+    let p = theme::pal(ui);
+    ui.horizontal(|ui| {
+        ui.set_min_height(22.0);
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(key_w, 18.0), Sense::hover());
+        ui.painter().text(rect.left_center(), egui::Align2::LEFT_CENTER, key.to_uppercase(), egui::FontId::proportional(10.5), p.faint);
+        add(ui);
+    });
 }
 
 /// Monospace lines in a box with a Copy button. Returns true when copied.
@@ -209,79 +494,100 @@ pub fn code_box(ui: &mut Ui, lines: &[String]) -> bool {
 pub enum Kind {
     /// Accent fill.
     Primary,
-    /// Card fill with a hairline.
+    /// Outlined.
     Secondary,
     /// Red fill.
     Danger,
 }
 
-/// A big rounded button with an icon (Start Desk, Start VR, Stop). Hover lightens it smoothly.
+/// A big button with an icon and a small-caps label (Play, Work, Stop). Hover lightens it smoothly.
 pub fn action(ui: &mut Ui, ic: &str, text: &str, kind: Kind, enabled: bool, width: f32) -> egui::Response {
     let p = theme::pal(ui);
-    let h = 50.0;
+    let h = 40.0;
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, h), if enabled { Sense::click() } else { Sense::hover() });
     resp.widget_info(|| WidgetInfo::labeled(WidgetType::Button, enabled, text));
     let hover = theme::ease(ui, resp.id.with("hover"), enabled && resp.hovered(), T_HOVER);
     let (fill, fg, stroke) = match (kind, enabled) {
-        (_, false) => (p.card, p.faint, p.stroke),
+        (_, false) => (Color32::TRANSPARENT, p.faint, p.stroke),
         (Kind::Primary, true) => (theme::mix(p.accent, p.accent_hover, hover), Color32::WHITE, p.accent_hover),
         (Kind::Danger, true) => (theme::mix(p.fail, p.fail.gamma_multiply(1.15), hover), Color32::WHITE, p.fail),
-        (Kind::Secondary, true) => (theme::mix(p.card, p.card_hover, hover), p.text, theme::mix(p.stroke, p.accent, hover * 0.6)),
+        (Kind::Secondary, true) => (theme::mix(Color32::TRANSPARENT, p.card_hover, hover), p.text, theme::mix(p.stroke_strong, p.accent, hover * 0.8)),
     };
     if ui.is_rect_visible(rect) {
         let painter = ui.painter();
         painter.rect(rect, CornerRadius::same(R_ROW), fill, Stroke::new(1.0, stroke), egui::StrokeKind::Inside);
-        let font = egui::FontId::new(16.0, theme::heading(ui));
-        let label = format!("{ic}  {text}");
-        painter.text(rect.center(), egui::Align2::CENTER_CENTER, label, font, fg);
+        let job = egui::text::LayoutJob::single_section(
+            format!("{ic}  {}", text.to_uppercase()),
+            egui::TextFormat { font_id: egui::FontId::new(13.0, theme::heading(ui)), color: fg, extra_letter_spacing: 1.0, ..Default::default() },
+        );
+        let g = painter.layout_job(job);
+        painter.galley(rect.center() - g.size() / 2.0, g, fg);
     }
     resp
-}
-
-/// A big coloured button (older pages).
-pub fn big_button(ui: &mut Ui, text: &str, fill: Color32, enabled: bool) -> egui::Response {
-    let p = theme::pal(ui);
-    let kind = if fill == p.fail { Kind::Danger } else { Kind::Primary };
-    action(ui, if kind == Kind::Danger { icon::STOP } else { icon::PLAY }, text, kind, enabled, 230.0)
 }
 
 /// A primary (accent) button.
 pub fn primary(ui: &mut Ui, text: &str, enabled: bool) -> egui::Response {
     let p = theme::pal(ui);
-    let (fill, fg) = if enabled { (p.accent, Color32::WHITE) } else { (p.card, p.faint) };
+    let (fill, fg) = if enabled { (p.accent, Color32::WHITE) } else { (Color32::TRANSPARENT, p.faint) };
     ui.add_enabled(
         enabled,
         egui::Button::new(RichText::new(text).color(fg).strong())
             .fill(fill)
+            .stroke(Stroke::new(1.0, if enabled { p.accent_hover } else { p.stroke }))
             .corner_radius(CornerRadius::same(R_SMALL)),
     )
 }
 
-/// A quiet button with an icon (ROOM SETUP).
-pub fn ghost(ui: &mut Ui, ic: &str, text: &str, enabled: bool) -> egui::Response {
+/// A quiet outlined button with an icon and a small-caps label (Room setup, Restart service, Test sound). With
+/// `compact` only the icon shows (the label is the tooltip and the accessible name).
+pub fn ghost_btn(ui: &mut Ui, ic: &str, text: &str, enabled: bool, compact: bool) -> egui::Response {
     let p = theme::pal(ui);
-    let r = ui.add_enabled(
-        enabled,
-        egui::Button::new(RichText::new(format!("{ic}  {}", text.to_uppercase())).size(13.0).color(p.dim))
-            .fill(p.card)
-            .stroke(Stroke::new(1.0, p.stroke))
-            .corner_radius(CornerRadius::same(R_ROW))
-            .min_size(egui::vec2(170.0, 38.0)),
-    );
-    r.widget_info(|| WidgetInfo::labeled(WidgetType::Button, enabled, text));
+    let label = if compact { RichText::new(ic).size(14.0).color(p.dim) } else { caps(&format!("{ic} {text}"), 10.5, p.dim) };
+    let r = outlined(ui, label, text, enabled);
+    if compact {
+        r.on_hover_text(text)
+    } else {
+        r
+    }
+}
+
+/// [`ghost`] with a shorter visible label than its accessible name ("Pair" for "Pair left").
+pub fn ghost_short(ui: &mut Ui, ic: &str, short: &str, name: &str, enabled: bool) -> egui::Response {
+    let p = theme::pal(ui);
+    outlined(ui, caps(&format!("{ic} {short}"), 10.5, p.dim), name, enabled)
+}
+
+fn outlined(ui: &mut Ui, label: RichText, name: &str, enabled: bool) -> egui::Response {
+    let p = theme::pal(ui);
+    let r = ui.add_enabled(enabled, egui::Button::new(label).fill(Color32::TRANSPARENT).stroke(Stroke::new(1.0, p.stroke_strong)).corner_radius(CornerRadius::same(R_SMALL)).min_size(egui::vec2(0.0, 26.0)));
+    r.widget_info(|| WidgetInfo::labeled(WidgetType::Button, enabled, name));
     r
 }
 
-/// A button with an icon; its accessible name is the text alone (screen readers, the UI tests).
+/// A quiet outlined button with an icon and a small-caps label.
+pub fn ghost(ui: &mut Ui, ic: &str, text: &str, enabled: bool) -> egui::Response {
+    ghost_btn(ui, ic, text, enabled, false)
+}
+
+/// A button with an icon and a small-caps label, outlined; its accessible name is the text alone (screen readers,
+/// the UI tests).
 pub fn ibutton(ui: &mut Ui, ic: &str, text: &str, enabled: bool) -> egui::Response {
-    let r = ui.add_enabled(enabled, egui::Button::new(format!("{ic} {text}")));
+    ghost_btn(ui, ic, text, enabled, false)
+}
+
+/// A small-caps outlined button without an icon.
+pub fn tbutton(ui: &mut Ui, text: &str, enabled: bool) -> egui::Response {
+    let p = theme::pal(ui);
+    let r = ui.add_enabled(enabled, egui::Button::new(caps(text, 10.5, p.dim)).fill(Color32::TRANSPARENT).stroke(Stroke::new(1.0, p.stroke_strong)).corner_radius(CornerRadius::same(R_SMALL)).min_size(egui::vec2(0.0, 26.0)));
     r.widget_info(|| WidgetInfo::labeled(WidgetType::Button, enabled, text));
     r
 }
 
 /// A small button with an icon (accessible name: the text).
 pub fn ismall(ui: &mut Ui, ic: &str, text: &str) -> egui::Response {
-    let r = ui.small_button(format!("{ic} {text}"));
+    let p = theme::pal(ui);
+    let r = ui.add(egui::Button::new(caps(&format!("{ic} {text}"), 9.5, p.dim)).fill(Color32::TRANSPARENT).stroke(Stroke::new(1.0, p.stroke_strong)).corner_radius(CornerRadius::same(3)));
     r.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, text));
     r
 }
@@ -293,15 +599,15 @@ pub fn kv(ui: &mut Ui, key: &str, value: impl Into<egui::WidgetText>) {
     ui.end_row();
 }
 
-/// Muted wrapped text.
+/// Muted wrapped text (a status line, a short note).
 pub fn note(ui: &mut Ui, text: &str) {
     let c = theme::pal(ui).dim;
-    ui.add(egui::Label::new(RichText::new(text).color(c)).wrap());
+    ui.add(egui::Label::new(RichText::new(text).size(12.5).color(c)).wrap());
 }
 
-/// A "coming soon" tag.
-pub fn soon(ui: &mut Ui) {
-    chip(ui, "coming soon", theme::pal(ui).faint);
+/// A small status line in a colour.
+pub fn status(ui: &mut Ui, text: &str, color: Color32) {
+    ui.add(egui::Label::new(RichText::new(text).size(12.0).color(color)).wrap());
 }
 
 /// A small spinner that animates at 10 frames per second (egui's own spinner asks for a new frame right away,
@@ -326,195 +632,81 @@ pub fn spinner(ui: &mut Ui) -> egui::Response {
     resp
 }
 
-/// Open or close a row from elsewhere (the ROOM SETUP button opens the Room row).
-pub fn set_row_open(ctx: &egui::Context, id: Id, open: bool) {
-    ctx.data_mut(|d| d.insert_temp(id.with("open"), open));
-}
-
-/// Is a row open?
-pub fn row_open(ctx: &egui::Context, id: Id) -> bool {
-    ctx.data(|d| d.get_temp::<bool>(id.with("open"))).unwrap_or(false)
-}
-
-/// A settings row: icon, uppercase title, the current values on the right, a chevron; a click expands the body in
-/// place with an eased height. Returns true while it is open.
-pub fn row(ui: &mut Ui, id: Id, ic: &str, title: &str, summary: &str, body: impl FnOnce(&mut Ui)) -> bool {
+/// Cards side by side (`weights`: their share of the width) with the same height: each card is as tall as the
+/// tallest one's content (measured in the previous frame). One column when the row is narrower than `min_w` per
+/// card.
+pub fn card_row(ui: &mut Ui, id: &str, weights: &[f32], min_w: f32, mut add: impl FnMut(usize, &mut Ui)) {
+    let id = Id::new(("card-row", id));
+    let gap = 12.0;
+    let avail = ui.available_width();
+    let n = weights.len().max(1);
+    let total: f32 = weights.iter().sum::<f32>().max(0.001);
+    let inner_w = avail - gap * (n - 1) as f32;
+    let narrow = weights.iter().any(|w| inner_w * w / total < min_w);
     let p = theme::pal(ui);
-    let mut open = row_open(ui.ctx(), id);
-    // the frame's hairline adds a pixel on each side: the content is that much narrower, so rows do not creep
-    let width = ui.available_width() - 2.0;
-    let t = theme::ease(ui, id.with("t"), open, T_EXPAND);
-    let header_h = 56.0;
-    let frame = Frame::new()
-        .fill(p.card)
-        .stroke(Stroke::new(1.0, theme::mix(p.stroke, p.stroke_strong, t)))
-        .corner_radius(CornerRadius::same(R_ROW));
-    frame.show(ui, |ui| {
-        ui.set_width(width);
-        ui.spacing_mut().item_spacing.y = 0.0;
-        let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, header_h), Sense::click());
-        resp.widget_info(|| WidgetInfo::labeled(WidgetType::CollapsingHeader, true, title));
-        if resp.clicked() {
-            open = !open;
-            set_row_open(ui.ctx(), id, open);
-        }
-        let hover = theme::ease(ui, id.with("hover"), resp.hovered(), T_HOVER);
-        if ui.is_rect_visible(rect) {
-            let painter = ui.painter();
-            if hover > 0.0 {
-                let r = CornerRadius { nw: R_ROW, ne: R_ROW, sw: if t > 0.0 { 0 } else { R_ROW }, se: if t > 0.0 { 0 } else { R_ROW } };
-                painter.rect_filled(rect.shrink(1.0), r, theme::mix(p.card, p.card_hover, hover));
-            }
-            let icon_c = theme::mix(p.dim, p.accent, t.max(hover * 0.6));
-            painter.text(rect.left_center() + egui::vec2(22.0, 0.0), egui::Align2::CENTER_CENTER, ic, egui::FontId::proportional(20.0), icon_c);
-            let title_font = egui::FontId::new(13.5, theme::heading(ui));
-            let title_galley = painter.layout_no_wrap(title.to_uppercase(), title_font, p.text);
-            let tx = rect.left() + 48.0;
-            painter.galley(egui::pos2(tx, rect.center().y - title_galley.size().y / 2.0), title_galley.clone(), p.text);
-            // the summary, right-aligned before the chevron, elided to the space left
-            let sx0 = tx + title_galley.size().x + 18.0;
-            let sx1 = rect.right() - 40.0;
-            if sx1 - sx0 > 30.0 {
-                let mut job = egui::text::LayoutJob::simple_singleline(summary.to_uppercase(), egui::FontId::proportional(11.5), p.dim);
-                job.wrap = egui::text::TextWrapping::truncate_at_width(sx1 - sx0);
-                let g = painter.layout_job(job);
-                painter.galley(egui::pos2(sx1 - g.size().x, rect.center().y - g.size().y / 2.0), g, p.dim);
-            }
-            // chevron, turned by the animation
-            let c = rect.right_center() - egui::vec2(20.0, 0.0);
-            let a = t * std::f32::consts::PI;
-            let pts: Vec<egui::Pos2> = [(-4.5f32, -2.0f32), (0.0, 2.5), (4.5, -2.0)]
-                .iter()
-                .map(|(x, y)| {
-                    let (s, co) = a.sin_cos();
-                    c + egui::vec2(x * co - y * s, x * s + y * co)
-                })
-                .collect();
-            painter.add(egui::Shape::line(pts, Stroke::new(1.6, theme::mix(p.dim, p.text, hover))));
-        }
-        if t > 0.0 {
-            let full: f32 = ui.ctx().data(|d| d.get_temp(id.with("h"))).unwrap_or(0.0);
-            let shown = if t >= 1.0 { full } else { (full * t).round() };
-            let (body_rect, _) = ui.allocate_exact_size(egui::vec2(width, shown), Sense::hover());
-            let inner = Rect::from_min_size(body_rect.min + egui::vec2(16.0, 4.0), egui::vec2(width - 32.0, 10_000.0));
-            let mut child = ui.new_child(UiBuilder::new().max_rect(inner).layout(Layout::top_down(Align::Min)).id_salt(id.with("body")));
-            child.set_clip_rect(body_rect.intersect(ui.clip_rect()));
-            if t < 1.0 {
-                child.multiply_opacity(t);
-            }
-            child.spacing_mut().item_spacing.y = 7.0;
-            child.painter().hline(inner.x_range(), body_rect.top() + 0.5, Stroke::new(1.0, p.stroke));
-            child.add_space(10.0);
-            body(&mut child);
-            child.add_space(12.0);
-            let used = child.min_rect().height() + 4.0;
-            if (used - full).abs() > 0.5 {
-                ui.ctx().data_mut(|d| d.insert_temp(id.with("h"), used));
-                ui.ctx().request_repaint();
+    if narrow {
+        for i in 0..n {
+            card(ui, |ui| add(i, ui));
+            if i + 1 < n {
+                ui.add_space(gap);
             }
         }
-    });
-    open
-}
-
-/// The runtime selector: an icon, a caption and dot-radio options. Returns the clicked option.
-pub fn selector(ui: &mut Ui, ic: &str, caption_text: &str, options: &[&str], selected: usize, enabled: bool) -> Option<usize> {
-    let p = theme::pal(ui);
-    let mut clicked = None;
-    ui.horizontal(|ui| {
-        ui.label(RichText::new(ic).size(16.0).color(p.dim));
-        ui.label(RichText::new(caption_text.to_uppercase()).size(12.0).color(p.dim).strong());
-        ui.add_space(8.0);
-        for (i, o) in options.iter().enumerate() {
-            let on = i == selected;
-            let t = theme::ease(ui, Id::new(("selector", caption_text, i)), on, 0.18);
-            let galley = ui.fonts_mut(|f| f.layout_no_wrap(o.to_string(), egui::FontId::proportional(13.0), p.text));
-            let (rect, resp) = ui.allocate_exact_size(egui::vec2(galley.size().x + 22.0, 24.0), if enabled { Sense::click() } else { Sense::hover() });
-            resp.widget_info(|| WidgetInfo::selected(WidgetType::RadioButton, enabled, on, *o));
-            if ui.is_rect_visible(rect) {
-                let painter = ui.painter();
-                let c = rect.left_center() + egui::vec2(6.0, 0.0);
-                painter.circle_stroke(c, 5.0, Stroke::new(1.2, theme::mix(p.faint, p.accent, t)));
-                if t > 0.0 {
-                    painter.circle_filled(c, 3.0 * t, p.accent);
-                }
-                let col = if enabled { theme::mix(p.dim, p.text, t) } else { p.faint };
-                painter.galley(egui::pos2(c.x + 10.0, rect.center().y - galley.size().y / 2.0), galley, col);
-            }
-            if resp.clicked() && !on {
-                clicked = Some(i);
-            }
-            ui.add_space(6.0);
-        }
-    });
-    clicked
-}
-
-/// A device card: a big outline icon, the name, a pill; controllers show their battery.
-pub fn device_card(ui: &mut Ui, id: Id, ic: &str, v: &DeviceView, big: bool, extra: impl FnOnce(&mut Ui)) {
-    let p = theme::pal(ui);
-    Frame::new()
-        .fill(p.card)
-        .stroke(Stroke::new(1.0, p.stroke))
-        .corner_radius(CornerRadius::same(R_CARD + 2))
-        .inner_margin(Margin::symmetric(18, if big { 22 } else { 14 }))
-        .show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            if let Some(b) = v.battery {
-                let (bi, text) = match b {
-                    Battery::Unknown => (icon::BATTERY_EMPTY, "battery unknown".to_string()),
-                    Battery::Mock(x) => (if x > 70 { icon::BATTERY_HIGH } else { icon::BATTERY_MEDIUM }, format!("{x}% (mock)")),
-                    Battery::Level(x) => (if x > 70 { icon::BATTERY_HIGH } else if x > 30 { icon::BATTERY_MEDIUM } else { icon::BATTERY_LOW }, format!("{x}%")),
-                };
-                ui.label(RichText::new(format!("{bi} {text}")).size(11.0).color(p.faint));
-            }
-            ui.horizontal(|ui| {
-                let size = if big { 64.0 } else { 34.0 };
-                let col = theme::fade(ui, id.with("icon"), if v.state == Dev::Off { p.faint } else { p.accent });
-                ui.label(RichText::new(ic).size(size).color(col));
-                ui.add_space(if big { 18.0 } else { 6.0 });
-                ui.vertical(|ui| {
-                    ui.add_space(if big { 6.0 } else { 0.0 });
-                    ui.label(RichText::new(&v.name).size(if big { 20.0 } else { 15.0 }).family(theme::heading(ui)).color(p.text));
-                    pill(ui, id.with("pill"), &v.label, dev_color(&p, v.state));
-                    if big && !v.detail.is_empty() {
-                        ui.label(RichText::new(&v.detail).size(11.5).color(p.faint));
+        return;
+    }
+    let target: f32 = ui.ctx().data(|d| d.get_temp(id)).unwrap_or(0.0);
+    let mut tallest: f32 = 0.0;
+    ui.horizontal_top(|ui| {
+        ui.spacing_mut().item_spacing.x = gap;
+        for (i, w) in weights.iter().enumerate() {
+            let cw = (inner_w * w / total).floor();
+            ui.allocate_ui_with_layout(egui::vec2(cw, 0.0), Layout::top_down(Align::Min), |ui| {
+                card_frame(&p).show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    let top = ui.min_rect().top();
+                    add(i, ui);
+                    let natural = ui.min_rect().bottom() - top;
+                    tallest = tallest.max(natural);
+                    // set_min_height would reserve that much more below the cursor: reach down to the target instead
+                    if target > natural + 0.5 {
+                        ui.expand_to_include_y(top + target);
                     }
-                    extra(ui);
                 });
             });
-        });
+        }
+    });
+    if (tallest - target).abs() > 0.5 {
+        ui.ctx().data_mut(|d| d.insert_temp(id, tallest));
+        ui.ctx().request_repaint();
+    }
 }
 
-/// An on/off switch with a sliding knob and a label (the settings rows).
-pub fn toggle(ui: &mut Ui, on: &mut bool, label: &str, enabled: bool) -> egui::Response {
+/// A navigation entry of the sidebar: icon, small-caps name, an optional count; the open page is filled.
+pub fn nav_item(ui: &mut Ui, selected: bool, ic: &str, label: &str, badge: Option<(String, Color32)>) -> egui::Response {
     let p = theme::pal(ui);
-    let h: f32 = 20.0;
-    let w = 36.0;
-    let text_w = ui.fonts_mut(|f| f.layout_no_wrap(label.to_string(), egui::FontId::proportional(14.0), p.text).size().x);
-    let (rect, mut resp) = ui.allocate_exact_size(egui::vec2(w + 10.0 + text_w, h.max(22.0)), if enabled { Sense::click() } else { Sense::hover() });
-    if resp.clicked() {
-        *on = !*on;
-        resp.mark_changed();
-    }
-    resp.widget_info(|| WidgetInfo::selected(WidgetType::Checkbox, enabled, *on, label));
-    let t = theme::ease(ui, resp.id.with("knob"), *on, 0.16);
+    let w = ui.available_width();
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, 30.0), Sense::click());
+    resp.widget_info(|| WidgetInfo::selected(WidgetType::Button, true, selected, label));
+    let t = theme::ease(ui, resp.id.with("sel"), selected, 0.18);
+    let hover = theme::ease(ui, resp.id.with("hover"), resp.hovered() && !selected, T_HOVER);
     if ui.is_rect_visible(rect) {
-        let track = Rect::from_min_size(egui::pos2(rect.left(), rect.center().y - h / 2.0), egui::vec2(w, h));
-        let off_c = if p.dark { Color32::from_rgb(48, 52, 66) } else { Color32::from_rgb(205, 210, 222) };
-        let mut fill = theme::mix(off_c, p.accent, t);
-        let mut knob_c = Color32::WHITE;
-        let mut text_c = p.text;
-        if !enabled {
-            fill = fill.gamma_multiply(0.45);
-            knob_c = knob_c.gamma_multiply(0.6);
-            text_c = p.faint;
-        }
         let painter = ui.painter();
-        painter.rect_filled(track, CornerRadius::same(255), fill);
-        let x = egui::lerp((track.left() + h / 2.0)..=(track.right() - h / 2.0), t);
-        painter.circle_filled(egui::pos2(x, track.center().y), h / 2.0 - 3.0, knob_c);
-        painter.text(egui::pos2(track.right() + 10.0, rect.center().y), egui::Align2::LEFT_CENTER, label, egui::FontId::proportional(14.0), text_c);
+        let fill = theme::mix(theme::mix(Color32::TRANSPARENT, p.card_hover, hover), p.accent.gamma_multiply(0.16), t);
+        let stroke = theme::mix(Color32::TRANSPARENT, p.accent.gamma_multiply(0.85), t);
+        painter.rect(rect, CornerRadius::same(R_SMALL), fill, Stroke::new(1.0, stroke), egui::StrokeKind::Inside);
+        let fg = theme::mix(p.dim, if p.dark { Color32::WHITE } else { p.text }, t.max(hover));
+        painter.text(rect.left_center() + egui::vec2(18.0, 0.0), egui::Align2::CENTER_CENTER, ic, egui::FontId::proportional(14.5), theme::mix(fg, p.accent_hover, t * 0.5));
+        let job = egui::text::LayoutJob::single_section(
+            label.to_uppercase(),
+            egui::TextFormat { font_id: egui::FontId::proportional(11.0), color: fg, extra_letter_spacing: 0.9, ..Default::default() },
+        );
+        let g = painter.layout_job(job);
+        painter.galley(egui::pos2(rect.left() + 34.0, rect.center().y - g.size().y / 2.0), g, fg);
+        if let Some((text, c)) = badge {
+            let g = painter.layout_no_wrap(text, egui::FontId::proportional(10.5), c);
+            let b = Rect::from_center_size(egui::pos2(rect.right() - 10.0 - g.size().x / 2.0, rect.center().y), g.size() + egui::vec2(10.0, 2.0));
+            painter.rect(b, CornerRadius::same(3), c.gamma_multiply(0.12), Stroke::new(1.0, c.gamma_multiply(0.6)), egui::StrokeKind::Inside);
+            painter.galley(b.center() - g.size() / 2.0, g, c);
+        }
     }
     resp
 }

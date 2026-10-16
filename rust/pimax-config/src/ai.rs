@@ -258,6 +258,418 @@ impl VoiceConfirm {
     }
 }
 
+/// How voice control uses the AI on this PC (`voice_local`; docs/AI.md section 16).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum VoiceLocal {
+    /// One model (`pimax-ai serve`, port 8080) answers in one short request (the default).
+    #[default]
+    Simple,
+    /// Two stages, like Jev online: a small router ("Lara") sorts the command into a category, then the model on
+    /// port 8080 (on the GPU) acts with only that category's tools.
+    TwoStage,
+}
+
+impl VoiceLocal {
+    pub const ALL: [VoiceLocal; 2] = [VoiceLocal::Simple, VoiceLocal::TwoStage];
+
+    pub fn id(self) -> &'static str {
+        match self {
+            VoiceLocal::Simple => "simple",
+            VoiceLocal::TwoStage => "two-stage",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<VoiceLocal> {
+        match s.trim() {
+            "simple" | "one" | "compact" => Some(VoiceLocal::Simple),
+            "two-stage" | "two_stage" | "twostage" => Some(VoiceLocal::TwoStage),
+            _ => None,
+        }
+    }
+}
+
+/// Speech recognition (`asr`; docs/AI.md section 17): the small model on the processor, the large one on the
+/// graphics card, or whichever the PC has room for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Asr {
+    /// The large model when the local models are On and 1.5 GB of video memory is free, else the small one.
+    #[default]
+    Auto,
+    /// Parakeet on the processor with hotwords (no video memory).
+    Cpu,
+    /// whisper large-v3-turbo on the graphics card (whisper-server, port 8082, Work only).
+    Gpu,
+}
+
+/// whisper-server's port.
+pub const ASR_PORT: u16 = 8082;
+/// What the large model takes on the graphics card (MiB, measured: 835).
+pub const ASR_VRAM_MIB: u32 = 900;
+/// Free video memory Auto wants before it picks the graphics card (MiB).
+pub const ASR_AUTO_MIN_FREE_MIB: u32 = 1536;
+
+impl Asr {
+    pub const ALL: [Asr; 3] = [Asr::Auto, Asr::Cpu, Asr::Gpu];
+
+    pub fn id(self) -> &'static str {
+        match self {
+            Asr::Auto => "auto",
+            Asr::Cpu => "cpu",
+            Asr::Gpu => "gpu",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Asr> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "auto" => Some(Asr::Auto),
+            "cpu" | "small" | "processor" => Some(Asr::Cpu),
+            "gpu" | "large" | "graphics" => Some(Asr::Gpu),
+            _ => None,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Asr::Auto => "Auto",
+            Asr::Cpu => "Small (processor)",
+            Asr::Gpu => "Large (graphics card)",
+        }
+    }
+
+    /// The measured numbers for the app (60 spoken commands, clean and with noise; docs/AI.md section 17).
+    pub fn numbers(self) -> &'static str {
+        match self {
+            Asr::Auto => "the large one when the local models are On and 1.5 GB of video memory is free, else the small one",
+            Asr::Cpu => "Parakeet + hotwords: 13.3% word errors in noise (2.7% clean), 0.14 s, no video memory, English and Spanish",
+            Asr::Gpu => "Whisper large-v3-turbo: 10.3% word errors in noise (6.4% clean), 0.04 s, 0.9 GB of video memory, English only",
+        }
+    }
+}
+
+/// What the speech recognition does now and why, in plain words ([`asr_plan`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AsrPlan {
+    /// The large model runs on the graphics card (whisper-server is wanted).
+    pub gpu: bool,
+    pub why: String,
+}
+
+/// Decide Auto / Small / Large. `local_on`: the Local models switch; `free_mib`: free video memory now with the ASR
+/// server's own share counted as free (None: unknown, nvidia-smi missing).
+pub fn asr_plan(choice: Asr, local_on: bool, free_mib: Option<u32>) -> AsrPlan {
+    let no = |why: &str| AsrPlan { gpu: false, why: why.to_string() };
+    let gb = |m: u32| format!("{:.1} GB", m as f64 / 1024.0);
+    match choice {
+        Asr::Cpu => no("Small model on the processor (your choice)"),
+        _ if !local_on => no(if choice == Asr::Gpu {
+            "The large model runs with the local models: turn Local models On (Work only); the small one answers meanwhile"
+        } else {
+            "Local models are Off: the small model on the processor"
+        }),
+        Asr::Gpu => match free_mib {
+            Some(f) if f < ASR_VRAM_MIB + 256 => AsrPlan { gpu: false, why: format!("Not enough video memory for the large model ({} free, it needs {}): the small one answers", gb(f), gb(ASR_VRAM_MIB)) },
+            _ => AsrPlan { gpu: true, why: "Large model on the graphics card (your choice)".into() },
+        },
+        Asr::Auto => match free_mib {
+            Some(f) if f >= ASR_AUTO_MIN_FREE_MIB => AsrPlan { gpu: true, why: format!("Large model on the graphics card ({} of video memory free)", gb(f)) },
+            Some(f) => AsrPlan { gpu: false, why: format!("Only {} of video memory free (Auto wants {}): the small model on the processor", gb(f), gb(ASR_AUTO_MIN_FREE_MIB)) },
+            None => no("No graphics card information: the small model on the processor"),
+        },
+    }
+}
+
+/// Where a local model of the two-stage pipeline runs and what it is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LocalEngine {
+    /// Laya (Python, `laya-serve`, TypeSafe Jev's `/v1/systemone` protocol): an encoder classifier, one forward pass.
+    Laya,
+    /// A GGUF model on llama.cpp's `llama-server`.
+    Llama,
+}
+
+/// A model the two-stage pipeline can use (the download pins are in `pimax-ai`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LocalModel {
+    /// The id in ai.toml (`[local_two_stage] router` / `action`).
+    pub id: &'static str,
+    /// For people.
+    pub label: &'static str,
+    pub engine: LocalEngine,
+    /// Download size (MiB), runtime included for Laya.
+    pub download_mib: u32,
+    /// Memory while it runs (MiB): VRAM for an action model on the GPU, RAM for a router on the CPU.
+    pub memory_mib: u32,
+    /// The weights' licence.
+    pub licence: &'static str,
+    /// One line for the app.
+    pub note: &'static str,
+    /// The audit's result for this model (docs/AI.md section 16): accuracy and latency, for the pickers.
+    pub bench: &'static str,
+    /// The recommended choice of its list.
+    pub recommended: bool,
+}
+
+/// Stage 1 ("Lara"): the routers, best first (benchmark in docs/AI.md section 16). All run on the CPU only.
+pub const ROUTER_MODELS: [LocalModel; 3] = [
+    LocalModel {
+        id: "lara",
+        label: "Lara (Laya tuned to your commands)",
+        engine: LocalEngine::Laya,
+        download_mib: 2760,
+        memory_mib: 2000,
+        licence: "Apache-2.0 (convaiinnovations/laya, tuned here on the command catalogue; PyTorch CPU)",
+        note: "Laya, the open Jev, tuned on this PC to the voice commands (about an hour once, in the background).",
+        bench: "94 % of categories right on unseen phrasings (Laya: 57 %); 0.3 s on the processor",
+        recommended: true,
+    },
+    LocalModel {
+        id: "laya",
+        label: "Laya 421M as published (the open Jev)",
+        engine: LocalEngine::Laya,
+        download_mib: 2760,
+        memory_mib: 2000,
+        licence: "Apache-2.0 (convaiinnovations/laya; Python, PyTorch CPU)",
+        note: "Open-weights classifier that speaks Jev's protocol; one pass, no text generated; not tuned.",
+        bench: "57 % of categories right on unseen phrasings; 0.33 s on the processor",
+        recommended: false,
+    },
+    LocalModel {
+        id: "qwen3.5-0.8b",
+        label: "Qwen3.5-0.8B (small LLM router)",
+        engine: LocalEngine::Llama,
+        download_mib: 508,
+        memory_mib: 900,
+        licence: "Apache-2.0 (Qwen3.5, unsloth GGUF)",
+        note: "A small language model that picks the category under a grammar; CPU only.",
+        bench: "57 % of categories right; 0.8 s on a busy processor (missed the 1.5 s deadline)",
+        recommended: false,
+    },
+];
+
+/// Stage 2: the action models (llama.cpp, GPU by default), smallest first.
+pub const ACTION_MODELS: [LocalModel; 2] = [
+    LocalModel {
+        id: "qwen3.5-4b",
+        label: "Qwen3.5-4B",
+        engine: LocalEngine::Llama,
+        download_mib: 2614,
+        memory_mib: 3100,
+        licence: "Apache-2.0 (Qwen3.5, unsloth GGUF)",
+        note: "The model of the simple mode, here with tools.",
+        bench: "40/40 hard phrases, 458/460 in all with Lara; 0.2 s alone, 0.35 s with Lara",
+        recommended: true,
+    },
+    LocalModel {
+        id: "qwen3.5-9b",
+        label: "Qwen3.5-9B",
+        engine: LocalEngine::Llama,
+        download_mib: 4929,
+        memory_mib: 5000,
+        licence: "Apache-2.0 (Qwen3.5, unsloth GGUF IQ4_XS)",
+        note: "Larger and slower; better with unusual wording.",
+        bench: "39/40 hard phrases alone, 38/40 with Lara; 0.25 s alone, 0.35 s with Lara",
+        recommended: false,
+    },
+];
+
+/// The agent-mode model (docs/AI.md section 18), an option next to the action model: only multi-step plans (agent mode)
+/// use it, on its own port; simple commands stay on the fast path (Lara + the action model).
+pub const AGENT_MODELS: [LocalModel; 1] = [LocalModel {
+    id: "qwen3.6-27b",
+    label: "Qwen3.6-27B (agent mode)",
+    engine: LocalEngine::Llama,
+    download_mib: 16036,
+    memory_mib: 18000,
+    licence: "Apache-2.0 (Qwen3.6, unsloth GGUF Q4_K_M)",
+    note: "Plans of several steps only; needs about 18 GB of video memory, so Work without a game.",
+    bench: "see docs/AI.md section 18",
+    recommended: false,
+}];
+
+/// Port of the agent-mode model's server.
+pub const AGENT_PORT: u16 = 8083;
+
+/// The router's address (stage 1, `pimax-ai serve --slot router`).
+pub const ROUTER_BASE: &str = "http://127.0.0.1:8081";
+
+/// A local model by id (router or action).
+pub fn local_model(id: &str) -> Option<&'static LocalModel> {
+    ROUTER_MODELS.iter().chain(ACTION_MODELS.iter()).chain(AGENT_MODELS.iter()).find(|m| m.id == id)
+}
+
+/// The two-stage pipeline on this PC (`[local_two_stage]`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LocalTwoStage {
+    /// Stage 1, an id of [`ROUTER_MODELS`].
+    pub router: String,
+    /// Stage 2, an id of [`ACTION_MODELS`] (served on port 8080 instead of the simple model).
+    pub action: String,
+    /// Optional agent-mode model, an id of [`AGENT_MODELS`] (None = off, the default).
+    pub agent: Option<String>,
+    /// GPU layers of the action model: None = all, Some(0) = CPU.
+    pub gpu_layers: Option<u32>,
+    /// "VRAM for AI": None = Auto (the default: what is free next to the running session, measured at each start and
+    /// re-checked while it runs), Some(N) = at most N MiB.
+    pub vram_mib: Option<u32>,
+    /// The preset the models came from (None: chosen by hand, "Advanced").
+    pub preset: Option<Preset>,
+}
+
+/// Local AI presets (user decision 2026-10-16: Low / Medium / High, each a router + action model pair from the
+/// benchmark of docs/AI.md section 16).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Preset {
+    Low,
+    Medium,
+    High,
+}
+
+/// One preset: what it sets and what the benchmark measured (for the app and the watch).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PresetInfo {
+    pub preset: Preset,
+    pub router: &'static str,
+    pub action: &'static str,
+    /// GPU layers of the action model (Some(0) = the processor).
+    pub gpu_layers: Option<u32>,
+    pub label: &'static str,
+    /// Download, RAM and VRAM in plain words.
+    pub size: &'static str,
+    /// Speed and accuracy from the audit.
+    pub bench: &'static str,
+}
+
+/// The presets, Low first; Medium is the default.
+pub const PRESETS: [PresetInfo; 3] = [
+    PresetInfo {
+        preset: Preset::Low,
+        router: "lara",
+        action: "qwen3.5-4b",
+        gpu_layers: Some(0),
+        label: "Low: everything on the processor",
+        size: "5.3 GB download, about 5 GB of RAM, no video memory",
+        bench: "40/40 hard phrases (the 4B on the processor); about 1.2-1.5 s per command",
+    },
+    PresetInfo {
+        preset: Preset::Medium,
+        router: "lara",
+        action: "qwen3.5-4b",
+        gpu_layers: None,
+        label: "Medium: Lara + Qwen3.5-4B on the graphics card",
+        size: "5.3 GB download, 2 GB of RAM, 3 GB of video memory",
+        bench: "40/40 hard phrases, 458/460 in all (plans included); about 0.35 s",
+    },
+    PresetInfo {
+        preset: Preset::High,
+        router: "lara",
+        action: "qwen3.5-9b",
+        gpu_layers: None,
+        label: "High: Lara + Qwen3.5-9B on the graphics card",
+        size: "7.5 GB download, 2 GB of RAM, 4.7 GB of video memory",
+        bench: "38/40 hard phrases; about 0.35 s (no more accurate here than Medium)",
+    },
+];
+
+impl Preset {
+    pub const ALL: [Preset; 3] = [Preset::Low, Preset::Medium, Preset::High];
+    pub fn id(self) -> &'static str {
+        match self {
+            Preset::Low => "low",
+            Preset::Medium => "medium",
+            Preset::High => "high",
+        }
+    }
+    pub fn parse(s: &str) -> Option<Preset> {
+        Preset::ALL.into_iter().find(|p| p.id() == s.trim())
+    }
+    /// "Low", "Medium", "High".
+    pub fn name(self) -> &'static str {
+        match self {
+            Preset::Low => "Low",
+            Preset::Medium => "Medium",
+            Preset::High => "High",
+        }
+    }
+    pub fn info(self) -> &'static PresetInfo {
+        PRESETS.iter().find(|p| p.preset == self).unwrap_or(&PRESETS[1])
+    }
+    /// The next one (the watch button cycles).
+    pub fn next(self) -> Preset {
+        match self {
+            Preset::Low => Preset::Medium,
+            Preset::Medium => Preset::High,
+            Preset::High => Preset::Low,
+        }
+    }
+}
+
+impl LocalTwoStage {
+    /// Set the models of a preset (the VRAM limit stays).
+    pub fn apply(&mut self, p: Preset) {
+        let i = p.info();
+        self.router = i.router.into();
+        self.action = i.action.into();
+        self.gpu_layers = i.gpu_layers;
+        self.preset = Some(p);
+    }
+    /// The preset these models match, if any.
+    pub fn matching(&self) -> Option<Preset> {
+        PRESETS.iter().find(|i| i.router == self.router && i.action == self.action && i.gpu_layers == self.gpu_layers).map(|i| i.preset)
+    }
+}
+
+impl Default for LocalTwoStage {
+    fn default() -> Self {
+        LocalTwoStage { router: ROUTER_MODELS[0].id.into(), action: ACTION_MODELS[0].id.into(), agent: None, gpu_layers: None, vram_mib: None, preset: Some(Preset::Medium) }
+    }
+}
+
+/// "AI runs on" for voice control (the AI page's first switch; the Work desk's watch button).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunsOn {
+    /// This PC: one model, one short request.
+    Simple,
+    /// This PC: the router "Lara" sorts the command, the model on the GPU acts with that category's tools.
+    TwoStage,
+    /// Online: Jev sorts, an action model acts (an online provider, OpenRouter first).
+    Online,
+}
+
+impl RunsOn {
+    pub const ALL: [RunsOn; 3] = [RunsOn::Simple, RunsOn::TwoStage, RunsOn::Online];
+    pub fn id(self) -> &'static str {
+        match self {
+            RunsOn::Simple => "simple",
+            RunsOn::TwoStage => "two-stage",
+            RunsOn::Online => "online",
+        }
+    }
+    pub fn parse(s: &str) -> Option<RunsOn> {
+        match s.trim() {
+            "simple" | "local" | "this-pc" => Some(RunsOn::Simple),
+            "two-stage" | "two_stage" | "lara" => Some(RunsOn::TwoStage),
+            "online" | "remote" => Some(RunsOn::Online),
+            _ => None,
+        }
+    }
+    /// For the app's selector.
+    pub fn label(self) -> &'static str {
+        match self {
+            RunsOn::Simple => "This PC (simple)",
+            RunsOn::TwoStage => "This PC (two-stage: Lara + GPU model)",
+            RunsOn::Online => "Online (Jev + action model)",
+        }
+    }
+    /// For the watch button and the captions (short).
+    pub fn short(self) -> &'static str {
+        match self {
+            RunsOn::Simple => "This PC",
+            RunsOn::TwoStage => "This PC, 2 stages",
+            RunsOn::Online => "Online",
+        }
+    }
+}
+
 /// A feature that uses a provider.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Feature {
@@ -414,6 +826,16 @@ pub struct AiConfig {
     pub voice_ai_log: Option<bool>,
     /// With a local voice model: use the online provider when the local server is not running (`voice_online_backup`; None: yes).
     pub voice_online_backup: Option<bool>,
+    /// The AI on this PC: one model or two stages (`voice_local`, default simple).
+    pub voice_local: VoiceLocal,
+    /// The two-stage pipeline's models (`[local_two_stage]`; None: the defaults).
+    pub local_two_stage: Option<LocalTwoStage>,
+    /// "Local models: On / Off" (`voice_local_models`; None: not set, the models follow `[use] voice`). Off: no local
+    /// model is loaded and voice uses the online provider when chosen, else only the offline commands. On: they run
+    /// in Work sessions only (pimaxd's ai.server; never in Play / SteamVR).
+    pub voice_local_models: Option<bool>,
+    /// Speech recognition: Auto / Small (processor) / Large (graphics card) (`asr`, default auto).
+    pub asr: Asr,
     /// Top-level keys this version does not know, raw values (kept on save).
     pub extra: BTreeMap<String, String>,
     /// `[use]` entries this version does not know (kept on save).
@@ -502,6 +924,7 @@ enum Section {
     Top,
     Use,
     Provider(usize),
+    TwoStage,
     Other(usize),
 }
 
@@ -529,6 +952,9 @@ impl AiConfig {
                 let h = h.split(']').next().unwrap_or("").trim();
                 sec = if h == "use" {
                     Section::Use
+                } else if h == "local_two_stage" {
+                    c.local_two_stage.get_or_insert_with(LocalTwoStage::default);
+                    Section::TwoStage
                 } else if let Some(name) = h.strip_prefix("providers.") {
                     let name = name.trim().trim_matches('"');
                     if !valid_name(name) {
@@ -558,6 +984,15 @@ impl AiConfig {
                     }
                     "strip_titles" => c.strip_titles = parse_bool(v, n, k)?,
                     "voice_online_backup" => c.voice_online_backup = Some(parse_bool(v, n, k)?),
+                    "voice_local_models" => c.voice_local_models = Some(parse_bool(v, n, k)?),
+                    "asr" => {
+                        let m = unquote(v, n)?;
+                        c.asr = Asr::parse(&m).ok_or_else(|| format!("line {n}: asr {m:?} (auto, cpu or gpu)"))?;
+                    }
+                    "voice_local" => {
+                        let m = unquote(v, n)?;
+                        c.voice_local = VoiceLocal::parse(&m).ok_or_else(|| format!("line {n}: voice_local {m:?} (simple or two-stage)"))?;
+                    }
                     "voice_confirm" => {
                         let m = unquote(v, n)?;
                         c.voice_confirm = VoiceConfirm::parse(&m).ok_or_else(|| format!("line {n}: voice_confirm {m:?} (none, dangerous or always)"))?;
@@ -605,6 +1040,60 @@ impl AiConfig {
                         }
                     }
                 }
+                Section::TwoStage => {
+                    let t = c.local_two_stage.get_or_insert_with(LocalTwoStage::default);
+                    match k {
+                        "preset" => {
+                            let m = unquote(v, n)?;
+                            t.preset = if m == "custom" { None } else { Some(Preset::parse(&m).ok_or_else(|| format!("line {n}: preset {m:?} (low, medium, high or custom)"))?) };
+                        }
+                        "router" => {
+                            let m = unquote(v, n)?;
+                            if !ROUTER_MODELS.iter().any(|x| x.id == m) {
+                                return Err(format!("line {n}: router {m:?} ({})", ROUTER_MODELS.map(|x| x.id).join(", ")));
+                            }
+                            t.router = m;
+                        }
+                        "action" => {
+                            let m = unquote(v, n)?;
+                            if !ACTION_MODELS.iter().any(|x| x.id == m) {
+                                return Err(format!("line {n}: action {m:?} ({})", ACTION_MODELS.map(|x| x.id).join(", ")));
+                            }
+                            t.action = m;
+                        }
+                        "agent" => {
+                            let m = unquote(v, n)?;
+                            if m.is_empty() || m == "off" || m == "none" {
+                                t.agent = None;
+                            } else if AGENT_MODELS.iter().any(|x| x.id == m) {
+                                t.agent = Some(m);
+                            } else {
+                                return Err(format!("line {n}: agent {m:?} ({}, or off)", AGENT_MODELS.map(|x| x.id).join(", ")));
+                            }
+                        }
+                        "gpu_layers" => {
+                            let raw = v.split('#').next().unwrap_or("").trim();
+                            t.gpu_layers = if raw == "\"all\"" || raw == "'all'" {
+                                None
+                            } else {
+                                Some(raw.parse().map_err(|_| format!("line {n}: gpu_layers is \"all\" or a number"))?)
+                            };
+                        }
+                        "vram_mib" => {
+                            let raw = v.split('#').next().unwrap_or("").trim();
+                            t.vram_mib = if raw == "\"auto\"" || raw == "'auto'" {
+                                None
+                            } else {
+                                let x: u32 = raw.parse().map_err(|_| format!("line {n}: vram_mib is \"auto\" or a number of MiB"))?;
+                                if !(512..=65536).contains(&x) {
+                                    return Err(format!("line {n}: vram_mib is between 512 and 65536"));
+                                }
+                                Some(x)
+                            };
+                        }
+                        _ => c.warnings.push(format!("line {n}: [local_two_stage] {k} is not known (dropped on save)")),
+                    }
+                }
                 Section::Other(ix) => c.other_sections[*ix].1.push((k.to_string(), v.to_string())),
             }
         }
@@ -632,6 +1121,15 @@ impl AiConfig {
         }
         if let Some(b) = self.voice_online_backup {
             o += &format!("voice_online_backup = {b}\n");
+        }
+        if self.voice_local != VoiceLocal::Simple {
+            o += &format!("voice_local = {}\n", quote(self.voice_local.id()));
+        }
+        if let Some(b) = self.voice_local_models {
+            o += &format!("voice_local_models = {b}\n");
+        }
+        if self.asr != Asr::Auto {
+            o += &format!("asr = {}\n", quote(self.asr.id()));
         }
         for (k, v) in &self.extra {
             o += &format!("{k} = {v}\n");
@@ -665,6 +1163,20 @@ impl AiConfig {
             for (k, v) in &p.extra {
                 o += &format!("{k} = {v}\n");
             }
+        }
+        if let Some(t) = &self.local_two_stage {
+            o += &format!("\n[local_two_stage]\npreset = {}\nrouter = {}\naction = {}\n", quote(t.preset.map(|p| p.id()).unwrap_or("custom")), quote(&t.router), quote(&t.action));
+            if let Some(a) = &t.agent {
+                o += &format!("agent = {}\n", quote(a));
+            }
+            o += &match t.gpu_layers {
+                None => "gpu_layers = \"all\"\n".to_string(),
+                Some(n) => format!("gpu_layers = {n}\n"),
+            };
+            o += &match t.vram_mib {
+                None => "vram_mib = \"auto\"\n".to_string(),
+                Some(m) => format!("vram_mib = {m}\n"),
+            };
         }
         for (name, lines) in &self.other_sections {
             o += &format!("\n[{name}]\n");
@@ -726,6 +1238,142 @@ impl AiConfig {
             let _ = std::fs::remove_file(&tmp);
         }
         res.map_err(|e| format!("{}: {e}", path.display()))
+    }
+
+    /// The first provider on this PC (loopback base URL), by name.
+    pub fn local_provider(&self) -> Option<String> {
+        self.providers.iter().find(|p| p.base().is_some_and(is_loopback)).map(|p| p.name.clone())
+    }
+
+    /// The first online provider (OpenRouter first), by name.
+    pub fn online_provider(&self) -> Option<String> {
+        let on = || self.providers.iter().filter(|p| p.base().is_some_and(|b| !is_loopback(b)));
+        on().find(|p| p.base().is_some_and(|b| b.contains("openrouter"))).or_else(|| on().next()).map(|p| p.name.clone())
+    }
+
+    /// Where voice commands are understood now.
+    pub fn runs_on(&self) -> RunsOn {
+        if self.provider_for(Feature::Voice).is_some_and(|p| p.base().is_some_and(|b| !is_loopback(b))) {
+            RunsOn::Online
+        } else if self.voice_local == VoiceLocal::TwoStage {
+            RunsOn::TwoStage
+        } else {
+            RunsOn::Simple
+        }
+    }
+
+    /// The choices this file allows (Online only with an online provider).
+    pub fn runs_on_choices(&self) -> Vec<RunsOn> {
+        let mut v = vec![RunsOn::Simple, RunsOn::TwoStage];
+        if self.online_provider().is_some() {
+            v.push(RunsOn::Online);
+        }
+        v
+    }
+
+    /// The agent-mode model option (docs/AI.md section 18): `Some(id)` sets `[local_two_stage] agent` and the top-level
+    /// `voice_agent_url` / `voice_agent_model` that voice reads (goal steps only; the usual model is the fallback while
+    /// the 27B server is not up); `None` removes all three. Nothing else in the file changes.
+    pub fn set_agent(&mut self, id: Option<&str>) -> Result<(), String> {
+        match id {
+            Some(id) => {
+                if !AGENT_MODELS.iter().any(|m| m.id == id) {
+                    return Err(format!("{id}: not an agent model ({})", AGENT_MODELS.map(|x| x.id).join(", ")));
+                }
+                self.local_two_stage.get_or_insert_with(LocalTwoStage::default).agent = Some(id.into());
+                self.extra.insert("voice_agent_url".into(), format!("\"http://127.0.0.1:{AGENT_PORT}/v1/chat/completions\""));
+                self.extra.insert("voice_agent_model".into(), "\"pimax-local\"".into());
+            }
+            None => {
+                if let Some(t) = self.local_two_stage.as_mut() {
+                    t.agent = None;
+                }
+                self.extra.remove("voice_agent_url");
+                self.extra.remove("voice_agent_model");
+            }
+        }
+        Ok(())
+    }
+
+    /// Switch: `[use] voice` and `voice_local` only (keys and other providers stay as they are). A local choice adds
+    /// the `pimax-ai` provider (127.0.0.1:8080) when there is no local one.
+    pub fn set_runs_on(&mut self, r: RunsOn) -> Result<(), String> {
+        let name = match r {
+            RunsOn::Online => self.online_provider().ok_or("no online provider is set up (AI page: Add OpenRouter)")?,
+            RunsOn::Simple | RunsOn::TwoStage => {
+                self.voice_local = if r == RunsOn::TwoStage { VoiceLocal::TwoStage } else { VoiceLocal::Simple };
+                if r == RunsOn::TwoStage {
+                    self.local_two_stage.get_or_insert_with(LocalTwoStage::default);
+                }
+                match self.local_provider() {
+                    Some(n) => n,
+                    None => {
+                        let mut name = "local".to_string();
+                        let mut i = 2;
+                        while self.provider(&name).is_some() {
+                            name = format!("local-{i}");
+                            i += 1;
+                        }
+                        let mut p = Provider::new(&name, Kind::OpenAiCompatible);
+                        p.base_url = Some(LLAMA_SERVER_BASE.into());
+                        p.model = "pimax-local".into();
+                        self.providers.push(p);
+                        name
+                    }
+                }
+            }
+        };
+        self.uses.insert(Feature::Voice, name);
+        Ok(())
+    }
+
+    /// Local models on (the switch; not set: on when voice uses a provider on this PC).
+    pub fn local_models_on(&self) -> bool {
+        self.voice_local_models.unwrap_or_else(|| self.runs_on() != RunsOn::Online)
+    }
+
+    /// "Local models: On / Off". On: two stages with the preset (Medium unless one was chosen), voice on this PC.
+    /// Off: the online provider when `online`, else voice keeps the local provider with no model loaded (only the
+    /// offline commands answer). Keys stay as they are.
+    pub fn set_local_models(&mut self, on: bool, online: bool) -> Result<(), String> {
+        self.voice_local_models = Some(on);
+        if on {
+            let t = self.local_two_stage.get_or_insert_with(LocalTwoStage::default);
+            if t.preset.is_none() && t.matching().is_none() && t.router.is_empty() {
+                t.apply(Preset::Medium);
+            }
+            self.set_runs_on(RunsOn::TwoStage)
+        } else if online {
+            self.set_runs_on(RunsOn::Online)
+        } else {
+            if self.runs_on() == RunsOn::Online {
+                self.set_runs_on(RunsOn::TwoStage)?;
+            }
+            Ok(())
+        }
+    }
+
+    /// The preset of the local models (Medium when none was set; None: chosen by hand).
+    pub fn preset(&self) -> Option<Preset> {
+        let t = self.two_stage();
+        t.preset.or_else(|| t.matching())
+    }
+
+    /// Choose a preset (the models of it; the VRAM limit stays).
+    pub fn set_preset(&mut self, p: Preset) {
+        self.local_two_stage.get_or_insert_with(LocalTwoStage::default).apply(p);
+    }
+
+    /// The next choice (the watch button cycles).
+    pub fn next_runs_on(&self) -> RunsOn {
+        let c = self.runs_on_choices();
+        let i = c.iter().position(|x| *x == self.runs_on()).unwrap_or(0);
+        c[(i + 1) % c.len()]
+    }
+
+    /// The two-stage settings (the defaults when the section is missing).
+    pub fn two_stage(&self) -> LocalTwoStage {
+        self.local_two_stage.clone().unwrap_or_default()
     }
 
     /// A provider by name.
@@ -850,6 +1498,36 @@ mod tests {
     }
 
     #[test]
+    fn asr_setting_parses_renders_and_defaults_to_auto() {
+        assert_eq!(AiConfig::default().asr, Asr::Auto);
+        assert!(!AiConfig::default().render().contains("asr"), "auto is the absent key");
+        let c = AiConfig::parse("asr = \"gpu\"\n").unwrap();
+        assert_eq!(c.asr, Asr::Gpu);
+        assert_eq!(AiConfig::parse(&c.render()).unwrap().asr, Asr::Gpu);
+        assert_eq!(AiConfig::parse("asr = 'cpu' # small\n").unwrap().asr, Asr::Cpu);
+        let e = AiConfig::parse("asr = \"huge\"\n").unwrap_err();
+        assert!(e.contains("line 1") && e.contains("auto, cpu or gpu"), "{e}");
+    }
+
+    #[test]
+    fn asr_plan_fits_the_graphics_card() {
+        // Auto: local models on and 1.5 GB free
+        assert!(asr_plan(Asr::Auto, true, Some(1536)).gpu);
+        assert!(!asr_plan(Asr::Auto, true, Some(1535)).gpu);
+        assert!(asr_plan(Asr::Auto, true, Some(1535)).why.contains("1.5 GB"));
+        assert!(!asr_plan(Asr::Auto, false, Some(20000)).gpu, "Local models Off: processor");
+        assert!(!asr_plan(Asr::Auto, true, None).gpu);
+        // Small never uses the card; Large needs room and the local models
+        assert!(!asr_plan(Asr::Cpu, true, Some(20000)).gpu);
+        assert!(asr_plan(Asr::Gpu, true, Some(2000)).gpu);
+        assert!(asr_plan(Asr::Gpu, true, None).gpu);
+        let p = asr_plan(Asr::Gpu, true, Some(800));
+        assert!(!p.gpu && p.why.contains("Not enough video memory"), "{p:?}");
+        let p = asr_plan(Asr::Gpu, false, Some(8000));
+        assert!(!p.gpu && p.why.contains("Local models On"), "{p:?}");
+    }
+
+    #[test]
     fn round_trip_and_resolve() {
         let c = sample();
         let text = c.render();
@@ -901,6 +1579,104 @@ mod tests {
         c.save_to(&p).unwrap();
         assert_eq!(AiConfig::load_from(&p).unwrap().other_sections, c.other_sections);
         let _ = std::fs::remove_dir_all(home);
+    }
+
+    #[test]
+    fn agent_model_is_an_option_and_round_trips() {
+        assert_eq!(AiConfig::parse("[local_two_stage]\naction = \"qwen3.5-4b\"\n").unwrap().two_stage().agent, None);
+        let c = AiConfig::parse("voice_local = \"two-stage\"\n[local_two_stage]\nagent = \"qwen3.6-27b\"\n").unwrap();
+        assert_eq!(c.two_stage().agent.as_deref(), Some("qwen3.6-27b"));
+        assert_eq!(AiConfig::parse(&c.render()).unwrap(), c);
+        assert_eq!(AiConfig::parse("[local_two_stage]\nagent = \"off\"\n").unwrap().two_stage().agent, None);
+        assert!(AiConfig::parse("[local_two_stage]\nagent = \"gpt\"\n").unwrap_err().contains("agent"));
+        assert!(local_model("qwen3.6-27b").is_some());
+        let mut c = AiConfig::parse("voice_ai = \"fallback\"\n").unwrap();
+        c.set_agent(Some("qwen3.6-27b")).unwrap();
+        let back = AiConfig::parse(&c.render()).unwrap();
+        assert_eq!(back.two_stage().agent.as_deref(), Some("qwen3.6-27b"));
+        assert!(c.render().contains("voice_agent_url = \"http://127.0.0.1:8083/v1/chat/completions\"") && c.render().contains("voice_ai = "));
+        c.set_agent(None).unwrap();
+        assert!(!c.render().contains("voice_agent") && c.set_agent(Some("x")).is_err());
+    }
+
+    #[test]
+    fn local_two_stage_round_trip_keeps_the_keys() {
+        let t = "voice_local = \"two-stage\"\n[providers.or]\nkind = \"openai-compatible\"\nbase_url = \"https://openrouter.ai/api/v1\"\napi_key = \"sk-or-TEST\"\n\n[local_two_stage]\nrouter = \"qwen3.5-0.8b\"\naction = \"qwen3.5-9b\"\ngpu_layers = 20\nvram_mib = 4096\n";
+        let c = AiConfig::parse(t).unwrap();
+        assert_eq!(c.voice_local, VoiceLocal::TwoStage);
+        let ts = c.two_stage();
+        assert_eq!((ts.router.as_str(), ts.action.as_str(), ts.gpu_layers, ts.vram_mib), ("qwen3.5-0.8b", "qwen3.5-9b", Some(20), Some(4096)));
+        let back = AiConfig::parse(&c.render()).unwrap();
+        assert_eq!(back, c);
+        assert_eq!(back.providers[0].api_key.as_ref().unwrap().expose(), "sk-or-TEST", "the key survives a mode change");
+        // the defaults and their rendering
+        let d = AiConfig::parse("").unwrap();
+        assert_eq!((d.voice_local, d.two_stage()), (VoiceLocal::Simple, LocalTwoStage::default()));
+        assert!(!d.render().contains("voice_local") && !d.render().contains("[local_two_stage]"), "simple files stay as they were");
+        let mut all = d.clone();
+        all.local_two_stage = Some(LocalTwoStage::default());
+        assert!(all.render().contains("gpu_layers = \"all\"") && all.render().contains("vram_mib = \"auto\""), "Auto by default");
+        assert_eq!(AiConfig::parse(&all.render()).unwrap().two_stage().vram_mib, None);
+        assert_eq!(AiConfig::parse(&all.render()).unwrap().two_stage().gpu_layers, None);
+        // unknown models and bad values are refused with the line
+        assert!(AiConfig::parse("[local_two_stage]\nrouter = \"gpt\"\n").unwrap_err().contains("router"));
+        assert!(AiConfig::parse("[local_two_stage]\nvram_mib = 9\n").is_err());
+        assert!(AiConfig::parse("voice_local = \"three\"\n").is_err());
+        assert!(local_model("laya").is_some_and(|m| m.engine == LocalEngine::Laya) && local_model("qwen3.5-9b").is_some());
+    }
+
+    #[test]
+    fn local_models_switch_and_presets() {
+        let t = "[use]\nvoice = \"local\"\n[providers.local]\nkind = \"openai-compatible\"\nbase_url = \"http://127.0.0.1:8080/v1\"\n[providers.or]\nkind = \"openai-compatible\"\nbase_url = \"https://openrouter.ai/api/v1\"\napi_key = \"sk-or-v1-TEST\"\n";
+        let mut c = AiConfig::parse(t).unwrap();
+        assert!(c.local_models_on(), "not set: follows [use] voice");
+        c.set_local_models(true, false).unwrap();
+        assert_eq!((c.runs_on(), c.preset()), (RunsOn::TwoStage, Some(Preset::Medium)));
+        c.set_preset(Preset::Low);
+        assert_eq!((c.two_stage().gpu_layers, c.two_stage().action.as_str()), (Some(0), "qwen3.5-4b"));
+        c.set_preset(Preset::High);
+        assert_eq!((c.two_stage().gpu_layers, c.two_stage().action.as_str()), (None, "qwen3.5-9b"));
+        let back = AiConfig::parse(&c.render()).unwrap();
+        assert_eq!((back.preset(), back.voice_local_models), (Some(Preset::High), Some(true)));
+        assert!(back.render().contains("preset = \"high\""));
+        // off with Online: Jev; off without: no model, the provider stays local
+        c.set_local_models(false, true).unwrap();
+        assert_eq!((c.runs_on(), c.local_models_on()), (RunsOn::Online, false));
+        c.set_local_models(false, false).unwrap();
+        assert_eq!((c.runs_on(), c.local_models_on()), (RunsOn::TwoStage, false));
+        assert!(c.render().contains("voice_local_models = false") && c.render().contains("sk-or-v1-TEST"));
+        // by hand: custom
+        let mut t2 = c.two_stage();
+        t2.router = "laya".into();
+        t2.preset = None;
+        c.local_two_stage = Some(t2);
+        assert_eq!(c.preset(), None);
+        assert!(AiConfig::parse(&c.render()).unwrap().two_stage().preset.is_none());
+        assert_eq!(Preset::High.next(), Preset::Low);
+    }
+
+    #[test]
+    fn runs_on_switches_only_use_and_voice_local() {
+        let t = "default = \"local\"\n[use]\nvoice = \"local\"\n[providers.local]\nkind = \"openai-compatible\"\nbase_url = \"http://127.0.0.1:8080/v1\"\nmodel = \"pimax-local\"\n[providers.openrouter]\nkind = \"openai-compatible\"\nbase_url = \"https://openrouter.ai/api/v1\"\nmodel = \"typesafe/jev-router\"\napi_key = \"sk-or-v1-TEST\"\n";
+        let mut c = AiConfig::parse(t).unwrap();
+        assert_eq!(c.runs_on(), RunsOn::Simple);
+        assert_eq!(c.runs_on_choices(), RunsOn::ALL.to_vec());
+        assert_eq!(c.next_runs_on(), RunsOn::TwoStage);
+        c.set_runs_on(RunsOn::TwoStage).unwrap();
+        assert_eq!((c.runs_on(), c.next_runs_on()), (RunsOn::TwoStage, RunsOn::Online));
+        c.set_runs_on(RunsOn::Online).unwrap();
+        assert_eq!((c.runs_on(), c.next_runs_on()), (RunsOn::Online, RunsOn::Simple));
+        let back = AiConfig::parse(&c.render()).unwrap();
+        assert_eq!(back.providers[1].api_key.as_ref().unwrap().expose(), "sk-or-v1-TEST", "keys stay");
+        assert_eq!(back.runs_on(), RunsOn::Online);
+        // no online provider: two choices; no local provider: one is added
+        let mut e = AiConfig::default();
+        assert_eq!(e.runs_on_choices(), vec![RunsOn::Simple, RunsOn::TwoStage]);
+        assert!(e.set_runs_on(RunsOn::Online).is_err());
+        e.set_runs_on(RunsOn::TwoStage).unwrap();
+        assert_eq!(e.providers[0].base(), Some(LLAMA_SERVER_BASE));
+        assert_eq!((e.runs_on(), e.uses.get(&Feature::Voice).map(String::as_str)), (RunsOn::TwoStage, Some("local")));
+        assert_eq!(RunsOn::parse("lara"), Some(RunsOn::TwoStage));
     }
 
     #[test]

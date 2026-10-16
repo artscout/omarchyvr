@@ -26,6 +26,7 @@ x11 = ["eframe/x11"]
 pimax-gui-core = { path = "../pimax-gui-core" }
 pimax-config = { path = "../pimax-config" }
 pimax-doctor = { path = "../pimax-doctor" }
+pimax-backgrounds = { path = "../pimax-backgrounds" }
 # OpenGL (glow) on Wayland only by default: the smallest build; `wgpu` and `x11` add renderers (see [features])
 eframe = { version = "0.36", default-features = false, features = ["glow", "wayland", "default_fonts"] }
 png = "0.18"
@@ -33,6 +34,9 @@ log = { workspace = true }
 libc = { workspace = true }
 # outline icons of the Pimax Play style look; only the used glyphs are compiled in (subset)
 egui-phosphor = { version = "0.14", default-features = false, features = ["subset"] }
+# the line art (assets/art/*.svg): egui's own CPU rasteriser, already in the build for its glyphs (same version and
+# features as epaint's, so no new crate); its kurbo parses the SVG path data
+vello_cpu = { version = "0.1.0", default-features = false, features = ["std", "u8_pipeline"] }
 # native crashes (a graphics driver): a minidump written by the supervisor process
 crash-handler = "0.8"
 minidumper = "0.11"

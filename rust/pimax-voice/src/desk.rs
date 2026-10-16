@@ -130,6 +130,9 @@ pub fn needs_confirm(args: &[String], r: &mut dyn Runner) -> Option<String> {
 
 /// `wtype` the text into the focused window (no Enter). `confirmed`: a terminal is allowed (after "yes").
 pub fn type_text(text: &str, confirmed: bool, r: &mut dyn Runner) -> Result<String, String> {
+    // hesitations are never typed ("uh something in the", user decision 2026-10-16)
+    let space = if text.ends_with(' ') { " " } else { "" };
+    let text = crate::command::strip_fillers(text) + space;
     let text: String = text.chars().filter(|c| !c.is_control()).take(TYPE_MAX).collect();
     if text.trim().is_empty() {
         return Err("Nothing to type".into());
@@ -272,7 +275,7 @@ pub fn search(q: &str, r: &mut dyn Runner) -> Result<String, String> {
     Ok(format!("Searching \"{}\"", short(&q, 40)))
 }
 
-fn title_has(title: &str, q: &str) -> bool {
+pub fn title_has(title: &str, q: &str) -> bool {
     let t = title.to_lowercase();
     let words: Vec<String> = crate::command::words(q).into_iter().filter(|w| w.len() >= 2 && !crate::command::FILLERS.contains(&w.as_str()) && w != "tab").collect();
     !words.is_empty() && words.iter().all(|w| t.contains(w.as_str()))
@@ -321,6 +324,89 @@ pub fn tab_or_site(q: &str, cycle: bool, r: &mut dyn Runner) -> Result<Option<St
     Ok(None)
 }
 
+/// Video files "play X" may open.
+const VIDEO_EXT: &[&str] = &["mkv", "mp4", "avi", "webm", "mov", "m4v", "wmv", "mpg", "mpeg", "ts", "flv"];
+
+/// The folders searched for videos: ~/Downloads, ~/Videos and the XDG videos folder (never the whole home).
+pub fn video_dirs() -> Vec<std::path::PathBuf> {
+    let home = std::path::PathBuf::from(std::env::var_os("HOME").unwrap_or_default());
+    let mut v = vec![home.join("Downloads"), home.join("Videos")];
+    if let Ok(t) = std::fs::read_to_string(home.join(".config/user-dirs.dirs")) {
+        for l in t.lines() {
+            if let Some(x) = l.strip_prefix("XDG_VIDEOS_DIR=") {
+                let p = x.trim_matches('"').replace("$HOME", &home.to_string_lossy());
+                v.push(std::path::PathBuf::from(p));
+            }
+        }
+    }
+    v.sort();
+    v.dedup();
+    v
+}
+
+/// The video whose file name has every word of `q` (case-insensitive), in `dirs` up to 3 folders deep (at most 5,000
+/// entries): the biggest, then the newest. (path, how many matched).
+pub fn find_video(q: &str, dirs: &[std::path::PathBuf]) -> Option<(std::path::PathBuf, usize)> {
+    let words: Vec<String> = crate::command::words(q)
+        .into_iter()
+        .filter(|w| w.len() >= 2 && !crate::command::FILLERS.contains(&w.as_str()) && !matches!(w.as_str(), "movie" | "film" | "video" | "file" | "it" | "already" | "downloaded" | "pelicula"))
+        .collect();
+    if words.is_empty() {
+        return None;
+    }
+    let mut hits: Vec<(u64, std::time::SystemTime, std::path::PathBuf)> = Vec::new();
+    let mut seen = 0usize;
+    let mut stack: Vec<(std::path::PathBuf, u32)> = dirs.iter().map(|d| (d.clone(), 0)).collect();
+    while let Some((d, depth)) = stack.pop() {
+        let Ok(rd) = std::fs::read_dir(&d) else { continue };
+        for e in rd.flatten() {
+            seen += 1;
+            if seen > 5000 {
+                break;
+            }
+            let p = e.path();
+            let Ok(md) = e.metadata() else { continue };
+            if md.is_dir() {
+                if depth < 3 && !e.file_name().to_string_lossy().starts_with('.') {
+                    stack.push((p, depth + 1));
+                }
+                continue;
+            }
+            let ext = p.extension().map(|x| x.to_string_lossy().to_lowercase()).unwrap_or_default();
+            if !VIDEO_EXT.contains(&ext.as_str()) {
+                continue;
+            }
+            let name = crate::command::words(&p.file_stem().map(|s| s.to_string_lossy().replace(['.', '_'], " ")).unwrap_or_default()).join(" ");
+            if words.iter().all(|w| name.contains(w.as_str())) {
+                hits.push((md.len(), md.modified().unwrap_or(std::time::UNIX_EPOCH), p));
+            }
+        }
+    }
+    let n = hits.len();
+    hits.sort_by(|a, b| b.0.cmp(&a.0).then(b.1.cmp(&a.1)));
+    hits.into_iter().next().map(|h| (h.2, n))
+}
+
+/// "Play Dune": the video, fullscreen in mpv (else the desktop's default player).
+pub fn play(q: &str, r: &mut dyn Runner) -> Result<String, String> {
+    let Some((path, n)) = find_video(q, &video_dirs()) else {
+        return Err(format!("No video called \"{}\" in Downloads or Videos", short(q.trim(), 30)));
+    };
+    let name = path.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let p = path.to_string_lossy().into_owned();
+    // the player opens on the main screen: cinema mode shows that one, big, in front
+    if let Some(m) = crate::windows::vr_screens(r).into_iter().find(|s| s.slot == "main" && !s.focused) {
+        if !m.output.is_empty() && m.output.chars().all(|c| c.is_alphanumeric() || "-_.:".contains(c)) {
+            let _ = crate::windows::dispatch(r, &format!("hl.dsp.focus({{ monitor = \"{}\" }})", m.output));
+        }
+    }
+    let mpv = std::path::Path::new("/usr/bin/mpv").exists();
+    let argv: Vec<String> = if mpv { vec!["mpv".into(), "--fs".into(), "--force-window=immediate".into(), "--".into(), p] } else { vec!["xdg-open".into(), p] };
+    r.run(&argv, false)?;
+    let more = if n > 1 { format!(" (the biggest of {n})") } else { String::new() };
+    Ok(format!("Playing {name}{more}"))
+}
+
 /// Run an `@desk` action. `confirmed` = a terminal may be typed into (after the yes, or no policy for it).
 pub fn execute(args: &[String], confirmed: bool, r: &mut dyn Runner) {
     let rest = args[1.min(args.len())..].join(" ");
@@ -328,6 +414,7 @@ pub fn execute(args: &[String], confirmed: bool, r: &mut dyn Runner) {
         Some("type") => type_text(&rest, confirmed, r),
         Some("key") => press(&rest, confirmed, r),
         Some("browser") => browser(r),
+        Some("play") => play(&rest, r),
         Some("search") => search(&rest, r),
         Some("open") => match site_url(&rest) {
             Some((name, url)) => {
@@ -356,6 +443,22 @@ pub fn execute(args: &[String], confirmed: bool, r: &mut dyn Runner) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_video_by_name_in_the_video_folders_only() {
+        let d = std::env::temp_dir().join(format!("pimax-video-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(d.join("Downloads/films")).unwrap();
+        std::fs::write(d.join("Downloads/Dune.Part.Two.2024.sample.mkv"), vec![0u8; 10]).unwrap();
+        std::fs::write(d.join("Downloads/films/Dune.2021.1080p.mkv"), vec![0u8; 100]).unwrap();
+        std::fs::write(d.join("Downloads/dune-notes.txt"), "x").unwrap();
+        let (p, n) = find_video("Dune", &[d.join("Downloads")]).unwrap();
+        assert_eq!((p.file_name().unwrap().to_str().unwrap(), n), ("Dune.2021.1080p.mkv", 2), "the biggest of the matches");
+        assert!(find_video("the movie dune part two", &[d.join("Downloads")]).unwrap().0.ends_with("Dune.Part.Two.2024.sample.mkv"));
+        assert!(find_video("arrival", &[d.join("Downloads")]).is_none());
+        assert!(find_video("the movie", &[d.join("Downloads")]).is_none());
+        let _ = std::fs::remove_dir_all(&d);
+    }
 
     #[test]
     fn sites_and_urls() {

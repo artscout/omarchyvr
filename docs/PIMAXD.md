@@ -145,8 +145,11 @@ The plan is the spec; the user decisions of 2026-10-15 apply.
 - **Leaves (wayvr, passthrough, ctrltrack, perf, voice.\*, voicehud, floor.follow).** pimaxd respawns the argv, env
   and cwd it captured from /proc while the process ran. The process is detached with setsid, its log is appended, and
   its pid file is written. The preset is re-applied after a WayVR restart. A WayVR crash together with an Xid 31 is not
-  restarted: the user is asked. `ai.server` restarts through `pimax-ai serve` (`--cpu` if that was its mode), and the
-  keepalive through `systemctl --user restart`.
+  restarted: the user is asked. `ai.server` starts and restarts through `pimax-ai up` (the saved shape: the simple
+  model, or Lara + the action model fitted to the free VRAM; `--cpu` if that was its mode) and stops with
+  `pimax-ai down`; since 2026-10-16 it is a Work-only session component (rule: Work and ai.toml's
+  `voice_local_models`, which pimaxd reads each round; Play never starts it, a switch to Play stops it; AI.md 16). The
+  keepalive restarts through `systemctl --user restart`.
 - **Unplug:**
   - Desk: after 6 s, a clean ordered stop. The intent stays on, and the session is restored once the HID has been
     present for 4 s and DP is connected.

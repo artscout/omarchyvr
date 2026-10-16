@@ -1,6 +1,7 @@
 //! What the app remembers between runs (`~/.config/pimax/gui-state.toml`): the onboarding was finished, the last desk
 //! switches and refresh rate. `key = value` lines, written atomically (temp file + rename). Missing or unreadable
 //! state means defaults.
+use pimax_config::ctrl_inhand::CtrlMode;
 use crate::app::Page;
 use crate::launcher::DeskToggles;
 use std::path::Path;
@@ -54,12 +55,14 @@ impl GuiState {
     /// Parse the file text.
     pub fn parse(text: &str) -> GuiState {
         let mut s = GuiState::default();
+        let mut eye_v2 = false;
         for l in text.lines() {
             let Some((k, v)) = l.split_once('=') else { continue };
             let on = matches!(v.trim(), "true" | "1" | "yes");
             match k.trim() {
                 "onboarded" | "wizard_done" => s.onboarded = on,
                 "eye" => s.toggles.eye = on,
+                "eye_visual" => eye_v2 = true,
                 "sixdof" => s.toggles.sixdof = on,
                 "ctrl_track" => s.toggles.ctrl_track = on,
                 "hands" => s.toggles.hands = on,
@@ -78,10 +81,23 @@ impl GuiState {
                 "perf" => s.toggles.perf = on,
                 "anchor" => s.toggles.anchor = on,
                 "preset" => s.toggles.preset = crate::launcher::Preset::parse(v),
+                "controllers_work" => s.toggles.ctrl_work = CtrlMode::parse(v).unwrap_or(CtrlMode::WhenHeld),
+                "controllers_play" => s.toggles.ctrl_play = CtrlMode::parse(v).unwrap_or(CtrlMode::Always),
                 "screens" => s.toggles.screens = crate::screens::clamp(v.trim().parse().unwrap_or(0)),
                 "scale_pct" => s.scale_pct = v.trim().parse::<u16>().ok().filter(|x| (50..=200).contains(x)).unwrap_or(100),
                 _ => {}
             }
+        }
+        // 2026-10-16: camera hands are off by default (they still need work); a saved `hands = true` the user never
+        // chose themselves (the old default) is dropped, a switch the user turned on stays
+        if !s.hands_chosen {
+            s.toggles.hands = false;
+            s.toggles.hands_roles = false;
+        }
+        // 2026-10-16: eye tracking is on by default (visual only); a state file from before that decision had the old
+        // dev-only value, so it is switched on once (the user can switch it off afterwards: the key is then written)
+        if !eye_v2 && !text.trim().is_empty() {
+            s.toggles.eye = true;
         }
         s
     }
@@ -90,7 +106,7 @@ impl GuiState {
     pub fn render(&self) -> String {
         let t = &self.toggles;
         format!(
-            "# Pimax app state (written by pimax-setup)\nonboarded = {}\neye = {}\nsixdof = {}\nctrl_track = {}\nhands = {}\nhands_roles = {}\nhands_chosen = {}\npassthrough = {}\nvoice = {}\nhz = {}\nperf = {}\nanchor = {}\npreset = {}\nscreens = {}\nscale_pct = {}\nautostart = {}\nlast_mode = {}\nlast_result = {}\nlast_at = {}\nargv_at = {}\ndev_mode = {}\n{}",
+            "# Pimax app state (written by pimax-setup)\nonboarded = {}\neye_visual = true\neye = {}\nsixdof = {}\nctrl_track = {}\nhands = {}\nhands_roles = {}\nhands_chosen = {}\npassthrough = {}\nvoice = {}\nhz = {}\nperf = {}\nanchor = {}\npreset = {}\ncontrollers_work = {}\ncontrollers_play = {}\nscreens = {}\nscale_pct = {}\nautostart = {}\nlast_mode = {}\nlast_result = {}\nlast_at = {}\nargv_at = {}\ndev_mode = {}\n{}",
             self.onboarded,
             t.eye,
             t.sixdof,
@@ -104,6 +120,8 @@ impl GuiState {
             t.perf,
             t.anchor,
             t.preset.name(),
+            t.ctrl_work.name(),
+            t.ctrl_play.name(),
             t.screens,
             self.scale_pct,
             self.autostart,
@@ -144,7 +162,7 @@ mod tests {
     fn round_trip_and_defaults() {
         let s = GuiState {
             onboarded: true,
-            toggles: DeskToggles { eye: false, sixdof: true, ctrl_track: true, hands: true, hands_roles: true, passthrough: true, voice: true, hz90: true, perf: false, anchor: true, preset: crate::launcher::Preset::Cinema, eye_default_on: false, screens: 2 },
+            toggles: DeskToggles { eye: false, sixdof: true, ctrl_track: true, hands: true, hands_roles: true, passthrough: true, voice: true, hz90: true, perf: false, anchor: true, preset: crate::launcher::Preset::Cinema, eye_default_on: false, screens: 2, ctrl_work: CtrlMode::Off, ctrl_play: CtrlMode::WhenHeld },
             page: Some(Page::Tools),
             scale_pct: 130,
             autostart: true,
@@ -159,6 +177,9 @@ mod tests {
         assert_eq!(GuiState::parse(""), GuiState::default());
         assert!(!GuiState::default().autostart, "start at login is off by default");
         assert!(!GuiState::default().dev_mode, "developer mode is off by default");
+        assert!(GuiState::default().toggles.eye, "eye tracking (visual only) is on by default");
+        assert!(GuiState::parse("onboarded = true\neye = false\n").toggles.eye, "an older file with the dev-only value is switched on once");
+        assert!(!GuiState::parse("eye_visual = true\neye = false\n").toggles.eye, "a later off is kept");
         assert!(GuiState::parse("wizard_done = true\npage = wizard\n").onboarded, "older files");
         assert_eq!(GuiState::parse("page = wizard\n").page, Some(Page::Onboarding));
         let d = std::env::temp_dir().join(format!("pimax-guistate-{}", std::process::id()));

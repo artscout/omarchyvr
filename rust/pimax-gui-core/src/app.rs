@@ -40,8 +40,18 @@ use std::time::{Duration, Instant};
 /// Pages.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Page {
-    /// Desk mode (main).
+    /// Home: the headset, the controllers, Play / Work, quick settings.
     Desk,
+    /// Display: refresh rate, render quality, brightness, performance, IPD.
+    Display,
+    /// Tracking: 6DoF, controllers, hands, eye tracking.
+    Tracking,
+    /// Room setup, the room map and the floor.
+    Room,
+    /// The Work desk (WayVR): passthrough, presets, screens, subtitles, voice.
+    Desktop,
+    /// Developer: auto mode, the VR runtime, crash reports, what Start runs, the session details.
+    Developer,
     /// Setup checklist.
     Setup,
     /// Tools.
@@ -52,6 +62,12 @@ pub enum Page {
     Profiles,
     /// AI providers (voice control, Autofix).
     Ai,
+    /// Recording: headset video and tracking takes.
+    Record,
+    /// Local AI models for Work: On / Off, Low / Medium / High, Online (Jev) instead (docs/AI.md 16).
+    LocalAi,
+    /// VR backgrounds (the skybox library): pages/backgrounds.rs.
+    Backgrounds,
     /// pimaxd: components, events, safe mode (the System page).
     System,
     /// Onboarding (the headset module's steps).
@@ -60,17 +76,42 @@ pub enum Page {
 
 impl Page {
     /// Every page, in navigation order.
-    pub const ALL: [Page; 8] = [Page::Desk, Page::Setup, Page::Tools, Page::Logs, Page::Profiles, Page::Ai, Page::System, Page::Onboarding];
+    pub const ALL: [Page; 16] = [
+        Page::Desk,
+        Page::Display,
+        Page::Tracking,
+        Page::Room,
+        Page::Desktop,
+        Page::Backgrounds,
+        Page::Record,
+        Page::LocalAi,
+        Page::Ai,
+        Page::Setup,
+        Page::Developer,
+        Page::Tools,
+        Page::Logs,
+        Page::Profiles,
+        Page::System,
+        Page::Onboarding,
+    ];
 
     /// Stable name (app state file, crash reports).
     pub fn name(self) -> &'static str {
         match self {
             Page::Desk => "desk",
+            Page::Display => "display",
+            Page::Tracking => "tracking",
+            Page::Room => "room",
+            Page::Desktop => "desktop",
+            Page::Developer => "developer",
             Page::Setup => "setup",
             Page::Tools => "tools",
             Page::Logs => "logs",
             Page::Profiles => "profiles",
             Page::Ai => "ai",
+            Page::Record => "record",
+            Page::LocalAi => "local-ai",
+            Page::Backgrounds => "backgrounds",
             Page::System => "system",
             Page::Onboarding => "onboarding",
         }
@@ -123,6 +164,13 @@ pub enum Pending {
         command: String,
         /// What runs on confirm.
         what: Confirm,
+    },
+    /// Play found a Steam that was started from inside SteamVR: ask before closing it (the Play dialog).
+    RestartSteam {
+        /// The tainted Steam.
+        steam: crate::facts::TaintedSteam,
+        /// The Play side that asked (true = game session, false = Work).
+        vr: bool,
     },
     /// SIGINT one process.
     Interrupt {
@@ -357,12 +405,14 @@ pub struct AppCore {
     pub fixes: FixesView,
     /// A catalogue fix whose job runs (job label, the fix): logged when the job ends.
     fix_logging: Option<(String, CatalogueRun)>,
-    /// The onboarding asked for the Room row on Home (the page opens it and clears this).
+    /// The onboarding asked for the Room page (the window shows it and clears this).
     pub room_requested: bool,
     /// Demo mode: the simulated live subtitles.
     pub demo_subtitles: bool,
     /// The eye laser as last switched from the app (WayVR has no query for it).
     pub eye_laser: Option<bool>,
+    /// `~/.config/pimax/eye.conf`: the gaze dot (visual effect) and the developer targeting switch.
+    pub eye_settings: pimax_config::eye::EyeSettings,
     /// The last headset restart's result.
     pub headset_reset: Option<crate::reset::ResetResult>,
     /// Where the running restart's output starts in the log.
@@ -477,6 +527,7 @@ impl AppCore {
             room_requested: false,
             demo_subtitles: false,
             eye_laser: None,
+            eye_settings: pimax_config::eye::EyeSettings::load(&pimax_config::eye::default_path()),
             headset_reset: None,
             headset_reset_from: None,
             lens_ipd: None,
@@ -540,6 +591,7 @@ impl AppCore {
             AppCore::new(machine, p, opts, env, store)
         };
         a.demo = true;
+        a.eye_settings = Default::default();
         // demo mode answers Autofix itself: nothing leaves the machine
         let svc = pimax_device::checks::cpu::monado_service(&a.opts.monado_build);
         a.autofix = AutofixView::new(Arc::new(crate::llm::Demo { reply: crate::autofix::demo_reply(&svc) }));
@@ -1046,11 +1098,11 @@ impl AppCore {
         t
     }
 
-    /// The switches of a game session (`pimax vr start`): no desk clients, no eye tracking (a desk switch).
+    /// The switches of a game session (`pimax vr start`): no desk clients; eye tracking follows its switch (visual only, no overlay in games).
     pub fn vr_toggles(&self) -> DeskToggles {
         let t = self.effective_toggles();
         let hands = self.state.hands_chosen && t.hands;
-        DeskToggles { passthrough: false, voice: false, eye: false, hands, hands_roles: hands && t.hands_roles, ..t }
+        DeskToggles { passthrough: false, voice: false, hands, hands_roles: hands && t.hands_roles, ..t }
     }
 
     /// The preflight of a game session.
@@ -1530,12 +1582,6 @@ impl AppCore {
         self.spawn(j);
     }
 
-    /// "Also pause Sunshine (stops game streaming)" (default off).
-    pub fn pause_sunshine(&mut self, on: bool) {
-        let j = tools::gamemode_job(&self.paths, &self.facts, &["sunshine", if on { "on" } else { "off" }]);
-        self.spawn(j);
-    }
-
     pub fn comp_budget(&mut self, b: &str) {
         if !matches!(b, "auto" | "6" | "8") {
             return;
@@ -1556,7 +1602,7 @@ impl AppCore {
         self.spawn(j);
     }
 
-    /// Crash recovery: Sunshine / the local AI were paused by a session that is gone (app or PC crashed): start
+    /// Crash recovery: the local AI was paused (an older version also Sunshine) by a session that is gone (app or PC crashed): start
     /// them again, once, when the app has looked and nothing runs.
     pub(crate) fn poll_gamemode_recovery(&mut self) -> bool {
         if self.demo || self.gm_recovery_done || self.facts.at == 0 {
@@ -1990,6 +2036,99 @@ impl AppCore {
                 Err(e) => c.message = format!("cannot save {}: {e}", path.display()),
             })
         });
+    }
+
+    /// "Controllers" (when picked up / always / off, docs/CONTROLLERS-INHAND.md) for Work (`play == false`) or Play:
+    /// saved at once (the next start passes `--controllers`, start-argv.txt keeps it for restarts) and, when a session
+    /// of that side runs with a Monado that knows it, changed there too (`$XDG_RUNTIME_DIR/pimax-ctrl-inhand-mode`).
+    pub fn set_controllers_mode(&mut self, play: bool, mode: pimax_config::ctrl_inhand::CtrlMode) {
+        if play {
+            self.toggles.ctrl_play = mode;
+        } else {
+            self.toggles.ctrl_work = mode;
+        }
+        self.save_state();
+        let running_side = self.live.started_as.as_deref().map(|k| k == "vr");
+        let live = self.live.ctrl_inhand.is_some() && running_side == Some(play);
+        let side = if play { "Play" } else { "Work" };
+        if !live || self.demo {
+            self.message = format!("Controllers in {side}: {} (from the next start)", mode.label().to_lowercase());
+            return;
+        }
+        let path = self.paths.runtime_dir.join("pimax-ctrl-inhand-mode");
+        self.task(None, move || {
+            let r = pimax_config::ctrl_inhand::request(&path, mode, std::time::Duration::from_millis(1000));
+            Box::new(move |c: &mut AppCore| {
+                c.message = match r {
+                    Ok(()) => format!("Controllers in {side}: {} (now and from the next start)", mode.label().to_lowercase()),
+                    Err(e) => format!("Controllers in {side}: saved for the next start; {e}"),
+                }
+            })
+        });
+    }
+
+    /// "Screen numbers" (off / on demand / always): saved at once in the WayVR settings (the next desk start writes it
+    /// into WayVR's conf.d, so restarts keep it; unsaved edits of the WayVR page stay unsaved) and sent to a running
+    /// WayVR (`wayvrctl screen-numbers off|ondemand|always`).
+    pub fn set_screen_numbers(&mut self, mode: wayvr::ScreenNumbers) {
+        self.wayvr.settings.screen_numbers = mode;
+        if self.live.alive("wayvr") {
+            self.wayvr_ctl(Ctl::ScreenNumbers(mode));
+        }
+        let mut s = self.wayvr.on_disk.clone().unwrap_or_default();
+        s.screen_numbers = mode;
+        if self.demo {
+            self.wayvr.on_disk = Some(s);
+            return;
+        }
+        let path = self.wayvr_paths.settings.clone();
+        self.task(None, move || {
+            let r = wayvr::save_settings(&path, &s);
+            Box::new(move |c: &mut AppCore| match r {
+                Ok(()) => {
+                    if let Some(d) = c.wayvr.on_disk.as_mut() {
+                        d.screen_numbers = mode;
+                    } else {
+                        c.wayvr.on_disk = Some(s);
+                    }
+                    c.message = format!("Screen numbers {}: saved for every desk start", match mode {
+                        wayvr::ScreenNumbers::Off => "off",
+                        wayvr::ScreenNumbers::OnDemand => "on demand",
+                        wayvr::ScreenNumbers::Always => "always",
+                    });
+                }
+                Err(e) => c.message = format!("cannot save {}: {e}", path.display()),
+            })
+        });
+    }
+
+    /// The gaze dot switch: saved in `eye.conf` (read by the next desk start) and sent to a running WayVR.
+    pub fn set_eye_dot(&mut self, on: bool) {
+        self.eye_settings.dot = on;
+        self.save_eye_settings();
+        if self.live.alive("wayvr") {
+            self.set_eye_laser(on);
+        }
+    }
+
+    /// Developer: gaze may target windows for voice (off by default; takes effect at the next desk start).
+    pub fn set_eye_targeting(&mut self, on: bool) {
+        self.eye_settings.targeting = on;
+        self.save_eye_settings();
+    }
+
+    fn save_eye_settings(&mut self) {
+        if self.demo {
+            return;
+        }
+        if let Err(e) = self.eye_settings.save(&pimax_config::eye::default_path()) {
+            self.message = format!("cannot save the eye settings: {e}");
+        }
+    }
+
+    /// The eye tracking status in plain words.
+    pub fn eye_status(&self) -> (String, bool) {
+        eye_status_text(self.toggles.eye, self.facts.eye_calibration, self.facts.caps.eye || self.facts.caps.no_eye, self.live.service.as_ref().map(|s| s.eye))
     }
 
     /// The eye laser of the running session (`wayvrctl gaze-laser on|off`).
@@ -2722,5 +2861,39 @@ mod mic_test_tests {
         assert!(super::mic_result_from(&l(&[]), false).contains("did not run"));
         let s = super::test_result_from(&l(&["Speaker test: no headset speaker: it exists only while VR runs"]), "Speaker test:", false);
         assert!(s.starts_with("no headset speaker"));
+    }
+}
+
+/// Plain-words eye tracking status: (text, ok). `running`: Some(eye flag of the running Monado).
+pub fn eye_status_text(switch_on: bool, calibrated: bool, supported: bool, running: Option<bool>) -> (String, bool) {
+    if !switch_on {
+        return ("Off".into(), true);
+    }
+    if !supported {
+        return ("Not available: this build of the launcher has no eye tracking".into(), false);
+    }
+    if !calibrated {
+        return ("Not calibrated, so it does not run (no calibration saved)".into(), false);
+    }
+    match running {
+        Some(true) => ("Running (visual only)".into(), true),
+        Some(false) => ("Not running: the eye tracker did not start. VR works without it".into(), false),
+        None => ("On: starts with the next session".into(), true),
+    }
+}
+
+#[cfg(test)]
+mod eye_status_tests {
+    use super::eye_status_text as t;
+
+    #[test]
+    fn plain_words() {
+        assert_eq!(t(false, true, true, Some(true)).0, "Off");
+        assert!(t(true, false, true, None).0.starts_with("Not calibrated"));
+        assert!(!t(true, false, true, None).1);
+        assert!(t(true, true, false, None).0.starts_with("Not available"));
+        assert_eq!(t(true, true, true, Some(true)).0, "Running (visual only)");
+        assert!(t(true, true, true, Some(false)).0.contains("VR works without it"));
+        assert!(t(true, true, true, None).0.starts_with("On"));
     }
 }
