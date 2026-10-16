@@ -144,6 +144,7 @@ impl Fixture {
             self.root.join("bin").display(),
             std::env::var("PATH").unwrap_or_default()
         );
+        omarchyvr_config::isolate_command(c, &self.root);
         c.env("HOME", self.root.join("home"))
             .env("PATH", path)
             .env("PIMAX_SYSFS_ROOT", self.root.join("sys"))
@@ -235,7 +236,9 @@ fn text(o: &Output) -> String {
 #[test]
 fn vr_is_listed_in_the_main_usage_and_has_its_own_help() {
     let f = Fixture::new(POLITE);
-    let o = Command::new(env!("CARGO_BIN_EXE_omarchyvr"))
+    let mut hc = Command::new(env!("CARGO_BIN_EXE_omarchyvr"));
+    omarchyvr_config::isolate_command(&mut hc, Path::new(env!("CARGO_TARGET_TMPDIR")));
+    let o = hc
         .arg("--help")
         .output()
         .unwrap();
@@ -933,7 +936,9 @@ fn mount_shared_prints_the_command_and_reports_the_mount_state() {
     fs::create_dir_all(&proc_root).unwrap();
     let run = |mounts: &str| {
         fs::write(proc_root.join("mounts"), mounts).unwrap();
-        let o = Command::new(env!("CARGO_BIN_EXE_omarchyvr"))
+        let mut mc = Command::new(env!("CARGO_BIN_EXE_omarchyvr"));
+        omarchyvr_config::isolate_command(&mut mc, &proc_root);
+        let o = mc
             .arg("mount-shared")
             .env("PIMAX_PROC_ROOT", &proc_root)
             .env("PIMAX_SHARED_UUID", "0123456789ABCDEF")

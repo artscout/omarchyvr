@@ -10,6 +10,7 @@ fn pimax(args: &[&str]) -> (Option<i32>, String) {
         .arg("vr")
         .args(args)
         .env("PIMAX_NO_NOTIFY", "1")
+        .env("OMARCHYVR_NO_MIGRATE", "1")
         .output()
         .unwrap();
     (

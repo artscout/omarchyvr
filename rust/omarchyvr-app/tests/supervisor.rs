@@ -19,6 +19,7 @@ fn dirs(tag: &str) -> PathBuf {
 
 fn start(d: &Path, crash: Option<&str>, extra: &[(&str, &str)]) -> Child {
     let mut c = Command::new(env!("CARGO_BIN_EXE_omarchyvr-app"));
+    omarchyvr_config::isolate_command(&mut c, d);
     c.env_remove("WAYLAND_DISPLAY")
         .env_remove("DISPLAY")
         .env("XDG_STATE_HOME", d.join("state"))
@@ -169,7 +170,9 @@ fn one_instance_and_unexpected_exits() {
     let d = dirs("instance");
     let mut first = start(&d, Some("hang"), &[("PIMAX_HANG_SECS", "60")]);
     std::thread::sleep(Duration::from_millis(1500));
-    let out = Command::new(env!("CARGO_BIN_EXE_omarchyvr-app"))
+    let mut c2 = Command::new(env!("CARGO_BIN_EXE_omarchyvr-app"));
+    omarchyvr_config::isolate_command(&mut c2, &d);
+    let out = c2
         .env_remove("WAYLAND_DISPLAY")
         .env_remove("DISPLAY")
         .env("XDG_STATE_HOME", d.join("state"))
