@@ -149,7 +149,8 @@ int64_t
 pimax_cam_record_stop(pimax_cam *cam);
 
 /* path NULL = $PIMAX_CAM_CALIB, $PIMAX_CALIB, ~/.config/omarchyvr/headset-calibration.xml,
- * ~/pimax-re/analysis/headset-calibration.xml. used_path may be NULL. */
+ * <repo>/analysis/headset-calibration.xml (repo = $PIMAX_REPO,
+ * ~/.local/share/omarchyvr/data or ~/omarchyvr). used_path may be NULL. */
 int
 pimax_cam_calib_load(const char *path, pimax_cam_calib *out, char *used_path, size_t used_len);
 int

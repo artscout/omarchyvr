@@ -17,7 +17,8 @@ fn reference() -> Option<Vec<u8>> {
     .map(std::path::PathBuf::from)
     .chain(
         std::env::var_os("HOME")
-            .map(|h| std::path::PathBuf::from(h).join("pimax-re/analysis/headset-calibration.xml")),
+            .into_iter()
+            .flat_map(|h| omarchyvr_config::paths::headset_calibration_candidates(std::path::Path::new(&h))),
     )
     .find_map(|p| std::fs::read(p).ok())
 }

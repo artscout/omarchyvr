@@ -16,19 +16,19 @@
 set -u
 MODE=${1:-}
 M=${M:-$HOME/src/monado-slam/build}
-T=$HOME/pimax-re/analysis/tools
+T=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # The newest build that has every subcommand used here (an old ~/src/target-slam binary had no "stats").
 if [ -z "${SLAMTOOL:-}" ]; then
-	for c in $HOME/src/target-slam/release/omarchyvr-slam $HOME/pimax-re/rust/target/release/omarchyvr-slam; do
+	for c in $HOME/src/target-slam/release/omarchyvr-slam $HOME/.local/bin/omarchyvr-slam; do
 		[ -x "$c" ] && "$c" stats 2>&1 | grep -q "unknown command" && continue
 		[ -x "$c" ] && { [ -z "${SLAMTOOL:-}" ] || [ "$c" -nt "$SLAMTOOL" ]; } && SLAMTOOL=$c
 	done
-	SLAMTOOL=${SLAMTOOL:-$HOME/pimax-re/rust/target/release/omarchyvr-slam}
+	SLAMTOOL=${SLAMTOOL:-$HOME/.local/bin/omarchyvr-slam}
 fi
 export VIT_SYSTEM_LIBRARY_PATH=${VIT_SYSTEM_LIBRARY_PATH:-$HOME/.local/lib/libbasalt.so}
 export PIMAX_LOG=${PIMAX_LOG:-info}
 RECROOT=$HOME/.local/share/omarchyvr/slam-recordings
-WINLOG=${WINLOG:-$HOME/pimax-re/pimax-data/windows-20261014/pimax-windows-dump-20261014-042415/pimax-poses.csv}
+WINLOG=${WINLOG:-$T/../../pimax-data/windows-20261014/pimax-windows-dump-20261014-042415/pimax-poses.csv}
 
 replay_one() { # $1 = recording dir, $2 = camera offset ns; prints the result dir
 	local DIR=$1 OFF=${2:-0} CFG ROOT N SECS RES

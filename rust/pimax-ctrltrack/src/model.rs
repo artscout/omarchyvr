@@ -69,8 +69,9 @@ impl LedModel {
         LedModel::parse(&t).map_err(|e| format!("{}: {e}", path.display()))
     }
 
-    /// Default model files (left, right): `$PIMAX_CTRL_MODEL_DIR`, else `~/.config/omarchyvr/controllers`, else the
-    /// lab's Windows dump (`~/pimax-re/pimax-data/ProgramData-Pimax/slam/H1`). Each holds one folder per controller
+    /// Default model files (left, right): `$PIMAX_CTRL_MODEL_DIR`, else `~/.config/omarchyvr/controllers`, else
+    /// `~/.local/share/omarchyvr/controller-models` (the installed data dir), else the Windows dump in the repo
+    /// (`<repo>/pimax-data/ProgramData-Pimax/slam/H1`; repo = `$PIMAX_REPO`, the installed data copy, or `~/omarchyvr`). Each holds one folder per controller
     /// serial with a `controller_params.json` (the Pimax `slam/H1/<serial>/` layout); the two folders are taken in
     /// name order, as the tracker has always used them. Nothing per-unit is compiled in; with no folder found the
     /// paths point at `~/.config/omarchyvr/controllers/{left,right}.json` so the error names where to put them.
@@ -83,7 +84,16 @@ impl LedModel {
             dirs.push(d.into());
         }
         dirs.push(home.join(".config/omarchyvr/controllers"));
-        dirs.push(home.join("pimax-re/pimax-data/ProgramData-Pimax/slam/H1"));
+        dirs.push(home.join(".local/share/omarchyvr/controller-models"));
+        // the repo as omarchyvr_config::paths::repo_dir finds it (inline: this crate stays free of the app's crates)
+        let repo = std::env::var_os("PIMAX_REPO")
+            .filter(|v| !v.is_empty())
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| {
+                let installed = home.join(".local/share/omarchyvr/data");
+                if installed.join("docs/LESSONS.md").is_file() { installed } else { home.join("omarchyvr") }
+            });
+        dirs.push(repo.join("pimax-data/ProgramData-Pimax/slam/H1"));
         for d in &dirs {
             if let Some(p) = Self::pair_in(d) {
                 return p;

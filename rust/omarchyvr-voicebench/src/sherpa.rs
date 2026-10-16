@@ -21,10 +21,11 @@ impl std::error::Error for Error {}
 
 type Result<T> = std::result::Result<T, Error>;
 
-/// Default location of the C API library installed by `pip install sherpa-onnx-core` into `~/src/venv-voice`.
+/// Default location of the C API library: `~/.local/lib/omarchyvr/sherpa-onnx/lib`, else the one `pip install
+/// sherpa-onnx-core` put into `~/src/venv-voice` (see [`omarchyvr_config::paths::sherpa_lib`]).
 pub fn default_lib_path() -> PathBuf {
     let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default();
-    home.join("src/venv-voice/lib/python3.14/site-packages/sherpa_onnx/lib/libsherpa-onnx-c-api.so")
+    omarchyvr_config::paths::sherpa_lib(&home)
 }
 
 /// The loaded C API.
@@ -364,8 +365,8 @@ mod tests {
     }
 
     #[test]
-    fn default_lib_path_points_into_the_venv() {
-        assert!(default_lib_path().to_string_lossy().ends_with("sherpa_onnx/lib/libsherpa-onnx-c-api.so"));
+    fn default_lib_path_is_the_installed_or_the_venv_library() {
+        assert!(default_lib_path().to_string_lossy().ends_with("lib/libsherpa-onnx-c-api.so"));
     }
 
     /// Needs ~/src/venv-voice (sherpa-onnx-core) and ~/models: run with `cargo test -p omarchyvr-voicebench -- --ignored`.

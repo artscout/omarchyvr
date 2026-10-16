@@ -190,7 +190,7 @@ mod tests {
             40_050, // started at 400.5 s of uptime -> 600 s old
             &["/dev/hidraw3"],
         );
-        m.process(372448, "pimax-cam", "/home/u/pimax-re/rust/target/release/pimax-cam broker", &[], 39_000, &["/dev/video0", "anon_inode:[eventfd]"]);
+        m.process(372448, "pimax-cam", "/home/u/omarchyvr/rust/target/release/pimax-cam broker", &[], 39_000, &["/dev/video0", "anon_inode:[eventfd]"]);
         m.process(5, "kworker/0:1", "", &[], 1, &[]);
         m
     }
@@ -207,7 +207,7 @@ mod tests {
             environ(&m, 372460),
             vec![("PIMAX_FPS".to_string(), "72".to_string()), ("PIMAX_EYE".to_string(), "1".to_string())]
         );
-        assert_eq!(exe(&m, 372448), Some(PathBuf::from("/home/u/pimax-re/rust/target/release/pimax-cam")));
+        assert_eq!(exe(&m, 372448), Some(PathBuf::from("/home/u/omarchyvr/rust/target/release/pimax-cam")));
     }
 
     #[test]
@@ -224,7 +224,7 @@ mod tests {
         assert_eq!(h.len(), 1);
         assert_eq!(h[0].pid, 372448);
         assert_eq!(h[0].comm, "pimax-cam");
-        assert!(h[0].describe().contains("pid 372448 (/home/u/pimax-re/rust/target/release/pimax-cam broker) holds /dev/video0"));
+        assert!(h[0].describe().contains("pid 372448 (/home/u/omarchyvr/rust/target/release/pimax-cam broker) holds /dev/video0"));
         assert!(holders(&m, &[PathBuf::from("/dev/bus/usb/001/009")]).is_empty());
         assert!(holders(&m, &[]).is_empty());
     }

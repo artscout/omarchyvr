@@ -8,7 +8,7 @@ set -euo pipefail
 NAME=${ROOM_NAME:-home}
 SECS=${MAP_SECONDS:-90}
 DESK_ARGS=${DESK_ARGS:---6dof --ctrl-track --preset work --anchor}
-RM=~/pimax-re/rust/target/release/omarchyvr-roommap
+RM=~/.local/bin/omarchyvr-roommap
 MAP=~/.local/share/omarchyvr/roommap/$NAME/map.bin
 mode=${1:-}
 

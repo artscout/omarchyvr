@@ -253,7 +253,7 @@ mod tests {
         let state = d.join("state");
         std::fs::create_dir_all(state.join("logs")).unwrap();
         std::fs::create_dir_all(state.join("jobs")).unwrap();
-        std::fs::write(state.join("logs/omarchyvr-app.log"), "line by alice in /home/alice/pimax-re\n").unwrap();
+        std::fs::write(state.join("logs/omarchyvr-app.log"), "line by alice in /home/alice/omarchyvr\n").unwrap();
         std::fs::write(state.join("jobs/20261014-1-start.log"), "$ omarchyvr desk start\n").unwrap();
         let mut r = Report::new(Kind::Panic, "panic in thread 'main'", "x");
         r.log_tail = vec!["serial=SER123456".into()];
@@ -280,7 +280,7 @@ mod tests {
         let mut raw = Vec::new();
         flate2::read::GzDecoder::new(&gz[..]).read_to_end(&mut raw).unwrap();
         let text = String::from_utf8_lossy(&raw);
-        assert!(text.contains("line by <user> in ~/pimax-re"), "redacted log");
+        assert!(text.contains("line by <user> in ~/omarchyvr"), "redacted log");
         assert!(text.contains("app 0.1.0 on <host>"));
         assert!(text.contains("serial=<serial>"));
         assert!(!text.contains("omarchyvr-report-20261014T120000Z/minidumps/"), "no dumps without opt-in");

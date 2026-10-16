@@ -1,6 +1,6 @@
 //! Regenerates `fixtures/*.usbpcap.gz` from the Windows captures, which are not in git.
 //!
-//!     cargo run -p pimax-eye --example make_fixtures -- ~/pimax-re
+//!     cargo run -p pimax-eye --example make_fixtures -- ~/omarchyvr
 //!
 //! The fixtures are byte-exact slices of the original USBPcap records (same timestamps, same snap-length truncation),
 //! so the tests exercise the real wire data. Slices:

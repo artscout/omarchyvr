@@ -699,7 +699,8 @@ mod tests {
         );
         m.host.files.remove(std::path::Path::new("/etc/pacman.d/hooks/65-nvidia-pimax-patch.hook"));
         m.host.files.remove(std::path::Path::new("/etc/udev/rules.d/70-pimax.rules"));
-        m.host.files.remove(std::path::Path::new("/home/u/pimax-re/rust/target/release/pimax-cam"));
+        m.host.files.remove(std::path::Path::new("/home/u/omarchyvr/rust/target/release/pimax-cam"));
+        m.host.files.remove(std::path::Path::new("/home/u/.local/bin/pimax-cam"));
         m.file("/home/u/.local/bin/omarchyvr", "older");
         m.cmd("systemctl --user is-active omarchyvr-keepalived", 3, "inactive\n");
         m.set_meta("/home/u/.config/openvr/openvrpaths.vrpath", crate::machine::FileMeta { len: 52, mode: 0o100644, ..Default::default() });
@@ -719,14 +720,14 @@ mod tests {
         match &item(&v, "pacman-hooks").fix {
             Fix::Root(r) => {
                 assert!(r.pkexec.is_ok(), "{:?}", r.pkexec);
-                assert!(r.lines[0].contains("L=/home/u/pimax-re/linux"));
+                assert!(r.lines[0].contains("L=/home/u/omarchyvr/linux"));
             }
             f => panic!("{f:?}"),
         }
         assert!(matches!(item(&v, "udev-rule").fix, Fix::Root(_)));
         assert_eq!(item(&v, "udev-rule").level, Level::Fail);
         match &item(&v, "rust-bins").fix {
-            Fix::User(u) => assert_eq!(u.steps[0].display(), "cd /home/u/pimax-re/rust && cargo build --release -p pimax-cam"),
+            Fix::User(u) => assert_eq!(u.steps[0].display(), "cd /home/u/omarchyvr/rust && cargo build --release -p pimax-cam"),
             f => panic!("{f:?}"),
         }
         // row 8: launcher install only while idle, atomic rename
@@ -817,13 +818,13 @@ mod tests {
             Fix::Root(r) => assert_eq!(r.lines, vec!["sudo /usr/local/lib/pimax/nvidia-patch-reapply.sh --rebuild".to_string()]),  // names:keep
             f => panic!("{f:?}"),
         }
-        let spaced = Paths::new(std::path::Path::new("/home/a b"), std::path::Path::new("/home/a b/pimax-re"), std::path::Path::new("/tmp/s"), std::path::Path::new("/run/user/1"));
+        let spaced = Paths::new(std::path::Path::new("/home/a b"), std::path::Path::new("/home/a b/omarchyvr"), std::path::Path::new("/tmp/s"), std::path::Path::new("/run/user/1"));
         let b = &spaced.builds[0];
         let fix = setcap_fix(&b.service());
         assert_eq!(fix.lines[0], "sudo setcap cap_sys_nice+ep '/home/a b/src/monado-eye/build/src/xrt/targets/service/monado-service'");
         assert!(fix.pkexec.is_ok(), "{:?}", fix.pkexec);
         let h = hooks_fix(&spaced);
-        assert!(h.lines[0].contains("L='/home/a b/pimax-re/linux'"), "{}", h.lines[0]);
+        assert!(h.lines[0].contains("L='/home/a b/omarchyvr/linux'"), "{}", h.lines[0]);
     }
 
     #[test]

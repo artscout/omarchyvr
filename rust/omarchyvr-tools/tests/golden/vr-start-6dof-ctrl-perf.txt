@@ -1,10 +1,10 @@
 $ omarchyvr vr start --dry-run --6dof --ctrl-track --perf
 exit Some(0)
 --- stdout
-omarchyvr vr: --perf would also run, after the service: $ROOT/home/src/target-desk/release/wayvr (minimal WayVR, no screens), $ROOT/home/pimax-re/rust/target/release/omarchyvr-perf
+omarchyvr vr: --perf would also run, after the service: $ROOT/home/src/target-desk/release/wayvr (minimal WayVR, no screens), $ROOT/home/.local/bin/omarchyvr-perf
        PIMAX_PERF_FILE=$ROOT/run/omarchyvr-perf.stats for monado-service
-omarchyvr vr: --6dof would first run: $ROOT/home/pimax-re/rust/target/release/omarchyvr-slam export --out $ROOT/session/basalt, then $ROOT/home/pimax-re/rust/target/release/pimax-cam broker (socket $ROOT/run/omarchyvr-cam-broker.sock)
-omarchyvr vr: --ctrl-track would also run, after the service: $ROOT/home/pimax-re/rust/target/release/pimax-ctrltrack live --source broker:$ROOT/run/omarchyvr-cam-broker.sock
+omarchyvr vr: --6dof would first run: $ROOT/home/.local/bin/omarchyvr-slam export --out $ROOT/session/basalt, then $ROOT/home/.local/bin/pimax-cam broker (socket $ROOT/run/omarchyvr-cam-broker.sock)
+omarchyvr vr: --ctrl-track would also run, after the service: $ROOT/home/.local/bin/pimax-ctrltrack live --source broker:$ROOT/run/omarchyvr-cam-broker.sock
 omarchyvr vr: preflight
   [warn] headset   34a4:0044 on USB but only 0/4 hidraw interfaces (udev rule linux/70-pimax.rules installed?)
   [ok  ] camera    34a4:0014 on USB, video node present

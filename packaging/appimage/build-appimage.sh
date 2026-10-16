@@ -16,14 +16,14 @@
 #
 # Why AppRun sets PIMAX_REPO: the app detects a package install only for /usr/bin/omarchyvr-app (is_system_install in
 # rust/omarchyvr-gui-core/src/paths.rs). Inside an AppImage the executable is under /tmp/.mount_*, so Paths::from_env
-# falls back to PIMAX_REPO, else ~/pimax-re. Paths expects <repo>/docs/LESSONS.md, so the docs go to
+# falls back to PIMAX_REPO, else the installed data (~/.local/share/omarchyvr/data), else ~/omarchyvr. Paths expects <repo>/docs/LESSONS.md, so the docs go to
 # $APPDIR/usr/share/omarchyvr/docs and AppRun sets PIMAX_REPO=$APPDIR/usr/share/omarchyvr (a PIMAX_REPO that the caller
 # already exports wins).
 #
 # With PIMAX_REPO set, Paths looks for every release binary in <repo>/rust/target/release. The AppDir therefore has
 # usr/share/omarchyvr/rust/target/release as a symlink to usr/bin, so the app finds the bundled omarchyvr-app and omarchyvr.
 # The other tools are not bundled: the app reports them as not built, and the launcher still looks for them in
-# ~/pimax-re/rust/target/release.
+# ~/.local/bin.
 #
 # Limits of the AppImage:
 #   * The binaries link the glibc and libgcc of the build machine; build on the oldest system you want to support.

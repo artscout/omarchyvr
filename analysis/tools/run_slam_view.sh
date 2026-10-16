@@ -9,8 +9,8 @@ set -u
 SECS=${1:-90}
 export PIMAX_CAM_AE=${PIMAX_CAM_AE:-0}
 M=${M:-$HOME/src/monado-slam/build}
-T=$HOME/pimax-re/analysis/tools
-BIN=$HOME/pimax-re/rust/target/release
+T=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+BIN=$HOME/.local/bin
 RECROOT=$HOME/.local/share/omarchyvr/slam-recordings
 SOCK=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/omarchyvr-cam-broker.sock
 LOGD=$(mktemp -d /tmp/pimax-slamview.XXXX)
@@ -33,7 +33,7 @@ trap 'echo; echo "interrupted"; cleanup; exit 130' INT TERM
 # 1. Preflight: nothing may hold the camera or run Monado already.
 pgrep -x monado-service >/dev/null && die "monado-service is already running (pgrep -a monado); stop it first (omarchyvr desk stop / omarchyvr vr stop --grace 30)"
 for v in /dev/video*; do fuser "$v" >/dev/null 2>&1 && die "$v is busy: $(fuser -v "$v" 2>&1 | tail -n +2 | tr -s ' ')"; done
-for b in pimax-cam omarchyvr-passthrough; do [ -x "$BIN/$b" ] || die "missing $BIN/$b (cargo build --release -p $b in ~/pimax-re/rust)"; done
+for b in pimax-cam omarchyvr-passthrough; do [ -x "$BIN/$b" ] || die "missing $BIN/$b (run ./install.sh again in your omarchyvr clone, or: cd ~/omarchyvr/rust && cargo build --release -p $b)"; done
 rm -f "$SOCK"
 
 # 2. Camera broker.

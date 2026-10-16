@@ -3,7 +3,7 @@
  INFO [pimax_ctrl_create] Pimax controllers: optical 6DoF on (PIMAX_CTRL_TRACK=1): poses from /run/user/1000/pimax-ctrltrack.pose (pimax-ctrltrack live), held 500 ms, then the rest pose; gyro between fixes off
  INFO [pimax_ctrl_on_report] first report (slot 3)
  INFO [pimax_hmd_create] pimax_video_prepare(72) -> 0
- INFO [pimax_camera_create] camera calibration /home/user/pimax-re/analysis/headset-calibration.xml (4 cameras, P511X0X000000000002)
+ INFO [pimax_camera_create] camera calibration /home/user/omarchyvr/analysis/headset-calibration.xml (4 cameras, P511X0X000000000002)
  INFO [do_attach] controller slot 2 attach burst #1 (start/reconnect) -> 0
  INFO [do_attach] controller slot 3 attach burst #1 (start/reconnect) -> 0
  INFO [pimax_camera_create] camera source: broker /run/user/1000/omarchyvr-cam-broker.sock (/dev/video0 (uvcvideo, PimaxSensor: PimaxSensor, usb-0000:00:14.0-4.4) 1280x832 YUYV bpl 2560 size 2129920 at 60.00 fps (offered [60.0, 50.0])) (pimax-cam 0.1.0)

@@ -582,7 +582,7 @@ mod tests {
     #[test]
     fn busy_camera_and_eye_chip_block_with_pid_actions() {
         let (mut m, p) = demo::idle_machine();
-        m.process(4242, "pimax-cam", "/home/u/pimax-re/rust/target/release/pimax-cam broker", &[], 10, &["/dev/video0"]);
+        m.process(4242, "pimax-cam", "/home/u/omarchyvr/rust/target/release/pimax-cam broker", &[], 10, &["/dev/video0"]);
         m.process(4243, "pimax-eye", "pimax-eye watch", &[], 10, &["/dev/bus/usb/001/009"]);
         let pf = eval_on(&m, &p, DeskToggles::with_eye());
         let cam = pf.get("camera-busy").unwrap();
@@ -600,7 +600,7 @@ mod tests {
     #[test]
     fn camera_held_by_a_session_leftover_offers_desk_stop() {
         let (mut m, p) = demo::idle_machine();
-        m.process(372448, "pimax-cam", "/home/u/pimax-re/rust/target/release/pimax-cam broker", &[], 10, &["/dev/video0"]);
+        m.process(372448, "pimax-cam", "/home/u/omarchyvr/rust/target/release/pimax-cam broker", &[], 10, &["/dev/video0"]);
         m.file("/tmp/omarchyvr-session/broker.pid", "372448\n");
         let pf = eval_on(&m, &p, DeskToggles::with_eye());
         assert_eq!(pf.get("camera-busy").unwrap().actions, vec![Action::StopSession]);

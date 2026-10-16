@@ -55,7 +55,7 @@ KMS through the same lease was correct (analysis/tools/kms_lease_test.c). Cause:
 7104x3840) nvSetViewPortsEvo() sets viewport origin x=0 for every merged head, so head 2 rescans the left half
 (NVIDIA/open-gpu-kernel-modules PR #1262, not in 610.57.04). Fix: linux/nvidia-2h1or-viewport.patch.
 Apply (nvidia-open-dkms):
-  cd /usr/src/nvidia-610.57.04 && sudo cp -a . /usr/src/nvidia-610.57.04.orig && sudo patch -p1 < ~/pimax-re/linux/nvidia-2h1or-viewport.patch
+  cd /usr/src/nvidia-610.57.04 && sudo cp -a . /usr/src/nvidia-610.57.04.orig && sudo patch -p1 < ~/omarchyvr/linux/nvidia-2h1or-viewport.patch
   sudo dkms build nvidia/610.57.04 -k $(uname -r) --force && sudo dkms install nvidia/610.57.04 -k $(uname -r) --force
   sudo mkinitcpio -P && reboot
 Verified after reboot with analysis/tools/vk_display_test: left eye red, right eye green.
@@ -73,7 +73,7 @@ and checks `modinfo nvidia-modeset | grep merged_head_sync`
 (hooks run sorted by file name: 65-nvidia-pimax-patch < 70-dkms-install < 75-nvidia-pimax-verify < 90-mkinitcpio-install).
 Install (copies to a root-owned directory because pacman runs the hook as root; one command, see also the header of
 nvidia-pimax-patch.hook):
-  sudo env L="$HOME/pimax-re/linux" bash -c 'install -Dm755 $L/nvidia-patch-reapply.sh /usr/local/lib/omarchyvr/nvidia-patch-reapply.sh && for p in nvidia-2h1or-viewport nvidia-2h1or-flip-fix nvidia-evo-makeroom-bounded-wait; do install -Dm644 $L/$p.patch /usr/local/lib/omarchyvr/$p.patch; done && install -Dm644 $L/nvidia-pimax-patch.hook /etc/pacman.d/hooks/65-nvidia-pimax-patch.hook && install -Dm644 $L/nvidia-pimax-verify.hook /etc/pacman.d/hooks/75-nvidia-pimax-verify.hook'
+  sudo env L="$HOME/omarchyvr/linux" bash -c 'install -Dm755 $L/nvidia-patch-reapply.sh /usr/local/lib/omarchyvr/nvidia-patch-reapply.sh && for p in nvidia-2h1or-viewport nvidia-2h1or-flip-fix nvidia-evo-makeroom-bounded-wait; do install -Dm644 $L/$p.patch /usr/local/lib/omarchyvr/$p.patch; done && install -Dm644 $L/nvidia-pimax-patch.hook /etc/pacman.d/hooks/65-nvidia-pimax-patch.hook && install -Dm644 $L/nvidia-pimax-verify.hook /etc/pacman.d/hooks/75-nvidia-pimax-verify.hook'
 Check without changing anything (also works as a normal user): `linux/nvidia-patch-reapply.sh --check`
 (exit 0 = patched, 2 = needs a patch). Verify the built module: `linux/nvidia-patch-reapply.sh --verify`.
 Manual one-shot incl. rebuild: `sudo linux/nvidia-patch-reapply.sh --rebuild`
@@ -90,7 +90,7 @@ Remove it when NVIDIA merges the fixes into the driver you run:
 ## One-click VR: `omarchyvr vr` (2026-10-14)
 Needs the new `omarchyvr` binary (the installed one predates the `vr` subcommand; the keepalive service runs the
 installed file, so replace it atomically and leave the service alone):
-  cd ~/pimax-re/rust && cargo build --release -p omarchyvr-tools
+  cd ~/omarchyvr/rust && cargo build --release -p omarchyvr-tools
   install -m755 target/release/omarchyvr ~/.local/bin/pimax.new && mv -f ~/.local/bin/pimax.new ~/.local/bin/omarchyvr
 Commands (details: `omarchyvr vr help`):
   omarchyvr vr start [--fps 72|90] [--dump DIR [--dump-frames 100,300]] [--wait] [--debug] [--no-notify]
@@ -111,7 +111,7 @@ Commands (details: `omarchyvr vr help`):
   Under `flock LOCK omarchyvr vr start` the lock is released when start returns (descriptors are not inherited by the
   service); use `--wait` to keep it for the whole session.
 Desktop entry (template `linux/omarchyvr-vr.desktop`, not installed; actions Start 90 Hz / Stop / Status):
-  sed "s|@OMARCHYVR@|$HOME/.local/bin/omarchyvr|g" ~/pimax-re/linux/omarchyvr-vr.desktop > ~/.local/share/applications/omarchyvr-vr.desktop
+  sed "s|@OMARCHYVR@|$HOME/.local/bin/omarchyvr|g" ~/omarchyvr/linux/omarchyvr-vr.desktop > ~/.local/share/applications/omarchyvr-vr.desktop
   desktop-file-validate ~/.local/share/applications/omarchyvr-vr.desktop && update-desktop-database ~/.local/share/applications
 Test scripts (headset!, run under the lock when other agents are active): analysis/tools/run_vr_fps_test.sh (72/90 Hz
 with dumps and firmware log) and analysis/tools/run_vr_color_test.sh (sRGB vs UNORM client).

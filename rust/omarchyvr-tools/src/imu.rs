@@ -9,7 +9,7 @@ use std::fs::File;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-/// Locate `headset-calibration.xml`: `--calib`, `$PIMAX_CALIB`, `./analysis/`, `~/pimax-re/analysis/`.
+/// Locate `headset-calibration.xml`: `--calib`, `$PIMAX_CALIB`, `./analysis/`, `~/.config/omarchyvr/`, `<repo>/analysis/`.
 pub fn find_calib_file(explicit: Option<String>) -> Option<PathBuf> {
     let mut c: Vec<PathBuf> = vec![];
     if let Some(e) = explicit {
@@ -21,7 +21,7 @@ pub fn find_calib_file(explicit: Option<String>) -> Option<PathBuf> {
     c.push("analysis/headset-calibration.xml".into());
     c.push("../analysis/headset-calibration.xml".into());
     if let Some(h) = std::env::var_os("HOME") {
-        c.push(PathBuf::from(h).join("pimax-re/analysis/headset-calibration.xml"));
+        c.extend(omarchyvr_config::paths::headset_calibration_candidates(std::path::Path::new(&h)));
     }
     c.into_iter().find(|p| p.is_file())
 }

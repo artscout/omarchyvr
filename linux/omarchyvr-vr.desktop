@@ -3,7 +3,7 @@
 #
 # Install (as your user, no sudo; the pimax binary must be the new one that has the `vr` subcommand):
 #   mkdir -p ~/.local/share/applications
-#   sed "s|@OMARCHYVR@|$HOME/.local/bin/omarchyvr|g" ~/pimax-re/linux/omarchyvr-vr.desktop > ~/.local/share/applications/omarchyvr-vr.desktop
+#   sed "s|@OMARCHYVR@|$HOME/.local/bin/omarchyvr|g" ~/omarchyvr/linux/omarchyvr-vr.desktop > ~/.local/share/applications/omarchyvr-vr.desktop
 #   desktop-file-validate ~/.local/share/applications/omarchyvr-vr.desktop && update-desktop-database ~/.local/share/applications
 # Remove: rm ~/.local/share/applications/omarchyvr-vr.desktop
 #

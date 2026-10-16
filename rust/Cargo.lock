@@ -2195,6 +2195,7 @@ dependencies = [
 name = "omarchyvr-backgrounds"
 version = "0.1.0"
 dependencies = [
+ "omarchyvr-config",
  "serde",
  "serde_json",
  "toml",
@@ -2353,6 +2354,7 @@ version = "0.1.0"
 dependencies = [
  "libc",
  "libloading 0.8.9",
+ "omarchyvr-config",
 ]
 
 [[package]]

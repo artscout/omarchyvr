@@ -13,7 +13,7 @@ use std::time::Duration;
 /// Where WayVR's desk-mode files are.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WayvrPaths {
-    /// The isolated home of the desk WayVR (`~/src/desk-out/wayvr-home-am`).
+    /// The isolated home of the desk WayVR (`~/.local/share/omarchyvr/wayvr-home`).
     pub home: PathBuf,
     /// `<home>/config/wayvr/conf.d`.
     pub conf_d: PathBuf,
@@ -34,12 +34,12 @@ pub struct WayvrPaths {
 impl WayvrPaths {
     /// From the app's paths (the launcher's defaults).
     pub fn new(p: &Paths) -> WayvrPaths {
-        let home = p.src.join("desk-out/wayvr-home-am");
+        let home = omarchyvr_config::paths::wayvr_home(&p.home);
         let conf_d = home.join("config/wayvr/conf.d");
         WayvrPaths {
             saved_state: conf_d.join("zz-saved-state.json5"),
             saved_config: conf_d.join("zz-saved-config.json5"),
-            backups: p.src.join("desk-out/wayvr-state-backups"),
+            backups: omarchyvr_config::paths::data_dir(&p.home).join("wayvr-state-backups"),
             ctl: p.wayvr_bin.with_file_name("wayvrctl"),
             settings: p.config.join("wayvr-desk.conf"),
             guide: p.doc("WAYVR-CONTROLS.md"),

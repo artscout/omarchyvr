@@ -356,19 +356,19 @@ pub fn run(mut a: Args) -> CliResult {
                 || real_env("PIMAX_MONADO_BUILD").is_some_and(|v| !v.is_empty());
             let home = PathBuf::from(real_env("HOME").unwrap_or_else(|| "/root".into()));
             // --6dof: camera broker + SLAM; needs the merged build (default ~/src/monado-eye/build)
-            let sixdof = sixdof::parse(&mut a, &real_env, &mut opts, &home, build_given, Some(omarchyvr_config::paths::src_dir(&home).join("monado-eye/build")));
+            let sixdof = sixdof::parse(&mut a, &real_env, &mut opts, &home, build_given, Some(omarchyvr_config::paths::monado_build(&home)));
             // --ctrl-track: optical controllers (needs --6dof); shared with `desk start`
             let ctrl_track = sixdof::parse_ctrl_track(&mut a, &real_env, &mut opts, &home, &sixdof)?;
             // --controllers: games keep the controllers always shown unless the user switched it (Play's own switch)
             let _controllers = sixdof::parse_controllers(&mut a, &real_env, &mut opts, omarchyvr_config::ctrl_inhand::CtrlMode::Always)?;
             // eye tracking, visual only (default on when the eye build and calibration exist; --no-eye): PIMAX_EYE=1
-            let eye_build = omarchyvr_config::paths::src_dir(&home).join("monado-eye/build");
+            let eye_build = omarchyvr_config::paths::monado_build(&home);
             let (eye_mode, eye_note) = eye_desk::parse(a.flag("--eye"), a.flag("--no-eye"), &mut opts, &eye_build, build_given, &real_env);
             // --hands: camera hands (Mercury); may move the Monado build to the hands build (docs/HANDS.md)
             let hands_opt = hands::parse(&mut a, &real_env, &mut opts, &home, build_given, sixdof.is_some())?;
             // --perf: wrist readout (minimal WayVR overlay without screens + omarchyvr-perf); Monado gets PIMAX_PERF_FILE
             let perf_opts = if a.flag("--perf") {
-                let wayvr = a.opt("--wayvr-bin")?.map(PathBuf::from).unwrap_or_else(|| omarchyvr_config::paths::src_dir(&home).join("target-desk/release/wayvr"));
+                let wayvr = a.opt("--wayvr-bin")?.map(PathBuf::from).unwrap_or_else(|| omarchyvr_config::paths::wayvr_bin(&home));
                 let ctl = a.opt("--wayvrctl-bin")?.map(PathBuf::from).unwrap_or_else(|| wayvr.with_file_name("wayvrctl"));
                 Some(perf::parse(&mut a, &real_env, &mut opts, &home, &wayvr, &ctl)?)
             } else {
@@ -493,7 +493,7 @@ pub fn run(mut a: Args) -> CliResult {
             auto_connector(&mut opts);
             if opts.dry_run {
                 let home = PathBuf::from(real_env("HOME").unwrap_or_default());
-                let wayvr = omarchyvr_config::paths::src_dir(&home).join("target-desk/release/wayvr");
+                let wayvr = omarchyvr_config::paths::wayvr_bin(&home);
                 vout!("omarchyvr vr: would stop, in this order (SIGINT by pid, never by name):");
                 let mut n = 1;
                 if let Ok(p) = perf::parse(&mut Args(Vec::new()), &real_env, &mut opts.clone(), &home, &wayvr, &wayvr) {
@@ -526,7 +526,7 @@ pub fn run(mut a: Args) -> CliResult {
             with_deps(&opts, &|| false, |d| {
                 // the wrist readout (only if `vr start --perf` started it) goes before the service
                 let home = PathBuf::from(real_env("HOME").unwrap_or_default());
-                let wayvr = omarchyvr_config::paths::src_dir(&home).join("target-desk/release/wayvr");
+                let wayvr = omarchyvr_config::paths::wayvr_bin(&home);
                 let mut hung = Vec::new();
                 if let Ok(p) = perf::parse(&mut Args(Vec::new()), &real_env, &mut opts.clone(), &home, &wayvr, &wayvr) {
                     hung = perf::vr_stop_clients(&p, &opts.session_dir, d.procs, d.clock);

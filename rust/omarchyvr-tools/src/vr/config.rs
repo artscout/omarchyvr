@@ -181,8 +181,8 @@ pub fn comm_of(path: &Path) -> String {
 
 /// Where the workspace's release tools are (pimax-cam, omarchyvr-passthrough, ...): next to the launcher when it runs
 /// from a package (`/usr/bin/omarchyvr`) or from the user install (`~/.local/bin/omarchyvr`: an installed session uses only
-/// installed binaries, never the development tree agents rebuild while working), else the development tree
-/// `~/pimax-re/rust/target/release`.
+/// installed binaries, never the development tree agents rebuild while working), else `~/.local/bin` (the
+/// installed set; a development tree is used only through the app or `PIMAX_REPO`).
 pub fn tools_dir(home: &Path) -> PathBuf {
     tools_dir_for(std::env::current_exe().ok().as_deref(), home)
 }
@@ -192,18 +192,19 @@ pub fn tools_dir_for(exe: Option<&Path>, home: &Path) -> PathBuf {
     match exe.and_then(|e| e.parent()) {
         Some(d) if d.starts_with("/usr/") => d.to_path_buf(),
         Some(d) if d == home.join(".local/bin") => d.to_path_buf(),
-        _ => home.join("pimax-re/rust/target/release"),
+        _ => home.join(".local/bin"),
     }
 }
 
-/// `$HOME/src/monado/build`, overridable with `PIMAX_MONADO_BUILD`.
+/// `PIMAX_MONADO_BUILD`, else the desk build ([`omarchyvr_config::paths::monado_build`]: the installed
+/// `~/.local/lib/omarchyvr/monado`, else `~/src/monado-eye/build`) when built, else `~/src/monado/build`.
 pub fn default_monado_build(env: &dyn Fn(&str) -> Option<String>) -> PathBuf {
     if let Some(p) = env("PIMAX_MONADO_BUILD").filter(|s| !s.is_empty()) {
         return PathBuf::from(p);
     }
     let home = PathBuf::from(env("HOME").unwrap_or_else(|| "/root".into()));
     // The desk build (eye + 6DoF + controllers) when present, else the plain one.
-    let desk = omarchyvr_config::paths::src_dir(&home).join("monado-eye/build");
+    let desk = omarchyvr_config::paths::monado_build(&home);
     if desk.join("openxr_monado-dev.json").exists() {
         return desk;
     }
@@ -741,8 +742,8 @@ pub(crate) mod tests {
         let h = Path::new("/home/u");
         assert_eq!(tools_dir_for(Some(Path::new("/usr/bin/omarchyvr")), h), PathBuf::from("/usr/bin"));
         assert_eq!(tools_dir_for(Some(Path::new("/home/u/.local/bin/omarchyvr")), h), PathBuf::from("/home/u/.local/bin"), "an installed launcher never uses the dev tree");
-        assert_eq!(tools_dir_for(Some(Path::new("/home/u/pimax-re/rust/target/release/omarchyvr")), h), PathBuf::from("/home/u/pimax-re/rust/target/release"));
-        assert_eq!(tools_dir_for(None, h), PathBuf::from("/home/u/pimax-re/rust/target/release"));
+        assert_eq!(tools_dir_for(Some(Path::new("/home/u/omarchyvr/rust/target/release/omarchyvr")), h), PathBuf::from("/home/u/.local/bin"));
+        assert_eq!(tools_dir_for(None, h), PathBuf::from("/home/u/.local/bin"));
     }
 
     #[test]
@@ -761,5 +762,25 @@ pub(crate) mod tests {
             _ => None,
         };
         assert_eq!(lookup(&build_env(&opts(), &own), "U_PACING_COMP_MIN_TIME_MS"), None); // inherited, not duplicated
+    }
+
+    #[test]
+    fn the_default_build_is_the_installed_one_when_it_is_there() {
+        if std::env::var_os("PIMAX_SRC_DIR").is_some() {
+            return;
+        }
+        let d = std::env::temp_dir().join(format!("omarchyvr-defbuild-{}", std::process::id()));
+        let env = |k: &str| (k == "HOME").then(|| d.display().to_string());
+        let inst = d.join(".local/lib/omarchyvr/monado");
+        let legacy = d.join("src/monado-eye/build");
+        std::fs::create_dir_all(&inst).unwrap();
+        std::fs::create_dir_all(&legacy).unwrap();
+        std::fs::write(legacy.join("openxr_monado-dev.json"), "{}").unwrap();
+        // the installed dir without CMakeCache.txt does not count: the legacy desk build
+        std::fs::write(inst.join("openxr_monado-dev.json"), "{}").unwrap();
+        assert_eq!(default_monado_build(&env), legacy);
+        std::fs::write(inst.join("CMakeCache.txt"), "").unwrap();
+        assert_eq!(default_monado_build(&env), inst);
+        let _ = std::fs::remove_dir_all(&d);
     }
 }

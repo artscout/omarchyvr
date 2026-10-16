@@ -128,7 +128,7 @@ impl Config {
             worn_dps: 0.3,
             imu: true,
             pimax_bin: home.join(".local/bin/omarchyvr"),
-            roommap_bin: home.join("pimax-re/rust/target/release/omarchyvr-roommap"),
+            roommap_bin: home.join(".local/bin/omarchyvr-roommap"),
         }
     }
 

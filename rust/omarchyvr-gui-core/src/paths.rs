@@ -51,7 +51,7 @@ pub struct Paths {
     /// Source/build trees of Monado, WayVR, Basalt, xrizer (`~/src`; `src_dir` in `~/.config/omarchyvr/paths.toml` or
     /// `PIMAX_SRC_DIR`).
     pub src: PathBuf,
-    /// The repository (`~/pimax-re`, or `PIMAX_REPO`).
+    /// The repository (`PIMAX_REPO`, else the installed data copy `~/.local/share/omarchyvr/data`, else `~/omarchyvr`).
     pub repo: PathBuf,
     /// `<repo>/rust`.
     pub rust: PathBuf,
@@ -77,17 +77,17 @@ pub struct Paths {
     pub icon: PathBuf,
     /// Monado builds, the main desk build first.
     pub builds: Vec<BuildDir>,
-    /// WayVR binary (`~/src/target-desk/release/wayvr`).
+    /// WayVR binary (`~/.local/lib/omarchyvr/wayvr/wayvr`, else `~/src/target-desk/release/wayvr`).
     pub wayvr_bin: PathBuf,
     /// WayVR source tree (`~/src/wayvr`).
     pub wayvr_src: PathBuf,
-    /// Basalt (`~/.local/lib/libbasalt.so`).
+    /// Basalt (`~/.local/lib/omarchyvr/basalt/lib/libbasalt.so`, else `~/.local/lib/libbasalt.so`).
     pub basalt_lib: PathBuf,
     /// Parakeet model directory.
     pub voice_model: PathBuf,
     /// Silero VAD model.
     pub vad_model: PathBuf,
-    /// sherpa-onnx C API library (default of omarchyvr-voice).
+    /// sherpa-onnx C API library (default of omarchyvr-voice; `~/.local/lib/omarchyvr/sherpa-onnx/lib/`, else the old venv).
     pub sherpa_lib: PathBuf,
     /// The headset lock of the device tools.
     pub headset_lock: PathBuf,
@@ -116,7 +116,7 @@ impl Paths {
             if built.join("docs/LESSONS.md").is_file() {
                 built.canonicalize().unwrap_or(built)
             } else {
-                home.join("pimax-re")
+                omarchyvr_config::paths::repo_dir(&home)
             }
         });
         let session_dir = get("PIMAX_VR_SESSION_DIR")
@@ -155,6 +155,12 @@ impl Paths {
 
     /// Explicit roots (tests).
     pub fn new(home: &Path, repo: &Path, session_dir: &Path, runtime_dir: &Path) -> Paths {
+        Paths::new_with(home, repo, session_dir, runtime_dir, &|p| p.exists())
+    }
+
+    /// [`Paths::new`] with an injectable `exists` (which installed files are there: the installed Monado build, WayVR, ...).
+    pub fn new_with(home: &Path, repo: &Path, session_dir: &Path, runtime_dir: &Path, exists: &dyn Fn(&Path) -> bool) -> Paths {
+        use omarchyvr_config::paths as cp;
         let rust = repo.join("rust");
         let release = rust.join("target/release");
         let src = home.join("src");
@@ -177,7 +183,7 @@ impl Paths {
                 BuildDir {
                     key: "desk",
                     label: "Monado desk (eye + hands + 6DoF, main build)",
-                    dir: src.join("monado-eye/build"),
+                    dir: cp::monado_build_with(home, exists),
                 },
                 BuildDir {
                     key: "slam",
@@ -190,12 +196,12 @@ impl Paths {
                     dir: src.join("monado/build"),
                 },
             ],
-            wayvr_bin: src.join("target-desk/release/wayvr"),
+            wayvr_bin: cp::wayvr_bin_with(home, exists),
             wayvr_src: src.join("wayvr"),
-            basalt_lib: home.join(".local/lib/libbasalt.so"),
+            basalt_lib: cp::basalt_lib_with(home, exists),
             voice_model: home.join("models/parakeet-tdt-0.6b-v3-int8"),
             vad_model: home.join("models/vad/silero_vad.onnx"),
-            sherpa_lib: src.join("venv-voice/lib/python3.14/site-packages/sherpa_onnx/lib/libsherpa-onnx-c-api.so"),
+            sherpa_lib: cp::sherpa_lib_with(home, exists),
             headset_lock: PathBuf::from("/tmp/omarchyvr-headset.lock"),
             openvr_paths: home.join(".config/openvr/openvrpaths.vrpath"),
             ipd_env: home.join(".config/omarchyvr/ipd.env"),
@@ -236,7 +242,8 @@ impl Paths {
         self.icon = PathBuf::from("/usr/share/icons/hicolor/scalable/apps/omarchyvr.svg");
     }
 
-    /// The main desk build (LESSONS row 16: `~/src/monado-eye/build`, branch `desk`).
+    /// The main desk build (LESSONS row 16: `~/.local/lib/omarchyvr/monado` of the installed set, else the lab's
+    /// `~/src/monado-eye/build`, branch `desk`).
     pub fn desk_build(&self) -> &BuildDir {
         &self.builds[0]
     }
@@ -286,10 +293,33 @@ mod tests {
     use super::*;
 
     #[test]
+    fn installed_layout_wins_over_the_lab_build() {
+        let (h, repo, s, r) = (Path::new("/home/u"), Path::new("/home/u/omarchyvr"), Path::new("/s"), Path::new("/r"));
+        let none = |_: &Path| false;
+        let p = Paths::new_with(h, repo, s, r, &none);
+        assert_eq!(p.desk_build().dir, PathBuf::from("/home/u/src/monado-eye/build"), "legacy fallback");
+        assert_eq!(p.wayvr_bin, PathBuf::from("/home/u/src/target-desk/release/wayvr"));
+        assert_eq!(p.basalt_lib, PathBuf::from("/home/u/.local/lib/libbasalt.so"));
+        let installed = |f: &Path| f.starts_with("/home/u/.local/lib/omarchyvr");
+        let p = Paths::new_with(h, repo, s, r, &installed);
+        assert_eq!(p.desk_build().dir, PathBuf::from("/home/u/.local/lib/omarchyvr/monado"));
+        assert_eq!(
+            p.desk_build().service(),
+            PathBuf::from("/home/u/.local/lib/omarchyvr/monado/src/xrt/targets/service/monado-service")
+        );
+        assert_eq!(p.wayvr_bin, PathBuf::from("/home/u/.local/lib/omarchyvr/wayvr/wayvr"));
+        assert_eq!(p.basalt_lib, PathBuf::from("/home/u/.local/lib/omarchyvr/basalt/lib/libbasalt.so"));
+        assert_eq!(p.sherpa_lib, PathBuf::from("/home/u/.local/lib/omarchyvr/sherpa-onnx/lib/libsherpa-onnx-c-api.so"));
+        // only the build dir, without its CMakeCache.txt: still the lab build
+        let dir_only = |f: &Path| f == Path::new("/home/u/.local/lib/omarchyvr/monado");
+        assert_eq!(Paths::new_with(h, repo, s, r, &dir_only).desk_build().dir, PathBuf::from("/home/u/src/monado-eye/build"));
+    }
+
+    #[test]
     fn defaults_follow_the_inventory() {
         let env = |k: &str| match k {
             "HOME" => Some("/home/u".to_string()),
-            "PIMAX_REPO" => Some("/home/u/pimax-re".to_string()),
+            "PIMAX_REPO" => Some("/home/u/omarchyvr".to_string()),
             _ => None,
         };
         let p = Paths::from_env(&env);
@@ -300,9 +330,9 @@ mod tests {
             PathBuf::from("/home/u/src/monado-eye/build/src/xrt/targets/service/monado-service")
         );
         assert_eq!(p.builds.len(), 3);
-        assert_eq!(p.bin("pimax-eye"), PathBuf::from("/home/u/pimax-re/rust/target/release/pimax-eye"));
-        assert_eq!(p.script("run_slam_view.sh"), PathBuf::from("/home/u/pimax-re/analysis/tools/run_slam_view.sh"));
-        assert_eq!(p.launcher(&|_| false), PathBuf::from("/home/u/pimax-re/rust/target/release/omarchyvr"));
+        assert_eq!(p.bin("pimax-eye"), PathBuf::from("/home/u/omarchyvr/rust/target/release/pimax-eye"));
+        assert_eq!(p.script("run_slam_view.sh"), PathBuf::from("/home/u/omarchyvr/analysis/tools/run_slam_view.sh"));
+        assert_eq!(p.launcher(&|_| false), PathBuf::from("/home/u/omarchyvr/rust/target/release/omarchyvr"));
         assert_eq!(p.launcher(&|_| true), PathBuf::from("/home/u/.local/bin/omarchyvr"));
         assert_eq!(p.broker_socket(), PathBuf::from("/run/user/1000/omarchyvr-cam-broker.sock"));
         let env2 = |k: &str| match k {

@@ -258,7 +258,7 @@ pub fn parse_desk(
     let wayvr_bin = a
         .opt("--wayvr-bin")?
         .map(PathBuf::from)
-        .unwrap_or_else(|| omarchyvr_config::paths::src_dir(&home).join("target-desk/release/wayvr"));
+        .unwrap_or_else(|| omarchyvr_config::paths::wayvr_bin(&home));
     let wayvrctl_bin = a
         .opt("--wayvrctl-bin")?
         .map(PathBuf::from)
@@ -266,7 +266,7 @@ pub fn parse_desk(
     let wayvr_home = a
         .opt("--wayvr-home")?
         .map(PathBuf::from)
-        .unwrap_or_else(|| omarchyvr_config::paths::src_dir(&home).join("desk-out/wayvr-home-am"));
+        .unwrap_or_else(|| omarchyvr_config::paths::wayvr_home(&home));
     let settle: f64 = a.opt_parse("--settle")?.unwrap_or(6.0);
     if !settle.is_finite() || !(0.0..=120.0).contains(&settle) {
         return Err(CliError::usage("--settle must be 0..120 seconds"));
@@ -276,7 +276,7 @@ pub fn parse_desk(
             .any(|x| x == "--monado-build" || x.starts_with("--monado-build="))
             || env("PIMAX_MONADO_BUILD").is_some_and(|v| !v.is_empty());
     let mut vr = parse_options(a, env)?;
-    let eye_build = omarchyvr_config::paths::src_dir(&home).join("monado-eye/build");
+    let eye_build = omarchyvr_config::paths::monado_build(&home);
     let sixdof = sixdof::parse(a, env, &mut vr, &home, build_given, Some(eye_build.clone()));
     let ctrl_track_bin = sixdof::parse_ctrl_track(a, env, &mut vr, &home, &sixdof)?;
     let ctrl_track = ctrl_track_bin.is_some();
@@ -476,10 +476,10 @@ pub fn start(o: &DeskOptions, d: &Deps, sp: &dyn Spawner) -> CliResult {
                 "{} does not exist{}",
                 s.program.display(),
                 match s.name {
-                    "passthrough" => " (cd ~/pimax-re/rust && cargo build --release -p omarchyvr-passthrough)",
-                    "voice" | "voicecap" | "voiceact" | "voicehud" => " (cd ~/pimax-re/rust && cargo build --release -p omarchyvr-voice -p omarchyvr-voicehud)",
-                    "ctrltrack" => " (cd ~/pimax-re/rust && cargo build --release -p pimax-ctrltrack)",
-                    "perf" => " (cd ~/pimax-re/rust && cargo build --release -p omarchyvr-perf, or start with --no-perf)",
+                    "passthrough" => " (run ./install.sh again in your omarchyvr clone (or: cd ~/omarchyvr/rust && cargo build --release -p omarchyvr-passthrough))",
+                    "voice" | "voicecap" | "voiceact" | "voicehud" => " (run ./install.sh again in your omarchyvr clone (or: cd ~/omarchyvr/rust && cargo build --release -p omarchyvr-voice -p omarchyvr-voicehud))",
+                    "ctrltrack" => " (run ./install.sh again in your omarchyvr clone (or: cd ~/omarchyvr/rust && cargo build --release -p pimax-ctrltrack))",
+                    "perf" => " (run ./install.sh again in your omarchyvr clone (or: cd ~/omarchyvr/rust && cargo build --release -p omarchyvr-perf), or start with --no-perf)",
                     _ => "",
                 }
             )));
@@ -1193,7 +1193,7 @@ mod tests {
         assert_eq!(o.vr.monado_build, PathBuf::from("/home/u/src/monado/build"));
         assert_eq!(
             o.passthrough_bin,
-            PathBuf::from("/home/u/pimax-re/rust/target/release/omarchyvr-passthrough")
+            PathBuf::from("/home/u/.local/bin/omarchyvr-passthrough")
         );
         assert_eq!(
             o.wayvr_bin,
@@ -1201,7 +1201,7 @@ mod tests {
         );
         assert_eq!(
             o.wayvr_home,
-            PathBuf::from("/home/u/src/desk-out/wayvr-home-am")
+            PathBuf::from("/home/u/.local/share/omarchyvr/wayvr-home")
         );
         assert_eq!(
             o.vr.extra_env,
@@ -1279,7 +1279,7 @@ mod tests {
         assert!(o.vr.extra_env.iter().any(|(k, v)| k == "PIMAX_CTRL_IMU_LOG" && v.ends_with("ctrl-imu")));
         let p = plan(&o);
         assert_eq!(p[0].name, "ctrltrack");
-        assert_eq!(p[0].program, PathBuf::from("/home/u/pimax-re/rust/target/release/pimax-ctrltrack"));
+        assert_eq!(p[0].program, PathBuf::from("/home/u/.local/bin/pimax-ctrltrack"));
         assert_eq!(p[0].args[0..2], ["live".to_string(), "--source".to_string()]);
         assert!(p[0].args[2].starts_with("broker:"));
         assert_eq!(p[1].name, "passthrough");
@@ -1304,7 +1304,7 @@ mod tests {
         let get = |k: &str| w.env.iter().find(|(n, _)| n == k).map(|(_, v)| v.as_str());
         assert_eq!(
             get("XDG_CONFIG_HOME"),
-            Some("/home/u/src/desk-out/wayvr-home-am/config")
+            Some("/home/u/.local/share/omarchyvr/wayvr-home/config")
         );
         assert_eq!(
             get("XR_RUNTIME_JSON"),
@@ -1330,7 +1330,7 @@ mod tests {
         assert!(o.voice);
         assert_eq!(
             o.voice_bin,
-            PathBuf::from("/home/u/pimax-re/rust/target/release/omarchyvr-voice")
+            PathBuf::from("/home/u/.local/bin/omarchyvr-voice")
         );
         // captions are the default: no head-locked HUD unless asked
         assert_eq!(
@@ -1387,7 +1387,7 @@ mod tests {
         assert_eq!(o.screens, 4);
         let p = plan(&o);
         assert_eq!(p.iter().map(|s| s.name).collect::<Vec<_>>(), ["passthrough", "wayvr", "screens", "perf"]);
-        assert_eq!(p[2].program, PathBuf::from("/home/u/pimax-re/rust/target/release/omarchyvr"));
+        assert_eq!(p[2].program, PathBuf::from("/home/u/.local/bin/omarchyvr"));
         assert_eq!(p[2].args, ["desk", "screens", "watch", "--wayvrctl-bin", "/home/u/src/target-desk/release/wayvrctl"]);
         assert_eq!(p[2].log, PathBuf::from("/tmp/omarchyvr-session/screens.log"));
         assert!(plan(&parse(&["--screens", "1"], &[]).unwrap()).iter().all(|s| s.name != "screens"));
@@ -1410,7 +1410,7 @@ mod tests {
         let o = parse(&["--screens", "1"], &[("XDG_RUNTIME_DIR", "/run/user/7")]).unwrap();
         let p = plan(&o);
         assert_eq!(p.iter().map(|s| s.name).collect::<Vec<_>>(), ["passthrough", "wayvr", "perf"]);
-        assert_eq!(p[2].program, PathBuf::from("/home/u/pimax-re/rust/target/release/omarchyvr-perf"));
+        assert_eq!(p[2].program, PathBuf::from("/home/u/.local/bin/omarchyvr-perf"));
         assert_eq!(
             p[2].args,
             ["run", "--file", "/run/user/7/omarchyvr-perf.stats", "--wayvrctl", "/home/u/src/target-desk/release/wayvrctl"]

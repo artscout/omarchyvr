@@ -294,9 +294,9 @@ mod tests {
             o => panic!("{o:?}"),
         }
         // root: the pkexec dialog with the documented lines, never a user command
-        match run("udev.install_rules", &[("repo", "/home/u/pimax-re")], false) {
+        match run("udev.install_rules", &[("repo", "/home/u/omarchyvr")], false) {
             FixAction::Root(r) => {
-                assert!(r.lines[0].starts_with("sudo install -Dm644 /home/u/pimax-re/linux/70-pimax.rules"));
+                assert!(r.lines[0].starts_with("sudo install -Dm644 /home/u/omarchyvr/linux/70-pimax.rules"));
                 assert!(r.command().is_some_and(|c| c.root && c.program == crate::safety::PKEXEC), "{:?}", r.pkexec);
             }
             o => panic!("{o:?}"),

@@ -43,4 +43,4 @@ still_dps = 0.2
 worn_dps = 0.3
 
 pimax_bin = "~/.local/bin/omarchyvr"
-roommap_bin = "~/pimax-re/rust/target/release/omarchyvr-roommap"
+roommap_bin = "~/.local/bin/omarchyvr-roommap"

@@ -877,7 +877,7 @@ mod tests {
                 assert!(n[4].contains("PIMAX_CAM_AE=1") && n[4].contains("PIMAX_SLAM_RECORD=/home/u/.local/share/omarchyvr/slam-recordings/20261014-1700-walk"));
                 assert_eq!(
                     script.unwrap(),
-                    "/home/u/pimax-re/rust/target/release/pimax-cam record /home/u/walk-20261014-1700.pxcam --source broker --seconds 90 --zlib 1"
+                    "/home/u/omarchyvr/rust/target/release/pimax-cam record /home/u/walk-20261014-1700.pxcam --source broker --seconds 90 --zlib 1"
                 );
             }
             l => panic!("{l:?}"),

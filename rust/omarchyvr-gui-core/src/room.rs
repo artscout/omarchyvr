@@ -642,11 +642,11 @@ mod tests {
         live.session.push(SessionProc { name: "broker", pid: Some(2), alive: true, age: None });
         assert!(blockers(&live, &st, Some("home")).is_empty());
         assert_eq!(blockers(&live, &st, Some("office")).len(), 1);
-        let p = Paths::new(Path::new("/home/u"), Path::new("/home/u/pimax-re"), Path::new("/tmp/s"), Path::new("/run/user/1000"));
+        let p = Paths::new(Path::new("/home/u"), Path::new("/home/u/omarchyvr"), Path::new("/tmp/s"), Path::new("/run/user/1000"));
         let r = RoomPaths::new(&p);
-        assert_eq!(build_cmd(&r, "home", 90).display(), "/home/u/pimax-re/rust/target/release/omarchyvr-roommap build --source broker --seconds 90 --name home");
-        assert_eq!(relocalize_cmd(&r, "home").display(), "/home/u/pimax-re/rust/target/release/omarchyvr-roommap relocalize --source broker --name home --apply");
-        assert_eq!(anchor_cmd(&r, "clear").display(), "/home/u/pimax-re/rust/target/release/omarchyvr-anchor clear");
+        assert_eq!(build_cmd(&r, "home", 90).display(), "/home/u/omarchyvr/rust/target/release/omarchyvr-roommap build --source broker --seconds 90 --name home");
+        assert_eq!(relocalize_cmd(&r, "home").display(), "/home/u/omarchyvr/rust/target/release/omarchyvr-roommap relocalize --source broker --name home --apply");
+        assert_eq!(anchor_cmd(&r, "clear").display(), "/home/u/omarchyvr/rust/target/release/omarchyvr-anchor clear");
         assert_eq!(r.offset, PathBuf::from("/run/user/1000/pimax-anchor.offset"));
         for c in [build_cmd(&r, "home", 90), relocalize_cmd(&r, "home"), anchor_cmd(&r, "apply")] {
             assert_eq!(crate::safety::check(&c), Ok(()), "{}", c.display());
@@ -657,7 +657,7 @@ mod tests {
         }
         assert_eq!(
             floor_cmd(&r, "home", &FloorAction::Touch("right")).display(),
-            "/home/u/pimax-re/rust/target/release/omarchyvr-roommap floor touch --hand right --save --name home"
+            "/home/u/omarchyvr/rust/target/release/omarchyvr-roommap floor touch --hand right --save --name home"
         );
     }
 

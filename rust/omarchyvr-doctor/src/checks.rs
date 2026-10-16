@@ -64,7 +64,7 @@ impl Opts {
                 if built.is_dir() {
                     built.canonicalize().unwrap_or(built)
                 } else {
-                    home.join("pimax-re/linux")
+                    omarchyvr_config::paths::repo_dir(&home).join("linux")
                 }
             });
         Opts {

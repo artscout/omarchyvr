@@ -301,9 +301,9 @@ pub fn serve_router(dirs: &Dirs, id: &str, foreground: bool) -> Result<PidInfo, 
 
 // ------------------------------------------------------------------------------------- speech recognition (AI.md 17)
 
-/// whisper.cpp's Vulkan server (built in `~/src/whisper.cpp/build-vk`) and the large-v3-turbo q5_0 model.
+/// whisper.cpp's Vulkan server (`~/.local/lib/omarchyvr/whisper.cpp/bin`, else built in `~/src/whisper.cpp/build-vk`) and the large-v3-turbo q5_0 model.
 pub fn asr_server_bin() -> PathBuf {
-    home_dir().join("src/whisper.cpp/build-vk/bin/whisper-server")
+    omarchyvr_config::paths::whisper_server(&home_dir())
 }
 pub fn asr_model_file() -> PathBuf {
     home_dir().join("models/whisper/ggml-large-v3-turbo-q5_0.bin")

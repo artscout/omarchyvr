@@ -227,7 +227,7 @@ mod tests {
             lines(&c, &start(Mode::Desk, Runtime::Monado, "cinema"), true),
             [
                 "PIMAX_ANCHOR=1 /h/.local/bin/omarchyvr desk start --6dof --ctrl-track --preset cinema --no-notify",
-                "/h/pimax-re/rust/target/release/omarchyvr-roommap relocalize --source broker --name home --apply",
+                "/h/.local/bin/omarchyvr-roommap relocalize --source broker --name home --apply",
             ]
         );
         assert!(commands(&c, &start(Mode::Desk, Runtime::Monado, "none"), true)[1].optional);

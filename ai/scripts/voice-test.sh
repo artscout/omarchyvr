@@ -4,7 +4,7 @@
 #   tools/voice-test.sh --dry-run  only print what would run
 # Say "Max, help" / "Max, volume up" / "Max, lock the screen" -> "yes". Ctrl-C stops both.
 set -u
-BIN=~/pimax-re/rust/target/release/omarchyvr-voice
+BIN=~/.local/bin/omarchyvr-voice
 LOG=${XDG_RUNTIME_DIR:-/tmp}/omarchyvr-voice-test.log
 "$BIN" ping >/dev/null 2>&1 && { echo "a voice listener is already running (desk --voice?); stop it first"; exit 1; }
 

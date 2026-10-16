@@ -48,7 +48,7 @@ fn world(tag: &str) -> PathBuf {
     script(&build.join("src/xrt/targets/service/monado-service"), "#!/bin/bash\nexit 0\n# PIMAX_SLAM\0\n");
     fs::write(build.join("openxr_monado-dev.json"), "{}").unwrap();
     // the stack's binaries at their default places
-    let rel = home.join("pimax-re/rust/target/release");
+    let rel = home.join(".local/bin");
     for b in ["omarchyvr", "omarchyvr-passthrough", "omarchyvr-voice", "omarchyvr-voice-hud", "pimax-ctrltrack", "omarchyvr-perf", "pimax-cam", "omarchyvr-slam"] {
         script(&rel.join(b), "#!/bin/bash\nexit 0\n");
     }

@@ -220,7 +220,7 @@ fn parse(args: &[String]) -> Result<Opts, String> {
         out: None,
         gap: 1.5,
         noise: 0.002,
-        wayvrctl: omarchyvr_config::paths::src_dir(&home).join("target-desk/release/wayvrctl"),
+        wayvrctl: omarchyvr_config::paths::wayvrctl_bin(&home),
         overlay: "captions".into(),
         clear_s: 6.0,
         lines: 2,

@@ -456,7 +456,7 @@ pub(crate) fn from_c(c: &CCalib) -> DeviceCalib {
 }
 
 /// Load the factory calibration XML (`path` NULL = default search: `$PIMAX_CAM_CALIB`, `$PIMAX_CALIB`,
-/// `~/.config/omarchyvr/headset-calibration.xml`, `~/pimax-re/analysis/headset-calibration.xml`).
+/// `~/.config/omarchyvr/headset-calibration.xml`, `<repo>/analysis/headset-calibration.xml`).
 /// `used_path` (optional) receives the file used. Returns 0 or -1.
 ///
 /// # Safety

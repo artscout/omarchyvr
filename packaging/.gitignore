@@ -1,5 +1,5 @@
 # makepkg output (packaging/arch): clone of the repository, build tree, package tree, packages, logs
-arch/pimax-re/
+arch/omarchyvr/
 arch/src/
 arch/pkg/
 arch/*.pkg.tar.*

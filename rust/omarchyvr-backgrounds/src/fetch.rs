@@ -12,7 +12,7 @@ use std::process::{Command, Stdio};
 pub const SOURCES: &str = include_str!("../sources.toml");
 
 /// Sent with every request (Poly Haven and Wikimedia ask for a unique, contactable agent).
-pub const USER_AGENT: &str = "pimax-re-backgrounds/0.1 (personal VR use; https://github.com/laughtt/omarchyvr)";
+pub const USER_AGENT: &str = "omarchyvr-backgrounds/0.1 (personal VR use; https://github.com/laughtt/omarchyvr)";
 
 /// Stop downloading when the library would pass this.
 pub const MAX_LIBRARY_BYTES: u64 = 4_000_000_000;
@@ -514,7 +514,7 @@ pub fn skybox_dir() -> PathBuf {
     if let Some(p) = std::env::var_os("PIMAX_SKYBOX_DIR").filter(|p| !p.is_empty()) {
         return PathBuf::from(p);
     }
-    PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join("src/desk-out/wayvr-home-am/config/wayvr/skybox")
+    omarchyvr_config::paths::wayvr_home(&PathBuf::from(std::env::var_os("HOME").unwrap_or_default())).join("config/wayvr/skybox")
 }
 
 /// (theme, title) of a picture of the skybox folder by its file stem.

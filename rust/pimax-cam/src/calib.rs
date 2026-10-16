@@ -242,7 +242,8 @@ impl DeviceCalib {
     }
 
     /// Default search order: `$PIMAX_CAM_CALIB`, `$PIMAX_CALIB`, `~/.config/omarchyvr/headset-calibration.xml`,
-    /// `~/pimax-re/analysis/headset-calibration.xml`.
+    /// `<repo>/analysis/headset-calibration.xml`
+    /// (the installed data copy `~/.local/share/omarchyvr/data`, else `~/omarchyvr`; `$PIMAX_REPO` overrides).
     pub fn default_candidates() -> Vec<PathBuf> {
         let mut c = Vec::new();
         for var in ["PIMAX_CAM_CALIB", "PIMAX_CALIB"] {
@@ -253,7 +254,16 @@ impl DeviceCalib {
         if let Some(h) = std::env::var_os("HOME") {
             let h = PathBuf::from(h);
             c.push(h.join(".config/omarchyvr/headset-calibration.xml"));
-            c.push(h.join("pimax-re/analysis/headset-calibration.xml"));
+            // the repo the way omarchyvr_config::paths::repo_dir finds it (computed here: this crate is linked into Monado
+            // as a staticlib and stays free of the app's crates): $PIMAX_REPO, the installed data copy, else ~/omarchyvr
+            let repo = std::env::var_os("PIMAX_REPO")
+                .filter(|v| !v.is_empty())
+                .map(PathBuf::from)
+                .unwrap_or_else(|| {
+                    let installed = h.join(".local/share/omarchyvr/data");
+                    if installed.join("docs/LESSONS.md").is_file() { installed } else { h.join("omarchyvr") }
+                });
+            c.push(repo.join("analysis/headset-calibration.xml"));
         }
         c
     }

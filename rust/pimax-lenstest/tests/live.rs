@@ -9,7 +9,7 @@
 //!   export XRT_COMPOSITOR_NULL=1 PIMAX_NO_DEVICE=1
 //!   sleep 120 | $HOME/src/monado/build/src/xrt/targets/service/monado-service >/tmp/m.log 2>&1 &
 //!   SVC=$!; SLEEP=$(jobs -p | tail -1); sleep 4
-//!   (cd ~/pimax-re/rust && cargo test -p pimax-lenstest --test live -- --ignored --test-threads=1 --nocapture)
+//!   (cd ~/omarchyvr/rust && cargo test -p pimax-lenstest --test live -- --ignored --test-threads=1 --nocapture)
 //!   kill -INT $SVC; sleep 3; kill $SLEEP 2>/dev/null'
 //! ```
 use std::process::{Command, Stdio};

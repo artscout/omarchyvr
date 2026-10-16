@@ -2,22 +2,22 @@ $ omarchyvr desk start --dry-run --6dof --anchor --no-eye --preset none
 exit Some(0)
 --- stdout
 omarchyvr desk: would start, in this order:
-  0. $ROOT/home/pimax-re/rust/target/release/omarchyvr-slam export --out $ROOT/session/basalt, then $ROOT/home/pimax-re/rust/target/release/pimax-cam broker (socket $ROOT/run/omarchyvr-cam-broker.sock)
+  0. $ROOT/home/.local/bin/omarchyvr-slam export --out $ROOT/session/basalt, then $ROOT/home/.local/bin/pimax-cam broker (socket $ROOT/run/omarchyvr-cam-broker.sock)
   1a. VR screens: 4 (the main desktop output + PIMAX-LEFT, PIMAX-RIGHT, PIMAX-UP as headless outputs of its size, created before Monado; hyprctl eval 'hl.monitor(...)', hyprctl output create headless)
   1. monado-service ($ROOT/build/src/xrt/targets/service/monado-service)
-  2. $ROOT/home/pimax-re/rust/target/release/omarchyvr-passthrough run --source broker  (log $ROOT/session/passthrough.log)
+  2. $ROOT/home/.local/bin/omarchyvr-passthrough run --source broker  (log $ROOT/session/passthrough.log)
        XR_RUNTIME_JSON=$ROOT/build/openxr_monado-dev.json
        IPC_IGNORE_VERSION=1
        PIMAX_CAM_SOURCE=broker
   3. $ROOT/home/src/target-desk/release/wayvr --openxr --show --no-autostart --log-to $ROOT/session/wayvr.log  (log $ROOT/session/wayvr.stdout)
        XR_RUNTIME_JSON=$ROOT/build/openxr_monado-dev.json
        IPC_IGNORE_VERSION=1
-       XDG_CONFIG_HOME=$ROOT/home/src/desk-out/wayvr-home-am/config
-       XDG_DATA_HOME=$ROOT/home/src/desk-out/wayvr-home-am/data
-       XDG_STATE_HOME=$ROOT/home/src/desk-out/wayvr-home-am/state
+       XDG_CONFIG_HOME=$ROOT/home/.local/share/omarchyvr/wayvr-home/config
+       XDG_DATA_HOME=$ROOT/home/.local/share/omarchyvr/wayvr-home/data
+       XDG_STATE_HOME=$ROOT/home/.local/share/omarchyvr/wayvr-home/state
        RUST_LOG=info
-  4. $ROOT/home/pimax-re/rust/target/release/omarchyvr desk screens watch --wayvrctl-bin $ROOT/home/src/target-desk/release/wayvrctl  (log $ROOT/session/screens.log)
-  5. $ROOT/home/pimax-re/rust/target/release/omarchyvr-perf run --file $ROOT/run/omarchyvr-perf.stats --wayvrctl $ROOT/home/src/target-desk/release/wayvrctl  (log $ROOT/session/perf.log)
+  4. $ROOT/home/.local/bin/omarchyvr desk screens watch --wayvrctl-bin $ROOT/home/src/target-desk/release/wayvrctl  (log $ROOT/session/screens.log)
+  5. $ROOT/home/.local/bin/omarchyvr-perf run --file $ROOT/run/omarchyvr-perf.stats --wayvrctl $ROOT/home/src/target-desk/release/wayvrctl  (log $ROOT/session/perf.log)
 omarchyvr vr: preflight
   [warn] headset   34a4:0044 on USB but only 0/4 hidraw interfaces (udev rule linux/70-pimax.rules installed?)
   [ok  ] camera    34a4:0014 on USB, video node present

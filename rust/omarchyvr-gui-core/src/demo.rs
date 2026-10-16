@@ -22,7 +22,7 @@ pub const DESK_HELP: &str = include_str!("../tests/fixtures/pimax-desk-help.txt"
 pub fn paths() -> Paths {
     Paths::new(
         Path::new("/home/u"),
-        Path::new("/home/u/pimax-re"),
+        Path::new("/home/u/omarchyvr"),
         Path::new("/tmp/omarchyvr-session"),
         Path::new("/run/user/1000"),
     )
@@ -80,16 +80,15 @@ pub fn idle_machine() -> (FakeMachine, Paths) {
     m.file("/etc/pacman.d/hooks/75-nvidia-pimax-verify.hook", "[Trigger]\n");
     let rules = "SUBSYSTEM==\"hidraw\", ATTRS{idVendor}==\"34a4\", MODE=\"0660\", TAG+=\"uaccess\"\n";
     m.file("/etc/udev/rules.d/70-pimax.rules", rules);
-    m.file("/home/u/pimax-re/linux/70-pimax.rules", rules);
+    m.file("/home/u/omarchyvr/linux/70-pimax.rules", rules);
     m.file("/home/u/.config/omarchyvr/ipd.env", "OXR_DEBUG_IPD_MM=65.9\n");
-    // packages, the keepalive unit with its Rust drop-in, the non-desktop EDID (MANUAL-STEPS 1.1-1.8)
+    // packages, the keepalive unit, the non-desktop EDID (MANUAL-STEPS 1.1-1.8)
     for f in ["/usr/bin/cargo", "/usr/bin/steam", "/home/u/.local/share/Steam/steamapps/common/Proton - Experimental/proton"] {
         m.file(f, "x");
     }
-    m.file("/home/u/.config/systemd/user/omarchyvr-keepalived.service", "[Service]\nExecStart=/usr/bin/python3 %h/pimax-re/linux/pimax_keepalived.py\n");
-    m.file("/home/u/.config/systemd/user/omarchyvr-keepalived.service.d/rust.conf", "[Service]\nExecStart=\nExecStart=%h/.local/bin/omarchyvr keepalived\n");
+    m.file("/home/u/.config/systemd/user/omarchyvr-keepalived.service", "[Service]\nExecStart=%h/.local/bin/omarchyvr keepalived\n");
     m.file("/etc/pimax/dp-edid.bin", "EDID-NON-DESKTOP");
-    m.file("/home/u/pimax-re/linux/pimax-dp-edid-msvsdb.bin", "EDID-NON-DESKTOP");
+    m.file("/home/u/omarchyvr/linux/pimax-dp-edid-msvsdb.bin", "EDID-NON-DESKTOP");
     m.file("/home/u/.local/share/omarchyvr/eye-calibration/eyecal-20261014-103635.json", "{}");
     m.file("/home/u/.config/openvr/openvrpaths.vrpath", "{\"runtime\": [\"/home/u/src/xrizer/target/release\"]}\n");
     m.set_meta(
@@ -116,12 +115,14 @@ pub fn idle_machine() -> (FakeMachine, Paths) {
         m.cmd(&format!("getcap {svc}"), 0, &if cap { format!("{svc} cap_sys_nice=ep\n") } else { String::new() });
     }
     // launcher, app, binaries, models
-    for f in ["/home/u/.local/bin/omarchyvr", "/home/u/pimax-re/rust/target/release/omarchyvr"] {
+    for f in ["/home/u/.local/bin/omarchyvr", "/home/u/omarchyvr/rust/target/release/omarchyvr"] {
         m.file(f, "omarchyvr launcher v7e9d910");
     }
     m.cmd("/home/u/.local/bin/omarchyvr desk help", 0, DESK_HELP);
     for (b, _) in crate::facts::RELEASE_BINS {
-        m.file(&format!("/home/u/pimax-re/rust/target/release/{b}"), "elf");
+        m.file(&format!("/home/u/omarchyvr/rust/target/release/{b}"), "elf");
+        // the launcher looks for the tools next to itself (~/.local/bin, the installed set)
+        m.file(&format!("/home/u/.local/bin/{b}"), "elf");
     }
     for f in [
         "/home/u/src/target-desk/release/wayvr",
@@ -129,9 +130,9 @@ pub fn idle_machine() -> (FakeMachine, Paths) {
         "/home/u/.local/lib/libbasalt.so",
         "/home/u/models/parakeet-tdt-0.6b-v3-int8/tokens.txt",
         "/home/u/src/venv-voice/lib/python3.14/site-packages/sherpa_onnx/lib/libsherpa-onnx-c-api.so",
-        "/home/u/pimax-re/analysis/tools/run_slam_view.sh",
-        "/home/u/pimax-re/analysis/tools/vr_runtime_switch.sh",
-        "/home/u/pimax-re/rust/target/release/omarchyvr-app",
+        "/home/u/omarchyvr/analysis/tools/run_slam_view.sh",
+        "/home/u/omarchyvr/analysis/tools/vr_runtime_switch.sh",
+        "/home/u/omarchyvr/rust/target/release/omarchyvr-app",
     ] {
         m.file(f, "x");
     }
@@ -153,9 +154,9 @@ pub fn running_machine() -> (FakeMachine, Paths) {
         ("OXR_DEBUG_IPD_MM", "65.9"),
     ];
     // ages: uptime 36000 s; started at 35100 s (15 min ago) etc.
-    m.process(372448, "pimax-cam", "/home/u/pimax-re/rust/target/release/pimax-cam broker", &[], 3_509_000, &["/dev/video0"]);
+    m.process(372448, "pimax-cam", "/home/u/omarchyvr/rust/target/release/pimax-cam broker", &[], 3_509_000, &["/dev/video0"]);
     m.process(372460, "monado-service", svc, &env, 3_510_000, &["/dev/bus/usb/001/009", "/dev/hidraw3"]);
-    m.process(372563, "omarchyvr-passt", "/home/u/pimax-re/rust/target/release/omarchyvr-passthrough run --source broker", &[], 3_511_000, &[]);
+    m.process(372563, "omarchyvr-passt", "/home/u/omarchyvr/rust/target/release/omarchyvr-passthrough run --source broker", &[], 3_511_000, &[]);
     m.process(378947, "wayvr", "/home/u/src/target-desk/release/wayvr --openxr --show --no-autostart", &[], 3_512_000, &[]);
     for (n, pid) in [("broker", 372448), ("monado", 372460), ("passthrough", 372563), ("wayvr", 378947)] {
         m.file(&format!("{s}/{n}.pid"), format!("{pid}\n"));

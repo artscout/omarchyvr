@@ -25,7 +25,7 @@ const USAGE: &str = "usage: omarchyvr-app [--demo] [--renderer wgpu|glow] [--no-
   --screenshots DIR  render every page from built-in demo data to DIR/*.png (CPU only, no window) and exit
       --real         ... from this machine's state instead (read-only; for bug reports)
   --version          print the version
-environment: PIMAX_RENDERER, PIMAX_NO_SUPERVISOR=1, PIMAX_REPO (default ~/pimax-re), PIMAX_VR_SESSION_DIR,
+environment: PIMAX_RENDERER, PIMAX_NO_SUPERVISOR=1, PIMAX_REPO (default: the installed data, else ~/omarchyvr), PIMAX_VR_SESSION_DIR,
              PIMAX_MONADO_BUILD, PIMAX_SYSFS_ROOT, PIMAX_PROC_ROOT";
 
 fn sync_core() -> AppCore {

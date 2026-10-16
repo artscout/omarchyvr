@@ -88,7 +88,7 @@ pub fn parse(
         stats,
         wayvrctl_bin: wayvrctl_bin.to_path_buf(),
         wayvr_bin: wayvr_bin.to_path_buf(),
-        wayvr_home: omarchyvr_config::paths::src_dir(&home).join("desk-out/wayvr-home-perf"),
+        wayvr_home: omarchyvr_config::paths::wayvr_home_perf(&home),
     })
 }
 
@@ -141,7 +141,7 @@ pub fn vr_start_clients(p: &PerfOptions, o: &StartOptions, d: &Deps, sp: &dyn Sp
     ];
     for s in &specs {
         if !s.program.exists() {
-            verr!("omarchyvr vr: --perf: {} does not exist, no wrist readout (cd ~/pimax-re/rust && cargo build --release -p omarchyvr-perf)", s.program.display());
+            verr!("omarchyvr vr: --perf: {} does not exist, no wrist readout (run ./install.sh again in your omarchyvr clone (or: cd ~/omarchyvr/rust && cargo build --release -p omarchyvr-perf))", s.program.display());
             return;
         }
         match sp.spawn(s) {

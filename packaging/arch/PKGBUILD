@@ -8,13 +8,13 @@
 #
 # Build and install:  cd packaging/arch && makepkg -si
 # makepkg clones the repository, so only COMMITTED files are built: commit before you build.
-# To build from somewhere else, change source=. Keep the "pimax-re::" prefix: build() and package() use
-# $srcdir/pimax-re. Examples:
-#   source=("pimax-re::git+https://github.com/laughtt/omarchyvr.git")
-#   source=("pimax-re::git+file:///home/user/pimax-re#branch=some-branch")
+# To build from somewhere else, change source=. Keep the "omarchyvr::" prefix: build() and package() use
+# $srcdir/omarchyvr. Examples:
+#   source=("omarchyvr::git+https://github.com/laughtt/omarchyvr.git")
+#   source=("omarchyvr::git+file:///home/user/omarchyvr#branch=some-branch")
 #
 # The packaged launcher (/usr/bin/omarchyvr) finds its tools next to itself (omarchyvr-tools vr::config::tools_dir); a
-# launcher run from the home directory keeps using ~/pimax-re/rust/target/release.
+# launcher run from the home directory uses the tools in ~/.local/bin (the installed set of ./install.sh).
 
 pkgname=omarchyvr-git
 _pkgname=omarchyvr
@@ -58,7 +58,7 @@ options=('debug')
 provides=("$_pkgname")
 conflicts=("$_pkgname")
 
-source=("pimax-re::git+file:///home/user/pimax-re")
+source=("omarchyvr::git+https://github.com/laughtt/omarchyvr.git")
 sha256sums=('SKIP')
 
 # cargo package -> binary it installs. The 11 tools are RELEASE_BINS in rust/omarchyvr-gui-core/src/facts.rs (the app
@@ -79,18 +79,18 @@ _bins=(
 )
 
 pkgver() {
-  cd "$srcdir/pimax-re"
+  cd "$srcdir/omarchyvr"
   printf 'r%s.%s' "$(git rev-list --count HEAD)" "$(git rev-parse --short=7 HEAD)"
 }
 
 prepare() {
-  cd "$srcdir/pimax-re/rust"
+  cd "$srcdir/omarchyvr/rust"
   export RUSTUP_TOOLCHAIN=stable
   cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
 }
 
 build() {
-  cd "$srcdir/pimax-re/rust"
+  cd "$srcdir/omarchyvr/rust"
   export RUSTUP_TOOLCHAIN=stable
   export CARGO_TARGET_DIR=target
   # The app shows the commit and the build date (rust/omarchyvr-app/build.rs reads both variables)
@@ -109,7 +109,7 @@ build() {
 # No check(): several test suites need the headset or a running session.
 
 package() {
-  cd "$srcdir/pimax-re"
+  cd "$srcdir/omarchyvr"
   local b f share="$pkgdir/usr/share/omarchyvr"
 
   for b in "${_bins[@]}"; do
@@ -127,7 +127,7 @@ package() {
   done
 
   # Scripts: vr_runtime_switch.sh is run by the Tools page, run_slam_view.sh is shown there (it calls run_slam.sh).
-  # Both run_slam*.sh still use $HOME/pimax-re (rust/target/release, analysis/tools) and need that checkout.
+  # run_slam*.sh find their sibling scripts next to themselves and the tools in ~/.local/bin.
   install -Dm755 -t "$share/analysis/tools" analysis/tools/{vr_runtime_switch,run_slam_view,run_slam}.sh
 
   # udev rule: the real one, and a copy for the app (it compares /etc/udev/rules.d/70-pimax.rules with
@@ -153,8 +153,8 @@ package() {
     { error 'omarchyvr-autod.service: the ExecStart line was not substituted'; return 1; }
 
   # systemd user unit: NOT in /usr/lib/systemd/user. linux/omarchyvr-keepalived.service runs
-  # "python3 %h/pimax-re/linux/pimax_keepalived.py" (a home path, superseded by "omarchyvr keepalived"; the live
-  # setup overrides ExecStart with a drop-in in ~/.config/systemd/user), so it is only data here.
+  # "%h/.local/bin/omarchyvr keepalived" (a home path, not /usr/bin), so it is only data here; the app copies it
+  # into ~/.config/systemd/user.
   install -Dm644 linux/omarchyvr-keepalived.service "$share/linux/omarchyvr-keepalived.service"
 
   # Desktop entry: the template (placeholder @OMARCHYVR_APP@) is kept for the app's own installer, the system entry

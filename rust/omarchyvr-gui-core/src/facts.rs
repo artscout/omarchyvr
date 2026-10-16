@@ -780,7 +780,7 @@ mod tests {
     #[test]
     fn holders_of_camera_eye_and_lock() {
         let (mut m, p) = demo::idle_machine();
-        m.process(4242, "pimax-cam", "/home/u/pimax-re/rust/target/release/pimax-cam broker", &[], 10, &["/dev/video0"]);
+        m.process(4242, "pimax-cam", "/home/u/omarchyvr/rust/target/release/pimax-cam broker", &[], 10, &["/dev/video0"]);
         m.process(4243, "pimax-eye", "pimax-eye watch", &[], 10, &["/dev/bus/usb/001/009", "/tmp/omarchyvr-headset.lock"]);
         m.process(4244, "pimax-lenstest", "pimax-lenstest", &[], 10, &[]);
         let f = collect_facts(&m, &p, &demo::opts(&p), &MarkerCache::default(), None, false, false);

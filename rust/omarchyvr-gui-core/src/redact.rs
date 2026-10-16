@@ -207,12 +207,12 @@ mod tests {
     fn removes_personal_values() {
         let r = Redactor::new("/home/alice", "alice", "archbox", "0123456789abcdef0123456789abcdef", &["PA4F21X00123".into(), "ab".into()]);
         let t = r.text(
-            "/home/alice/pimax-re/rust by alice on archbox; mail alice@example.com; headset PA4F21X00123 \
+            "/home/alice/omarchyvr/rust by alice on archbox; mail alice@example.com; headset PA4F21X00123 \
              serial=TOBII-77AB; iSerial: 0xdeadbeef1; machine 0123456789abcdef0123456789abcdef; mount UUID=1234-ABCD on \
              /dev/disk/by-uuid/0ef1-22; ip 192.168.1.20, lo 127.0.0.1, wlan 00:1a:2b:3c:4d:5e; driver 580.95.05; \
              mauricio_x stays; archboxes stays",
         );
-        assert!(t.starts_with("~/pimax-re/rust by <user> on <host>; mail <email>; headset <serial> serial=<serial>; iSerial: <serial>;"), "{t}");
+        assert!(t.starts_with("~/omarchyvr/rust by <user> on <host>; mail <email>; headset <serial> serial=<serial>; iSerial: <serial>;"), "{t}");
         assert!(t.contains("machine <machine-id>"), "{t}");
         assert!(t.contains("UUID=<uuid>") && t.contains("by-uuid/<uuid>"), "{t}");
         assert!(t.contains("ip <ip>, lo 127.0.0.1, wlan <mac>"), "{t}");

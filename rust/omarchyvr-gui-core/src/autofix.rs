@@ -37,7 +37,7 @@ pub const CHAT_MAX_TOKENS: u32 = 4096;
 pub const SESSION_LOGS: [(&str, usize); 6] = [("monado.log", 150), ("wayvr.log", 30), ("passthrough.log", 10), ("broker.log", 10), ("ctrltrack.log", 10), ("voice.log", 10)];
 
 /// The instructions of every request.
-pub const SYSTEM: &str = "You help someone run a Pimax VR headset on Linux with the open-source pimax-re stack (Monado as the OpenXR runtime, WayVR for desktop windows in VR, a patched NVIDIA open kernel module). The user message holds the list of fixes this app can run and a redacted diagnostic bundle: check results, versions and the end of the session logs.\n\nAnswer only with lines of these two forms, nothing else:\nEXPLAIN <one sentence for the user>\nFIX <fix id> <name>=<value> ...\n\nStart with the most likely cause. Use at most 6 EXPLAIN lines and at most 5 FIX lines. Propose a FIX only when the bundle shows the problem it solves, and only with an id from the list, giving every argument it names as a plain path or word. If no listed fix applies, say in an EXPLAIN line what the person should check next. No markdown, no code blocks, no other commands.";
+pub const SYSTEM: &str = "You help someone run a Pimax VR headset on Linux with the open-source omarchyvr stack (Monado as the OpenXR runtime, WayVR for desktop windows in VR, a patched NVIDIA open kernel module). The user message holds the list of fixes this app can run and a redacted diagnostic bundle: check results, versions and the end of the session logs.\n\nAnswer only with lines of these two forms, nothing else:\nEXPLAIN <one sentence for the user>\nFIX <fix id> <name>=<value> ...\n\nStart with the most likely cause. Use at most 6 EXPLAIN lines and at most 5 FIX lines. Propose a FIX only when the bundle shows the problem it solves, and only with an id from the list, giving every argument it names as a plain path or word. If no listed fix applies, say in an EXPLAIN line what the person should check next. No markdown, no code blocks, no other commands.";
 
 /// The demo answer: two fixes, an explanation, one line that is rejected.
 pub fn demo_reply(monado_service: &Path) -> String {
@@ -585,7 +585,7 @@ pub(crate) mod tests {
         for cmd in &c.job {
             crate::safety::check(cmd).unwrap_or_else(|e| panic!("{}: {e}", cmd.display()));
         }
-        assert!(c.share.iter().any(|l| l.starts_with("git -C ~/pimax-re push -u origin contrib/")), "{:?}", c.share);
+        assert!(c.share.iter().any(|l| l.starts_with("git -C ~/omarchyvr push -u origin contrib/")), "{:?}", c.share);
         // demo mode: the branch is not made
         a.autofix_make_branch();
         assert!(a.job.is_none());

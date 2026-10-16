@@ -358,13 +358,14 @@ fn passthrough_send(sock: &Path, line: &str) -> Result<String, String> {
     Ok(r.trim().to_string())
 }
 
-/// `wayvrctl`: `$PIMAX_WAYVRCTL`, else the desk build, else the one on PATH.
+/// `wayvrctl`: `$PIMAX_WAYVRCTL`, else the installed one (`~/.local/lib/omarchyvr/wayvr`, else the desk build), else the
+/// one on PATH.
 pub fn default_wayvrctl() -> PathBuf {
     if let Some(p) = std::env::var_os("PIMAX_WAYVRCTL").filter(|p| !p.is_empty()) {
         return PathBuf::from(p);
     }
     let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default();
-    let desk = home.join("src/target-desk/release/wayvrctl");
+    let desk = omarchyvr_config::paths::wayvrctl_bin(&home);
     if desk.is_file() { desk } else { PathBuf::from("wayvrctl") }
 }
 

@@ -1,12 +1,12 @@
 //! Manual steps of docs/MANUAL-STEPS.md the app now checks or runs (its "GUI coverage gaps" table): packages, the
-//! keepalive unit with its Rust drop-in, the auto mode unit, the installed EDID and Hyprland's DP-1 line, the eye
+//! keepalive unit (Rust `omarchyvr keepalived`), the auto mode unit, the installed EDID and Hyprland's DP-1 line, the eye
 //! calibration refit and the controller gyro fit.
 //!
 //! Root steps stay Copy or pkexec (package installs are copy only); Hyprland's config and Steam's settings are only
 //! read and shown, never written (safety.rs). Everything here is read in the background with the other facts.
 use crate::app::{AppCore, Confirm, Pending};
 use crate::checklist::{install_cmd, Fix, Group, Item, RootFix, UserFix};
-use crate::cmd::{quote, Cmd};
+use crate::cmd::Cmd;
 use crate::facts::Facts;
 use crate::job::{JobKind, JobSpec, Step};
 use crate::machine::Machine;
@@ -107,20 +107,21 @@ fn package_fix(why: &str, pkg: &str) -> Fix {
     )
 }
 
-/// The keepalive unit and its Rust drop-in (MANUAL-STEPS 1.4), as the user.
-pub fn keepalive_fix(p: &Paths, link_unit: bool) -> UserFix {
+/// The keepalive unit (MANUAL-STEPS 1.4), as the user: a COPY of `linux/omarchyvr-keepalived.service` (its ExecStart is
+/// the Rust `omarchyvr keepalived`), so the unit does not depend on the repo staying where it was. An old install that
+/// symlinked the unit into the repo and added a `rust.conf` drop-in is still recognised as fine ([`collect`]); when it
+/// is replaced, the symlink goes (`--remove-destination`: the repo file is never written through it).
+pub fn keepalive_fix(p: &Paths) -> UserFix {
     let units = p.home.join(".config/systemd/user");
-    let dir = units.join("omarchyvr-keepalived.service.d");
     let s = |x: &Path| x.display().to_string();
-    let mut steps = vec![Cmd::new("mkdir", &["-p", &s(&dir)])];
-    if link_unit {
-        steps.push(Cmd::new("ln", &["-sf", &s(&p.repo.join("linux/omarchyvr-keepalived.service")), &s(&units.join("omarchyvr-keepalived.service"))]));
-    }
-    steps.push(Cmd::shell(&format!("printf '[Service]\\nExecStart=\\nExecStart=%%h/.local/bin/omarchyvr keepalived\\n' > {}", quote(&s(&dir.join("rust.conf"))))));
-    steps.push(Cmd::new("systemctl", &["--user", "daemon-reload"]));
-    steps.push(Cmd::new("systemctl", &["--user", "enable", "--now", "omarchyvr-keepalived"]));
+    let steps = vec![
+        Cmd::new("mkdir", &["-p", &s(&units)]),
+        Cmd::new("cp", &["--remove-destination", &s(&p.repo.join("linux/omarchyvr-keepalived.service")), &s(&units.join("omarchyvr-keepalived.service"))]),
+        Cmd::new("systemctl", &["--user", "daemon-reload"]),
+        Cmd::new("systemctl", &["--user", "enable", "--now", "omarchyvr-keepalived"]),
+    ];
     UserFix {
-        why: "Install the user unit and the drop-in that runs the Rust `omarchyvr keepalived` (needs the launcher in ~/.local/bin), then enable it. A keepalive that already runs switches at its next start (reboot or headset power cycle).".into(),
+        why: "Install the user unit that runs the Rust `omarchyvr keepalived` (needs the launcher in ~/.local/bin), then enable it. A keepalive that already runs switches at its next start (reboot or headset power cycle).".into(),
         steps,
         follow_up: None,
         needs_idle: true,
@@ -174,12 +175,12 @@ pub fn items(facts: &Facts, p: &Paths) -> Vec<Item> {
             Item::new("pkg-proton", Group::Extras, "Proton", Level::Ok, f.proton.join(", "), None, Fix::None)
         });
     }
-    // 1.4 keepalive unit and drop-in
+    // 1.4 keepalive unit (an old symlinked unit with its rust.conf drop-in counts as fine)
     v.push(match (&f.keepalive_unit, f.keepalive_rust) {
         (Some(u), true) => Item::new("keepalive-unit", Group::Headset, "Keepalive unit", Level::Ok, format!("{} runs the Rust omarchyvr keepalived", u.display()), None, Fix::None),
         (Some(u), false) => Item::new("keepalive-unit", Group::Headset, "Keepalive unit", Level::Warn,
-            format!("{} still runs the Python script: the drop-in that runs omarchyvr keepalived is missing", u.display()), None, Fix::User(keepalive_fix(p, false))),
-        (None, _) => Item::new("keepalive-unit", Group::Headset, "Keepalive unit", Level::Warn, "no omarchyvr-keepalived unit in ~/.config/systemd/user", None, Fix::User(keepalive_fix(p, true))),
+            format!("{} still runs the Python script: it is an old unit without the Rust ExecStart", u.display()), None, Fix::User(keepalive_fix(p))),
+        (None, _) => Item::new("keepalive-unit", Group::Headset, "Keepalive unit", Level::Warn, "no omarchyvr-keepalived unit in ~/.config/systemd/user", None, Fix::User(keepalive_fix(p))),
     });
     // 3.5 auto mode unit
     let missing: Vec<&str> = [(!f.autod_build, "the daemon build"), (f.autod_unit.is_none(), "the user unit"), (!f.auto_config, "~/.config/omarchyvr/auto.toml")]
@@ -361,11 +362,12 @@ mod tests {
             }
         }
         let Fix::User(k) = &get(&v, "keepalive-unit").fix else { panic!() };
-        assert!(k.needs_idle && k.steps.iter().any(|c| c.text().contains("ExecStart=%%h/.local/bin/omarchyvr keepalived")));
+        assert!(k.needs_idle && k.steps.iter().any(|c| c.text().contains("cp --remove-destination /home/u/omarchyvr/linux/omarchyvr-keepalived.service")));
+        assert!(!k.steps.iter().any(|c| c.text().contains("ln ")), "a copy, no symlink into the repo");
         // a native EDID and a Hyprland config without the DP-1 line: the line to add is shown, nothing is written
         m.file("/usr/bin/cargo", "elf");
         m.file("/etc/pimax/dp-edid.bin", "N");
-        m.file("/home/u/pimax-re/linux/pimax-dp-edid-native.bin", "N");
+        m.file("/home/u/omarchyvr/linux/pimax-dp-edid-native.bin", "N");
         m.file("/home/u/.config/hypr/monitors.lua", "hl.monitor({ output = \"DP-2\", mode = \"preferred\" })\n-- DP-1 monitor (old)\n");
         m.file("/home/u/.config/systemd/user/omarchyvr-keepalived.service", "[Service]\nExecStart=/usr/bin/python3 x\n");
         m.file("/home/u/.config/systemd/user/omarchyvr-keepalived.service.d/rust.conf", "[Service]\nExecStart=\nExecStart=%h/.local/bin/omarchyvr keepalived\n");
@@ -383,7 +385,7 @@ mod tests {
         assert_eq!(h.level, Level::Warn);
         assert!(matches!(&h.fix, Fix::Manual { lines, .. } if lines[0].starts_with("hl.monitor({ output = \"DP-1\"")));
         // the non-desktop EDID wants the line gone
-        m.file("/home/u/pimax-re/linux/pimax-dp-edid-msvsdb.bin", "N");
+        m.file("/home/u/omarchyvr/linux/pimax-dp-edid-msvsdb.bin", "N");
         m.file("/home/u/.config/hypr/monitors.lua", "hl.monitor({ output = \"DP-1\", mode = \"7104x3840@72\" })\n");
         f.manual = collect(&m, &p);
         assert_eq!(get(&items(&f, &p), "hypr-dp1").level, Level::Warn);

@@ -2,7 +2,7 @@
 Description=Pimax Dream Air USB keepalive (wake + 58 04 39 every 213 ms)
 
 [Service]
-ExecStart=/usr/bin/python3 %h/pimax-re/linux/pimax_keepalived.py
+ExecStart=%h/.local/bin/omarchyvr keepalived
 Restart=always
 RestartSec=1
 

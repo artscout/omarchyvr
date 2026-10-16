@@ -98,7 +98,7 @@ pub fn parse(
         "VIT_SYSTEM_LIBRARY_PATH",
         or_env(
             "VIT_SYSTEM_LIBRARY_PATH",
-            &home.join(".local/lib/libbasalt.so").to_string_lossy(),
+            &omarchyvr_config::paths::basalt_lib(home).to_string_lossy(),
         ),
     );
     set(
@@ -137,7 +137,7 @@ pub fn check(o: &StartOptions, s: &SixDof, env: &dyn Fn(&str) -> Option<String>)
         Ok(false) => {
             return Err(CliError::new(format!(
                 "--6dof needs a Monado build with the 6DoF code (branch desk or slam); {} has none (no PIMAX_SLAM in it). \
-                 Use --monado-build ~/src/monado-eye/build after merging, or drop --6dof",
+                 Use --monado-build with the desk build (~/.local/lib/omarchyvr/monado once installed) after merging, or drop --6dof",
                 svc.display()
             )))
         }
@@ -149,7 +149,7 @@ pub fn check(o: &StartOptions, s: &SixDof, env: &dyn Fn(&str) -> Option<String>)
     ] {
         if !bin.exists() {
             return Err(CliError::new(format!(
-                "{} does not exist (cd ~/pimax-re/rust && {hint})",
+                "{} does not exist (run ./install.sh again in your omarchyvr clone, or: cd ~/omarchyvr/rust && {hint})",
                 bin.display()
             )));
         }
@@ -266,7 +266,7 @@ pub fn ctrltrack_spec(bin: &Path, s: &SixDof, session_dir: &Path) -> ProcSpec {
 pub fn vr_start_ctrltrack(bin: &Path, s: &SixDof, o: &StartOptions, d: &Deps, sp: &dyn Spawner) {
     let spec = ctrltrack_spec(bin, s, &o.session_dir);
     if !spec.program.exists() {
-        verr!("omarchyvr vr: --ctrl-track: {} does not exist (cd ~/pimax-re/rust && cargo build --release -p pimax-ctrltrack)", spec.program.display());
+        verr!("omarchyvr vr: --ctrl-track: {} does not exist (run ./install.sh again in your omarchyvr clone (or: cd ~/omarchyvr/rust && cargo build --release -p pimax-ctrltrack))", spec.program.display());
         return;
     }
     match sp.spawn(&spec) {
@@ -402,7 +402,7 @@ mod tests {
     fn ctrl_track_needs_6dof_and_sets_the_env() {
         assert!(ct(&["--ctrl-track"], &[]).1.is_err());
         let (vr, r) = ct(&["--6dof", "--ctrl-track"], &[]);
-        assert_eq!(r.unwrap(), Some(PathBuf::from("/home/u/pimax-re/rust/target/release/pimax-ctrltrack")));
+        assert_eq!(r.unwrap(), Some(PathBuf::from("/home/u/.local/bin/pimax-ctrltrack")));
         assert_eq!(get(&vr, "PIMAX_CTRL_TRACK"), Some("1"));
         assert!(get(&vr, "PIMAX_CTRL_IMU_LOG").unwrap().ends_with("ctrl-imu"));
         let (vr, r) = ct(&["--6dof"], &[]);
