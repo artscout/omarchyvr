@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 const USAGE: &str = "usage: omarchyvr-app [--demo] [--renderer wgpu|glow] [--no-supervisor]
        omarchyvr-app --self-test | --report | --screenshots DIR [--real] | --version
-  (no option)        open the Pimax window: desk mode, setup checklist with fixes, tools, logs and history, wizard.
+  (no option)        open the Max window: desk mode, setup checklist with fixes, tools, logs and history, wizard.
                      A small supervisor process runs the window and restarts it after a crash (crash reports in
                      ~/.local/state/omarchyvr/crashes, the log in ~/.local/state/omarchyvr/logs/omarchyvr-app.log)
   --demo             the window with built-in demo data; nothing is started, signalled or written

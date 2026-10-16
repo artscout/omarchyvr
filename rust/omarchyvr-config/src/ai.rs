@@ -1,6 +1,8 @@
 //! AI providers shared by the Pimax app (AI tab, Autofix) and voice control: `~/.config/omarchyvr/ai.toml`.
 //!
 //! ```toml
+//! # no file, or no provider chosen for voice: the built-in `claude-cli` provider (the installed Claude Code CLI,
+//! # model "haiku", no key) answers voice commands that the offline matcher does not understand.
 //! default = "claude"              # the provider every feature uses unless [use] says otherwise
 //! voice_ai = "fallback"           # off | fallback (when the offline matcher has no answer) | always
 //! strip_titles = false            # privacy: window titles are not sent to a provider
@@ -13,8 +15,13 @@
 //! voice = "claude"
 //! autofix = "claude"
 //!
+//! [providers.claude-cli]          # the default for voice: runs `claude -p` (the user's own login, no API key)
+//! kind = "claude-cli"
+//! model = "haiku"                 # a CLI alias or id: haiku | sonnet | claude-haiku-5-5 ...
+//! command = "claude"              # optional: the binary (default: `claude` on PATH, then ~/.local/bin/claude)
+//!
 //! [providers.claude]
-//! kind = "anthropic"              # anthropic | openai | openai-compatible
+//! kind = "anthropic"              # anthropic | openai | openai-compatible | claude-cli
 //! model = "claude-haiku-5-5"
 //! api_key = "sk-ant-..."          # or: api_key_env = "ANTHROPIC_API_KEY"
 //!
@@ -48,6 +55,11 @@ pub const CLAUDE_MODELS: [(&str, &str); 3] = [
     ("claude-opus-5-5", "Claude Opus 5.5 (most capable)"),
 ];
 
+/// Models offered for the Claude CLI provider (alias, name); the first is the default.
+pub const CLAUDE_CLI_MODELS: [(&str, &str); 2] = [("haiku", "Claude Haiku (fast)"), ("sonnet", "Claude Sonnet (more capable)")];
+/// The name of the built-in Claude CLI provider.
+pub const CLAUDE_CLI_NAME: &str = "claude-cli";
+
 /// The Anthropic API base.
 pub const ANTHROPIC_BASE: &str = "https://api.anthropic.com";
 /// The OpenAI API base.
@@ -74,11 +86,13 @@ pub enum Kind {
     OpenAi,
     /// Any server with the OpenAI Chat Completions shape (ollama, llama-server, LM Studio, ...); key optional.
     OpenAiCompatible,
+    /// The user's installed Claude Code CLI (`claude -p`): their own login, no API key, no URL.
+    ClaudeCli,
 }
 
 impl Kind {
     /// Every kind.
-    pub const ALL: [Kind; 3] = [Kind::Anthropic, Kind::OpenAi, Kind::OpenAiCompatible];
+    pub const ALL: [Kind; 4] = [Kind::Anthropic, Kind::OpenAi, Kind::OpenAiCompatible, Kind::ClaudeCli];
 
     /// The value in the file.
     pub fn id(self) -> &'static str {
@@ -86,6 +100,7 @@ impl Kind {
             Kind::Anthropic => "anthropic",
             Kind::OpenAi => "openai",
             Kind::OpenAiCompatible => "openai-compatible",
+            Kind::ClaudeCli => "claude-cli",
         }
     }
 
@@ -100,6 +115,7 @@ impl Kind {
             Kind::Anthropic => "Claude (Anthropic)",
             Kind::OpenAi => "OpenAI",
             Kind::OpenAiCompatible => "Local or other (OpenAI-compatible)",
+            Kind::ClaudeCli => "Claude (CLI, no key)",
         }
     }
 
@@ -108,13 +124,13 @@ impl Kind {
         match self {
             Kind::Anthropic => Some(ANTHROPIC_BASE),
             Kind::OpenAi => Some(OPENAI_BASE),
-            Kind::OpenAiCompatible => None,
+            Kind::OpenAiCompatible | Kind::ClaudeCli => None,
         }
     }
 
     /// A key is required.
     pub fn needs_key(self) -> bool {
-        self != Kind::OpenAiCompatible
+        !matches!(self, Kind::OpenAiCompatible | Kind::ClaudeCli)
     }
 
     /// The environment variable a key usually comes from.
@@ -122,7 +138,7 @@ impl Kind {
         match self {
             Kind::Anthropic => Some("ANTHROPIC_API_KEY"),
             Kind::OpenAi => Some("OPENAI_API_KEY"),
-            Kind::OpenAiCompatible => None,
+            Kind::OpenAiCompatible | Kind::ClaudeCli => None,
         }
     }
 }
@@ -712,6 +728,8 @@ pub struct Provider {
     /// Voice control's second step (acting with tools) uses this model when set (`action_model`); `model` then
     /// only sorts the command (the intent model).
     pub action_model: Option<String>,
+    /// Claude CLI only: the binary (`command`; None: `claude` on PATH, then the usual install places).
+    pub command: Option<String>,
     /// Keys this version does not know, raw values (kept on save).
     pub extra: BTreeMap<String, String>,
 }
@@ -722,17 +740,37 @@ impl Provider {
         Provider {
             name: name.to_string(),
             kind,
-            model: if kind == Kind::Anthropic { CLAUDE_MODELS[0].0.to_string() } else { String::new() },
+            model: match kind {
+                Kind::Anthropic => CLAUDE_MODELS[0].0.to_string(),
+                Kind::ClaudeCli => CLAUDE_CLI_MODELS[0].0.to_string(),
+                _ => String::new(),
+            },
             api_key: None,
             api_key_env: None,
             base_url: match kind {
                 Kind::OpenAi => Some(OPENAI_BASE.into()),
                 Kind::OpenAiCompatible => Some(OLLAMA_BASE.into()),
-                Kind::Anthropic => None,
+                Kind::Anthropic | Kind::ClaudeCli => None,
             },
             action_model: None,
+            command: None,
             extra: BTreeMap::new(),
         }
+    }
+
+    /// The built-in Claude CLI provider (`claude-cli`, model haiku): voice uses it when the file chooses nothing.
+    pub fn claude_cli() -> Provider {
+        Provider::new(CLAUDE_CLI_NAME, Kind::ClaudeCli)
+    }
+
+    /// The binary to run (Claude CLI): `command`, else `claude`.
+    pub fn cli_command(&self) -> &str {
+        self.command.as_deref().map(str::trim).filter(|c| !c.is_empty()).unwrap_or("claude")
+    }
+
+    /// Requests leave this PC (a provider that is not on a loopback address; the Claude CLI always calls Anthropic).
+    pub fn is_remote(&self) -> bool {
+        self.kind == Kind::ClaudeCli || self.base().is_some_and(|b| !is_loopback(b))
     }
 
     /// The base URL in use.
@@ -771,21 +809,25 @@ pub struct Resolved {
     pub key_source: KeySource,
     /// Voice control's action model (`action_model`), if set.
     pub action_model: Option<String>,
+    /// Claude CLI: the binary to run (`command` in the file; None: `claude`).
+    pub command: Option<String>,
 }
 
 impl Resolved {
-    /// The URL a request goes to: Anthropic `<base>/v1/messages`, the others `<base>/chat/completions`.
+    /// The URL a request goes to: Anthropic `<base>/v1/messages`, the others `<base>/chat/completions`. The Claude
+    /// CLI has none (its endpoint is the word `claude-cli`).
     pub fn endpoint(&self) -> String {
         let b = self.base_url.trim_end_matches('/');
         match self.kind {
+            Kind::ClaudeCli => "claude-cli".to_string(),
             Kind::Anthropic => format!("{b}/v1/messages"),
             _ => format!("{b}/chat/completions"),
         }
     }
 
-    /// Requests stay on this machine (a loopback base URL).
+    /// Requests stay on this machine (a loopback base URL; never the Claude CLI).
     pub fn local(&self) -> bool {
-        is_loopback(&self.base_url)
+        self.kind != Kind::ClaudeCli && is_loopback(&self.base_url)
     }
 }
 
@@ -818,6 +860,8 @@ pub struct AiConfig {
     pub voice_ai_gaze: Option<bool>,
     /// Log AI requests to `~/.local/state/omarchyvr/logs/ai.log` (`voice_ai_log`; None: yes).
     pub voice_ai_log: Option<bool>,
+    /// Keep one Claude CLI process started ahead for the next command (`voice_ai_prewarm`; None: yes).
+    pub voice_ai_prewarm: Option<bool>,
     /// With a local voice model: use the online provider when the local server is not running (`voice_online_backup`; None: yes).
     pub voice_online_backup: Option<bool>,
     /// The AI on this PC: one model or two stages (`voice_local`, default simple).
@@ -838,6 +882,12 @@ pub struct AiConfig {
     pub other_sections: Vec<(String, Vec<(String, String)>)>,
     /// What the last load noticed (an unsafe file mode, unknown lines).
     pub warnings: Vec<String>,
+}
+
+/// The built-in Claude CLI provider (see [`AiConfig::provider`]).
+fn builtin_claude_cli() -> &'static Provider {
+    static P: std::sync::OnceLock<Provider> = std::sync::OnceLock::new();
+    P.get_or_init(Provider::claude_cli)
 }
 
 /// A provider name the file can hold.
@@ -957,7 +1007,7 @@ impl AiConfig {
                     if c.providers.iter().any(|p| p.name == name) {
                         return Err(format!("line {n}: provider {name} twice"));
                     }
-                    c.providers.push(Provider { name: name.to_string(), kind: Kind::OpenAiCompatible, model: String::new(), api_key: None, api_key_env: None, base_url: None, action_model: None, extra: BTreeMap::new() });
+                    c.providers.push(Provider { name: name.to_string(), kind: Kind::OpenAiCompatible, model: String::new(), api_key: None, api_key_env: None, base_url: None, action_model: None, command: None, extra: BTreeMap::new() });
                     kinds.push(false);
                     Section::Provider(c.providers.len() - 1)
                 } else {
@@ -993,6 +1043,7 @@ impl AiConfig {
                     }
                     "voice_ai_gaze" => c.voice_ai_gaze = Some(parse_bool(v, n, k)?),
                     "voice_ai_log" => c.voice_ai_log = Some(parse_bool(v, n, k)?),
+                    "voice_ai_prewarm" => c.voice_ai_prewarm = Some(parse_bool(v, n, k)?),
                     "voice_ai_timeout_s" => {
                         let t: f64 = v.split('#').next().unwrap_or("").trim().parse().map_err(|_| format!("line {n}: voice_ai_timeout_s is a number of seconds"))?;
                         if !(t.is_finite() && t > 0.0 && t <= 600.0) {
@@ -1021,7 +1072,7 @@ impl AiConfig {
                     match k {
                         "kind" => {
                             let s = unquote(v, n)?;
-                            p.kind = Kind::parse(&s).ok_or_else(|| format!("line {n}: kind {s:?} (anthropic, openai or openai-compatible)"))?;
+                            p.kind = Kind::parse(&s).ok_or_else(|| format!("line {n}: kind {s:?} (anthropic, openai, openai-compatible or claude-cli)"))?;
                             kinds[*ix] = true;
                         }
                         "model" => p.model = unquote(v, n)?,
@@ -1029,6 +1080,7 @@ impl AiConfig {
                         "api_key_env" => p.api_key_env = Some(unquote(v, n)?).filter(|s| !s.is_empty()),
                         "base_url" => p.base_url = Some(unquote(v, n)?).filter(|s| !s.is_empty()),
                         "action_model" => p.action_model = Some(unquote(v, n)?).filter(|s| !s.trim().is_empty()),
+                        "command" => p.command = Some(unquote(v, n)?).filter(|s| !s.trim().is_empty()),
                         _ => {
                             p.extra.insert(k.to_string(), v.to_string());
                         }
@@ -1092,7 +1144,7 @@ impl AiConfig {
             }
         }
         if let Some(p) = c.providers.iter().zip(&kinds).find(|(_, k)| !**k).map(|(p, _)| p) {
-            return Err(format!("provider {} has no kind (anthropic, openai or openai-compatible)", p.name));
+            return Err(format!("provider {} has no kind (anthropic, openai, openai-compatible or claude-cli)", p.name));
         }
         Ok(c)
     }
@@ -1112,6 +1164,9 @@ impl AiConfig {
         }
         if let Some(l) = self.voice_ai_log {
             o += &format!("voice_ai_log = {l}\n");
+        }
+        if let Some(b) = self.voice_ai_prewarm {
+            o += &format!("voice_ai_prewarm = {b}\n");
         }
         if let Some(b) = self.voice_online_backup {
             o += &format!("voice_online_backup = {b}\n");
@@ -1153,6 +1208,9 @@ impl AiConfig {
             }
             if let Some(m) = &p.action_model {
                 o += &format!("action_model = {}\n", quote(m));
+            }
+            if let Some(c) = &p.command {
+                o += &format!("command = {}\n", quote(c));
             }
             for (k, v) in &p.extra {
                 o += &format!("{k} = {v}\n");
@@ -1239,15 +1297,24 @@ impl AiConfig {
         self.providers.iter().find(|p| p.base().is_some_and(is_loopback)).map(|p| p.name.clone())
     }
 
-    /// The first online provider (OpenRouter first), by name.
+    /// The first online provider (OpenRouter first, then a keyed one, then the Claude CLI), by name. The built-in
+    /// Claude CLI provider always exists, so there is always one.
     pub fn online_provider(&self) -> Option<String> {
-        let on = || self.providers.iter().filter(|p| p.base().is_some_and(|b| !is_loopback(b)));
-        on().find(|p| p.base().is_some_and(|b| b.contains("openrouter"))).or_else(|| on().next()).map(|p| p.name.clone())
+        let on = || self.providers.iter().filter(|p| p.kind != Kind::ClaudeCli && p.base().is_some_and(|b| !is_loopback(b)));
+        on().find(|p| p.base().is_some_and(|b| b.contains("openrouter")))
+            .or_else(|| on().next())
+            .map(|p| p.name.clone())
+            .or_else(|| Some(self.claude_cli_provider().name.clone()))
+    }
+
+    /// The Claude CLI provider voice uses by default: the first one in the file, else the built-in one.
+    pub fn claude_cli_provider(&self) -> &Provider {
+        self.providers.iter().find(|p| p.kind == Kind::ClaudeCli).unwrap_or_else(|| builtin_claude_cli())
     }
 
     /// Where voice commands are understood now.
     pub fn runs_on(&self) -> RunsOn {
-        if self.provider_for(Feature::Voice).is_some_and(|p| p.base().is_some_and(|b| !is_loopback(b))) {
+        if self.provider_for(Feature::Voice).is_some_and(|p| p.is_remote()) {
             RunsOn::Online
         } else if self.voice_local == VoiceLocal::TwoStage {
             RunsOn::TwoStage
@@ -1370,18 +1437,25 @@ impl AiConfig {
         self.local_two_stage.clone().unwrap_or_default()
     }
 
-    /// A provider by name.
+    /// A provider by name (the built-in `claude-cli` exists even when the file has no such table).
     pub fn provider(&self, name: &str) -> Option<&Provider> {
-        self.providers.iter().find(|p| p.name == name)
+        self.providers.iter().find(|p| p.name == name).or_else(|| (name == CLAUDE_CLI_NAME).then(builtin_claude_cli))
     }
 
-    /// The provider name a feature uses: its `[use]` entry, else `default`, else the only provider.
+    /// The provider a feature uses: its `[use]` entry, else `default`; then, for voice control, the Claude CLI
+    /// (no key needed: the default since 2026-10-16); for the other features the only provider.
     pub fn provider_for(&self, f: Feature) -> Option<&Provider> {
         self.uses
             .get(&f)
             .and_then(|n| self.provider(n))
             .or_else(|| self.default.as_deref().and_then(|n| self.provider(n)))
-            .or_else(|| if self.providers.len() == 1 { self.providers.first() } else { None })
+            .or_else(|| match self.providers.len() {
+                // one provider in the file: that one (the rule from before the Claude CLI existed)
+                1 => self.providers.first(),
+                // a new install: nothing configured, so voice uses the built-in Claude CLI
+                0 if f == Feature::Voice => Some(self.claude_cli_provider()),
+                _ => None,
+            })
     }
 
     /// What a feature talks to, with this process's environment.
@@ -1399,6 +1473,11 @@ impl AiConfig {
     /// One provider by name, as [`AiConfig::resolve_with`] would give it.
     pub fn resolve_provider(&self, name: &str, env: &dyn Fn(&str) -> Option<String>, session_key: Option<&Secret>) -> Result<Resolved, String> {
         let p = self.provider(name).ok_or_else(|| format!("no provider named {name}"))?;
+        if p.kind == Kind::ClaudeCli {
+            let model = Some(p.model.trim()).filter(|m| !m.is_empty()).unwrap_or(CLAUDE_CLI_MODELS[0].0).to_string();
+            let command = p.command.clone().filter(|c| !c.trim().is_empty());
+            return Ok(Resolved { provider: p.name.clone(), kind: p.kind, model, base_url: String::new(), api_key: None, key_source: KeySource::None, action_model: None, command });
+        }
         let base_url = p.base().map(|b| b.trim_end_matches('/').to_string()).ok_or_else(|| format!("{}: base_url is missing", p.name))?;
         let model = if p.model.trim().is_empty() {
             if p.kind == Kind::Anthropic {
@@ -1421,7 +1500,7 @@ impl AiConfig {
         } else {
             (None, KeySource::None)
         };
-        Ok(Resolved { provider: p.name.clone(), kind: p.kind, model, base_url, api_key, key_source, action_model: p.action_model.clone() })
+        Ok(Resolved { provider: p.name.clone(), kind: p.kind, model, base_url, api_key, key_source, action_model: p.action_model.clone(), command: None })
     }
 
     /// Text for logs and reports: everything except the keys.
@@ -1445,6 +1524,7 @@ impl fmt::Display for Redacted<'_> {
             let key = match (&p.api_key, &p.api_key_env) {
                 (Some(_), _) => "key in the file".to_string(),
                 (None, Some(e)) => format!("key from ${e}"),
+                (None, None) if p.kind == Kind::ClaudeCli => "the Claude CLI's own login".to_string(),
                 (None, None) if p.kind.needs_key() => "no key".to_string(),
                 (None, None) => "no key needed".to_string(),
             };
@@ -1493,12 +1573,14 @@ mod tests {
 
     #[test]
     fn cloud_ai_is_off_by_default() {
-        // no file, or a file without providers: no cloud provider, no key, no default provider; voice "fallback" then
-        // means the local omarchyvr-ai server only (agent.rs settings_and_providers_from_ai_toml checks `local`)
+        // no file, or a file without providers: no keyed provider, no default provider; voice uses the built-in Claude
+        // CLI (the user's own login, no key); the other features have nothing to talk to
         for c in [AiConfig::default(), AiConfig::parse("").unwrap(), AiConfig::parse("strip_titles = true\n").unwrap()] {
             assert!(c.providers.is_empty() && c.default.is_none() && c.uses.is_empty());
-            assert!(c.providers.iter().all(|p| p.kind != Kind::Anthropic && p.kind != Kind::OpenAi));
-            assert!(c.resolve_with(Feature::Voice, &|_| None, None).is_err(), "nothing to send to without a key");
+            let r = c.resolve_with(Feature::Voice, &|_| None, None).unwrap();
+            assert_eq!((r.kind, r.model.as_str(), r.provider.as_str(), r.api_key.is_none(), r.local()), (Kind::ClaudeCli, "haiku", "claude-cli", true, false));
+            assert_eq!(c.voice_ai, VoiceAi::Fallback);
+            assert!(c.resolve_with(Feature::Autofix, &|_| None, None).is_err(), "nothing to send to without a key");
         }
         // a provider the user adds (a key) is kept
         let c = AiConfig::parse("default = \"claude\"\n[providers.claude]\nkind = \"anthropic\"\napi_key = \"sk-ant-x\"\n").unwrap();
@@ -1563,8 +1645,9 @@ mod tests {
         assert!(c2.resolve_with(Feature::Voice, &none, None).unwrap_err().contains("no API key"));
         let s = Secret::new("session-key-xyz");
         assert_eq!(c2.resolve_with(Feature::Voice, &none, Some(&s)).unwrap().key_source, KeySource::Session);
-        // no provider at all
-        assert!(AiConfig::default().resolve_with(Feature::Voice, &none, None).is_err());
+        // no provider at all: voice has the Claude CLI, autofix has nothing
+        assert_eq!(AiConfig::default().resolve_with(Feature::Voice, &none, None).unwrap().kind, Kind::ClaudeCli);
+        assert!(AiConfig::default().resolve_with(Feature::Autofix, &none, None).is_err());
     }
 
     #[test]
@@ -1678,14 +1761,59 @@ mod tests {
         let back = AiConfig::parse(&c.render()).unwrap();
         assert_eq!(back.providers[1].api_key.as_ref().unwrap().expose(), "sk-or-v1-TEST", "keys stay");
         assert_eq!(back.runs_on(), RunsOn::Online);
-        // no online provider: two choices; no local provider: one is added
+        // nothing set: the built-in Claude CLI is the online choice (Online, no key); no local provider: one is added
         let mut e = AiConfig::default();
-        assert_eq!(e.runs_on_choices(), vec![RunsOn::Simple, RunsOn::TwoStage]);
-        assert!(e.set_runs_on(RunsOn::Online).is_err());
+        assert_eq!((e.runs_on(), e.runs_on_choices()), (RunsOn::Online, RunsOn::ALL.to_vec()));
+        e.set_runs_on(RunsOn::Online).unwrap();
+        assert_eq!(e.uses.get(&Feature::Voice).map(String::as_str), Some("claude-cli"));
+        let mut e = AiConfig::default();
         e.set_runs_on(RunsOn::TwoStage).unwrap();
         assert_eq!(e.providers[0].base(), Some(LLAMA_SERVER_BASE));
         assert_eq!((e.runs_on(), e.uses.get(&Feature::Voice).map(String::as_str)), (RunsOn::TwoStage, Some("local")));
         assert_eq!(RunsOn::parse("lara"), Some(RunsOn::TwoStage));
+    }
+
+    #[test]
+    fn claude_cli_is_the_voice_default_and_round_trips() {
+        // a provider table of its own: model and command kept, no key written
+        let t = "[providers.claude-cli]\nkind = \"claude-cli\"\nmodel = \"sonnet\"\ncommand = \"~/bin/claude\"\n";
+        let c = AiConfig::parse(t).unwrap();
+        let r = c.resolve_with(Feature::Voice, &|_| None, None).unwrap();
+        assert_eq!((r.kind, r.model.as_str(), r.command.as_deref(), r.endpoint().as_str()), (Kind::ClaudeCli, "sonnet", Some("~/bin/claude"), "claude-cli"));
+        assert_eq!(c.runs_on(), RunsOn::Online);
+        assert!(c.provider_for(Feature::Voice).unwrap().is_remote());
+        let back = AiConfig::parse(&c.render()).unwrap();
+        assert_eq!(back.providers[0].command.as_deref(), Some("~/bin/claude"));
+        assert!(!c.render().contains("api_key = "));
+        // a file that only has a keyed provider and no choice: that one is used by both (the old rule)
+        let t = "[providers.claude]\nkind = \"anthropic\"\napi_key = \"sk-ant-x\"\n";
+        let c = AiConfig::parse(t).unwrap();
+        assert_eq!(c.provider_for(Feature::Voice).unwrap().name, "claude");
+        // a lone local provider stays the voice brain (an upgrade must not switch it to the cloud)
+        let c = AiConfig::parse("[providers.local]\nkind = \"openai-compatible\"\nbase_url = \"http://127.0.0.1:8080/v1\"\n").unwrap();
+        assert_eq!(c.provider_for(Feature::Voice).unwrap().name, "local");
+        assert_eq!(c.runs_on(), RunsOn::Simple);
+        // a new install (no providers): the built-in Claude CLI answers voice, autofix has nothing
+        let c = AiConfig::parse("").unwrap();
+        assert_eq!(c.provider_for(Feature::Voice).unwrap().kind, Kind::ClaudeCli);
+        assert!(c.provider_for(Feature::Autofix).is_none());
+        // two providers and no choice: nothing is guessed
+        let two = "[providers.a]\nkind = \"openai-compatible\"\nbase_url = \"http://127.0.0.1:1/v1\"\n[providers.b]\nkind = \"openai-compatible\"\nbase_url = \"http://127.0.0.1:2/v1\"\n";
+        assert!(AiConfig::parse(two).unwrap().provider_for(Feature::Voice).is_none());
+        assert_eq!(AiConfig::parse(&format!("[use]\nvoice = \"b\"\n{two}")).unwrap().provider_for(Feature::Voice).unwrap().name, "b");
+        assert_eq!(AiConfig::parse(&format!("default = \"a\"\n{two}")).unwrap().provider_for(Feature::Voice).unwrap().name, "a");
+        let c = AiConfig::parse(t).unwrap();
+        assert_eq!(c.provider_for(Feature::Autofix).unwrap().name, "claude");
+        assert_eq!(c.online_provider().as_deref(), Some("claude"), "a keyed online provider is still found first");
+        // an explicit choice is kept
+        let c = AiConfig::parse(&format!("default = \"claude\"\n{t}")).unwrap();
+        assert_eq!(c.provider_for(Feature::Voice).unwrap().name, "claude");
+        let c = AiConfig::parse(&format!("[use]\nvoice = \"claude\"\n{t}")).unwrap();
+        assert_eq!(c.resolve_with(Feature::Voice, &|_| None, None).unwrap().kind, Kind::Anthropic);
+        // no model: haiku; the command word defaults to claude
+        let c = AiConfig::parse("[providers.x]\nkind = \"claude-cli\"\n").unwrap();
+        assert_eq!((c.providers[0].cli_command(), c.resolve_provider("x", &|_| None, None).unwrap().model.as_str()), ("claude", "haiku"));
+        assert!(AiConfig::parse("[providers.x]\nkind = \"claude-cli\"\nbase_url = \"http://127.0.0.1:1/v1\"\n").is_ok());
     }
 
     #[test]

@@ -22,6 +22,9 @@ Nothing leaves the machine unless you set up a remote LLM yourself.
   ignored without a toast.
 - **Debug line.** With the voice AI on, a dim cyan line under the captions shows what the matcher and the model
   decided and how long it took. "Max, debug off" / "Max, debug on" ([AI.md](AI.md) section 12).
+- **Claude through the CLI (the default AI).** With no other choice, "Max, ..." anything the matcher does not
+  understand goes to your installed Claude Code (`claude -p`, your own login, no API key), a fresh process per
+  command, one kept ready; see [AI.md](AI.md) section 20.
 - **Where the AI runs.** The Work desk's watch has an "AI: ..." button: This PC (one model) / This PC, 2 stages (the
   router Lara sorts the command, the model on the graphics card answers) / Online. With two stages, two more buttons
   switch Lara and the model. Voice control follows within 2 s, no restart ([AI.md](AI.md) section 16).

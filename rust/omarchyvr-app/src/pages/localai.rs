@@ -1,81 +1,39 @@
-//! Local AI (user decision 2026-10-16): the local voice models of Work. One switch (On / Off), a preset (Low /
+//! The local model section of the AI page (user decision 2026-10-16): the local voice models of Work. One switch (On / Off), a preset (Low /
 //! Medium / High, each a router "Lara" + action model pair from the benchmark of docs/AI.md section 16), "Advanced:
 //! choose models" (the per-slot pickers, Lara on/off, "Video memory for AI"), the state (download, start, test), and
 //! Online (Jev) as the separate choice. The models load in Work sessions only (omarchyvrd's ai.server), never in Play.
 use crate::app::PimaxApp;
 use crate::theme::{self, icon};
-use crate::widgets::{self, caption, card, chip, note, pal, title};
+use crate::widgets::{self, caption, chip, inset as card, note, pal, title};
 use eframe::egui::{self, RichText, Ui};
 use omarchyvr_config::ai::{asr_plan, Asr, LocalModel, Preset, RunsOn, VoiceLocal, ACTION_MODELS, PRESETS, ROUTER_MODELS};
 
-pub fn show(ui: &mut Ui, app: &mut PimaxApp) {
-    app.core.want_ai();
+/// The body of the "Local model on this PC" section of the AI page.
+pub fn body(ui: &mut Ui, app: &mut PimaxApp) {
     app.core.want_localai();
-    if !app.core.ai.loaded {
-        card(ui, |ui| {
-            ui.horizontal(|ui| {
-                widgets::spinner(ui);
-                ui.label("Reading ~/.config/omarchyvr/ai.toml...");
-            });
-        });
-        return;
-    }
     let busy = app.core.busy();
     let on = app.core.ai.config.local_models_on() && app.core.ai_runs_on() != RunsOn::Online;
-    let online = app.core.ai_online_provider();
-    card(ui, |ui| {
-        let p = theme::pal(ui);
-        ui.horizontal(|ui| {
-            title(ui, "Local AI");
-            widgets::help(ui, "The models that understand voice commands the offline commands do not know (\"Max, ...\"). They run on this PC, in Work only (the desk for work and movies): Play, SteamVR and games never load them, and switching to Play unloads them. Nothing you say leaves this PC.");
-            if app.core.demo {
-                chip(ui, "demo: nothing is read, written or sent", pal(ui).info);
-            }
-        });
+    ui.horizontal(|ui| {
         let mut sw = on;
         if widgets::toggle(ui, &mut sw, "Local models", !busy).changed() {
             app.core.ai_set_local_models(sw, false);
         }
-        if !on {
-            note(ui, "Off: no model is loaded; only the offline commands work, unless Online is chosen below.");
-        }
-        if !app.core.ai.saved.is_empty() {
-            ui.label(RichText::new(&app.core.ai.saved).size(11.5).color(p.faint));
-        }
+        widgets::help(ui, "The models that understand voice commands the offline commands do not know (\"Max, ...\"). They run on this PC, in Work only (the desk for work and movies): Play, SteamVR and games never load them, and switching to Play unloads them. Nothing you say leaves this PC.");
     });
-    if on {
-        ui.add_space(8.0);
-        presets(ui, app, busy);
-        ui.add_space(8.0);
-        speech(ui, app, busy);
-        ui.add_space(8.0);
-        agent_mode(ui, app, busy);
-        ui.add_space(8.0);
-        advanced(ui, app, busy);
-        ui.add_space(8.0);
-        status(ui, app, busy);
+    if !on {
+        note(ui, "Off: no local model is loaded. Choose \"Local model on this PC\" at the top to answer voice commands with it.");
+        return;
     }
     ui.add_space(8.0);
-    card(ui, |ui| {
-        let p = theme::pal(ui);
-        ui.horizontal(|ui| {
-            title(ui, "Online (Jev) instead");
-            widgets::help(ui, "A separate choice: Jev on OpenRouter sorts the command and an action model acts (about 3.4 s, 37/40 hard phrases). Your words and the names of your windows are sent. Exact phrases still run on this PC.");
-        });
-        match online {
-            None => note(ui, "No online provider is set up (AI page, developer mode: Add OpenRouter)."),
-            Some(_) => {
-                let mut use_online = app.core.ai_runs_on() == RunsOn::Online;
-                if widgets::toggle(ui, &mut use_online, "Use Online (Jev) for voice commands", !busy).changed() {
-                    // Online on: the local models off; Online off: back to the local models
-                    app.core.ai_set_local_models(!use_online, use_online);
-                }
-                if use_online {
-                    ui.label(RichText::new("Online is on: the local models stay unloaded.").size(12.0).color(p.dim));
-                }
-            }
-        }
-    });
+    presets(ui, app, busy);
+    ui.add_space(8.0);
+    speech(ui, app, busy);
+    ui.add_space(8.0);
+    agent_mode(ui, app, busy);
+    ui.add_space(8.0);
+    advanced(ui, app, busy);
+    ui.add_space(8.0);
+    status(ui, app, busy);
 }
 
 /// Low / Medium / High with what each costs and does.

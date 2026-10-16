@@ -71,6 +71,7 @@ const HELP: &str = "omarchyvr-voice <command> [options]   local voice-to-text (n
       audit phrase; prints top-1 accuracy, how often the right category is among the ones the act request gets,
       the matcher's own guess for comparison, and p50/p95 latency. Nothing runs. --label held-out: only the
       natural phrasings (not in the training rows); --out: write Laya training rows from the catalogue instead.
+  ai-size                      (prints what each AI request kind sends for a typical state: characters, ~tokens)
   ai-mode [local-toggle|local-on|local-off|preset-next|low|medium|high|next|simple|two-stage|online|show]
       AI runs on (the Work desk watch's AI button): saves it in ai.toml ([use] voice and voice_local only),
       starts the local AI in that shape (omarchyvr-ai up) and prints the mode; a running act switches by itself.
@@ -761,6 +762,7 @@ fn load_agent(a: &mut Actor, ai_toml: &std::path::Path, dry_run: bool) -> bool {
                 match ag.style() {
                     omarchyvr_voice::agent::Style::Compact => "compact".to_string(),
                     omarchyvr_voice::agent::Style::Tools => "tool calling".to_string(),
+                    omarchyvr_voice::agent::Style::State => "claude cli: request + state, calls, done/expect loop".to_string(),
                     omarchyvr_voice::agent::Style::TwoStage => format!(
                         "two stages: classify, then act with the category's tools; fallback {}",
                         ag.fallback.as_ref().map(|f| f.describe()).unwrap_or_else(|| "the matcher".into())
@@ -1721,6 +1723,19 @@ fn run(args: &[String]) -> Result<(), String> {
         "audit" => cmd_audit(&o),
         "routerbench" => cmd_routerbench(&o),
         "ai-mode" => cmd_ai_mode(&o),
+        "claude-live" => {
+            // the real `claude` CLI through the Claude CLI code path over a simulated desktop (nothing real is touched)
+            // CLAUDE_LIVE_MODEL (default haiku), CLAUDE_LIVE_NO_PREWARM=1
+            let model = std::env::var("CLAUDE_LIVE_MODEL").unwrap_or_else(|_| "haiku".to_string());
+            print!("{}", omarchyvr_voice::claudelive::run(&o.positional, &model, std::env::var_os("CLAUDE_LIVE_NO_PREWARM").is_none())?);
+            Ok(())
+        }
+        "ai-size" => {
+            // what each AI request kind sends for a typical state (characters, approximate tokens)
+            let cat = Catalogue::load_default()?;
+            print!("{}", omarchyvr_voice::agent::size_report(&cat));
+            Ok(())
+        }
         "aiprompt" => {
             // the compact request body for some words (no live context): for debugging and the docs
             let cat = Catalogue::load_default()?;
@@ -1783,7 +1798,7 @@ mod watch_tests {
 
     #[test]
     fn the_watch_row() {
-        let mut cfg = omarchyvr_config::ai::AiConfig::parse("voice_local = \"two-stage\"\nvoice_local_models = true\n[local_two_stage]\npreset = \"high\"\nrouter = \"lara\"\naction = \"qwen3.5-9b\"\n").unwrap();
+        let mut cfg = omarchyvr_config::ai::AiConfig::parse("voice_local = \"two-stage\"\nvoice_local_models = true\n[providers.local]\nkind = \"openai-compatible\"\nbase_url = \"http://127.0.0.1:8080/v1\"\nmodel = \"pimax-local\"\n[local_two_stage]\npreset = \"high\"\nrouter = \"lara\"\naction = \"qwen3.5-9b\"\n").unwrap();
         let c = super::watch_commands("", &cfg);
         let j: Vec<String> = c.iter().map(|v| v.join(" ")).collect();
         assert_eq!(j[0], "panel-modify watch btn_ai_mode set-text -- Local AI: On");

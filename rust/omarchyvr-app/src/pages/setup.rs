@@ -222,7 +222,7 @@ pub fn install(ui: &mut Ui, app: &mut PimaxApp) {
         Some(ItemClick::Root(id)) => app.core.ask_root(&id),
         None => {}
     }
-    widgets::section(ui, "Desktop entry", Some("Launcher and app > This app installs the binary to ~/.local/bin/omarchyvr-app, the icon and 'Pimax' in ~/.local/share/applications (no root)."), |ui| {
+    widgets::section(ui, "Desktop entry", Some("Launcher and app > This app installs the binary to ~/.local/bin/omarchyvr-app, the icon and 'omarchyvr' in ~/.local/share/applications (no root)."), |ui| {
         note(ui, "~/.local/bin/omarchyvr-app, \"omarchyvr\" in the app launcher");
     });
 }

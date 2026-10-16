@@ -781,6 +781,7 @@ impl Actor {
                     crate::agent::Style::Compact => "ai",
                     crate::agent::Style::Tools => "ai-tools",
                     crate::agent::Style::TwoStage => "ai2",
+                    crate::agent::Style::State => "ai-claude",
                 });
             }
             let routed = ag.route(self, &words, matched.as_ref(), &cands, now, r);
@@ -1582,7 +1583,7 @@ impl Runner for Real {
         eprintln!("voice: {text}");
         if self.toasts {
             if let Ok(s) = std::net::UdpSocket::bind("127.0.0.1:0") {
-                let _ = s.send_to(toast_json("Pimax", text).as_bytes(), "127.0.0.1:42069");
+                let _ = s.send_to(toast_json("Max", text).as_bytes(), "127.0.0.1:42069");
             }
         }
     }
@@ -2105,7 +2106,7 @@ mod tests {
     fn state_file_round_trip_and_toast_format() {
         let s = State { preset: Some("work-3".into()), backdrop: Some("sky".into()), history: vec![("preset".into(), "cinema".into())] };
         assert_eq!(State::from_text(&s.to_text()), s);
-        let j: serde_json::Value = serde_json::from_str(&toast_json("Pimax", "hi \"x\"")).unwrap();
+        let j: serde_json::Value = serde_json::from_str(&toast_json("Max", "hi \"x\"")).unwrap();
         assert_eq!(j["messageType"], 1);
         assert_eq!(j["content"], "hi \"x\"");
         assert_eq!(find_backdrop(&["passthrough".into(), "sky".into(), "mountain_lake".into()], "space"), Some("sky".into()));

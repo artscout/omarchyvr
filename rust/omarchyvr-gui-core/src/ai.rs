@@ -7,6 +7,7 @@
 use crate::app::AppCore;
 use crate::llm::{self, Backend, Request};
 use omarchyvr_config::ai::{self, AiConfig, Feature, Kind, Provider, Resolved, Secret, VoiceAi};
+use omarchyvr_config::claude_cli::{self, ClaudeCliStatus};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -42,6 +43,14 @@ pub struct AiView {
     pub log: Vec<String>,
     /// When the log was read last.
     log_at: Option<Instant>,
+    /// The Claude CLI as found by the last look (None: not looked yet).
+    pub claude_status: Option<ClaudeCliStatus>,
+    /// The look runs.
+    pub claude_checking: bool,
+    /// The last Claude CLI test: "OK: ..." or the plain error.
+    pub claude_test: Option<Result<String, String>>,
+    /// The test runs.
+    pub claude_testing: bool,
     /// The latest config to write (the writer task takes it).
     slot: Arc<Mutex<Option<AiConfig>>>,
 }
@@ -78,6 +87,162 @@ pub enum KeyChoice {
 
 /// "AI runs on" (the AI page's first switch, also on the Work desk's watch).
 pub use omarchyvr_config::ai::RunsOn;
+
+/// Which AI answers voice commands (the AI page's first card).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VoiceBrain {
+    /// The Claude CLI the user is logged into (the default, no key).
+    Claude,
+    /// A model on this PC.
+    Local,
+    /// An online provider with a key.
+    Online,
+}
+
+impl VoiceBrain {
+    /// Every choice, in the order the page shows them.
+    pub const ALL: [VoiceBrain; 3] = [VoiceBrain::Claude, VoiceBrain::Local, VoiceBrain::Online];
+
+    /// The label on the page.
+    pub fn label(self) -> &'static str {
+        match self {
+            VoiceBrain::Claude => "Claude (CLI), default",
+            VoiceBrain::Local => "Local model on this PC",
+            VoiceBrain::Online => "Online with a key",
+        }
+    }
+}
+
+/// Providers the curl path (Autofix, connection tests) can talk to: everything but the Claude CLI.
+pub fn curl_capable(p: &Provider) -> bool {
+    p.kind != Kind::ClaudeCli
+}
+
+impl AppCore {
+    /// The command the Claude CLI provider runs (`claude` unless the file says otherwise).
+    pub fn claude_command(&self) -> String {
+        self.ai.config.claude_cli_provider().cli_command().to_string()
+    }
+
+    /// Look for the Claude CLI once (and again after [`AppCore::claude_look`]).
+    pub fn want_claude_status(&mut self) {
+        if self.ai.claude_status.is_none() && !self.ai.claude_checking {
+            self.claude_look();
+        }
+    }
+
+    /// Look for the Claude CLI now (in the background; `claude --version`, 2 s at most).
+    pub fn claude_look(&mut self) {
+        if self.ai.claude_checking {
+            return;
+        }
+        if self.demo {
+            // nothing is run in demo mode: a fixed answer, kept when a screenshot or test set one
+            self.ai.claude_status.get_or_insert(ClaudeCliStatus::Found { path: "/usr/bin/claude".into(), version: "2.1.0 (Claude Code)".into() });
+            return;
+        }
+        self.ai.claude_checking = true;
+        let cmd = self.claude_command();
+        self.task(None, move || {
+            let st = claude_cli::claude_cli_status(&cmd);
+            Box::new(move |c: &mut AppCore| {
+                c.ai.claude_checking = false;
+                c.ai.claude_status = Some(st);
+            })
+        });
+    }
+
+    /// One real request to the Claude CLI (the Test button): "OK in 2.1 s" or why not.
+    pub fn claude_test_run(&mut self) {
+        if self.ai.claude_testing {
+            return;
+        }
+        self.ai.claude_test = None;
+        if self.demo {
+            self.ai.claude_test = Some(Ok("OK: haiku answered \"OK\" in 2.1 s".into()));
+            return;
+        }
+        self.ai.claude_testing = true;
+        let (cmd, model) = {
+            let p = self.ai.config.claude_cli_provider();
+            let m = Some(p.model.trim()).filter(|m| !m.is_empty()).unwrap_or(ai::CLAUDE_CLI_MODELS[0].0).to_string();
+            (p.cli_command().to_string(), m)
+        };
+        log::info!("Claude CLI test ({model})");
+        self.task(None, move || {
+            let r = claude_cli::claude_cli_test(&cmd, &model, claude_cli::TEST_TIMEOUT).map(|t| t.plain());
+            log::info!("Claude CLI test: {}", if r.is_ok() { "ok" } else { "failed" });
+            Box::new(move |c: &mut AppCore| {
+                c.ai.claude_testing = false;
+                c.ai.claude_test = Some(r);
+            })
+        });
+    }
+
+    /// Open `claude` in a terminal so the user can log in once.
+    pub fn claude_login(&mut self) {
+        let cmd = self.claude_command();
+        let path = claude_cli::find_command(&cmd).map(|p| p.display().to_string()).unwrap_or(cmd);
+        let q = format!("'{}'", path.replace('\'', "'\\''"));
+        self.open_terminal("Claude login", &q);
+    }
+
+    /// The Claude CLI's model (haiku / sonnet): the file's CLI provider, or a new one when the file has none.
+    pub fn ai_set_claude_model(&mut self, model: &str) {
+        if !ai::CLAUDE_CLI_MODELS.iter().any(|(id, _)| *id == model) {
+            return;
+        }
+        self.ai.claude_test = None;
+        match self.ai.config.providers.iter_mut().find(|p| p.kind == Kind::ClaudeCli) {
+            Some(p) => p.model = model.to_string(),
+            None => {
+                let mut p = Provider::claude_cli();
+                p.model = model.to_string();
+                self.ai.config.providers.push(p);
+            }
+        }
+        self.ai_save();
+    }
+
+    /// "Start Claude ahead (faster)": `voice_ai_prewarm` (None in the file: on).
+    pub fn ai_set_prewarm(&mut self, on: bool) {
+        self.ai.config.voice_ai_prewarm = (!on).then_some(false);
+        self.ai_save();
+    }
+
+    /// Which AI answers voice commands now.
+    pub fn ai_voice_brain(&self) -> VoiceBrain {
+        match self.ai.config.provider_for(Feature::Voice) {
+            Some(p) if p.kind == Kind::ClaudeCli => VoiceBrain::Claude,
+            Some(p) if p.is_remote() => VoiceBrain::Online,
+            _ => VoiceBrain::Local,
+        }
+    }
+
+    /// The online provider with a key that Online would use (never the Claude CLI).
+    pub fn ai_keyed_online_provider(&self) -> Option<String> {
+        self.ai_online_provider().filter(|n| self.ai.config.provider(n).is_some_and(curl_capable))
+    }
+
+    /// Choose which AI answers voice commands. Claude: `[use] voice` = the CLI provider, no local model loaded. Local:
+    /// the local models On. Online: the first keyed online provider (a message when there is none).
+    pub fn ai_set_voice_brain(&mut self, b: VoiceBrain) {
+        match b {
+            VoiceBrain::Claude => {
+                self.ai.config.voice_local_models = Some(false);
+                let name = self.ai.config.claude_cli_provider().name.clone();
+                self.ai.config.uses.insert(Feature::Voice, name);
+                self.ai_save();
+                self.localai_follow();
+            }
+            VoiceBrain::Local => self.ai_set_local_models(true, false),
+            VoiceBrain::Online => match self.ai_keyed_online_provider() {
+                Some(_) => self.ai_set_local_models(false, true),
+                None => self.message = "Add an online provider with a key first (AI page, Online providers).".into(),
+            },
+        }
+    }
+}
 
 impl AppCore {
     /// ai.toml.
@@ -141,7 +306,11 @@ impl AppCore {
     pub fn ai_resolve(&self, f: Feature) -> Result<Resolved, String> {
         let name = self.ai.config.provider_for(f).map(|p| p.name.clone());
         let session = name.as_deref().and_then(|n| self.ai.session_keys.get(n));
-        self.ai.config.resolve_with(f, &|k| (self.env)(k), session)
+        let r = self.ai.config.resolve_with(f, &|k| (self.env)(k), session)?;
+        if f == Feature::Autofix && r.kind == Kind::ClaudeCli {
+            return Err("Autofix cannot use the Claude CLI: pick another provider for Autofix (Which provider for what).".into());
+        }
+        Ok(r)
     }
 
     /// One provider as a request would use it.
@@ -167,12 +336,24 @@ impl AppCore {
         if !ai::valid_name(&p.name) {
             return Err("Names are letters, digits, - and _ (up to 32).".into());
         }
-        if old != Some(p.name.as_str()) && self.ai.config.provider(&p.name).is_some() {
+        if old != Some(p.name.as_str()) && self.ai.config.providers.iter().any(|x| x.name == p.name) {
             return Err(format!("There is already a provider named {}.", p.name));
         }
         p.model = p.model.trim().to_string();
         if p.model.is_empty() && p.kind != Kind::Anthropic {
             return Err("Enter the model name.".into());
+        }
+        if p.kind == Kind::ClaudeCli {
+            // no key, no URL: the CLI logs in by itself
+            p.base_url = None;
+            p.api_key_env = None;
+            p.action_model = None;
+            p.command = p.command.map(|c| c.trim().to_string()).filter(|c| !c.is_empty());
+            if !ai::CLAUDE_CLI_MODELS.iter().any(|(id, _)| *id == p.model) {
+                return Err("The Claude CLI model is haiku or sonnet.".into());
+            }
+        } else {
+            p.command = None;
         }
         p.base_url = p.base_url.map(|b| b.trim().to_string()).filter(|b| !b.is_empty());
         if let Some(b) = &p.base_url {
@@ -190,6 +371,7 @@ impl AppCore {
         if let Some(o) = old {
             self.ai.session_keys.remove(o);
         }
+        let key = if p.kind == Kind::ClaudeCli { KeyChoice::None } else { key };
         match key {
             KeyChoice::None => p.api_key = None,
             KeyChoice::Save(k) => p.api_key = Some(k),
@@ -214,7 +396,7 @@ impl AppCore {
                 c.providers[i] = p;
             }
             None => {
-                if c.providers.is_empty() {
+                if c.providers.is_empty() && curl_capable(&p) {
                     c.default = Some(p.name.clone());
                 }
                 c.providers.push(p);
@@ -240,7 +422,7 @@ impl AppCore {
 
     /// The default provider.
     pub fn ai_set_default(&mut self, name: &str) {
-        if self.ai.config.provider(name).is_some() {
+        if self.ai.config.provider(name).is_some_and(curl_capable) {
             self.ai.config.default = Some(name.to_string());
             self.ai_save();
         }
@@ -248,7 +430,8 @@ impl AppCore {
 
     /// A feature's provider (None: the default).
     pub fn ai_set_use(&mut self, f: Feature, name: Option<&str>) {
-        match name.filter(|n| self.ai.config.provider(n).is_some()) {
+        let curl_only = f == Feature::Autofix;
+        match name.filter(|n| self.ai.config.provider(n).is_some_and(|p| !curl_only || curl_capable(p))) {
             Some(n) => {
                 self.ai.config.uses.insert(f, n.to_string());
             }
@@ -447,6 +630,10 @@ impl AppCore {
         if self.ai.testing.contains(name) {
             return;
         }
+        if self.ai.config.provider(name).is_some_and(|p| p.kind == Kind::ClaudeCli) {
+            self.claude_test_run();
+            return;
+        }
         let r = match self.ai_resolve_provider(name) {
             Ok(r) => r,
             Err(e) => {
@@ -561,6 +748,9 @@ impl AppCore {
 
 /// Where a provider's key comes from, for people.
 pub fn key_status(c: &AiView, p: &Provider, env: &dyn Fn(&str) -> Option<String>) -> (String, bool) {
+    if p.kind == Kind::ClaudeCli {
+        return ("no key: uses the Claude Code you are logged into".into(), true);
+    }
     if p.api_key.is_some() {
         return ("key saved in ai.toml".into(), true);
     }
@@ -639,6 +829,53 @@ mod tests {
         a.ai_set_local_models(false, true);
         assert_eq!(a.ai_runs_on(), RunsOn::Online);
         assert!(std::fs::read_to_string(a.ai_path()).unwrap().contains("sk-or-v1-TEST-NOT-A-KEY"));
+    }
+
+    #[test]
+    fn claude_cli_is_the_voice_brain_by_default_and_never_autofix() {
+        let (mut a, _) = app("claude-brain");
+        a.want_ai();
+        // nothing in the file: Claude answers voice, and the model choice is saved as a CLI provider
+        assert_eq!(a.ai_voice_brain(), VoiceBrain::Claude);
+        a.ai_set_claude_model("sonnet");
+        assert_eq!(a.ai.config.claude_cli_provider().model, "sonnet");
+        assert!(std::fs::read_to_string(a.ai_path()).unwrap().contains("claude-cli"));
+        a.ai_set_claude_model("gpt-9");
+        assert_eq!(a.ai.config.claude_cli_provider().model, "sonnet", "only haiku and sonnet");
+        // a keyed provider: Online is possible, and the CLI is never the default or Autofix's choice
+        let mut or = Provider::new("openrouter", Kind::OpenAiCompatible);
+        or.base_url = Some(ai::OPENROUTER_BASE.into());
+        or.model = "anthropic/claude-haiku-4.5".into();
+        a.ai_put(None, or, KeyChoice::Save(Secret::new("sk-or-v1-TEST-NOT-A-KEY"))).unwrap();
+        a.ai_set_default(ai::CLAUDE_CLI_NAME);
+        assert_ne!(a.ai.config.default.as_deref(), Some(ai::CLAUDE_CLI_NAME));
+        a.ai_set_use(Feature::Autofix, Some(ai::CLAUDE_CLI_NAME));
+        assert!(a.ai.config.uses.get(&Feature::Autofix).is_none(), "refused");
+        a.ai_set_voice_brain(VoiceBrain::Online);
+        assert_eq!(a.ai_voice_brain(), VoiceBrain::Online);
+        a.ai_set_voice_brain(VoiceBrain::Claude);
+        assert_eq!(a.ai_voice_brain(), VoiceBrain::Claude);
+        // even a hand-written use is refused by the Autofix resolver
+        a.ai.config.uses.insert(Feature::Autofix, ai::CLAUDE_CLI_NAME.into());
+        assert!(a.ai_resolve(Feature::Autofix).unwrap_err().contains("Autofix cannot use the Claude CLI"));
+        // prewarm: default on (nothing written), off is saved
+        a.ai_set_prewarm(false);
+        assert!(std::fs::read_to_string(a.ai_path()).unwrap().contains("voice_ai_prewarm = false"));
+        a.ai_set_prewarm(true);
+        assert!(!std::fs::read_to_string(a.ai_path()).unwrap().contains("voice_ai_prewarm"));
+    }
+
+    #[test]
+    fn the_cli_provider_has_no_key_and_is_not_the_first_default() {
+        let (mut a, _) = app("claude-editor");
+        a.want_ai();
+        let mut p = Provider::new("claude-cli", Kind::ClaudeCli);
+        p.base_url = Some("https://x.example".into());
+        p.command = Some(" ~/bin/claude ".into());
+        a.ai_put(None, p, KeyChoice::Save(Secret::new("sk-ant-NOT-A-KEY"))).unwrap();
+        let c = a.ai.config.providers.iter().find(|p| p.kind == Kind::ClaudeCli).unwrap();
+        assert_eq!((c.base_url.as_deref(), c.command.as_deref(), c.api_key.is_none()), (None, Some("~/bin/claude"), true));
+        assert_eq!(a.ai.config.default, None);
     }
 
     #[test]

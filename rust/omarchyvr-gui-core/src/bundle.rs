@@ -129,7 +129,7 @@ pub fn tail_text(path: &Path, max: u64) -> Option<String> {
 const README: &str = "omarchyvr problem report
 ========================
 
-Made by the Pimax app (\"Report a problem\"). It stayed on your computer; share it by hand if you want help.
+Made by the Max app (\"Report a problem\"). It stayed on your computer; share it by hand if you want help.
 
 What is inside:
   summary.txt        app version, system (kernel, GPU driver, desktop), what was running, the desk preflight verdict

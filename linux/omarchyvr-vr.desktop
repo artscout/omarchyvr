@@ -13,7 +13,7 @@
 
 [Desktop Entry]
 Type=Application
-Name=Pimax VR
+Name=Max VR
 GenericName=Start the Pimax Dream Air
 Comment=Preflight checks, then start the Monado OpenXR service for the Pimax Dream Air (72 Hz)
 Exec=@OMARCHYVR@ vr start --wait
@@ -25,13 +25,13 @@ StartupNotify=false
 Actions=start90;stop;status;
 
 [Desktop Action start90]
-Name=Start Pimax VR at 90 Hz
+Name=Start Max VR at 90 Hz
 Exec=@OMARCHYVR@ vr start --fps 90 --wait
 
 [Desktop Action stop]
-Name=Stop Pimax VR
+Name=Stop Max VR
 Exec=@OMARCHYVR@ vr stop
 
 [Desktop Action status]
-Name=Pimax VR status (notification)
+Name=Max VR status (notification)
 Exec=@OMARCHYVR@ vr status --notify

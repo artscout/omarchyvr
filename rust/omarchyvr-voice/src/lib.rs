@@ -13,6 +13,8 @@ pub mod agent;
 pub mod audit;
 pub mod bench;
 pub mod captions;
+pub mod claude;
+pub mod claudelive;
 pub mod catalogue;
 pub mod command;
 #[cfg(feature = "pipewire")]
