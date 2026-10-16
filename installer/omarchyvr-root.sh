@@ -88,11 +88,19 @@ mrec() { # mrec KIND PATH NOTE [BACKUP]: the root manifest
 }
 in_manifest() { [[ -f $STATE/manifest.tsv ]] && awk -F'\t' -v p="$1" '$2 == p { f = 1 } END { exit !f }' "$STATE/manifest.tsv"; }
 backup_of() { echo "$STATE/backup$1"; }
+# files whose names are ours (an older omarchyvr/pimax install wrote them): replaced, never kept as "originals"
+ours_by_name() {
+	case $1 in
+	"$UDEV_RULE" | "$HOOK_PATCH" | "$HOOK_VERIFY" | "$MODPROBE" | "$MKINITCPIO" | "$EDID_DIR"/* | "$LIBDIR"/* | "$LEGACY_LIBDIR"/*) return 0 ;;
+	esac
+	return 1
+}
 save_original() { # keep a file that is not ours before replacing it (first original wins)
 	local p=$1 b
 	b=$(backup_of "$p")
 	[[ -e $p ]] || return 0
 	in_manifest "$p" && return 0
+	ours_by_name "$p" && return 0
 	[[ -e $b ]] && return 0
 	mkdir -p "$(dirname "$b")"
 	cp -a "$p" "$b"
@@ -105,7 +113,7 @@ place() { # place SRC DEST MODE NOTE: install a file if it differs (backup of a 
 		return 1
 	fi
 	if [[ $DRY == 1 ]]; then
-		info "would write $dst ($note)${dst:+$([[ -e $dst ]] && echo ', the current file is saved first')}"
+		info "would write $dst ($note)$([[ -e $dst ]] && ! ours_by_name "$dst" && echo ', the current file is saved first')$([[ -e $dst ]] && ours_by_name "$dst" && echo ', replacing an older omarchyvr/pimax copy')"
 		return 0
 	fi
 	save_original "$dst"

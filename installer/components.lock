@@ -8,8 +8,9 @@
 # --- forks (git submodules of this repository, branch omarchyvr) --------------------------------------------------
 MONADO_SUBMODULE=forks/monado
 WAYVR_SUBMODULE=forks/wayvr
-# WayVR cargo features of the tested build (fingerprint of ~/src/target-desk on 2026-10-16)
-WAYVR_FEATURES=openxr,osc,pipewire,wayland,x11
+# WayVR cargo features of the tested build: the crate defaults (openvr, openxr, osc, wayland + pipewire, whisper, x11),
+# as `cargo build --release` built the installed binary of 2026-10-16 (it contains the OpenVR overlay code)
+WAYVR_FEATURES=default
 
 # --- Basalt (VIO for 6DoF; unmodified upstream, BSD-3-Clause) -------------------------------------------------------
 BASALT_URL=https://gitlab.freedesktop.org/mateosss/basalt.git

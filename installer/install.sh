@@ -318,7 +318,7 @@ note "Monado markers: all ${#OVR_MARKERS[@]} present"
 record dir "$MONADO_BUILD" REBUILD "Monado (forks/monado $(git -C "$REPO/forks/monado" rev-parse --short HEAD))"
 
 build "WayVR (forks/wayvr; features $WAYVR_FEATURES)" env CARGO_TARGET_DIR="$CACHE/wayvr-target" \
-	cargo build --manifest-path "$REPO/forks/wayvr/Cargo.toml" --release --locked -j "$JOBS" --no-default-features --features "$WAYVR_FEATURES"
+	cargo build --manifest-path "$REPO/forks/wayvr/Cargo.toml" --release --locked -j "$JOBS" $([[ $WAYVR_FEATURES == default ]] || echo --no-default-features --features "$WAYVR_FEATURES")
 
 SHERPA_DIR="$LIBDIR/sherpa-onnx/lib"
 if ! file_ok "$SHERPA_DIR/libsherpa-onnx-c-api.so" "$SHERPA_CAPI_SHA256"; then
