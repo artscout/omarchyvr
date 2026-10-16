@@ -37,6 +37,7 @@ pub mod facts;
 pub mod findings;
 pub mod fixlog;
 pub mod gamecheck;
+pub mod gameruntime;
 pub mod guards;
 pub mod guistate;
 pub mod handtest;

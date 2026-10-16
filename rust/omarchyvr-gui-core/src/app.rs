@@ -469,6 +469,8 @@ pub struct AppCore {
     pub auto: AutoView,
     /// The Ready check's VR games check (docs/GAMES-CHECK.md).
     pub gamecheck: crate::gamecheck::GameCheckView,
+    /// The running game and the message after an xrizer crash (docs/GAME-MODE.md).
+    pub game_watch: crate::gameruntime::GameWatch,
     /// The auto mode daemon's socket.
     pub auto_socket: PathBuf,
     /// Play, start at login, the hand test.
@@ -558,6 +560,7 @@ impl AppCore {
             room: RoomView { map_name: "home".into(), seconds: 90, ..Default::default() },
             auto: AutoView::default(),
             gamecheck: Default::default(),
+            game_watch: Default::default(),
             auto_socket: crate::auto::socket_path(&|k| env_for_rows(k)),
             play: Default::default(),
         };
@@ -719,7 +722,10 @@ impl AppCore {
             for u in m.poll() {
                 changed = true;
                 match u {
-                    Update::Live(l) => self.live = *l,
+                    Update::Live(l) => {
+                        self.live = *l;
+                        self.watch_game();
+                    }
                     Update::Facts(f) => {
                         self.facts = *f;
                         got_facts = true;
@@ -1102,7 +1108,13 @@ impl AppCore {
     pub fn vr_toggles(&self) -> DeskToggles {
         let t = self.effective_toggles();
         let hands = self.state.hands_chosen && t.hands;
-        DeskToggles { passthrough: false, voice: false, hands, hands_roles: hands && t.hands_roles, ..t }
+        let t = DeskToggles { passthrough: false, voice: false, hands, hands_roles: hands && t.hands_roles, ..t };
+        if self.light_game() {
+            // Light game mode: only what a game needs (docs/GAME-MODE.md); the camera hands stay as the user chose
+            DeskToggles { eye: false, perf: false, anchor: false, ..t }
+        } else {
+            t
+        }
     }
 
     /// The preflight of a game session.
@@ -1124,7 +1136,7 @@ impl AppCore {
         }
         let force = force && matches!(pf.gate, Gate::NeedsConsent(_));
         let t = self.vr_toggles();
-        let mut c = Cmd::with_args(self.launcher_bin().display().to_string(), launcher::vr_game_args(&t, force));
+        let mut c = Cmd::with_args(self.launcher_bin().display().to_string(), launcher::vr_game_args(&t, force, self.light_game(), self.facts.next_game.as_deref()));
         for (k, v) in self.launcher_env() {
             c = c.env(&k, v);
         }
@@ -1139,7 +1151,7 @@ impl AppCore {
         steps.push(Step::Run(self.own_scope(c, "vr")));
         Ok(JobSpec {
             kind: JobKind::DeskStart,
-            label: format!("Start VR ({})", launcher::vr_game_args(&t, false)[2..].join(" ")),
+            label: format!("Start VR ({})", launcher::vr_game_args(&t, false, self.light_game(), self.facts.next_game.as_deref())[2..].join(" ")),
             steps,
         })
     }

@@ -92,6 +92,10 @@ fn performance(ui: &mut Ui, app: &mut PimaxApp) {
         if switch_row(ui, &mut on, "Game mode", Some("Play pauses the local voice AI (it uses the graphics card) and Stop starts it again. Work is not affected."), !busy).changed() {
             app.core.game_mode(on);
         }
+        let mut light = app.core.light_game();
+        if switch_row(ui, &mut light, "Light game mode", Some("Play runs only what a game needs (Monado, head tracking, controllers): no wrist readout, eye tracking or room search. Applies to the next Play."), !busy).changed() {
+            app.core.set_light_game(light);
+        }
         let names: Vec<&str> = quality::BUDGETS.iter().map(|x| x.1).collect();
         let cur = quality::BUDGETS.iter().position(|x| x.0 == app.core.facts.comp_budget).unwrap_or(usize::MAX);
         if let Some(i) = seg_row(

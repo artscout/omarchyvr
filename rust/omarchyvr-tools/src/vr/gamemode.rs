@@ -33,11 +33,14 @@ pub struct Settings {
     pub pause_ai: bool,
     /// "auto" | "6" | "8"
     pub comp_budget: String,
+    /// Light game mode (default on): Play runs only what a game needs (Monado, head 6DoF, controllers); no wrist
+    /// readout, no eye tracking, no room anchor / room search. `vr start --light` / `--no-light` override it.
+    pub light: bool,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { pause_ai: true, comp_budget: "auto".into() }
+        Settings { pause_ai: true, comp_budget: "auto".into(), light: true }
     }
 }
 
@@ -63,6 +66,9 @@ pub fn parse_settings(t: &str) -> Settings {
     if let Some(b) = flag(value(t, "pause_ai")) {
         s.pause_ai = b;
     }
+    if let Some(b) = flag(value(t, "light_game")) {
+        s.light = b;
+    }
     // `pause_sunshine` in an old file is ignored (Sunshine is never paused) and dropped at the next save.
     if let Some(b) = value(t, "comp_budget").filter(|b| BUDGETS.iter().any(|x| x.0 == *b)) {
         s.comp_budget = b.to_string();
@@ -79,8 +85,19 @@ pub fn save(home: &Path, s: &Settings) -> std::io::Result<()> {
     std::fs::create_dir_all(p.parent().unwrap())?;
     std::fs::write(
         p,
-        format!("# Game mode and compositor time budget (Pimax app)\npause_ai = {}\ncomp_budget = \"{}\"\n", s.pause_ai, s.comp_budget),
+        format!("# Game mode, light game mode and compositor time budget (Pimax app)\npause_ai = {}\nlight_game = {}\ncomp_budget = \"{}\"\n", s.pause_ai, s.light, s.comp_budget),
     )
+}
+
+/// Light game mode for one start: `--light` / `--no-light` win over the saved switch (`light_game`, default on).
+/// Both flags at once is an error.
+pub fn resolve_light(light: bool, no_light: bool, saved: &Settings) -> Result<bool, String> {
+    match (light, no_light) {
+        (true, true) => Err("--light and --no-light together".into()),
+        (true, false) => Ok(true),
+        (false, true) => Ok(false),
+        (false, false) => Ok(saved.light),
+    }
 }
 
 /// `U_PACING_COMP_MIN_TIME_MS` for a saved budget (None = auto: Monado's own 3 ms).
@@ -273,6 +290,17 @@ pub fn cli(what: &[String], home: &Path, session_dir: &Path) -> Result<(), Strin
             save(home, &s).map_err(|e| e.to_string())?;
             println!("Game mode (pause the local AI): {w}");
         }
+        w @ ("light" | "light-on" | "light-off") => {
+            // `light on|off` (the app) or `light-on` / `light-off`
+            let v = match (w, what.get(1).map(String::as_str)) {
+                ("light-on", _) | ("light", Some("on")) => true,
+                ("light-off", _) | ("light", Some("off")) => false,
+                _ => return Err("light: on | off".into()),
+            };
+            s.light = v;
+            save(home, &s).map_err(|e| e.to_string())?;
+            println!("Light game mode: {} (next start)", if v { "on" } else { "off" });
+        }
         "budget" => {
             let b = what.get(1).map(|b| b.trim_end_matches("ms").trim().to_string()).unwrap_or_default();
             if !BUDGETS.iter().any(|x| x.0 == b) {
@@ -294,10 +322,11 @@ pub fn cli(what: &[String], home: &Path, session_dir: &Path) -> Result<(), Strin
         }
         "status" => {
             println!("Pause the local AI: {}", if s.pause_ai { "on" } else { "off" });
+            println!("Light game mode: {}", if s.light { "on" } else { "off" });
             println!("Compositor time budget: {}", s.comp_budget);
             println!("{}", paused_line(session_dir).unwrap_or_else(|| "Nothing paused".into()));
         }
-        w => return Err(format!("unknown choice {w} (status|on|off|budget auto|6|8|restore)")),
+        w => return Err(format!("unknown choice {w} (status|on|off|light on|off|budget auto|6|8|restore)")),
     }
     Ok(())
 }
@@ -454,5 +483,25 @@ mod tests {
         let t = fakes(&d, "server:  pid 5, gpu (all layers)");
         assert_eq!(on_start(&ai_off, &t, &d.join("s")), None);
         assert_eq!(calls(&d), "");
+    }
+
+    #[test]
+    fn light_game_mode_defaults_on_saves_and_flags_win() {
+        let d = Settings::default();
+        assert!(d.light);
+        assert!(!parse_settings("light_game = false\n").light);
+        assert!(parse_settings("pause_ai = false\n").light, "an old file keeps the default");
+        let h = std::env::temp_dir().join(format!("omarchyvr-light-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&h);
+        save(&h, &Settings { light: false, ..d.clone() }).unwrap();
+        assert!(!load(&h).light);
+        cli(&["light".into(), "on".into()], &h, &h).unwrap();
+        assert!(load(&h).light);
+        assert!(cli(&["light".into(), "maybe".into()], &h, &h).is_err());
+        assert_eq!(resolve_light(false, false, &d), Ok(true));
+        assert_eq!(resolve_light(false, true, &d), Ok(false));
+        assert_eq!(resolve_light(true, false, &Settings { light: false, ..d.clone() }), Ok(true));
+        assert!(resolve_light(true, true, &d).is_err());
+        let _ = std::fs::remove_dir_all(&h);
     }
 }

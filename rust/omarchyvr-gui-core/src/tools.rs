@@ -658,6 +658,8 @@ pub fn gamemode_job(p: &Paths, f: &Facts, args: &[&str]) -> JobSpec {
             ["off"] => "Game mode: off".into(),
             ["restore"] => "Game mode: starting again what was paused".into(),
             ["budget", b] => format!("Compositor time budget: {b}"),
+            ["light", "on"] => "Light game mode: on".into(),
+            ["light", "off"] => "Light game mode: off".into(),
             _ => "Game mode".into(),
         },
         steps: vec![Step::Run(Cmd::with_args(pl.display().to_string(), a))],

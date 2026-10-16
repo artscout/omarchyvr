@@ -140,6 +140,8 @@ pub struct Live {
     /// In hand / put down per controller, from the running Monado (`$XDG_RUNTIME_DIR/pimax-ctrl-inhand`,
     /// PIMAX_CTRL_INHAND; docs/CONTROLLERS-INHAND.md). None: no session, or a build without it.
     pub ctrl_inhand: Option<omarchyvr_config::ctrl_inhand::Status>,
+    /// The Steam game that runs now (app id of Steam's `reaper SteamLaunch AppId=N` wrapper), if any.
+    pub game: Option<String>,
 }
 
 impl Live {
@@ -263,6 +265,7 @@ pub fn collect_live(m: &dyn Machine, p: &Paths, follower: &mut LogFollower) -> L
         live.steam_note = omarchyvr_tools::vr::steamvr::session_note_from(at_play, live.steamvr.is_some(), now);
     }
     live.steam_tainted = steam_taint(m, &p.home);
+    live.game = crate::gameruntime::running_game(m);
     live.started_as = m.read_str(&p.session_dir.join(crate::reset::ARGV_FILE)).and_then(|s| s.lines().next().map(str::to_string)).filter(|k| k == "desk" || k == "vr");
     if live.alive("ctrltrack") {
         let f = p.session_dir.join("ctrltrack.log");
@@ -354,6 +357,12 @@ pub struct Facts {
     /// Game mode switch and compositor time budget (`~/.config/omarchyvr/gamemode.toml`; defaults AI on / auto).
     pub game_mode: bool,
     pub comp_budget: String,
+    /// Light game mode (gamemode.toml `light_game`, default on): Play runs only what a game needs.
+    pub light_game: bool,
+    /// Games with a saved runtime (`game-runtime.json`; the built-in seed is added by the list function).
+    pub game_runtimes: Vec<omarchyvr_tools::vr::gameruntime::Entry>,
+    /// The game the next Play is for (`--game`).
+    pub next_game: Option<String>,
     /// Brightness (`~/.config/omarchyvr/display.toml`; defaults bright / 100 %).
     pub image_brightness: String,
     pub backlight: u8,
@@ -608,6 +617,10 @@ pub fn collect_facts(
     let gm = m.read_str(&omarchyvr_tools::vr::gamemode::settings_path(&p.home)).map(|t| omarchyvr_tools::vr::gamemode::parse_settings(&t)).unwrap_or_default();
     f.game_mode = gm.pause_ai;
     f.comp_budget = gm.comp_budget;
+    f.light_game = gm.light;
+    let grs = m.read_str(&omarchyvr_tools::vr::gameruntime::store_path(&p.home)).map(|t| omarchyvr_tools::vr::gameruntime::Store::parse(&t)).unwrap_or_default();
+    f.game_runtimes = grs.saved.into_values().collect();
+    f.next_game = grs.next;
     let ds = m.read_str(&omarchyvr_tools::vr::display::settings_path(&p.home)).map(|t| omarchyvr_tools::vr::display::parse_settings(&t)).unwrap_or_default();
     f.image_brightness = ds.image;
     f.backlight = ds.backlight;

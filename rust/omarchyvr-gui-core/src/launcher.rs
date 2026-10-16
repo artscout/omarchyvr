@@ -326,7 +326,10 @@ pub fn desk_flags(t: &DeskToggles) -> Vec<String> {
 
 /// `omarchyvr vr start` arguments for a game session (Monado alone): refresh rate, 6DoF, controller tracking, the wrist
 /// readout (`--perf`, a second minimal WayVR). Eye tracking is a desk switch only. `force` as for the desk.
-pub fn vr_game_args(t: &DeskToggles, force: bool) -> Vec<String> {
+///
+/// `light` is the Light game mode switch (docs/GAME-MODE.md): the launcher gets `--light` (or `--no-light`) explicitly, so the
+/// choice is in start-argv and every restart keeps it. `game` is the Steam game the next Play is for (`--game`).
+pub fn vr_game_args(t: &DeskToggles, force: bool, light: bool, game: Option<&str>) -> Vec<String> {
     let mut v: Vec<String> = vec!["vr".into(), "start".into(), "--fps".into(), t.hz().to_string()];
     if t.sixdof {
         v.push("--6dof".into());
@@ -353,6 +356,11 @@ pub fn vr_game_args(t: &DeskToggles, force: bool) -> Vec<String> {
     // eye tracking is on by default (visual only); a launcher that knows --no-eye gets it when the switch is off
     if !t.eye && t.eye_default_on {
         v.push("--no-eye".into());
+    }
+    v.push(if light { "--light" } else { "--no-light" }.into());
+    if let Some(g) = game.filter(|g| !g.is_empty() && g.bytes().all(|b| b.is_ascii_digit())) {
+        v.push("--game".into());
+        v.push(g.into());
     }
     if force {
         v.push("--force".into());
@@ -596,12 +604,12 @@ mod tests {
         let base = DeskToggles::default();
         assert_eq!((base.ctrl_work, base.ctrl_play), (CtrlMode::WhenHeld, CtrlMode::Always), "Work: when picked up, Play: always");
         assert!(!desk_flags(&base).contains(&"--controllers".to_string()), "the default needs no flag");
-        assert!(!vr_game_args(&base, false).contains(&"--controllers".to_string()));
+        assert!(!vr_game_args(&base, false, false, None).contains(&"--controllers".to_string()));
         let w = DeskToggles { ctrl_work: CtrlMode::Always, ctrl_play: CtrlMode::WhenHeld, ..base };
         let f = desk_flags(&w);
         let i = f.iter().position(|x| x == "--controllers").unwrap();
         assert_eq!(f[i + 1], "always");
-        let g = vr_game_args(&w, false);
+        let g = vr_game_args(&w, false, false, None);
         let i = g.iter().position(|x| x == "--controllers").unwrap();
         assert_eq!(g[i + 1], "when-held");
         // the recorded start (start-argv.txt) gives the switch back, per side
@@ -632,12 +640,16 @@ mod tests {
             "desk start --fps 90 --eye --6dof --ctrl-track --no-passthrough --voice --no-perf --force"
         );
         // a game session: Monado alone, the wrist readout with --perf, never --eye
-        assert_eq!(vr_game_args(&t, false).join(" "), "vr start --fps 90 --6dof --perf");
-        assert_eq!(vr_game_args(&all, true).join(" "), "vr start --fps 90 --6dof --ctrl-track --force");
+        assert_eq!(vr_game_args(&t, false, false, None).join(" "), "vr start --fps 90 --6dof --perf --no-light");
+        assert_eq!(vr_game_args(&all, true, false, None).join(" "), "vr start --fps 90 --6dof --ctrl-track --no-light --force");
+        // light game mode: the flag is always passed (start-argv keeps it); the game, when Play is for one
+        assert_eq!(vr_game_args(&all, false, true, None).join(" "), "vr start --fps 90 --6dof --ctrl-track --light");
+        assert_eq!(vr_game_args(&all, false, true, Some("546560")).join(" "), "vr start --fps 90 --6dof --ctrl-track --light --game 546560");
+        assert!(!vr_game_args(&all, false, true, Some("5;rm")).contains(&"--game".to_string()), "digits only");
         // camera hands (the hands build) with 6DoF only, for desk and game sessions
         let h = DeskToggles { hands: true, ..DeskToggles::with_eye() };
         assert_eq!(desk_start_args(&h, false).join(" "), "desk start --fps 90 --eye --6dof --hands");
-        assert_eq!(vr_game_args(&h, false).join(" "), "vr start --fps 90 --6dof --hands --perf");
+        assert_eq!(vr_game_args(&h, false, false, None).join(" "), "vr start --fps 90 --6dof --hands --perf --no-light");
         assert!(!desk_flags(&DeskToggles { sixdof: false, ..h }).contains(&"--hands".to_string()));
         assert!(parse_caps("  start [--6dof [--ctrl-track] [--hands [--hands-roles]]]").hands);
         // controller tracking is only passed together with 6DoF

@@ -244,8 +244,10 @@ pub fn desired_from_argv(kind: &str, args: &[String], base: &omarchyvr_component
     d.sixdof = has("--6dof");
     d.ctrltrack = d.sixdof && has("--ctrl-track");
     d.hands = d.sixdof && has("--hands");
-    d.anchor = has("--anchor");
-    d.eye = if has("--no-eye") {
+    // light game mode (`vr start --light`): the launcher itself drops the wrist readout, eye tracking and the room anchor
+    let light = !desk && has("--light");
+    d.anchor = has("--anchor") && !light;
+    d.eye = if has("--no-eye") || light {
         Eye::Off
     } else if has("--eye") {
         Eye::Pointer
@@ -263,7 +265,7 @@ pub fn desired_from_argv(kind: &str, args: &[String], base: &omarchyvr_component
         d.screens = val("--screens").and_then(|v| v.parse::<u8>().ok()).filter(|n| (1..=4).contains(n)).unwrap_or(4);
     } else {
         d.passthrough = false;
-        d.perf = has("--perf");
+        d.perf = has("--perf") && !light;
         d.voice = false;
         d.voicehud = false;
         d.preset = "none".into();
@@ -382,6 +384,8 @@ mod tests {
         assert!(desired_from_argv("desk", &sv(&["--6dof", "--hands", "--hands-roles"]), &base).hands);
         assert!(!desired_from_argv("desk", &sv(&["--6dof"]), &base_h).hands);
         assert!(!desired_from_argv("vr", &sv(&["--hands"]), &base).hands, "needs --6dof");
+        let l = desired_from_argv("vr", &sv(&["--6dof", "--perf", "--anchor", "--eye", "--light"]), &base);
+        assert!(l.sixdof && !l.perf && !l.anchor && l.eye == Eye::Off, "light game mode keeps only what a game needs");
     }
 
     #[test]
