@@ -29,7 +29,7 @@ omarchyvrd; their own switches, shared by both sides), **Play** and **Work**. Ho
   records its flags in `<session dir>/start-argv.txt`; the app takes a newer one over as its switches (a `vr` start changes
   only the base switches), so the next Play or Work repeats the last session. (The hand test's own start is not taken over.)
 - Fresh defaults are the normal setup: eye, 6DoF, optical controllers, passthrough, voice, room anchor, the wrist
-  readout, 72 Hz.
+  readout, 90 Hz (72 Hz stays selectable; a saved choice is kept).
 
 ## The Monado cap (cap_sys_nice)
 

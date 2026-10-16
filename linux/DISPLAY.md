@@ -1,6 +1,6 @@
 # Dream Air display on Linux (NVIDIA, Hyprland) — what works (2026-10-13)
 
-Result: DP-1 runs **7104x3840 @ 72 Hz with DSC**; both panels show the desktop (left half -> left eye,
+Result: DP-1 runs **7104x3840 @ 90 Hz (default; 72 Hz selectable) with DSC**; both panels show the desktop (left half -> left eye,
 right half -> right eye). Each eye image appears rotated 90 deg (panels are mounted rotated) — handled
 later in the Monado driver, not in Hyprland.
 
@@ -93,7 +93,7 @@ installed file, so replace it atomically and leave the service alone):
   cd ~/omarchyvr/rust && cargo build --release -p omarchyvr-tools
   install -m755 target/release/omarchyvr ~/.local/bin/pimax.new && mv -f ~/.local/bin/pimax.new ~/.local/bin/omarchyvr
 Commands (details: `omarchyvr vr help`):
-  omarchyvr vr start [--fps 72|90] [--dump DIR [--dump-frames 100,300]] [--wait] [--debug] [--no-notify]
+  omarchyvr vr start [--fps 72|90 (default 90)] [--dump DIR [--dump-frames 100,300]] [--wait] [--debug] [--no-notify]
       preflight (headset 34a4:0044 on USB, omarchyvr-keepalived active, DP-1 connected, no Xid/"Idling" in this boot's
       kernel log, no monado-service running), then monado-service detached (own session, log
       /tmp/omarchyvr-session/monado.log, pid file monado.pid), returns after "gyro bias done" (keep the headset still

@@ -213,7 +213,7 @@ pub fn vrsettings_path(home: &Path) -> PathBuf {
 }
 
 /// SteamVR picks the display mode by `steamvr.preferredRefreshRate` (default 90). The Pimax driver wakes the panel
-/// at PIMAX_FPS (72 by default) and the firmware lights it only at that rate, so the setting must match. Only while
+/// at PIMAX_FPS (90 by default) and the firmware lights it only at that rate, so the setting must match. Only while
 /// SteamVR is stopped (it rewrites the file). Returns a line when it changed something.
 pub fn set_refresh_rate(home: &Path, hz: u32) -> io::Result<Option<String>> {
     let changed = set_steamvr_keys(home, &[("preferredRefreshRate", serde_json::json!(hz))])?;
@@ -268,9 +268,9 @@ fn set_steamvr_keys(home: &Path, keys: &[(&str, serde_json::Value)]) -> io::Resu
     Ok(true)
 }
 
-/// PIMAX_FPS of the session environment (72 when missing).
+/// PIMAX_FPS of the session environment (90 when missing).
 pub fn session_hz(env: &[(String, String)]) -> u32 {
-    env.iter().find(|(k, _)| k == "PIMAX_FPS").and_then(|(_, v)| v.parse().ok()).unwrap_or(72)
+    env.iter().find(|(k, _)| k == "PIMAX_FPS").and_then(|(_, v)| v.parse().ok()).unwrap_or(90)
 }
 
 /// `<build>/steamvr-monado/bin/linux64/pimax_rttime_preload.so` (Monado, marker PIMAX_RTTIME_PRELOAD).
@@ -876,7 +876,7 @@ mod tests {
         assert!(set_color_gain(&h, "bright").unwrap().is_none());
         assert!(set_color_gain(&h, "standard").unwrap().is_some());
         assert_eq!(session_hz(&[("PIMAX_FPS".into(), "90".into())]), 90);
-        assert_eq!(session_hz(&[]), 72);
+        assert_eq!(session_hz(&[]), 90);
     }
 
     #[test]

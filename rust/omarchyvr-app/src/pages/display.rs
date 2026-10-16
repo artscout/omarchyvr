@@ -27,7 +27,7 @@ fn picture(ui: &mut Ui, app: &mut PimaxApp) {
     let p = theme::pal(ui);
     section(ui, "Display", None, |ui| {
         let cur = usize::from(app.core.toggles.hz90);
-        if let Some(i) = seg_row(ui, "Refresh rate", Some("90 Hz is new: the headset starts at 90 Hz with exactly the commands Pimax Play sends on Windows. Applied when VR starts."), &["72 Hz", "90 Hz"], cur, ed) {
+        if let Some(i) = seg_row(ui, "Refresh rate", Some("90 Hz is the default: the headset starts at 90 Hz with exactly the commands Pimax Play sends on Windows. 72 Hz stays available. Applied when VR starts."), &["72 Hz", "90 Hz"], cur, ed) {
             app.core.toggles.hz90 = i == 1;
         }
         let pct = app.core.state.scale_pct;

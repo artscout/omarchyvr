@@ -20,8 +20,8 @@ Legend: **works** = used in daily sessions on our PC; **experimental** = runs bu
 
 | Feature | Status | Notes |
 |---|---|---|
-| Picture 7104x3840, 72 Hz | works | DisplayPort DRM lease, lens correction fitted to Pimax's data |
-| 90 Hz | experimental | start commands match the Windows capture; little long-run testing |
+| Picture 7104x3840, 90 Hz (default) or 72 Hz | works | DisplayPort DRM lease, lens correction fitted to Pimax's data |
+| 90 Hz as default | new | start commands match the Windows capture; little long-run testing, 72 Hz stays selectable in Display |
 | Head tracking 6DoF (SLAM, Basalt) | works | fused output; loses 6DoF in very fast turns |
 | Controllers: buttons, sticks, vibration | works | Oculus Touch profile; pair and unpair from the app |
 | Controllers: optical tracking | experimental | rough; occlusion is the main problem |

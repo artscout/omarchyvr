@@ -413,9 +413,6 @@ pub fn evaluate(
                 "Speak once the picture is up.", vec![]);
         }
     }
-    if t.hz90 {
-        o.add(None, "hz", Sev::Info, "90 Hz is new: same start commands as Pimax Play on Windows (open issue 9)", "Check the picture in the headset; 72 Hz is the long-tested rate.", vec![]);
-    }
     if let Some(free) = facts.free_home.filter(|f| *f < (5u64 << 30)) {
         o.add(Some(15), "disk", Sev::Warn, format!("Only {} free in your home", gib(free)), "Recordings and logs can fill it.", vec![]);
     }

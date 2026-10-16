@@ -901,7 +901,7 @@ pub fn status_lines(
         let ev = |k: &str| env.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
         out.push(format!(
             "rate: {} Hz (PIMAX_FPS), display mode index {}",
-            ev("PIMAX_FPS").unwrap_or_else(|| "72 (default)".into()),
+            ev("PIMAX_FPS").unwrap_or_else(|| "90 (default)".into()),
             ev("XRT_COMPOSITOR_DESIRED_MODE").unwrap_or_else(|| "?".into())
         ));
         if let Some(dd) = ev("XRT_COMPOSITOR_DUMP_DIR") {

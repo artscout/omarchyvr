@@ -119,7 +119,7 @@ pub struct DeskToggles {
     pub passthrough: bool,
     /// Voice captions on a WayVR panel under the main screen (`--voice`).
     pub voice: bool,
-    /// 90 Hz instead of 72 Hz.
+    /// 90 Hz (the default) instead of 72 Hz.
     pub hz90: bool,
     /// The performance readout on the right wrist (off = `--no-perf`).
     pub perf: bool,
@@ -140,7 +140,7 @@ pub struct DeskToggles {
 impl Default for DeskToggles {
     /// The user's normal setup (camera hands off by default since 2026-10-16: they still need work; the user switches
     /// them on in developer mode, and Play only gets them once the user switched them on): eye tracking, 6DoF, optical controllers, passthrough, voice, the room anchor, the
-    /// wrist readout, 72 Hz.
+    /// wrist readout, 90 Hz.
     fn default() -> Self {
         DeskToggles {
             eye: true,
@@ -150,7 +150,7 @@ impl Default for DeskToggles {
             hands_roles: false,
             passthrough: true,
             voice: true,
-            hz90: false,
+            hz90: true,
             perf: true,
             anchor: true,
             preset: Preset::None,
@@ -177,7 +177,7 @@ pub fn toggles_from_argv(text: &str, base: DeskToggles) -> Option<(DeskToggles, 
     let has = |f: &str| args.contains(&f);
     let value = |f: &str| args.iter().position(|a| *a == f).and_then(|i| args.get(i + 1)).copied();
     let mut t = base;
-    t.hz90 = value("--fps") == Some("90");
+    t.hz90 = value("--fps") != Some("72"); // no --fps: the launcher default, 90 Hz
     t.sixdof = has("--6dof");
     t.ctrl_track = t.sixdof && has("--ctrl-track");
     // a game session without --hands says nothing about Work's hands (default on): keep the saved switch
@@ -572,7 +572,7 @@ mod tests {
         assert!(!vr && t.sixdof && t.ctrl_track && t.voice && t.anchor && t.hands && !t.hands_roles && t.eye && t.passthrough);
         assert_eq!(t.preset, Preset::Work);
         // the same flags come back out (Play repeats the session)
-        assert_eq!(desk_flags(&t), ["--fps", "72", "--6dof", "--ctrl-track", "--hands", "--voice", "--anchor", "--preset", "work"]);
+        assert_eq!(desk_flags(&t), ["--fps", "90", "--6dof", "--ctrl-track", "--hands", "--voice", "--anchor", "--preset", "work"]);
         let (t, vr) = toggles_from_argv("vr\n--fps\n90\n--6dof\n--perf\n", base).unwrap();
         assert!(vr && t.hz90 && t.sixdof && !t.ctrl_track && t.perf && !t.voice);
         let (t, _) = toggles_from_argv("desk\n--no-eye\n--no-passthrough\n", base).unwrap();
@@ -620,7 +620,7 @@ mod tests {
     #[test]
     fn command_lines() {
         let t = DeskToggles::with_eye();
-        assert_eq!(desk_start_args(&t, false).join(" "), "desk start --fps 72 --eye --6dof");
+        assert_eq!(desk_start_args(&t, false).join(" "), "desk start --fps 90 --eye --6dof");
         let all = DeskToggles { eye: true, sixdof: true, ctrl_track: true, hands: false, hands_roles: false, passthrough: false, voice: true, hz90: true, perf: false, anchor: false, preset: Preset::None, eye_default_on: false, screens: 4, ctrl_work: CtrlMode::WhenHeld, ctrl_play: CtrlMode::Always };
         // a newer launcher: eye on by default, --no-eye to turn it off
         let newer = DeskToggles { eye_default_on: true, ..all };
@@ -632,12 +632,12 @@ mod tests {
             "desk start --fps 90 --eye --6dof --ctrl-track --no-passthrough --voice --no-perf --force"
         );
         // a game session: Monado alone, the wrist readout with --perf, never --eye
-        assert_eq!(vr_game_args(&t, false).join(" "), "vr start --fps 72 --6dof --perf");
+        assert_eq!(vr_game_args(&t, false).join(" "), "vr start --fps 90 --6dof --perf");
         assert_eq!(vr_game_args(&all, true).join(" "), "vr start --fps 90 --6dof --ctrl-track --force");
         // camera hands (the hands build) with 6DoF only, for desk and game sessions
         let h = DeskToggles { hands: true, ..DeskToggles::with_eye() };
-        assert_eq!(desk_start_args(&h, false).join(" "), "desk start --fps 72 --eye --6dof --hands");
-        assert_eq!(vr_game_args(&h, false).join(" "), "vr start --fps 72 --6dof --hands --perf");
+        assert_eq!(desk_start_args(&h, false).join(" "), "desk start --fps 90 --eye --6dof --hands");
+        assert_eq!(vr_game_args(&h, false).join(" "), "vr start --fps 90 --6dof --hands --perf");
         assert!(!desk_flags(&DeskToggles { sixdof: false, ..h }).contains(&"--hands".to_string()));
         assert!(parse_caps("  start [--6dof [--ctrl-track] [--hands [--hands-roles]]]").hands);
         // controller tracking is only passed together with 6DoF

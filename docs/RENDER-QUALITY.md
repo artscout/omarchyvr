@@ -25,7 +25,7 @@ the same variable, or `SCALE`). Developer mode adds a custom slider (50-200 %).
 ## Frame health in the session card
 While a session runs the card shows the render size and a line from `$XDG_RUNTIME_DIR/omarchyvr-perf.stats`:
 headset fps, **dropped frames** (`comp_skipped`: display periods where the headset showed the previous image again)
-and the game's fps and GPU time against the frame budget (13.9 ms at 72 Hz).
+and the game's fps and GPU time against the frame budget (11.1 ms at 90 Hz, 13.9 ms at 72 Hz).
 
 `comp_late` is not a dropped frame: it counts compositor commits (render, present, then the bounded wait for the GPU
 queue) that returned after the *predicted display time*. Monado's fake pacer gives the compositor only 3 ms before the

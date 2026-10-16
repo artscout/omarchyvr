@@ -76,7 +76,7 @@ pub const USAGE: &str = "usage: omarchyvr vr <command> [options]
         [--no-notify] [--monado-build DIR] [--connector NAME] [--mode N] [--timeout SECS]
       the connector is found by the headset's EDID (PVR 0xD242 / product 0x1019) unless --connector is given; the
       preflight also warns when monado-service lacks cap_sys_nice and prints the setcap line for its path.
-      --mode is the Vulkan display-mode index (default 2 = 72 Hz, 3 = 90 Hz): sysfs does not list the refresh
+      --mode is the Vulkan display-mode index (default 3 = 90 Hz, 2 = 72 Hz): sysfs does not list the refresh
       rate or Monado's order, so it is not derived from the EDID.
       preflight checks, then monado-service detached (log /tmp/omarchyvr-session/monado.log); returns when
       the gyro calibration is done. --wait stays in the foreground until the service exits (desktop entry).
@@ -198,7 +198,7 @@ pub fn parse_options(
 ) -> Result<StartOptions, CliError> {
     let fps = match a.opt("--fps")? {
         Some(v) => Fps::parse(&v)?,
-        None => Fps::Hz72,
+        None => Fps::Hz90,
     };
     let dump_dir = a.opt("--dump")?.map(PathBuf::from);
     let dump_frames = match a.opt("--dump-frames")? {
@@ -728,7 +728,7 @@ mod tests {
     #[test]
     fn defaults() {
         let o = parse(&[]).unwrap();
-        assert_eq!(o.fps, Fps::Hz72);
+        assert_eq!(o.fps, Fps::Hz90);
         assert_eq!(o.connector, "DP-1");
         assert_eq!(o.monado_build, PathBuf::from("/home/u/src/monado/build"));
         assert_eq!(o.session_dir, PathBuf::from("/tmp/omarchyvr-session"));

@@ -153,7 +153,7 @@ impl Default for ToolOptions {
     fn default() -> Self {
         ToolOptions {
             pattern: String::new(),
-            hz90: false,
+            hz90: true,
             walk_secs: 90,
             walk_ae: true,
             walk_record: false,
@@ -309,9 +309,6 @@ pub fn availability(id: ToolId, live: &Live, f: &Facts, o: &ToolOptions, p: &Pat
             need_bin(&mut a, f, p, "pimax-lenstest");
             need_no_monado(&mut a, live);
             need_launcher_start(&mut a, f, o);
-            if o.hz90 {
-                a.notes.push("90 Hz is new (same start commands as Pimax Play on Windows): check the picture in the headset.".into());
-            }
         }
         ToolId::WalkTest => {
             need_bin(&mut a, f, p, "pimax-cam");
@@ -802,7 +799,7 @@ mod tests {
                 let n = step_names(&start.steps);
                 assert_eq!(n[0], "wait", "row 1 first");
                 assert_eq!(n[1], "guard still only WayVR Xid 31");
-                assert_eq!(n[2], "run OXR_DEBUG_IPD_MM=65.9 /home/u/.local/bin/omarchyvr vr start --fps 72 --monado-build /home/u/src/monado-eye/build --force");
+                assert_eq!(n[2], "run OXR_DEBUG_IPD_MM=65.9 /home/u/.local/bin/omarchyvr vr start --fps 90 --monado-build /home/u/src/monado-eye/build --force");
                 let script = script.unwrap();
                 assert!(script.contains("XR_RUNTIME_JSON=/home/u/src/monado-eye/build/openxr_monado-dev.json IPC_IGNORE_VERSION=1"));
                 assert!(script.contains("pimax-lenstest --pattern swim"));

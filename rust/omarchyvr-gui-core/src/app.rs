@@ -2647,7 +2647,7 @@ mod tests {
         assert!(matches!(j.steps[2], Step::Guard("still only WayVR Xid 31", _)), "--force re-checked right before");
         match &j.steps[3] {
             Step::Run(c) => {
-                assert_eq!(c.display(), "OXR_DEBUG_IPD_MM=65.9 /home/u/.local/bin/omarchyvr desk start --fps 72 --eye --6dof --force");
+                assert_eq!(c.display(), "OXR_DEBUG_IPD_MM=65.9 /home/u/.local/bin/omarchyvr desk start --fps 90 --eye --6dof --force");
                 assert_eq!(crate::safety::check(c), Ok(()));
             }
             s => panic!("{s:?}"),
@@ -2711,7 +2711,7 @@ mod tests {
         assert!(kinds[1].starts_with("WaitNoMonado"));
         assert!(kinds[2].starts_with("Guard(camera still free)"));
         assert!(kinds[3].starts_with("Guard(still only WayVR Xid 31)"));
-        assert!(kinds[4].contains("desk start --fps 72 --6dof --force") && !kinds[4].contains("--eye"));
+        assert!(kinds[4].contains("desk start --fps 90 --6dof --force") && !kinds[4].contains("--eye"));
         // the preflight while running says: stop first
         assert!(matches!(a.preflight().gate, Gate::Blocked(_)));
         let _ = std::fs::remove_dir_all(d);

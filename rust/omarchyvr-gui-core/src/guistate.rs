@@ -76,7 +76,7 @@ impl GuiState {
                 "dev_mode" => s.dev_mode = on,
                 "passthrough" => s.toggles.passthrough = on,
                 "voice" => s.toggles.voice = on,
-                "hz" => s.toggles.hz90 = v.trim() == "90",
+                "hz" => s.toggles.hz90 = v.trim() != "72",
                 "page" => s.page = Page::from_name(v.trim()),
                 "perf" => s.toggles.perf = on,
                 "anchor" => s.toggles.anchor = on,
@@ -157,6 +157,17 @@ impl GuiState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn refresh_rate_defaults_to_90_and_keeps_a_saved_72() {
+        assert!(GuiState::default().toggles.hz90, "fresh default is 90 Hz");
+        assert!(GuiState::parse("onboarded = true\n").toggles.hz90, "absent = 90 Hz");
+        assert!(GuiState::parse("hz = auto\n").toggles.hz90, "auto = 90 Hz");
+        assert!(!GuiState::parse("hz = 72\n").toggles.hz90, "an explicit 72 is kept");
+        let mut s = GuiState::default();
+        s.toggles.hz90 = false;
+        assert!(!GuiState::parse(&s.render()).toggles.hz90, "72 survives a save and load");
+    }
 
     #[test]
     fn round_trip_and_defaults() {
