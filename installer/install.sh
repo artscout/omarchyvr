@@ -177,6 +177,17 @@ BUILD_PKGS=(git base-devel cmake ninja rust clang pkgconf python patch eigen ope
 RUN_PKGS=(polkit)
 [[ $HAND_MODELS == 1 ]] && BUILD_PKGS+=(git-lfs)
 MISSING_BUILD=$(pacman -T "${BUILD_PKGS[@]}" 2>/dev/null | tr '\n' ' ' || true)
+# rehearsals only (staging): OVR_ALLOW_MISSING="boost" builds without those packages and skips what needs them
+SKIP_BASALT=0
+if [[ $STAGING == 1 && -n ${OVR_ALLOW_MISSING:-} ]]; then
+	for a in $OVR_ALLOW_MISSING; do
+		if [[ " $MISSING_BUILD " == *" $a "* ]]; then
+			MISSING_BUILD=${MISSING_BUILD//$a/}
+			warn "rehearsal: package $a is missing and allowed (OVR_ALLOW_MISSING)"
+			[[ $a == boost ]] && SKIP_BASALT=1
+		fi
+	done
+fi
 MISSING_RUN=$(pacman -T "${RUN_PKGS[@]}" 2>/dev/null | tr '\n' ' ' || true)
 if [[ -n ${MISSING_BUILD// /} ]]; then
 	if [[ $INSTALL_PKGS == 1 && $STAGING == 0 ]]; then
@@ -243,7 +254,7 @@ fetch_file() { # fetch_file URL SHA DEST [REUSE_CANDIDATE...]
 	note "$(basename "$dst"): downloaded, checksum ok"
 }
 fetch_file "$ORT_URL" "$ORT_SHA256" "$CACHE/dl/onnxruntime-$ORT_VERSION.tgz" "$HOME/$ORT_REUSE"
-fetch_git "$BASALT_URL" "$BASALT_COMMIT" "$CACHE/src/basalt" --recursive
+[[ $SKIP_BASALT == 1 ]] || fetch_git "$BASALT_URL" "$BASALT_COMMIT" "$CACHE/src/basalt" --recursive
 [[ $GPU_SPEECH == 1 ]] && fetch_git "$WHISPER_URL" "$WHISPER_COMMIT" "$CACHE/src/whisper.cpp"
 
 # ==== 3. build (nice 19, -j8) ========================================================================================
@@ -266,14 +277,16 @@ fi
 record dir "$ORT_DIR" REBUILD "ONNX Runtime $ORT_VERSION"
 
 BASALT_PREFIX="$LIBDIR/basalt"
-if [[ ! -f "$BASALT_PREFIX/lib/libbasalt.so" ]] || [[ "$(cat "$BASALT_PREFIX/.commit" 2>/dev/null)" != "$BASALT_COMMIT" ]]; then
+if [[ $SKIP_BASALT == 1 ]]; then
+	warn "Basalt: skipped in this rehearsal (boost headers missing on this PC)"
+elif [[ ! -f "$BASALT_PREFIX/lib/libbasalt.so" ]] || [[ "$(cat "$BASALT_PREFIX/.commit" 2>/dev/null)" != "$BASALT_COMMIT" ]]; then
 	build "Basalt ${BASALT_COMMIT:0:9} (6DoF; the longest step)" cmake -S "$CACHE/src/basalt" -B "$CACHE/basalt-build" -G Ninja \
 		-DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_INSTALL_PREFIX="$BASALT_PREFIX" -DBASALT_BUILD_SHARED_LIBRARY_ONLY=ON
 	build "Basalt (compile)" ninja -C "$CACHE/basalt-build" -j "$JOBS"
 	build "Basalt (install)" ninja -C "$CACHE/basalt-build" install
 	echo "$BASALT_COMMIT" >"$BASALT_PREFIX/.commit"
 fi
-record dir "$BASALT_PREFIX" REBUILD "Basalt ${BASALT_COMMIT:0:9}"
+[[ $SKIP_BASALT == 1 ]] || record dir "$BASALT_PREFIX" REBUILD "Basalt ${BASALT_COMMIT:0:9}"
 
 # Monado: built in its installed place, so the realtime permission set once stays (a rebuild without changes does
 # not relink; a relink happens only on an update, whose root job sets it again)
