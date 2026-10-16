@@ -347,7 +347,7 @@ impl AppCore {
         self.localai_follow();
     }
 
-    /// "Speech recognition": Auto / Small (processor) / Large (graphics card), saved as `asr` (docs/AI.md section 17).
+    /// "Speech on graphics card" (default off = the processor), saved as `asr` (docs/AI.md section 17).
     /// The speech server follows at once (`pimax-ai up`); voice control picks the engine when it starts.
     pub fn ai_set_asr(&mut self, a: ai::Asr) {
         self.ai.config.asr = a;
@@ -634,8 +634,8 @@ mod tests {
         a.ai_set_asr(ai::Asr::Gpu);
         let text = std::fs::read_to_string(a.ai_path()).unwrap();
         assert!(text.contains("asr = \"gpu\"") && text.contains("sk-or-v1-TEST-NOT-A-KEY"), "{text}");
-        a.ai_set_asr(ai::Asr::Auto);
-        assert!(!std::fs::read_to_string(a.ai_path()).unwrap().contains("asr ="), "Auto is the absent key");
+        a.ai_set_asr(ai::Asr::Cpu);
+        assert!(!std::fs::read_to_string(a.ai_path()).unwrap().contains("asr ="), "the processor is the absent key");
         a.ai_set_local_models(false, true);
         assert_eq!(a.ai_runs_on(), RunsOn::Online);
         assert!(std::fs::read_to_string(a.ai_path()).unwrap().contains("sk-or-v1-TEST-NOT-A-KEY"));

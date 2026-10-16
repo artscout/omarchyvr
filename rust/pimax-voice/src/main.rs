@@ -337,15 +337,12 @@ fn parakeet_spec(o: &Opts, threads: i32, hotwords: bool) -> EngineSpec {
     }
 }
 
-/// What `--engine auto` means: ai.toml's `asr` (Auto / Small / Large) and the Local models switch.
+/// What `--engine auto` means: ai.toml's `asr` (the "Speech on graphics card" switch, default off = Parakeet on the
+/// processor). On: the whisper-server on the card, with Parakeet as the fallback.
 fn auto_engine(o: &Opts, threads: i32) -> EngineSpec {
     let cfg = pimax_config::ai::AiConfig::load().unwrap_or_default();
-    let large = match cfg.asr {
-        pimax_config::ai::Asr::Cpu => false,
-        pimax_config::ai::Asr::Gpu => true,
-        // Auto: the large model belongs to the local models (Work only); without them there is no server to ask
-        pimax_config::ai::Asr::Auto => cfg.local_models_on(),
-    };
+    // the card also needs the local models (the server belongs to them; Work only)
+    let large = cfg.asr_on_gpu() && cfg.local_models_on();
     let cpu = parakeet_spec(o, threads, true);
     if large {
         EngineSpec::WhisperServer {

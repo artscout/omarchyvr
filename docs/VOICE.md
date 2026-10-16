@@ -672,6 +672,8 @@ A **Voice** settings row could have:
 ## Speech engine (2026-10-16)
 
 `pimax-voice listen` recognises speech with Parakeet TDT v3 on the processor (biased to words like Max, passthrough,
-screens, workspace, YouTube) or, when the Local AI page says Auto or Large and the local models run (Work), with Whisper
-large-v3-turbo on the graphics card through `whisper-server` (port 8082). If the server is down, Parakeet answers, so
-voice never stops. The engine in use is the first line of voice.log. Details and numbers: docs/AI.md section 17.
+screens, workspace, YouTube). This is the default (since 2026-10-16). Only when the switch "Speech on graphics card"
+on the Local AI page is On (`asr = "gpu"` in ai.toml, default Off) and the local models run (Work), it uses Whisper
+large-v3-turbo on the graphics card through `whisper-server` (port 8082); the GPU server shared the card with the AI
+models and made Monado skip 8.8% of its frames. If the server is down, Parakeet answers, so voice never stops. The
+engine in use is the first line of voice.log. Details and numbers: docs/AI.md sections 17 and 19.

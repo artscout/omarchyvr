@@ -288,14 +288,16 @@ impl VoiceLocal {
     }
 }
 
-/// Speech recognition (`asr`; docs/AI.md section 17): the small model on the processor, the large one on the
-/// graphics card, or whichever the PC has room for.
+/// Speech recognition (`asr`; docs/AI.md sections 17 and 19): Parakeet on the processor (the default), or whisper
+/// large-v3-turbo on the graphics card (the "Speech on graphics card" switch).
+///
+/// Since 2026-10-16 the processor is the default: the GPU speech server shared the card with the AI models and made
+/// Monado skip 8.8% of its frames (the VR screens shook). A saved `asr = "auto"` (or no key) means the processor;
+/// only an explicit `asr = "gpu"` keeps the graphics card.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Asr {
-    /// The large model when the local models are On and 1.5 GB of video memory is free, else the small one.
+    /// Parakeet on the processor with hotwords (no video memory, no server).
     #[default]
-    Auto,
-    /// Parakeet on the processor with hotwords (no video memory).
     Cpu,
     /// whisper large-v3-turbo on the graphics card (whisper-server, port 8082, Work only).
     Gpu,
@@ -305,24 +307,21 @@ pub enum Asr {
 pub const ASR_PORT: u16 = 8082;
 /// What the large model takes on the graphics card (MiB, measured: 835).
 pub const ASR_VRAM_MIB: u32 = 900;
-/// Free video memory Auto wants before it picks the graphics card (MiB).
-pub const ASR_AUTO_MIN_FREE_MIB: u32 = 1536;
 
 impl Asr {
-    pub const ALL: [Asr; 3] = [Asr::Auto, Asr::Cpu, Asr::Gpu];
+    pub const ALL: [Asr; 2] = [Asr::Cpu, Asr::Gpu];
 
     pub fn id(self) -> &'static str {
         match self {
-            Asr::Auto => "auto",
             Asr::Cpu => "cpu",
             Asr::Gpu => "gpu",
         }
     }
 
+    /// From the file; the old default `auto` is the processor now (migration).
     pub fn parse(s: &str) -> Option<Asr> {
         match s.trim().to_ascii_lowercase().as_str() {
-            "auto" => Some(Asr::Auto),
-            "cpu" | "small" | "processor" => Some(Asr::Cpu),
+            "auto" | "cpu" | "small" | "processor" => Some(Asr::Cpu),
             "gpu" | "large" | "graphics" => Some(Asr::Gpu),
             _ => None,
         }
@@ -330,19 +329,24 @@ impl Asr {
 
     pub fn label(self) -> &'static str {
         match self {
-            Asr::Auto => "Auto",
-            Asr::Cpu => "Small (processor)",
-            Asr::Gpu => "Large (graphics card)",
+            Asr::Cpu => "Processor",
+            Asr::Gpu => "Graphics card",
         }
     }
 
     /// The measured numbers for the app (60 spoken commands, clean and with noise; docs/AI.md section 17).
     pub fn numbers(self) -> &'static str {
         match self {
-            Asr::Auto => "the large one when the local models are On and 1.5 GB of video memory is free, else the small one",
             Asr::Cpu => "Parakeet + hotwords: 13.3% word errors in noise (2.7% clean), 0.14 s, no video memory, English and Spanish",
             Asr::Gpu => "Whisper large-v3-turbo: 10.3% word errors in noise (6.4% clean), 0.04 s, 0.9 GB of video memory, English only",
         }
+    }
+}
+
+/// The "Speech on graphics card" switch.
+impl AiConfig {
+    pub fn asr_on_gpu(&self) -> bool {
+        self.asr == Asr::Gpu
     }
 }
 
@@ -354,26 +358,16 @@ pub struct AsrPlan {
     pub why: String,
 }
 
-/// Decide Auto / Small / Large. `local_on`: the Local models switch; `free_mib`: free video memory now with the ASR
-/// server's own share counted as free (None: unknown, nvidia-smi missing).
+/// Decide processor / graphics card. `local_on`: the Local models switch; `free_mib`: free video memory now with the
+/// ASR server's own share counted as free (None: unknown, nvidia-smi missing).
 pub fn asr_plan(choice: Asr, local_on: bool, free_mib: Option<u32>) -> AsrPlan {
-    let no = |why: &str| AsrPlan { gpu: false, why: why.to_string() };
     let gb = |m: u32| format!("{:.1} GB", m as f64 / 1024.0);
     match choice {
-        Asr::Cpu => no("Small model on the processor (your choice)"),
-        _ if !local_on => no(if choice == Asr::Gpu {
-            "The large model runs with the local models: turn Local models On (Work only); the small one answers meanwhile"
-        } else {
-            "Local models are Off: the small model on the processor"
-        }),
+        Asr::Cpu => AsrPlan { gpu: false, why: "Speech runs on the processor (the graphics card stays free for VR)".into() },
+        Asr::Gpu if !local_on => AsrPlan { gpu: false, why: "The graphics-card model runs with the local models: turn Local models On (Work only); the processor answers meanwhile".into() },
         Asr::Gpu => match free_mib {
-            Some(f) if f < ASR_VRAM_MIB + 256 => AsrPlan { gpu: false, why: format!("Not enough video memory for the large model ({} free, it needs {}): the small one answers", gb(f), gb(ASR_VRAM_MIB)) },
-            _ => AsrPlan { gpu: true, why: "Large model on the graphics card (your choice)".into() },
-        },
-        Asr::Auto => match free_mib {
-            Some(f) if f >= ASR_AUTO_MIN_FREE_MIB => AsrPlan { gpu: true, why: format!("Large model on the graphics card ({} of video memory free)", gb(f)) },
-            Some(f) => AsrPlan { gpu: false, why: format!("Only {} of video memory free (Auto wants {}): the small model on the processor", gb(f), gb(ASR_AUTO_MIN_FREE_MIB)) },
-            None => no("No graphics card information: the small model on the processor"),
+            Some(f) if f < ASR_VRAM_MIB + 256 => AsrPlan { gpu: false, why: format!("Not enough video memory for the large model ({} free, it needs {}): the processor answers", gb(f), gb(ASR_VRAM_MIB)) },
+            _ => AsrPlan { gpu: true, why: "Large model on the graphics card (your choice; it can make VR stutter)".into() },
         },
     }
 }
@@ -987,7 +981,7 @@ impl AiConfig {
                     "voice_local_models" => c.voice_local_models = Some(parse_bool(v, n, k)?),
                     "asr" => {
                         let m = unquote(v, n)?;
-                        c.asr = Asr::parse(&m).ok_or_else(|| format!("line {n}: asr {m:?} (auto, cpu or gpu)"))?;
+                        c.asr = Asr::parse(&m).ok_or_else(|| format!("line {n}: asr {m:?} (cpu or gpu)"))?;
                     }
                     "voice_local" => {
                         let m = unquote(v, n)?;
@@ -1128,7 +1122,7 @@ impl AiConfig {
         if let Some(b) = self.voice_local_models {
             o += &format!("voice_local_models = {b}\n");
         }
-        if self.asr != Asr::Auto {
+        if self.asr != Asr::Cpu {
             o += &format!("asr = {}\n", quote(self.asr.id()));
         }
         for (k, v) in &self.extra {
@@ -1498,27 +1492,28 @@ mod tests {
     }
 
     #[test]
-    fn asr_setting_parses_renders_and_defaults_to_auto() {
-        assert_eq!(AiConfig::default().asr, Asr::Auto);
-        assert!(!AiConfig::default().render().contains("asr"), "auto is the absent key");
+    fn asr_setting_parses_renders_and_defaults_to_the_processor() {
+        assert_eq!(AiConfig::default().asr, Asr::Cpu);
+        assert!(!AiConfig::default().asr_on_gpu());
+        assert!(!AiConfig::default().render().contains("asr"), "the processor is the absent key");
         let c = AiConfig::parse("asr = \"gpu\"\n").unwrap();
         assert_eq!(c.asr, Asr::Gpu);
+        assert!(c.asr_on_gpu());
         assert_eq!(AiConfig::parse(&c.render()).unwrap().asr, Asr::Gpu);
         assert_eq!(AiConfig::parse("asr = 'cpu' # small\n").unwrap().asr, Asr::Cpu);
+        // migration: the old default (no key, or an explicit "auto") is the processor now
+        assert_eq!(AiConfig::parse("").unwrap().asr, Asr::Cpu);
+        assert_eq!(AiConfig::parse("asr = \"auto\"\n").unwrap().asr, Asr::Cpu);
         let e = AiConfig::parse("asr = \"huge\"\n").unwrap_err();
-        assert!(e.contains("line 1") && e.contains("auto, cpu or gpu"), "{e}");
+        assert!(e.contains("line 1") && e.contains("cpu or gpu"), "{e}");
     }
 
     #[test]
     fn asr_plan_fits_the_graphics_card() {
-        // Auto: local models on and 1.5 GB free
-        assert!(asr_plan(Asr::Auto, true, Some(1536)).gpu);
-        assert!(!asr_plan(Asr::Auto, true, Some(1535)).gpu);
-        assert!(asr_plan(Asr::Auto, true, Some(1535)).why.contains("1.5 GB"));
-        assert!(!asr_plan(Asr::Auto, false, Some(20000)).gpu, "Local models Off: processor");
-        assert!(!asr_plan(Asr::Auto, true, None).gpu);
-        // Small never uses the card; Large needs room and the local models
+        // the processor never uses the card
         assert!(!asr_plan(Asr::Cpu, true, Some(20000)).gpu);
+        assert!(asr_plan(Asr::Cpu, true, Some(20000)).why.contains("processor"));
+        // the card needs room and the local models
         assert!(asr_plan(Asr::Gpu, true, Some(2000)).gpu);
         assert!(asr_plan(Asr::Gpu, true, None).gpu);
         let p = asr_plan(Asr::Gpu, true, Some(800));

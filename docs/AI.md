@@ -825,7 +825,7 @@ distil-large-v3 is not used: no better than turbo in noise and twice the memory.
   `ai-asr.log`), started and stopped by pimaxd's `ai.server` through `pimax-ai up` / `down`: Work only, with Local
   models On. `up` decides first and counts the server's 0.9 GB in the fit of the action model. `pimax-ai stop --asr`,
   `pimax-ai status` (line "speech") and `status --json` (`asr`, `asr_missing`) show it.
-- **Setting** (`ai.toml`, `pimax_config::ai::Asr`): `asr = "auto" | "cpu" | "gpu"`, default auto (key absent).
+- **Setting** (`ai.toml`, `pimax_config::ai::Asr`): `asr = "auto" | "cpu" | "gpu"`, default auto (key absent). **Superseded by section 19: the default is the processor; `auto` now means `cpu`.**
   Auto: the large model when Local models are On and at least 1.5 GB of video memory is free, else the small one. `cpu`
   never starts the server; `gpu` starts it when 0.9 GB + margin is free and the local models are On. Local models Off:
   no server (Work only rule), the small model answers.
@@ -887,3 +887,63 @@ enough for a Work desk with passthrough and the compositor plus headroom.
 loaded in Work. Keep it as an opt-in experiment for sessions without a headset (Session none), loaded on demand and
 stopped before Play/Work. Revisit after the goal loop's stray-step problem is fixed, with a prompt written for the bigger
 model (its "none" answers) and thinking enabled for the planning step only. The 9B is no better than the 4B either.
+
+## 19. Speech on the processor by default; "Speech on graphics card" switch (2026-10-16)
+
+User decision 2026-10-16: speech recognition runs on the processor by default, with a switch for the graphics card.
+Why: in the 18:08 session the GPU work (llama + whisper-server on Vulkan, plus an audit) made Monado skip 8.8% of its
+frames at 90 Hz and the VR screens shook (the session's perf.log frame-health timeline). The PC: i9-14900KF (32 threads, no iGPU), RTX 4090.
+
+### Benchmark on the processor (no VR session running; 60 Kokoro TTS commands, clean and noisy, same scorer as section 17)
+
+whisper.cpp `build-cpu` (AVX2 native, no BLAS), `nice -n 19`, 8 threads, one clip per request, server on port 8095;
+Parakeet through sherpa-onnx with hotwords (score 1.5). WER includes the wake word "Max". At normal priority the
+latency is the same within a few percent on an idle machine (nothing else wants the cores); under load nice 19 would
+be slower. A 3 s command is about the average clip here.
+
+| engine | device | WER clean / noisy | p50 / p95 |
+|---|---|---|---|
+| **Parakeet TDT v3 int8 + hotwords, 2 threads (the default)** | CPU | 6.4% / 15.2% | 134 / 195 ms |
+| Parakeet + hotwords, 4 threads | CPU | 6.4% / 15.2% | 108 / 169 ms |
+| Parakeet + hotwords, 8 threads | CPU | 6.4% / 15.2% | 116 / 177 ms |
+| whisper base.en, `-ac 512` | CPU | 9.7% / 23.0% | 157 / 195 ms |
+| whisper base.en (q8, multilingual) | CPU | 10.9% / 29.7% | 513 / 766 ms |
+| whisper small.en, `-ac 512` | CPU | 8.2% / 21.8% | 496 / 604 ms |
+| whisper small.en | CPU | 9.1% / 22.1% | 2051 / 4440 ms |
+| whisper small q8 (multilingual) | CPU | 8.5% / 19.7% | 1541 / 2931 ms |
+| whisper large-v3-turbo q5_0, `-ac 512` | CPU | 8.2% / 13.3% | 2372 / 2556 ms |
+| whisper large-v3-turbo q5_0 | CPU | 9.7% / 12.1% | 9867 / 12359 ms |
+| whisper large-v3-turbo q5_0 (reference) | GPU | 9.4% / 12.1% | 43 / 69 ms |
+| distil-large-v3 | CPU | 7.3% / 12.4% | 8467 / 8738 ms |
+| distil-large-v3 (reference) | GPU | 7.3% / 12.4% | 36 / 52 ms |
+
+Reading: whisper keeps its 30 s window, so on the processor its cost does not depend on the clip length; only the
+audio-context cut (`-ac 512`) makes small and base usable, and they are less accurate than Parakeet. Large-v3-turbo
+needs 2.4 to 10 s per command on the processor: out of the question. Parakeet is both the fastest and the most
+accurate on the processor (6.4% clean, 15.2% noisy), is a 2-thread in-process engine (no server, no port, no VRAM, English
+and Spanish) and is the budget winner under the 600 ms p95 target by a wide margin.
+
+**Default: Parakeet TDT v3 int8 with hotwords, 2 threads** (`pimax-voice --threads`, default 2; 4 threads would give 108 ms
+but 2 leaves more of the 32 threads alone). Monado's threads are SCHED_FIFO (cap_sys_nice) and preempt any normal
+thread, so this CPU work cannot take their time slices; the part that is shared is memory bandwidth and caches, which
+Parakeet barely touches.
+
+### What changed
+
+- **Setting**: `asr = "cpu" | "gpu"` in `~/.config/pimax/ai.toml` (`pimax_config::ai::Asr`, `AiConfig::asr_on_gpu()`). The
+  default is the processor and the key is absent. **Migration**: the old default `auto` (no key, or `asr = "auto"`,
+  which picked the GPU server whenever 1.5 GB were free) now means the processor; only an explicit `asr = "gpu"`
+  (chosen by hand in the old selector) stays on the graphics card. No file is rewritten.
+- **App**: Local AI page, card "Speech recognition": one switch "Speech on graphics card" (default Off) with the "?"
+  "GPU is faster but can make VR stutter.", the measured numbers of both, the plain-words decision, and the state of the
+  graphics-card server. Saved to ai.toml at once, so `pimax-ai`, `pimax-voice` and the CLI share it; each Work start
+  and each restart of the session (pimaxd's `ai.server`, `pimax-ai up`) re-reads it, so it needs no flag in
+  `start-argv.txt` (a restart keeps it because it lives in ai.toml, not in the argument list).
+- **Wiring**: `pimax-ai up` (Work start, the `ai.server` health watch, the Local AI buttons, the resume after Game mode)
+  starts the whisper-server on port 8082 only when the switch is On (`asr_decision`); Off stops it. Game mode / Play
+  never start it (they only bring back what `up` decides). `pimax-voice listen` uses Parakeet unless the switch is On
+  and the local models run, in which case it asks the server and falls back to Parakeet as before. The voice client,
+  port and API are unchanged.
+- Not kept: a whisper CPU server on port 8082. It would be slower and less accurate than Parakeet, so no second
+  engine is started on the processor.
+

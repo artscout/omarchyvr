@@ -846,10 +846,10 @@ mod tests {
     #[test]
     fn asr_decision_follows_the_switch() {
         let mut c = AiConfig::default();
-        assert!(!asr_decision(&c, Some(500)).0.gpu);
-        c.asr = pimax_config::ai::Asr::Cpu;
-        assert!(!asr_decision(&c, Some(20000)).0.gpu);
-        c.asr = pimax_config::ai::Asr::Auto;
+        assert!(!asr_decision(&c, Some(20000)).0.gpu, "the default is the processor: no GPU whisper");
+        assert!(!asr_decision(&c, Some(20000)).1, "and the server is not wanted");
+        c.asr = pimax_config::ai::Asr::Gpu;
+        assert!(asr_decision(&c, Some(20000)).0.gpu);
         c.voice_local_models = Some(false);
         assert!(!asr_decision(&c, Some(20000)).0.gpu, "Local models Off");
     }

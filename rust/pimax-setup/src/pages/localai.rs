@@ -122,21 +122,17 @@ fn agent_mode(ui: &mut Ui, app: &mut PimaxApp, busy: bool) {
     });
 }
 
-/// "Speech recognition": Auto / Small (processor) / Large (graphics card), each with its measured numbers.
+/// "Speech recognition": the switch "Speech on graphics card" (default off: Parakeet on the processor).
 fn speech(ui: &mut Ui, app: &mut PimaxApp, busy: bool) {
     let choice = app.core.ai.config.asr;
     let free = app.core.localai.status.as_ref().and_then(|s| s.as_ref().ok()).and_then(|s| s.vram_free_mib).map(|f| f as u32);
     let st = app.core.localai.status.as_ref().and_then(|s| s.as_ref().ok()).cloned();
     card(ui, |ui| {
         let p = theme::pal(ui);
-        ui.horizontal(|ui| {
-            title(ui, "Speech recognition");
-            widgets::help(ui, "Turns what you say into text. Small runs on the processor; Large is a bigger model on the graphics card that hears you better in noise and answers faster. If the large one is not available, the small one answers by itself, so voice never stops. The large model starts and stops with the other local models (Work only) and is English only. Voice control picks the model when it starts: restart voice, or the next Work start, after changing this.");
-        });
-        let names: Vec<&str> = Asr::ALL.iter().map(|a| a.label()).collect();
-        let cur = Asr::ALL.iter().position(|a| *a == choice).unwrap_or(0);
-        if let Some(i) = widgets::selector(ui, icon::SLIDERS, "Model", &names, cur, !busy) {
-            app.core.ai_set_asr(Asr::ALL[i]);
+        title(ui, "Speech recognition");
+        let mut gpu = choice == Asr::Gpu;
+        if widgets::switch_row(ui, &mut gpu, "Speech on graphics card", Some("GPU is faster but can make VR stutter. Off: speech runs on the processor. Voice control picks this when it starts: restart voice, or the next Work start, after changing it."), !busy).changed() {
+            app.core.ai_set_asr(if gpu { Asr::Gpu } else { Asr::Cpu });
         }
         for a in Asr::ALL {
             let line = format!("{}: {}", a.label(), a.numbers());
@@ -148,11 +144,11 @@ fn speech(ui: &mut Ui, app: &mut PimaxApp, busy: bool) {
         let plan = asr_plan(choice, true, free.map(|f| f + own));
         ui.add(egui::Label::new(RichText::new(&plan.why).size(12.0).color(p.dim)).wrap());
         ui.horizontal_wrapped(|ui| match st.as_ref().and_then(|s| s.asr.as_ref()) {
-            Some(a) => chip(ui, &format!("large model: {}{}", if a.ready { "ready" } else { "loading" }, a.gpu_mib.map(|m| format!(", {:.1} GB of video memory", m as f64 / 1024.0)).unwrap_or_default()), if a.ready { pal(ui).ok } else { pal(ui).warn }),
-            None => chip(ui, "large model: off (the small one answers)", pal(ui).muted),
+            Some(a) => chip(ui, &format!("graphics-card model: {}{}", if a.ready { "ready" } else { "loading" }, a.gpu_mib.map(|m| format!(", {:.1} GB of video memory", m as f64 / 1024.0)).unwrap_or_default()), if a.ready { pal(ui).ok } else { pal(ui).warn }),
+            None => chip(ui, "graphics-card model: off (the processor answers)", pal(ui).muted),
         });
         if let (true, Some(m)) = (plan.gpu, st.as_ref().and_then(|s| s.asr_missing.clone())) {
-            ui.add(egui::Label::new(RichText::new(format!("The large model cannot start: {m}. The small one answers.")).size(12.0).color(pal(ui).warn)).wrap());
+            ui.add(egui::Label::new(RichText::new(format!("The graphics-card model cannot start: {m}. The processor answers.")).size(12.0).color(pal(ui).warn)).wrap());
         }
     });
 }

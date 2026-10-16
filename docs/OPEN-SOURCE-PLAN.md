@@ -15,6 +15,11 @@ evening export (ai/ folder, patches/nvidia, forks `github.com/laughtt/monado` an
 PRIVATE, branch `omarchyvr`, `main` = upstream base: Monado `e686ba77e5` + 60 commits, WayVR tag v26.8.0 `cb3aa42` + 30
 commits, our commits rewritten to the laughtt noreply identity and scrubbed of home paths and the login name). Next
 export: recording plus speech on the CPU.
+**Update 2026-10-16 night: work continues in ~/omarchyvr; pimax-re is the archive/lab backup.** `0167cf8` -> omarchyvr
+`a650ce1`; omarchyvr `678ce37` adds the private (git-ignored) `.claude/` with the lab rules, memory and lab data, the
+leak-guard hooks and the forks as submodules (`forks/monado`, `forks/wayvr`). Last sync: lab `5174fc8`, `91bac42`,
+`3e8a569` (speech on the CPU by default, distil-large-v3 note) carried over by the export diff (old/new export of the
+lab, `diff -ruN`, applied here); the lab is frozen after `3e8a569`.
 The audit in section 1 was read-only (pattern scans over the tracked tree and `git log -p --all`); no secret value is
 written here, only the file, the commit count and the kind of hit.
 
