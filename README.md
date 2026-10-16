@@ -83,7 +83,7 @@ See [docs/ROADMAP-OMARCHY.md](docs/ROADMAP-OMARCHY.md) (shipping with Omarchy) a
 
 ## For AI agents
 
-Start with [AGENTS.md](AGENTS.md) and [docs/AI-KNOWLEDGE.md](docs/AI-KNOWLEDGE.md). The binding rules are in [.claude/CLAUDE.md](.claude/CLAUDE.md).
+Start with [AGENTS.md](AGENTS.md) and [docs/AI-KNOWLEDGE.md](docs/AI-KNOWLEDGE.md). The binding rules are in [ai/CLAUDE.md](ai/CLAUDE.md).
 
 ## Docs index
 
@@ -135,4 +135,10 @@ Start with [AGENTS.md](AGENTS.md) and [docs/AI-KNOWLEDGE.md](docs/AI-KNOWLEDGE.m
 
 ## For developers
 
-The Rust workspace is in `rust/` (`cargo test` in that folder). Build from a clean checkout of committed HEAD. The Monado fork must keep its markers (`PIMAX_SLAM`, `PIMAX_ANCHOR`, `PIMAX_EYE`, `PIMAX_CTRL_TRACK`). Details and rules: [.claude/CLAUDE.md](.claude/CLAUDE.md), [docs/INVENTORY.md](docs/INVENTORY.md).
+Clone with the forks (Monado and WayVR are git submodules under `forks/`, branch `omarchyvr`):
+
+    git clone --recursive https://github.com/laughtt/omarchyvr.git
+    # an existing clone: git submodule update --init --recursive
+
+Enable the leak guard once per clone: `git config core.hooksPath tools/git-hooks` (pre-commit and pre-push run
+`tools/leak-scan.py` and refuse private data). The Rust workspace is in `rust/` (`cargo test` in that folder). Build from a clean checkout of committed HEAD. The Monado fork must keep its markers (`PIMAX_SLAM`, `PIMAX_ANCHOR`, `PIMAX_EYE`, `PIMAX_CTRL_TRACK`). Details and rules: [ai/CLAUDE.md](ai/CLAUDE.md), [docs/INVENTORY.md](docs/INVENTORY.md).

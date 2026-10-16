@@ -2,7 +2,7 @@
 //! tracking cameras), docs/HANDS.md. Off by default.
 //!
 //! Design (the simplest one that cannot break a session):
-//! * One Monado build carries everything (.claude/CLAUDE.md section 3), hands included: `--hands` only sets the
+//! * One Monado build carries everything (ai/CLAUDE.md section 3), hands included: `--hands` only sets the
 //!   variables below on the build the start uses anyway (`~/src/monado-eye/build`). Another build only when it is
 //!   named: `--hands-build DIR` or `PIMAX_HANDS_BUILD` (service binary AND runtime manifest move together). An
 //!   explicit `--monado-build` / `PIMAX_MONADO_BUILD` / `--service-bin` wins and is used as it is.
@@ -114,7 +114,7 @@ pub fn parse(
     }
     let explicit = build_given || vr.service_bin.is_some();
     let mut cand = vr.clone();
-    // one build carries everything (.claude/CLAUDE.md section 3): --hands only sets the variables on the build the
+    // one build carries everything (ai/CLAUDE.md section 3): --hands only sets the variables on the build the
     // start uses; another build only when it is named (--hands-build DIR or PIMAX_HANDS_BUILD)
     let named = build_opt.or_else(|| env("PIMAX_HANDS_BUILD").filter(|v| !v.is_empty()));
     if let (false, Some(b)) = (explicit, named) {

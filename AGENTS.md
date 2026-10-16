@@ -4,7 +4,7 @@ This repo makes a Pimax Dream Air work on Linux, with one app and one click (`pi
 
 Everything an agent uses is in `ai/` (see `ai/README.md`). Before any work, read:
 
-1. `.claude/CLAUDE.md`: the binding project rules (GUI first, the definition of done, one whole build, safety rules).
+1. `ai/CLAUDE.md`: the binding project rules (GUI first, the definition of done, one whole build, safety rules).
 2. `ai/AI-KNOWLEDGE.md`: the reading order, the system overview, the hard rules, the pitfalls we already hit,
    how to add a headset, GPU or compositor, and how to diagnose a user's failure.
 3. `ai/LESSONS.md`: the numbered pitfalls. Read all of it before touching the stack.

@@ -16,7 +16,7 @@
 + public-manifest.txt
 + .gitignore
 + .gitattributes
-+ .claude/CLAUDE.md
++ CLAUDE.md
 # lab diaries and personal notes (serials, dates, the lab PC): private
 - HISTORY.md
 - STATUS.md
@@ -54,7 +54,6 @@
 
 # ---- ai/: everything an AI agent uses (moved or copied here by the export; symlinks stay at the old paths) ---------
 + ai/**
-= ai/CLAUDE.md <- .claude/CLAUDE.md
 > ai/AI-KNOWLEDGE.md <- docs/AI-KNOWLEDGE.md
 > ai/LESSONS.md <- docs/LESSONS.md
 > ai/VOICE-DECISIONS.md <- docs/VOICE-DECISIONS.md

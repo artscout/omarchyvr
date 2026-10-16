@@ -331,7 +331,7 @@ pub fn evaluate(
                 vec![Action::Setup(format!("setcap-{}", b.build.key))]),
             None => {}
         }
-        // one build carries everything (.claude/CLAUDE.md section 3): a build that lost a feature is refused
+        // one build carries everything (ai/CLAUDE.md section 3): a build that lost a feature is refused
         if let (true, Some(k)) = (b.built(), b.markers) {
             let miss = k.missing(t.hands);
             if miss.is_empty() {

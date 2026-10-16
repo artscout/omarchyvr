@@ -33,7 +33,7 @@ pimax vr start --6dof --hands --hands-roles     # VR, the hands take the control
 
 How the build is chosen (the simplest design that cannot break a start):
 
-1. One Monado build carries everything (`.claude/CLAUDE.md` section 3), hands included: `--hands` does **not**
+1. One Monado build carries everything (`ai/CLAUDE.md` section 3), hands included: `--hands` does **not**
    switch builds any more. It only sets the variables on the build the start uses (`~/src/monado-eye/build`).
    Another build is used only when it is named (`--hands-build DIR` / `PIMAX_HANDS_BUILD`); then the service binary
    and the runtime manifest move together. (The separate `~/src/monado-ht/build-ht` of the first tests is no longer

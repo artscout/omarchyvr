@@ -1,4 +1,4 @@
-# pimax-re: rules for every agent (final)
+# omarchyvr: rules for every agent
 
 Goal: the Pimax Dream Air works on Linux like Pimax Play on Windows: **one app, one click, everything is part of one whole.**
 Read this before any work. It applies to the main thread and to every subagent.
@@ -47,7 +47,7 @@ Every change ends in a new complete build of the whole set (Monado + WayVR + all
 - No sudo by agents. No firmware flashing, no DRM hotplug, HID bytes only from Windows captures.
 - Don't edit hypr, systemd system units, NVIDIA or boot config, or `~/.config/wayvr`.
 - Never tell the user to unplug the headset.
-- Monado and WayVR: local commits only; never push to upstream. They are published only by the export step to the PRIVATE forks laughtt/monado and laughtt/wayvr (branch `omarchyvr`, clean copy, noreply identity; user 2026-10-16). pimax-re: commit only your own files, push origin main.
+- Monado and WayVR: local commits only; never push to upstream. They are published only by the export step to the PRIVATE forks laughtt/monado and laughtt/wayvr (branch `omarchyvr`, clean copy, noreply identity; user 2026-10-16). omarchyvr: commit only your own files, push origin main. Private context (lab notes, data, machine facts) lives in the untracked `.claude/` folder and `CLAUDE.local.md`: never commit or push them.
 - Heavy work (builds, tests, benches, AI audits) runs at `nice -n 19` with `-j8`; never send keys/typing to the user's windows.
 - No AI audits, benchmarks or GPU tests while `monado-service` runs (check `pgrep -x monado-service` before and during every run): they share the GPU and made VR drop 8% of frames (shaky screens, 2026-10-16 18:08).
 - Voice commands run without confirmation by default (`voice_confirm = none|dangerous|always`).

@@ -1,0 +1,8 @@
+[submodule "forks/monado"]
+	path = forks/monado
+	url = https://github.com/laughtt/monado.git
+	branch = omarchyvr
+[submodule "forks/wayvr"]
+	path = forks/wayvr
+	url = https://github.com/laughtt/wayvr.git
+	branch = omarchyvr

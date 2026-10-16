@@ -8,7 +8,7 @@ Start with [../AGENTS.md](../AGENTS.md) (the entry point tools look for), then:
 
 | File | What it is |
 |---|---|
-| [CLAUDE.md](CLAUDE.md) | A copy of `.claude/CLAUDE.md`, the binding project rules (the original stays where tools look for it) |
+| [CLAUDE.md](CLAUDE.md) | The binding project rules (imported by the root `CLAUDE.md`, which Claude Code loads) |
 | [AI-KNOWLEDGE.md](AI-KNOWLEDGE.md) | Reading order, system overview, hard rules, pitfalls, how to add hardware, how to diagnose a failure |
 | [LESSONS.md](LESSONS.md) | The numbered pitfalls; read all of it before touching the stack |
 | [VOICE-DECISIONS.md](VOICE-DECISIONS.md) | Why the voice loop is built the way it is |

@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT OR Apache-2.0
+# Leak guard (enable once per clone: git config core.hooksPath tools/git-hooks).
+# Refuses a commit that stages anything under .claude/ (or another private path) or whose staged diff hits the
+# export scanners (tools/leak-scan.py: serials, keys, e-mail addresses, home paths, eye-chip bytes, the login name).
+set -euo pipefail
+top="$(git rev-parse --show-toplevel)"
+if git diff --cached --name-only --diff-filter=ACMRT -z | tr '\0' '\n' | grep -qE '^(\.claude/|CLAUDE\.local\.md$)'; then
+    echo "pre-commit: REFUSED: a path under .claude/ (or CLAUDE.local.md) is staged; that folder is private." >&2
+    echo "            unstage it: git restore --staged .claude" >&2
+    exit 1
+fi
+exec python3 -I "$top/tools/leak-scan.py" --staged

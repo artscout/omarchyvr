@@ -11,11 +11,17 @@ is the upstream base commit.
 | WayVR (VR desktop, gaze, screens, controllers) | `github.com/laughtt/wayvr` | `omarchyvr` | `cb3aa42` = tag `v26.8.0` of `github.com/wlx-team/wayvr` | 30 | GPL-3.0 |
 | NVIDIA open kernel modules | [nvidia/](nvidia/) (patch files) | | `open-gpu-kernel-modules` 610.57.04 | 3 patches | MIT / GPL-2.0 |
 
-Build:
+Both forks are git submodules of this repository (`forks/monado`, `forks/wayvr`, `branch = omarchyvr` in
+`.gitmodules`), so one clone brings in everything:
 
-    git clone -b omarchyvr git@github.com:laughtt/monado.git
-    git clone -b omarchyvr git@github.com:laughtt/wayvr.git
+    git clone --recursive https://github.com/laughtt/omarchyvr.git
+    # an existing clone:
+    git submodule update --init --recursive
+    # move the forks to the newest commit of their omarchyvr branch:
+    git submodule update --remote --recursive
 
-Monado needs the CMake options listed in `.claude/CLAUDE.md` (section 3) and the Rust libraries of this repository
+Build Monado from `forks/monado` and WayVR from `forks/wayvr`.
+
+Monado needs the CMake options listed in `ai/CLAUDE.md` (section 3) and the Rust libraries of this repository
 (`libpimax`, `rust/pimax-*`); the paths default to `$HOME/omarchyvr/...` and can be set with the `PIMAX_*_DIR` cache
 variables. To send something upstream, branch from the upstream base commit and cherry-pick the commits you want.

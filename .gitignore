@@ -1,11 +1,55 @@
-# Big / private / third-party data stays local only
-captures/
-captures2/
+# ---- private: never tracked, never pushed -------------------------------------------------------------------------
+# lab notes, data, memory, machine facts and local Claude Code settings
+.claude/
+CLAUDE.local.md
+*.local.md
+
+# private lab data that tools/lab-data.sh links into the tree for the lab-data tests (public-manifest.txt "-" lines)
+/analysis/headset-calibration*.xml
+/rust/pimax-cam/tests/fixtures/evening2.pxcam
+/rust/pimax-passthrough/tests/fixtures/*.png
+/rust/fixtures/if0_replies_coldstart.rec.gz
+/rust/pimax-eye/fixtures/*.usbpcap.gz
+/rust/pimax-eye/fixtures/*.golden.gz
+*.lab-public
+
+# captures, recordings, device data
+captures*/
 pimax-data/
+/calib/
 refs/
+tracking-recordings/
 *.pcap
 *.pcapng
+*.usbpcap
+*.pxcam
+*.dmp
 *.iso
+
+# ---- local env and secrets --------------------------------------------------------------------------------------
+.env
+.env.*
+ai.toml
+ai.toml.*
+*.key
+*.pem
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+.credentials.json
+*.secret
+*.secrets
+
+# ---- session logs ----------------------------------------------------------------------------------------------
+*.jsonl
+*.log
+!/rust/*/tests/fixtures/*.log
+start-argv.txt
+
+# ---- build output ----------------------------------------------------------------------------------------------
+/rust/target*/
+target/
+/libpimax/build/
 __pycache__/
 *.pyc
-.claude/worktrees/

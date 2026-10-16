@@ -2,7 +2,7 @@
 
 For any AI agent (Claude Code or other) that changes this repo or helps a user run the Pimax Dream Air on Linux,
 or that adds support for another headset, GPU, driver or compositor. Short on purpose: it points at the detailed
-docs and records what went wrong before. The rules in `.claude/CLAUDE.md` override anything here.
+docs and records what went wrong before. The rules in `ai/CLAUDE.md` override anything here.
 
 ---
 
@@ -10,7 +10,7 @@ docs and records what went wrong before. The rules in `.claude/CLAUDE.md` overri
 
 Read in this order. Each line says why.
 
-1. `.claude/CLAUDE.md`: the project rules (GUI first, definition of done, one whole build, safety). Binding.
+1. `ai/CLAUDE.md`: the project rules (GUI first, definition of done, one whole build, safety). Binding.
 2. `docs/LESSONS.md`: 33 numbered pitfalls with the rule each one became. Read all of it before touching the stack.
 3. `docs/INVENTORY.md`: every component, command, device path and past problem with its commit.
 4. `docs/ARCHITECTURE.md`: the layers (app, core, device modules, doctor) and the open-source design. Scope is the Pimax family.
@@ -112,7 +112,7 @@ Symptom, cause, fix and where it is recorded. "L n" is `docs/LESSONS.md` row n.
 | Headset black although the app is focused | Monado started without the launcher's compositor env | One env builder (`rust/pimax-tools/src/vr/config.rs`); never hand-roll it | L5 |
 | Pose printer or helper took the display | Monado shows the last main app | Only one main OpenXR app; helpers are `XR_EXTX_overlay` sessions (`POSECLI_OVERLAY=1`) | L4, f7cd5f4 |
 | 6DoF ran 3DoF only: `built without -DPIMAX_CAM=ON` | Build configured from scratch with `PIMAX_CAM=OFF`; string checks passed | Check `PIMAX_CAM:BOOL=ON` in `CMakeCache.txt`; rebuild with `cmake -DPIMAX_CAM=ON .` then ninja | L6, f568424 |
-| Build for the app: 6DoF blocked by preflight | build-rec was configured with the Pimax driver OFF (2026-10-15) | Copy the cache options from the live build, check the markers before switching `~/src/monado-eye/build` | .claude/CLAUDE.md section 3 |
+| Build for the app: 6DoF blocked by preflight | build-rec was configured with the Pimax driver OFF (2026-10-15) | Copy the cache options from the live build, check the markers before switching `~/src/monado-eye/build` | ai/CLAUDE.md section 3 |
 | Monado stutters or fails the priority request after a rebuild | Every relink drops `cap_sys_nice` | Fix/Play button (pkexec) or `setcap cap_sys_nice+ep` by the user; check with `getcap` | L7, f568424 |
 | Replacing the launcher made the next start fail | Installing the binary while desk mode runs | Install only when nothing runs | L8 |
 | Xid 31 from WayVR refuses every start for the boot | Per-app MMU fault the GPU recovers from | Xid 31 from wayvr = warning + "start anyway"; other Xids = red, reboot. Never run WayVR headless renders from the GUI | L9 |

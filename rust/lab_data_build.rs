@@ -3,6 +3,8 @@
 // private lab data that some tests replay: the factory calibration of the lab headset, the camera recording of the
 // room and the eye-chip USB transcript. The public tree (tools/export-public.sh) has synthetic stand-ins instead, and
 // the tests that need the real data are ignored there with `#[cfg_attr(not(lab_data), ignore = "...")]`.
+// In a working clone the private data lives in the untracked `.claude/lab/repo/` (or `$PIMAX_LAB_DATA`) and
+// `tools/lab-data.sh link` links it into these paths; without it the tests stay ignored.
 fn lab_data_cfg() {
     println!("cargo::rustc-check-cfg=cfg(lab_data)");
     let m = std::path::PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap_or_default());

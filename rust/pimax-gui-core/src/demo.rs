@@ -47,7 +47,7 @@ fn service_binary(slam: bool, eye: bool) -> Vec<u8> {
         b.extend_from_slice(b"PIMAX_SLAM\0slam: %lu frame sets, %lu IMU samples (%lu held from the tracker in %lu camera gaps)\0");
     }
     if eye {
-        // the full build (.claude/CLAUDE.md section 3): eye, controllers, anchor, the IMU gate
+        // the full build (ai/CLAUDE.md section 3): eye, controllers, anchor, the IMU gate
         b.extend_from_slice(b"PIMAX_EYE\0PIMAX_CTRL_TRACK\0origin_gate_mm\0PIMAX_ANCHOR\0PIMAX_CTRL_INHAND\0");
     }
     b
