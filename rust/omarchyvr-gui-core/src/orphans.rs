@@ -17,12 +17,12 @@ pub struct Orphan {
 pub fn find(live: &Live, facts: &Facts, job: Option<&str>) -> Vec<Orphan> {
     let mut v = Vec::new();
     if let Some(s) = &live.service {
-        let mode = if live.desk_clients_alive() { "Desk mode" } else { "VR mode" };
+        let mode = if live.desk_side() { "Desk mode" } else { "VR mode" };
         v.push(Orphan {
             text: format!("{mode} is still running (monado-service pid {}). It does not need the app; stop it when you are done.", s.pid),
             action: Some(Action::StopSession),
         });
-    } else if live.desk_clients_alive() {
+    } else if live.session_helpers_alive() {
         let names: Vec<&str> = live.session.iter().filter(|p| p.alive && p.name != "monado").map(|p| p.name).collect();
         v.push(Orphan {
             text: format!("Leftovers of a session run without Monado: {}.", names.join(", ")),

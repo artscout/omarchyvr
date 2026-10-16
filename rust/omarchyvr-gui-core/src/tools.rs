@@ -210,7 +210,7 @@ fn need_no_monado(a: &mut Availability, live: &Live) {
         a.block("A desk/VR session is running: this tool brings its own Monado (one at a time, LESSONS row 1).", Some(Action::StopSession));
     } else if !live.foreign_monado.is_empty() {
         a.block(format!("monado-service pid {:?} is running.", live.foreign_monado), Some(Action::StopForeignMonado));
-    } else if live.desk_clients_alive() {
+    } else if live.session_helpers_alive() {
         a.block("Leftovers of the last session still run.", Some(Action::StopSession));
     }
 }

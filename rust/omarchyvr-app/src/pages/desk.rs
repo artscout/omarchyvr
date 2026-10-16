@@ -93,7 +93,7 @@ pub fn status(ui: &mut Ui, app: &mut PimaxApp) {
     let live = app.core.live.clone();
     let p = pal(ui);
     {
-        if live.service.is_none() && !live.desk_clients_alive() {
+        if live.service.is_none() && !live.session_helpers_alive() {
             note(ui, "Nothing is running. The status of a session shows here (processes, 6DoF tracking, eye gaze, controllers).");
             if let Some(f) = live.foreign_monado.first() {
                 ui.colored_label(p.fail, format!("monado-service pid {f} runs outside the launcher session."));

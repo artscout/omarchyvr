@@ -1076,7 +1076,7 @@ impl AppCore {
     /// The launcher exits 2 whenever this boot's kernel log has any Xid line (also the WayVR ones), so its exit code is
     /// only reported; the next step checks that Monado is really gone.
     pub fn stop_job(&self) -> JobSpec {
-        let args = if self.live.desk_clients_alive() { launcher::desk_stop_args() } else { launcher::vr_stop_args(false) };
+        let args = if self.live.desk_side() { launcher::desk_stop_args() } else { launcher::vr_stop_args(false) };
         JobSpec {
             kind: JobKind::Stop,
             label: "Stop".into(),
@@ -2584,7 +2584,7 @@ pub fn desk_phase(job: Option<&JobKind>, live: &Live) -> DeskPhase {
                 DeskPhase::Running
             } else if !live.foreign_monado.is_empty() {
                 DeskPhase::Foreign
-            } else if live.desk_clients_alive() {
+            } else if live.session_helpers_alive() {
                 DeskPhase::Stopping
             } else {
                 DeskPhase::Idle

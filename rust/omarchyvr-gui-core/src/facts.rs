@@ -153,10 +153,25 @@ impl Live {
         self.proc(name).is_some_and(|p| p.alive)
     }
 
-    /// Any desk client alive (not Monado, and not the wrist readout of a VR session with `--perf`, which
-    /// `omarchyvr vr stop` stops).
+    /// Any real desk client alive: WayVR, the passthrough or a voice process. The camera broker, the controller
+    /// tracker and the wrist readout also run in a VR (Play) session, so they say nothing about the side.
     pub fn desk_clients_alive(&self) -> bool {
+        self.session.iter().any(|p| matches!(p.name, "wayvr" | "passthrough" | "voice" | "voicecap" | "voiceact" | "voicehud") && p.alive)
+    }
+
+    /// Any helper of a session alive besides Monado and the wrist readout (broker, controller tracker, desk clients):
+    /// what is left over when a session ended without Monado.
+    pub fn session_helpers_alive(&self) -> bool {
         self.session.iter().any(|p| !matches!(p.name, "monado" | "perf" | "perfwayvr") && p.alive)
+    }
+
+    /// Does the running session belong to the desk (Work)? The start record (`started_as`) decides; without one
+    /// (a session started outside the app) the desk clients do.
+    pub fn desk_side(&self) -> bool {
+        match self.started_as.as_deref() {
+            Some(k) => k == "desk",
+            None => self.desk_clients_alive(),
+        }
     }
 
     /// Anything of the stack running (Monado or a client).

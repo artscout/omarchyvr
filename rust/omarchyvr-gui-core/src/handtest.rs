@@ -195,8 +195,8 @@ impl AppCore {
         let file = dir.join(format!("hands-test-{stamp}.pxcam"));
         let launcher_bin = self.launcher_bin().display().to_string();
         let mut steps = Vec::new();
-        if self.live.service.is_some() || self.live.desk_clients_alive() {
-            let args = if self.live.desk_clients_alive() { launcher::desk_stop_args() } else { launcher::vr_stop_args(false) };
+        if self.live.service.is_some() || self.live.session_helpers_alive() {
+            let args = if self.live.desk_side() { launcher::desk_stop_args() } else { launcher::vr_stop_args(false) };
             steps.push(Step::RunAllowFail(Cmd::with_args(launcher_bin.clone(), args)));
         }
         steps.push(Step::WaitNoMonado(Duration::from_secs(45)));

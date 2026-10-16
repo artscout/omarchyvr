@@ -195,7 +195,7 @@ impl AppCore {
     /// Which side runs now: Some(true) = a game session (Play), Some(false) = the desk (Work), None = nothing of ours.
     pub fn running_side(&self) -> Option<bool> {
         match self.phase() {
-            DeskPhase::Running => Some(!self.live.desk_clients_alive()),
+            DeskPhase::Running => Some(!self.live.desk_side()),
             _ => None,
         }
     }
@@ -465,6 +465,41 @@ mod tests {
         for b in a.facts.builds.iter_mut().filter(|b: &&mut BuildInfo| b.service == svc) {
             b.sys_nice = Some(false);
         }
+    }
+
+    /// A running demo session where only the named helpers are alive.
+    fn session_with(tag: &str, started_as: Option<&str>, alive: &[&str]) -> AppCore {
+        let mut a = AppCore::demo(true, store(tag));
+        for p in a.live.session.iter_mut() {
+            p.alive = p.name == "monado" || alive.contains(&p.name);
+        }
+        a.live.started_as = started_as.map(String::from);
+        a
+    }
+
+    #[test]
+    fn vr_session_with_broker_and_ctrltrack_is_the_play_side() {
+        let a = session_with("vrside", Some("vr"), &["broker", "ctrltrack"]);
+        assert!(!a.live.desk_clients_alive());
+        assert_eq!(a.running_side(), Some(true));
+        let crate::job::Step::RunAllowFail(c) = &a.stop_job().steps[0] else { panic!() };
+        assert_eq!(c.args, crate::launcher::vr_stop_args(false));
+        // no start record (started outside the app): broker and ctrltrack still do not make it a desk
+        let a = session_with("vrside2", None, &["broker", "ctrltrack", "perf"]);
+        assert_eq!(a.running_side(), Some(true));
+    }
+
+    #[test]
+    fn desk_session_is_the_work_side() {
+        for rec in [Some("desk"), None] {
+            let a = session_with("deskside", rec, &["broker", "passthrough", "wayvr"]);
+            assert_eq!(a.running_side(), Some(false));
+            let crate::job::Step::RunAllowFail(c) = &a.stop_job().steps[0] else { panic!() };
+            assert_eq!(c.args, crate::launcher::desk_stop_args());
+        }
+        // the start record wins over the processes
+        let a = session_with("deskrec", Some("desk"), &["broker"]);
+        assert_eq!(a.running_side(), Some(false));
     }
 
     #[test]

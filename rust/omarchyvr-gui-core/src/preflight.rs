@@ -153,7 +153,7 @@ pub fn evaluate(
             format!("monado-service pid {} is running outside the launcher session", list.join(", ")),
             "A second Monado fails with 'monado-service is already running'. Stop it with `omarchyvr vr stop --grace 30 --all` (SIGINT, then SIGKILL only after 30 s; never pkill).",
             vec![Action::StopForeignMonado]);
-    } else if live.desk_clients_alive() {
+    } else if live.session_helpers_alive() {
         let names: Vec<&str> = live.session.iter().filter(|x| x.alive && x.name != "monado").map(|x| x.name).collect();
         o.add(Some(1), "previous-stop", Sev::Block, format!("Leftovers of the last session still run: {}", names.join(", ")),
             "`omarchyvr desk stop` stops them by pid (the camera broker last).", vec![Action::StopSession]);

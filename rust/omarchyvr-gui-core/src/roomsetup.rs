@@ -126,8 +126,8 @@ impl AppCore {
         let build = if self.room_session_ready(full) {
             self.live.service.as_ref().and_then(|s| s.build.clone()).unwrap_or_else(|| self.paths.desk_build().dir.clone())
         } else {
-            if self.live.service.is_some() || self.live.desk_clients_alive() || self.live.steamvr.is_some() {
-                let args = if self.live.desk_clients_alive() { launcher::desk_stop_args() } else { launcher::vr_stop_args(false) };
+            if self.live.service.is_some() || self.live.session_helpers_alive() || self.live.steamvr.is_some() {
+                let args = if self.live.desk_side() { launcher::desk_stop_args() } else { launcher::vr_stop_args(false) };
                 steps.push(Step::RunAllowFail(Cmd::with_args(launcher_bin.clone(), args)));
             }
             steps.push(Step::WaitNoMonado(Duration::from_secs(45)));

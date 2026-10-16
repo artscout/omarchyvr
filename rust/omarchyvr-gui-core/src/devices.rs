@@ -109,7 +109,7 @@ pub fn devices(f: &Facts, live: &Live, t: &DeskToggles, demo: bool) -> Devices {
                 name: model.into(),
                 state: Dev::Active,
                 label: format!("Streaming{hz}"),
-                detail: if live.desk_clients_alive() { "Desk mode".into() } else { "VR mode".into() },
+                detail: if live.desk_side() { "Desk mode".into() } else { "VR mode".into() },
                 battery: None,
             }
         }
