@@ -126,6 +126,23 @@ PY
 		mv -f "$VRP.ovr-new" "$VRP"
 	fi
 fi
+# SteamVR settings our app wrote (refresh rate, render scale, colour gain): the keys go, SteamVR's defaults return
+VRS="$HOME/.local/share/Steam/config/steamvr.vrsettings"
+OUR_KEYS="preferredRefreshRate supersampleManualOverride supersampleScale hmdDisplayColorGainR hmdDisplayColorGainG hmdDisplayColorGainB"
+if [[ -f $VRS ]] && python3 -I -c 'import json,sys; d=json.load(open(sys.argv[1])).get("steamvr",{}); sys.exit(0 if any(k in d for k in sys.argv[2].split()) else 1)' "$VRS" "$OUR_KEYS" 2>/dev/null; then
+	line REG edit "$VRS (remove the keys our app set: $OUR_KEYS)"
+	if [[ $DRY == 0 ]]; then
+		python3 -I - "$VRS" "$OUR_KEYS" <<'PY'
+import json, sys
+p, keys = sys.argv[1], sys.argv[2].split()
+d = json.load(open(p))
+for k in keys:
+    d.get("steamvr", {}).pop(k, None)
+open(p + ".ovr-new", "w").write(json.dumps(d, indent=3) + "\n")
+PY
+		mv -f "$VRS.ovr-new" "$VRS"
+	fi
+fi
 # OpenXR: a link to one of our Monado builds goes; SteamVR's own runtime link stays (SteamVR manages it)
 AR="$HOME/.config/openxr/1/active_runtime.json"
 if [[ -L $AR ]]; then
