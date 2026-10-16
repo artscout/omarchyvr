@@ -205,6 +205,27 @@ grep -q "^mkinitcpio -P" "$SHIM_LOG" && ! grep -q "^limine" "$SHIM_LOG" && ok "m
 "$SCRIPT" --rebuild --src-root "$T/r2" >"$T/out.txt" 2>&1
 [ ! -s "$SHIM_LOG" ] && ok "nothing rebuilt when the tree was already patched" || bad "rebuilt an already patched tree: $(cat "$SHIM_LOG")"
 
+# 11. --fallback: a failed patched build puts the stock source back and builds the stock module
+mk r3
+printf '#!/bin/bash\necho "dkms $*" >> "$SHIM_LOG"\n[ -e "$FAIL_FLAG" ] && [ "$1" = build ] && { rm -f "$FAIL_FLAG"; exit 1; }\nexit 0\n' >"$T/shims/dkms-fail"
+chmod +x "$T/shims/dkms-fail"
+: >"$SHIM_LOG"
+export FAIL_FLAG=$T/fail-once
+: >"$FAIL_FLAG"
+NVIDIA_PATCH_NO_SYSLOG=1 NVIDIA_PATCH_DKMS=$T/shims/dkms-fail "$SCRIPT" --rebuild --fallback --src-root "$T/r3" >"$T/out.txt" 2>&1 && bad "fallback run should exit 1" || ok "fallback run exits 1"
+cmp -s "$T/r3/nvidia-610.57.04/$F" "$PRISTINE_FILE" && ok "fallback: stock file back in place" || bad "fallback: file not restored"
+[ -z "$(find "$T/r3" -name '*.pimax-orig')" ] && ok "fallback: no backups left" || bad "fallback: backups left"
+[ "$(grep -c '^dkms build' "$SHIM_LOG")" = 2 ] && grep -q '^dkms install' "$SHIM_LOG" && ok "fallback: stock module built and installed" || bad "fallback dkms calls: $(cat "$SHIM_LOG")"
+grep -q "STOCK module is installed" "$T/out.txt" && ok "fallback banner" || bad "fallback banner"
+# --verify --fallback: dkms has no installed module and the tree is patched -> stock
+mk r4
+"$SCRIPT" --src-root "$T/r4" >/dev/null 2>&1
+printf '#!/bin/bash\necho "dkms $*" >> "$SHIM_LOG"\n[ "$1" = status ] && exit 0\nexit 0\n' >"$T/shims/dkms-none"
+chmod +x "$T/shims/dkms-none"
+: >"$SHIM_LOG"
+NVIDIA_SRC_ROOT=$T/r4 NVIDIA_PATCH_NO_SYSLOG=1 NVIDIA_PATCH_DKMS=$T/shims/dkms-none "$SCRIPT" --verify --fallback >"$T/out.txt" 2>&1 && bad "verify fallback should exit 1" || ok "verify fallback exits 1"
+cmp -s "$T/r4/nvidia-610.57.04/$F" "$PRISTINE_FILE" && ok "verify fallback: stock file back" || bad "verify fallback: not restored"
+
 echo
 [ "$fails" = 0 ] && echo "all checks passed" || echo "$fails check(s) FAILED"
 exit $((fails > 0))

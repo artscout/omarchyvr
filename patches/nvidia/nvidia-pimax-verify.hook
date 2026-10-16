@@ -11,4 +11,4 @@ Target = nvidia-open-dkms
 [Action]
 Description = Verifying that the built nvidia-modeset has the Pimax merged_head_sync parameter...
 When = PostTransaction
-Exec = /usr/local/lib/omarchyvr/nvidia-patch-reapply.sh --hook --verify
+Exec = /usr/local/lib/omarchyvr/nvidia-patch-reapply.sh --hook --verify --fallback

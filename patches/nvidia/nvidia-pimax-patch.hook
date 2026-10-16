@@ -6,7 +6,8 @@
 # 65-nvidia-pimax-patch.hook.
 #
 # Install (needs sudo; NOT done automatically) - one command, installs the script, all three patches and both hooks:
-#   sudo env L="$HOME/pimax-re/linux" bash -c 'install -Dm755 $L/nvidia-patch-reapply.sh /usr/local/lib/omarchyvr/nvidia-patch-reapply.sh && for p in nvidia-2h1or-viewport nvidia-2h1or-flip-fix nvidia-evo-makeroom-bounded-wait; do install -Dm644 $L/$p.patch /usr/local/lib/omarchyvr/$p.patch; done && install -Dm644 $L/nvidia-pimax-patch.hook /etc/pacman.d/hooks/65-nvidia-pimax-patch.hook && install -Dm644 $L/nvidia-pimax-verify.hook /etc/pacman.d/hooks/75-nvidia-pimax-verify.hook'
+#   (done by the omarchyvr installer's one root job: installer/omarchyvr-root.sh copies the script, the three patches and
+#   both hooks; see docs/INSTALL.md)
 # (The files are copied to a root-owned
 # directory because pacman runs the hook as root; do not point the hook at files in a home directory.)
 # The patches are applied in order: viewport, flip-fix, evo-makeroom-bounded-wait. 75-nvidia-pimax-verify.hook runs

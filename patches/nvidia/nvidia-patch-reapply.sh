@@ -18,6 +18,12 @@
 #   --rebuild     after patching: dkms build + install --force for the running kernel, then rebuild the boot image
 #                 (limine-mkinitcpio on Omarchy/Limine, else mkinitcpio -P), then --verify. The pacman hook does not
 #                 need this: the dkms and initramfs hooks run after it.
+#   --fallback    never leave the machine without a working module: if the patched dkms build fails (--rebuild),
+#                 or (with --verify, the pacman hook after the dkms build) dkms has no installed module for the
+#                 running kernel, put the stock files back (*.pimax-orig), build and install the stock module and
+#                 the boot image, and report it loudly (exit 1). The desktop keeps working; the headset shows the
+#                 left half in both eyes until the patches are fixed.
+#   --force-build with --rebuild: build even when every patch was already in (the module lacked the fix)
 #   --verify      only check the BUILT module: modinfo of nvidia-modeset must list the merged_head_sync parameter
 #                 (exit 1 and a banner if not). Run after the dkms build (the 75 pacman hook does this).
 #   --version V   only /usr/src/nvidia-V (default: every /usr/src/nvidia-<digits> tree)
@@ -29,7 +35,7 @@ set -euo pipefail
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 SRC_ROOT=${NVIDIA_SRC_ROOT:-/usr/src}
 PATCH_FILES=()
-CHECK=0 HOOK=0 REBUILD=0 VERIFY=0 ONLY_VERSION=""
+CHECK=0 HOOK=0 REBUILD=0 VERIFY=0 FALLBACK=0 FORCE_BUILD=0 ONLY_VERSION=""
 VIEWPORT_TARGET=src/nvidia-modeset/src/nvkms-evo.c
 FLIP_MARKER_FILE=kernel-open/nvidia-modeset/nvidia-modeset-linux.c # carries the merged_head_sync parameter
 BACKUP_SUFFIX=.pimax-orig
@@ -45,6 +51,8 @@ while [ $# -gt 0 ]; do
 	--hook) HOOK=1 ;;
 	--rebuild) REBUILD=1 ;;
 	--verify) VERIFY=1 ;;
+	--fallback) FALLBACK=1 ;;
+	--force-build) FORCE_BUILD=1 ;;
 	--version) ONLY_VERSION=${2:?--version needs a value}; shift ;;
 	--src-root) SRC_ROOT=${2:?--src-root needs a value}; shift ;;
 	--patch) PATCH_FILES+=("${2:?--patch needs a value}"); shift ;;
@@ -67,7 +75,7 @@ banner() { # banner WHAT REASON
 		echo "# The nvidia module that dkms builds next is NOT fully patched: the Dream Air will show the"
 		echo "# left half in both eyes and/or hang the display engine (Xid / \"Idling display engine\")."
 		echo "# Check whether NVIDIA fixed this upstream (then nothing is needed) or regenerate the patches in"
-		echo "# ~/pimax-re/linux/ for the new source."
+		echo "# patches/nvidia/ of omarchyvr for the new source."
 		echo "################################################################################"
 	} >&2
 	if [ "$HOOK" = 1 ] && [ -z "${NVIDIA_PATCH_NO_SYSLOG:-}" ] && command -v logger >/dev/null 2>&1; then
@@ -91,7 +99,37 @@ verify_module() {
 	fi
 }
 
+# restore_stock DIR: the *.pimax-orig files back in place (the stock source), then dkms build + install for the running
+# kernel and the boot image. Used by --fallback only.
+restore_stock() {
+	local d=$1 ver o kver
+	ver=${d##*/nvidia-}
+	kver=$(uname -r)
+	while IFS= read -r o; do
+		mv -f -- "$o" "${o%"$BACKUP_SUFFIX"}"
+	done < <(find "$d" -name "*$BACKUP_SUFFIX" -type f)
+	say "fallback: stock source restored in $d; building the stock module for $kver"
+	"$DKMS" build "nvidia/$ver" -k "$kver" --force && "$DKMS" install "nvidia/$ver" -k "$kver" --force || {
+		banner "the STOCK nvidia module could not be built either" "dkms build/install nvidia/$ver failed"
+		return 1
+	}
+	if command -v "$LIMINE_MKINITCPIO" >/dev/null 2>&1; then "$LIMINE_MKINITCPIO"; else "$MKINITCPIO" -P; fi
+	banner "the patched nvidia module failed to build: the STOCK module is installed instead" "the desktop works; the headset needs the patches (see the pacman log)"
+}
+module_installed() { "$DKMS" status "nvidia/$1" -k "$(uname -r)" 2>/dev/null | grep -q 'installed'; }
+
 if [ "$VERIFY" = 1 ]; then
+	if [ "$FALLBACK" = 1 ]; then
+		for d in "$SRC_ROOT"/nvidia-[0-9]*; do
+			[ -d "$d" ] || continue
+			case $d in *.orig | *.pimax-orig) continue ;; esac
+			v=${d##*/nvidia-}
+			if ! module_installed "$v" && [ -n "$(find "$d" -name "*$BACKUP_SUFFIX" -type f -print -quit)" ]; then
+				restore_stock "$d" || true
+				exit 1
+			fi
+		done
+	fi
 	verify_module
 	exit $?
 fi
@@ -267,12 +305,21 @@ for d in "${trees[@]}"; do
 	patched_now+=("$d")
 done
 
+if [ "$REBUILD" = 1 ] && [ "$FORCE_BUILD" = 1 ] && [ "${#patched_now[@]}" -eq 0 ]; then
+	patched_now=("${trees[@]}")
+fi
 if [ "$REBUILD" = 1 ] && [ "${#patched_now[@]}" -gt 0 ] && [ "$CHECK" = 0 ]; then
 	for d in "${patched_now[@]}"; do
 		ver=${d##*/nvidia-}
 		say "dkms build + install nvidia/$ver for $(uname -r)"
-		"$DKMS" build "nvidia/$ver" -k "$(uname -r)" --force
-		"$DKMS" install "nvidia/$ver" -k "$(uname -r)" --force
+		if ! { "$DKMS" build "nvidia/$ver" -k "$(uname -r)" --force && "$DKMS" install "nvidia/$ver" -k "$(uname -r)" --force; }; then
+			if [ "$FALLBACK" = 1 ]; then
+				restore_stock "$d" || true
+				exit 1
+			fi
+			banner "dkms could not build the patched nvidia module" "see the dkms output above"
+			exit 1
+		fi
 	done
 	if command -v "$LIMINE_MKINITCPIO" >/dev/null 2>&1; then
 		# Omarchy/Limine boots a UKI that contains the nvidia modules; /etc/mkinitcpio.d has no presets for mkinitcpio -P
