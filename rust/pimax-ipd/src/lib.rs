@@ -2,8 +2,8 @@
 //! each step on a [`Sink`] (the headset panel, or PNG files in `--simulate`), printing the same to the terminal.
 
 use pimax_eye::ipd::{self, Measurement};
-use pimax_hud::screen::{Line, Screen, CYAN, GREEN, RED, WHITE, YELLOW};
-use pimax_hud::Sink;
+use omarchyvr_hud::screen::{Line, Screen, CYAN, GREEN, RED, WHITE, YELLOW};
+use omarchyvr_hud::Sink;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
@@ -34,7 +34,7 @@ pub struct Plan {
     pub step: Duration,
     /// How long the result screen stays.
     pub hold: Duration,
-    /// Write ~/.config/pimax/ipd.env after a verified apply.
+    /// Write ~/.config/omarchyvr/ipd.env after a verified apply.
     pub write_env: bool,
 }
 
@@ -232,7 +232,7 @@ pub fn run(
     (ui.say)(&format!("Monado render IPD (read once at session start): {line}"));
     if ok && plan.write_env {
         if let Some(home) = std::env::var_os("HOME") {
-            let p = PathBuf::from(home).join(".config/pimax/ipd.env");
+            let p = PathBuf::from(home).join(".config/omarchyvr/ipd.env");
             if std::fs::create_dir_all(p.parent().unwrap_or(std::path::Path::new("."))).is_ok()
                 && std::fs::write(&p, format!("{line}\n")).is_ok()
             {

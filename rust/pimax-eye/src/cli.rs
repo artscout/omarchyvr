@@ -51,7 +51,7 @@ pimax-eye: Tobii EyeChip (2104:0561) client for the Pimax Dream Air
   pimax-eye ipd --read | --set MM
         no eye tracker: --read prints the live lens IPD (headset info report); --set sends the captured set-IPD
         command once (clamped to 58-72 mm), refused while monado-service runs, waits for the lens to arrive (about
-        1.8 mm/s) and writes ~/.config/pimax/ipd.env. This is what the app's Optics page Apply uses.
+        1.8 mm/s) and writes ~/.config/omarchyvr/ipd.env. This is what the app's Optics page Apply uses.
   pimax-eye ipd [--seconds S] [--apply [--mm X] | --watch] [--usb-device PATH]
         measure the IPD for S s (default 5) from chip field 34 and the distance between the two gaze origins
         (samples >2.5 mm from the per-eye median origin dropped) and print both medians, the sample counts and the
@@ -63,7 +63,7 @@ pimax-eye: Tobii EyeChip (2104:0561) client for the Pimax Dream Air
         --watch: live full-screen view (10 Hz) of eyes IPD (field 34 + gated origin distance, last 3 s) vs the live
         lens IPD on a 58-72 mm scale with the difference (green <1, yellow 1-3, red >3 mm) and per-eye good %.
         Keys: a apply measured (same checks as --apply), + / - target +-0.5 mm sent after a 1 s pause, q quit; at
-        most one motor command per second; ~/.config/pimax/ipd.env is written on quit if a value was applied.
+        most one motor command per second; ~/.config/omarchyvr/ipd.env is written on quit if a value was applied.
   pimax-eye power-on [--wait S]
         if the headset (34a4:0044) is enumerated and the EyeChip is not, send the captured eye-module enable
         `58 05 3c 05 00 01` once on the headset command interface (what Windows sends; the module powers up and
@@ -78,7 +78,7 @@ pimax-eye: Tobii EyeChip (2104:0561) client for the Pimax Dream Air
         --stop              send the captured unsubscribe at the end (only after a replay by this run)
         --dry-run           print the plan and exit without opening the device
 
-Run device commands under the headset lock:  flock -w 3600 /tmp/pimax-headset.lock pimax-eye stream ...
+Run device commands under the headset lock:  flock -w 3600 /tmp/omarchyvr-headset.lock pimax-eye stream ...
 ";
 
 struct Args {
@@ -796,7 +796,7 @@ fn cmd_watch(a: &mut Args, out: &mut dyn Write) -> Result<i32, Fail> {
 /// `pimax-eye ipd --read` / `--set MM`: the lens IPD of the headset without the eye tracker (what the app's Optics
 /// page uses). `--read` prints the live lens IPD from the info report. `--set MM` sends the captured set-IPD command
 /// once (clamped to 58-72 mm), refuses while a VR session runs (monado-service), polls the lens until it arrives (the
-/// motor moves about 1.8 mm/s) and writes ~/.config/pimax/ipd.env. Exit 0 ok, 2 refused/failed, 3 lens did not arrive.
+/// motor moves about 1.8 mm/s) and writes ~/.config/omarchyvr/ipd.env. Exit 0 ok, 2 refused/failed, 3 lens did not arrive.
 fn cmd_ipd_headless(set: Option<f32>, out: &mut dyn Write) -> Result<i32, Fail> {
     use crate::ipd;
     let (hc, dev) = (Path::new("/sys/class/hidraw"), Path::new("/dev"));
@@ -855,7 +855,7 @@ fn cmd_ipd_headless(set: Option<f32>, out: &mut dyn Write) -> Result<i32, Fail> 
     }
     if ok {
         if let Some(home) = std::env::var_os("HOME") {
-            let p = PathBuf::from(home).join(".config/pimax/ipd.env");
+            let p = PathBuf::from(home).join(".config/omarchyvr/ipd.env");
             if std::fs::create_dir_all(p.parent().unwrap_or(Path::new("."))).is_ok() && std::fs::write(&p, format!("{}\n", ipd::monado_line(mm))).is_ok() {
                 writeln!(out, "wrote {} (the next start renders with it)", p.display())?;
             }
@@ -991,7 +991,7 @@ fn cmd_ipd(a: &mut Args, out: &mut dyn Write) -> Result<i32, Fail> {
     writeln!(out, "Monado render IPD (read once at session start): {line}")?;
     if ok {
         if let Some(home) = std::env::var_os("HOME") {
-            let p = PathBuf::from(home).join(".config/pimax/ipd.env");
+            let p = PathBuf::from(home).join(".config/omarchyvr/ipd.env");
             if std::fs::create_dir_all(p.parent().unwrap_or(Path::new("."))).is_ok() && std::fs::write(&p, format!("{line}\n")).is_ok() {
                 writeln!(out, "wrote {} (source it before monado-service)", p.display())?;
             }

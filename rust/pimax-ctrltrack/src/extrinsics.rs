@@ -1,6 +1,6 @@
 //! Camera extrinsic corrections fitted on controller poses (`track --fit-extrinsics --save-extrinsics P`).
 //! Stores the full corrected `cam_from_body` of each refitted camera; `live`/`track` load them with `--extrinsics`
-//! (default `~/.config/pimax/ctrl-cam-extrinsics.json` when it exists).
+//! (default `~/.config/omarchyvr/ctrl-cam-extrinsics.json` when it exists).
 
 use pimax_cam::geom::Pose;
 use pimax_cam::json;
@@ -10,7 +10,7 @@ pub fn default_path() -> PathBuf {
     let h = std::env::var_os("HOME")
         .map(PathBuf::from)
         .unwrap_or_default();
-    h.join(".config/pimax/ctrl-cam-extrinsics.json")
+    h.join(".config/omarchyvr/ctrl-cam-extrinsics.json")
 }
 
 /// `cams`: (camera id, cam_from_body).

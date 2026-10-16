@@ -25,7 +25,7 @@
 //! velocity from the optical rotation, `y = log(R_a^T R_b) / dt` (aim axes, rad/s), is regressed on the mean raw gyro
 //! over the same interval: `y = C x + d` (least squares, 12 unknowns), for several camera-to-IMU time offsets; the
 //! best offset wins. `C` = scale * axis mapping (rad/s per LSB, raw axes -> aim axes), `bias = -C^-1 d` (LSB). The fit
-//! runs online and is saved to `~/.config/pimax/ctrl-imu.json` per hand; a saved fit is loaded at start, else the
+//! runs online and is saved to `~/.config/omarchyvr/ctrl-imu.json` per hand; a saved fit is loaded at start, else the
 //! built-in one ([`default_calib`]), so the gyro is used from the first second (`PIMAX_CTRL_TRACK_IMU=0` turns it
 //! off). Masked-replay numbers: `pimax-ctrltrack occlusion`, analysis/linux-recordings-20261016.md.
 
@@ -459,7 +459,7 @@ impl Fit {
     }
 }
 
-/// Built-in calibration (raw LSB -> aim rad/s) used when `~/.config/pimax/ctrl-imu.json` has no entry for a hand,
+/// Built-in calibration (raw LSB -> aim rad/s) used when `~/.config/omarchyvr/ctrl-imu.json` has no entry for a hand,
 /// so the gyro is on from the first second on a new install. Fitted on optical poses (online fit of the 2026-10-14/15
 /// sessions, checked on the 2026-10-16 takes: same scale 0.122 deg/s per LSB, same axes, misalignment 8-11 deg and
 /// time offset 0-8 ms in every log, analysis/linux-recordings-20261016.md). The bias is re-learned at rest.
@@ -504,7 +504,7 @@ pub fn calib_path() -> PathBuf {
     let h = std::env::var_os("HOME")
         .map(PathBuf::from)
         .unwrap_or_default();
-    h.join(".config/pimax/ctrl-imu.json")
+    h.join(".config/omarchyvr/ctrl-imu.json")
 }
 
 fn hand_name(hand: usize) -> &'static str {
@@ -858,7 +858,7 @@ struct Log {
     w: std::io::BufWriter<std::fs::File>,
     span_ns: u64,
     end: Option<u64>,
-    /// After `span_ns` the log pauses; it writes again while `$XDG_RUNTIME_DIR/pimax-imu-log.on` exists (a tracking
+    /// After `span_ns` the log pauses; it writes again while `$XDG_RUNTIME_DIR/omarchyvr-imu-log.on` exists (a tracking
     /// take is being recorded). (last check time, flag present)
     flag: (u64, bool),
 }
@@ -934,7 +934,7 @@ impl Fuser {
             if t.saturating_sub(l.flag.0) > 1_000_000_000 {
                 let on = std::env::var_os("XDG_RUNTIME_DIR")
                     .filter(|d| !d.is_empty())
-                    .is_some_and(|d| Path::new(&d).join("pimax-imu-log.on").exists());
+                    .is_some_and(|d| Path::new(&d).join("omarchyvr-imu-log.on").exists());
                 if l.flag.1 && !on {
                     let _ = l.w.flush();
                 }

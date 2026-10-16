@@ -1,0 +1,48 @@
+# omarchyvr-voice aibench: what the user said (after the wake word "Max"), as Parakeet heard it, and what it meant.
+# Columns (tab separated): expected intent id ("none" = do nothing), heard words, optional slots (k=v,k=v).
+# Rows marked "live" are real transcripts from /tmp/omarchyvr-session/voiceact.log (2026-10-15).
+win.list	liz windows	# live
+win.list	leaks list windows	# live
+vr.preset.work3	open 2 more screens	# live
+none	can you hear me	# live
+none	ma max max	# live
+vr.preset.work3	war three	# live ("Time Max War Three")
+vr.preset.cinema	uh cinema mode	# live
+omarchy.focus.app	switch to terminal	app=terminal	# live
+vr.preset.cinema	cinema mod
+vr.preset.cinema	i want to watch a movie
+vr.preset.cinema	sinema mode please
+vr.preset.work1	just one screen please
+vr.preset.work1	work won
+vr.preset.work3	walk mode tree
+vr.preset.work3	give me three screens
+win.list	what windows do i have open
+win.list	list the windoes
+win.ws.goto	go to work space for	n=4
+win.ws.goto	switch to desktop two	n=2
+win.ws.next	next work space
+win.tab.next	next tap
+omarchy.volume.up	volume app
+omarchy.volume.up	make it louder
+omarchy.volume.down	it's too loud
+omarchy.media.next	skip this song
+omarchy.media.play_pause	pause the music
+omarchy.screenshot	take a screen shot
+omarchy.screenshot	grab the screen
+vr.passthrough.on	show me the room
+vr.passthrough.off	hide the room
+vr.passthrough.dim	dim the lights in the room
+vr.screens.reset	where did my screens go
+vr.recenter	re center the view
+omarchy.window.fullscreen	make this full screen
+omarchy.launch.terminal	open a new terminal window
+omarchy.launch.browser	open the web browser
+omarchy.info.battery	how much battery is left
+voice.captions.off	turn the subtitles off
+voice.debug.on	the bug on
+voice.undo	undo that
+omarchy.reminder	remind me in ten minutes to stretch	minutes=10
+none	hello
+none	testing testing
+none	um i was saying that to my friend
+none	what's the weather like in paris

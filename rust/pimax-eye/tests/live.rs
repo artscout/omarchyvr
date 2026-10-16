@@ -1,7 +1,7 @@
 //! Hardware tests against the real EyeChip. All `#[ignore]`d. Run them under the headset lock:
 //!
 //! ```text
-//! flock -w 3600 /tmp/pimax-headset.lock \
+//! flock -w 3600 /tmp/omarchyvr-headset.lock \
 //!   cargo test -p pimax-eye --test live -- --ignored --test-threads=1 --nocapture
 //! # full replay (needs a capture whose session start is complete, see analysis/overnight/eye.md):
 //! PIMAX_EYE_CAPTURE=/path/to/full-snaplen.pcap flock ... cargo test ... replay_from_capture
@@ -13,7 +13,7 @@ use pimax_eye::usbfs::{find_eye_chips, UsbFs};
 use std::time::Duration;
 
 #[test]
-#[ignore = "needs the headset; run under /tmp/pimax-headset.lock"]
+#[ignore = "needs the headset; run under /tmp/omarchyvr-headset.lock"]
 fn eye_chip_is_enumerated_and_the_node_can_be_opened() {
     let chips = find_eye_chips();
     assert_eq!(
@@ -44,7 +44,7 @@ fn eye_chip_is_enumerated_and_the_node_can_be_opened() {
 }
 
 #[test]
-#[ignore = "needs the headset; run under /tmp/pimax-headset.lock"]
+#[ignore = "needs the headset; run under /tmp/omarchyvr-headset.lock"]
 fn passive_read_sends_nothing_and_decodes_whatever_arrives() {
     let chip = find_eye_chips().remove(0);
     let mut dev = UsbFs::open(&chip.devnode).expect("open");

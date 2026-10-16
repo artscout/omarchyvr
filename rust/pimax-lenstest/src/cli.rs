@@ -32,11 +32,11 @@ run options:
                         submitting it as a head-locked quad layer (default: quad; capture mode has no text at all)
   --square-size DEG     size of the moving square (default 5)
   --square-dir D        right|left|up|down (default right); stick up/down cycles it
-  --lens-conf FILE      lens.conf to report (default: PIMAX_LENS_CONF or ~/.config/pimax/lens.conf)
+  --lens-conf FILE      lens.conf to report (default: PIMAX_LENS_CONF or ~/.config/omarchyvr/lens.conf)
   --timing              print the per-frame timing (wait, locate, CPU render, upload/GPU draw, end) every 2 s (or PIMAX_LENSTEST_TIMING=1)
   --swim-cpu            render the swim pattern on the CPU (default: GPU shader; the CPU path is the reference and the fallback)
   --gaze-points N       gaze pattern: accuracy grid of 13 or 17 dots (default 17)
-  --gaze-out PATH       gaze pattern: results JSON file (.json) or directory (default ~/.local/share/pimax/eye-accuracy)
+  --gaze-out PATH       gaze pattern: results JSON file (.json) or directory (default ~/.local/share/omarchyvr/eye-accuracy)
   --res-div N           render at 1/N of the recommended resolution (faster, for tests)
   --capture DIR         capture mode: show every pattern and step, save the compositor output as PNG into DIR
                         (monado-service needs XRT_COMPOSITOR_DUMP_DIR and XRT_COMPOSITOR_DUMP_TRIGGER set)

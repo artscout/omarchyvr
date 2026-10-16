@@ -12,7 +12,7 @@ path = "src/lib.rs"
 
 [dependencies]
 # Host abstraction and the existing checks (wrapped, not moved yet; see docs/ARCHITECTURE.md "Migration").
-pimax-doctor = { path = "../pimax-doctor" }
+omarchyvr-doctor = { path = "../omarchyvr-doctor" }
 
 [dev-dependencies]
 pimax-proto = { workspace = true, features = ["std"] }

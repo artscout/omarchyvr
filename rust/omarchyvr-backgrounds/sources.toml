@@ -1,0 +1,288 @@
+# The curated list of VR backgrounds (docs/BACKGROUNDS.md has the licence table).
+# provider = polyhaven: ref is the asset id (CC0); commons: ref is the file name on Wikimedia Commons (licence and credit
+# are read from the Commons API and must be CC0 / public domain / CC BY / CC BY-SA); url: a direct link whose terms are written here.
+# Only equirectangular 2:1 panoramas. Images never go in git: they are downloaded to ~/.local/share/omarchyvr/backgrounds.
+
+[[image]]
+provider = "polyhaven"
+theme = "flowers"
+ref = "wildflower_field"
+
+[[image]]
+provider = "polyhaven"
+theme = "flowers"
+ref = "sunflowers"
+
+[[image]]
+provider = "polyhaven"
+theme = "flowers"
+ref = "flower_hillside"
+
+[[image]]
+provider = "polyhaven"
+theme = "ocean"
+ref = "blouberg_sunrise_1"
+
+[[image]]
+provider = "polyhaven"
+theme = "ocean"
+ref = "blouberg_sunrise_2"
+
+[[image]]
+provider = "polyhaven"
+theme = "ocean"
+ref = "fish_hoek_beach"
+
+[[image]]
+provider = "polyhaven"
+theme = "ocean"
+ref = "blue_lagoon"
+
+[[image]]
+provider = "polyhaven"
+theme = "ocean"
+ref = "the_sky_is_on_fire"
+
+[[image]]
+provider = "polyhaven"
+theme = "ocean"
+ref = "white_cliff_top"
+
+[[image]]
+provider = "polyhaven"
+theme = "sunset"
+ref = "belfast_sunset"
+
+[[image]]
+provider = "polyhaven"
+theme = "sunset"
+ref = "bambanani_sunset"
+
+[[image]]
+provider = "polyhaven"
+theme = "sunset"
+ref = "venice_sunset"
+
+[[image]]
+provider = "polyhaven"
+theme = "sunset"
+ref = "camdeboo_road"
+
+[[image]]
+provider = "polyhaven"
+theme = "mountains"
+ref = "alps_field"
+
+[[image]]
+provider = "polyhaven"
+theme = "mountains"
+ref = "table_mountain_1_puresky"
+
+[[image]]
+provider = "polyhaven"
+theme = "mountains"
+ref = "bergen"
+
+[[image]]
+provider = "polyhaven"
+theme = "mountains"
+ref = "autumn_hill_view"
+
+[[image]]
+provider = "polyhaven"
+theme = "mountains"
+ref = "cayley_lookout"
+
+[[image]]
+provider = "polyhaven"
+theme = "forest"
+ref = "autumn_forest_04"
+
+[[image]]
+provider = "polyhaven"
+theme = "forest"
+ref = "bamboo_tunnel"
+
+[[image]]
+provider = "polyhaven"
+theme = "forest"
+ref = "forest_grove"
+
+[[image]]
+provider = "polyhaven"
+theme = "forest"
+ref = "birchwood"
+
+[[image]]
+provider = "polyhaven"
+theme = "forest"
+ref = "crystal_falls"
+
+[[image]]
+provider = "polyhaven"
+theme = "desert"
+ref = "goegap"
+
+[[image]]
+provider = "polyhaven"
+theme = "desert"
+ref = "klippad_sunrise_2"
+
+[[image]]
+provider = "polyhaven"
+theme = "desert"
+ref = "aarfontein_sunrise"
+
+[[image]]
+provider = "polyhaven"
+theme = "night"
+ref = "kloppenheim_02_puresky"
+
+[[image]]
+provider = "polyhaven"
+theme = "night"
+ref = "rogland_moonlit_night"
+
+[[image]]
+provider = "polyhaven"
+theme = "night"
+ref = "clarens_night_02"
+
+[[image]]
+provider = "polyhaven"
+theme = "city"
+ref = "donkin_reserve"
+
+[[image]]
+provider = "polyhaven"
+theme = "city"
+ref = "shanghai_bund"
+
+[[image]]
+provider = "polyhaven"
+theme = "city"
+ref = "golden_bay"
+
+[[image]]
+provider = "polyhaven"
+theme = "city"
+ref = "cobblestone_street_night"
+
+[[image]]
+provider = "commons"
+theme = "flowers"
+ref = "Dutch flower fields (360 degree aerial pano).jpg"
+slug = "dutch_flower_fields"
+title = "Dutch flower fields"
+
+[[image]]
+provider = "commons"
+theme = "flowers"
+ref = "Field of Rape in Full Flower – 360° Drone Panorama.jpg"
+slug = "rapeseed_field"
+title = "Rapeseed field in bloom"
+
+[[image]]
+provider = "commons"
+theme = "flowers"
+ref = "Sunflowers McKee-Beshers WMA 360 pano 2025-07-25 09-13-17 1.jpg"
+slug = "sunflower_meadow"
+title = "Sunflower meadow"
+
+[[image]]
+provider = "commons"
+theme = "universe"
+ref = "Gaia Visible Light All Sky (AllSky-18 Optical330-1100nm-Gaia-DR3-StarMap).jpg"
+slug = "gaia_all_sky"
+title = "Gaia all-sky star map"
+
+[[image]]
+provider = "commons"
+theme = "universe"
+ref = "The colour of the sky from Gaia’s Early Data Release 3 ESA22358060.jpg"
+slug = "gaia_colour_sky"
+title = "Gaia colour of the sky"
+
+[[image]]
+provider = "commons"
+theme = "universe"
+ref = "Milky Way at Chajnantor (uhd-9428-panorama-eq-extended).jpg"
+slug = "milky_way_chajnantor"
+title = "Milky Way at Chajnantor"
+
+[[image]]
+provider = "commons"
+theme = "universe"
+ref = "Milky Way at the Residencia (uhd-9180-panorama-eq-extended).jpg"
+slug = "milky_way_paranal"
+title = "Milky Way at Paranal"
+
+[[image]]
+provider = "commons"
+theme = "universe"
+ref = "Rubin, the Moon, and the Milky Way (360-Panorama) (iotw2546b).jpg"
+slug = "milky_way_rubin"
+title = "Moon and Milky Way over Rubin"
+
+[[image]]
+provider = "commons"
+theme = "universe"
+ref = "Milky Way Above Cerro Pachón 360 Panorama (20220408PachonFPano35mmRubinAuxi MW EQ-001-CC-002).jpg"
+slug = "milky_way_pachon"
+title = "Milky Way over Cerro Pachon"
+
+[[image]]
+provider = "commons"
+theme = "hawaii"
+ref = "Maunakea Sunset 360 Panorama (Gemini North 360 Sunset4-CC).jpg"
+slug = "maunakea_sunset_1"
+title = "Maunakea sunset"
+
+[[image]]
+provider = "commons"
+theme = "hawaii"
+ref = "Gemini North Sunset 360 Panorama (2022 04 01 Gemini North 360 Sunset2-CC).jpg"
+slug = "maunakea_sunset_2"
+title = "Maunakea sunset above the clouds"
+
+[[image]]
+provider = "commons"
+theme = "hawaii"
+ref = "Gemini North Sunset 360 Panorama (2022 04 01 Gemini North 360 Sunset3-CC).jpg"
+slug = "maunakea_sunset_3"
+title = "Maunakea dusk"
+
+[[image]]
+provider = "commons"
+theme = "hawaii"
+ref = "Milky Way Over Maunakea 360 Panorama (MaunaKea GeminiNorth MW360Pano-CC).jpg"
+slug = "maunakea_milky_way"
+title = "Milky Way over Maunakea"
+
+[[image]]
+provider = "commons"
+theme = "hawaii"
+ref = "Gemini North and the Milky Way 360 Panorama (MaunaKea GeminiNorth MW360Pano-2-CC).jpg"
+slug = "maunakea_milky_way_2"
+title = "Gemini North and the Milky Way"
+
+[[image]]
+provider = "commons"
+theme = "hawaii"
+ref = "Gemini North Under a Blanket of Airglow 360 Panorama (iotw2509b).jpg"
+slug = "maunakea_airglow"
+title = "Maunakea airglow"
+
+[[image]]
+provider = "commons"
+theme = "underwater"
+ref = "Heron Bommie SVII.jpg"
+slug = "heron_bommie"
+title = "Heron Island reef"
+
+[[image]]
+provider = "commons"
+theme = "underwater"
+ref = "Lady Elliot Island SVII.jpg"
+slug = "lady_elliot_reef"
+title = "Lady Elliot Island reef"

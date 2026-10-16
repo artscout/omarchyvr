@@ -1,4 +1,4 @@
-//! Bridge: run all of pimax-doctor's checks and map them to findings. Doctor fixes become catalogue `FixRef`s where
+//! Bridge: run all of omarchyvr-doctor's checks and map them to findings. Doctor fixes become catalogue `FixRef`s where
 //! a catalogue entry exists; other doctor fixes stay as text in `detail` until they are migrated (ARCHITECTURE.md
 //! "Migration").
 
@@ -43,7 +43,7 @@ impl Check for DoctorBridge {
         Area::Drivers
     }
     fn run(&self, cx: &Ctx) -> Vec<Finding> {
-        let r = pimax_doctor::run_checks(cx.host, cx.opts);
+        let r = omarchyvr_doctor::run_checks(cx.host, cx.opts);
         r.checks
             .iter()
             .map(|c| {

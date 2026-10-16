@@ -473,7 +473,7 @@ mod tests {
     use crate::frame::FRAME_BYTES;
 
     fn tmp(name: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("pimax-cam-test-{}-{name}", std::process::id()));
+        let d = std::env::temp_dir().join(format!("omarchyvr-cam-test-{}-{name}", std::process::id()));
         let _ = std::fs::remove_file(&d);
         d
     }

@@ -1,0 +1,6 @@
+# 5.2 the local AI server crashes (no unit): L2 through omarchyvr-ai serve after the leaf backoff; voice.act stays up.
+start desk voice ai
+at 10 exit ai.server code=1
+expect 11 health voice.act ok
+expect 13 ran start ai.server
+expect 30 overall ok

@@ -24,11 +24,11 @@ pub fn write_with_backup(path: &Path, text: &str) -> Result<Option<PathBuf>, Str
     pimax_lenstest::gaze::write_with_backup(path, text, &stamp(unix_now()))
 }
 
-/// `~/.local/share/pimax/eye-calibration/` (or `.` without `$HOME`).
+/// `~/.local/share/omarchyvr/eye-calibration/` (or `.` without `$HOME`).
 pub fn results_dir() -> PathBuf {
     std::env::var_os("HOME")
         .map_or_else(|| PathBuf::from("."), PathBuf::from)
-        .join(".local/share/pimax/eye-calibration")
+        .join(".local/share/omarchyvr/eye-calibration")
 }
 
 /// The summary in three forms.

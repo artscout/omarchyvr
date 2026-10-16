@@ -1,5 +1,5 @@
-//! Example checks: two ported from pimax-doctor (`setcap`, `merged-head-sync`), one new (`cpu.governor`), and a
-//! bridge that runs all of pimax-doctor's checks and maps them to findings until they are migrated one by one.
+//! Example checks: two ported from omarchyvr-doctor (`setcap`, `merged-head-sync`), one new (`cpu.governor`), and a
+//! bridge that runs all of omarchyvr-doctor's checks and maps them to findings until they are migrated one by one.
 
 pub mod cpu;
 pub mod doctor;

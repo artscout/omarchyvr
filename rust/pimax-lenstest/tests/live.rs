@@ -4,7 +4,7 @@
 //! ```text
 //! # null compositor: no display at all (use analysis/tools/run_lens_test.sh for direct mode). `flock -o`: the sleep
 //! # that feeds monado-service must not inherit the lock descriptor, and it is killed by PID at the end.
-//! flock -o -w 3600 /tmp/pimax-headset.lock bash -c '
+//! flock -o -w 3600 /tmp/omarchyvr-headset.lock bash -c '
 //!   export XR_RUNTIME_JSON=$HOME/src/monado/build/openxr_monado-dev.json IPC_IGNORE_VERSION=1
 //!   export XRT_COMPOSITOR_NULL=1 PIMAX_NO_DEVICE=1
 //!   sleep 120 | $HOME/src/monado/build/src/xrt/targets/service/monado-service >/tmp/m.log 2>&1 &

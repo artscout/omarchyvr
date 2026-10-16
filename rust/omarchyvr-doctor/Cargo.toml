@@ -1,0 +1,19 @@
+[package]
+name = "omarchyvr-doctor"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Read-only health checks for the Pimax Dream Air on Linux (USB/udev, keepalive, NVIDIA patches, connector by EDID, lease protocol, setcap, kernel log) with JSON output and a fix plan."
+
+[lib]
+name = "omarchyvr_doctor"
+path = "src/lib.rs"
+
+[[bin]]
+name = "omarchyvr-doctor"
+path = "src/main.rs"
+
+[dependencies]
+libc = { workspace = true }
+omarchyvr-config = { path = "../omarchyvr-config" }
+pimax-lens = { path = "../pimax-lens" }

@@ -1,4 +1,4 @@
-//! Onboarding steps and the progress file (`~/.local/state/pimax/onboarding.state`, plain `key = value` lines).
+//! Onboarding steps and the progress file (`~/.local/state/omarchyvr/onboarding.state`, plain `key = value` lines).
 //!
 //! Every step is resumable and skippable: the file records `done`, `skipped` or `failed` per step, and the next step
 //! is the first one of the module's list that is neither done nor skipped. Nothing here touches a device.
@@ -89,10 +89,10 @@ pub struct Progress {
 }
 
 impl Progress {
-    /// Default location: `$XDG_STATE_HOME/pimax/onboarding.state` or `~/.local/state/pimax/onboarding.state`.
+    /// Default location: `$XDG_STATE_HOME/omarchyvr/onboarding.state` or `~/.local/state/omarchyvr/onboarding.state`.
     pub fn path(env: &dyn Fn(&str) -> Option<String>) -> Option<PathBuf> {
         let base = env("XDG_STATE_HOME").map(PathBuf::from).or_else(|| env("HOME").map(|h| Path::new(&h).join(".local/state")))?;
-        Some(base.join("pimax/onboarding.state"))
+        Some(base.join("omarchyvr/onboarding.state"))
     }
 
     pub fn state(&self, s: Step) -> State {
@@ -183,7 +183,7 @@ mod tests {
     #[test]
     fn save_and_load_round_trip() {
         let dir = std::env::temp_dir().join(format!("pimax-device-onb-{}", std::process::id()));
-        let path = dir.join("pimax/onboarding.state");
+        let path = dir.join("omarchyvr/onboarding.state");
         let mut p = Progress::default();
         p.set(Step::Udev, State::Done);
         p.save(&path).unwrap();

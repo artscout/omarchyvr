@@ -5,11 +5,13 @@ use std::path::PathBuf;
 
 /// The variable Steam's game container needs to share Monado's socket (LESSONS row 27).
 pub const PV_VAR: &str = "PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES";
-/// Marker of the files `pimax vr steam-setup on` writes (pimax-tools `vr::steam_setup::MARKER`).
-pub const MARKER: &str = "X-Pimax-Steam-VR=1";
+/// Marker of the files `omarchyvr vr steam-setup on` writes (omarchyvr-tools `vr::steam_setup::MARKER`).
+pub const MARKER: &str = "X-Omarchyvr-Steam-VR=1";
+/// Marker and file of installs made before the rename; still recognised.
+pub const LEGACY_MARKER: &str = "X-Pimax-Steam-VR=1";  // names:keep
 
 /// `runtime.steam_vr_games`: Steam itself has `PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1`, so every Steam game reaches
-/// Monado without per-game launch options (`pimax vr steam-setup`).
+/// Monado without per-game launch options (`omarchyvr vr steam-setup`).
 pub struct SteamVrGames;
 
 impl Check for SteamVrGames {
@@ -26,8 +28,10 @@ impl Check for SteamVrGames {
         if !steam {
             return vec![self.finding(Severity::Info, title, "Steam is not installed (only needed for Steam games)", None)];
         }
-        let ours = |p: PathBuf| cx.host.read_str(&p).is_some_and(|t| t.contains(MARKER));
-        let configured = ours(home.join(".local/share/applications/steam.desktop")) || ours(home.join(".config/environment.d/90-pimax-steam-vr.conf"));
+        let ours = |p: PathBuf| cx.host.read_str(&p).is_some_and(|t| t.contains(MARKER) || t.contains(LEGACY_MARKER));
+        let configured = ours(home.join(".local/share/applications/steam.desktop"))
+            || ours(home.join(".config/environment.d/90-omarchyvr-steam-vr.conf"))
+            || ours(home.join(".config/environment.d/90-pimax-steam-vr.conf"));  // names:keep
         if !configured {
             return vec![self.finding(
                 Severity::Warn,
@@ -52,8 +56,8 @@ impl Check for SteamVrGames {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pimax_doctor::fake::FakeHost;
-    use pimax_doctor::Opts;
+    use omarchyvr_doctor::fake::FakeHost;
+    use omarchyvr_doctor::Opts;
 
     fn run(h: &FakeHost) -> Finding {
         let opts = Opts::from_env(&|k| (k == "HOME").then(|| "/home/u".to_string()));
@@ -75,14 +79,14 @@ mod tests {
         assert_eq!(f.severity, Severity::Warn);
         assert_eq!(f.fix.as_ref().unwrap().id, "runtime.steam_vr_games");
         let p = f.fix.unwrap().plan().unwrap();
-        assert_eq!(p.commands, vec!["pimax vr steam-setup on".to_string()]);
-        assert_eq!(p.undo, vec!["pimax vr steam-setup off".to_string()]);
+        assert_eq!(p.commands, vec!["omarchyvr vr steam-setup on".to_string()]);
+        assert_eq!(p.undo, vec!["omarchyvr vr steam-setup off".to_string()]);
     }
 
     #[test]
     fn set_up_is_ok_unless_the_running_steam_lacks_the_variable() {
         let mut h = host();
-        h.file("/home/u/.config/environment.d/90-pimax-steam-vr.conf", format!("# {MARKER}\n{PV_VAR}=1\n"));
+        h.file("/home/u/.config/environment.d/90-omarchyvr-steam-vr.conf", format!("# {MARKER}\n{PV_VAR}=1\n"));
         assert_eq!(run(&h).severity, Severity::Ok);
         h.cmd("pgrep -x -u u steam", 0, "123\n");
         h.file("/proc/123/environ", "HOME=/home/u\0");

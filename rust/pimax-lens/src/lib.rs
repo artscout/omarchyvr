@@ -1,4 +1,4 @@
-//! Pimax Dream Air lens model for the Monado `pimax` driver, in Rust.
+//! Pimax Dream Air lens model for the Monado `omarchyvr` driver, in Rust.
 //!
 //! * [`config`]: `lens.conf` parser (backward compatible with the C parser it replaces, plus per-channel base,
 //!   k4/k5, per-channel shift, `fit_range`, `blackout`, `mask`).
@@ -139,7 +139,7 @@ pub fn eye_log_lines(cfg: &LensConfig, e: usize) -> Vec<String> {
 }
 
 /// Load the configuration like the driver does: defaults, then the file from `PIMAX_LENS_CONF` /
-/// `$XDG_CONFIG_HOME/pimax/lens.conf` / `~/.config/pimax/lens.conf`, then `PIMAX_LENS_OFF`.
+/// `$XDG_CONFIG_HOME/omarchyvr/lens.conf` / `~/.config/omarchyvr/lens.conf`, then `PIMAX_LENS_OFF`.
 pub fn load(aspect: f32, env: &dyn Fn(&str) -> Option<String>) -> Loaded {
     let path = config::config_path(env);
     load_file(aspect, env, path)
@@ -336,7 +336,7 @@ mod tests {
 
     #[test]
     fn file_warnings_and_forced_off() {
-        let dir = std::env::temp_dir().join(format!("pimax-lens-test-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("omarchyvr-lens-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let p = dir.join("lens.conf");
         std::fs::write(&p, "fov = 40 40 40 40\nbogus line\n").unwrap();

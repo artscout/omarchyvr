@@ -122,7 +122,7 @@ fn current_lens_conf_matches_the_c_model_bit_for_bit_on_the_compositor_grid() {
     let mut files = vec![repo_example()];
     // the user's installed file, if there is one (it is a copy of the example today, but may be tuned later)
     if let Ok(home) = std::env::var("HOME") {
-        let p = PathBuf::from(home).join(".config/pimax/lens.conf");
+        let p = PathBuf::from(home).join(".config/omarchyvr/lens.conf");
         if p.exists() {
             files.push(p);
         }

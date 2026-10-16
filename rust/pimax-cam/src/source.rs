@@ -121,7 +121,7 @@ pub fn open_once(spec: &str, fps: u32, replay: ReplayOptions) -> io::Result<Box<
             .map(|c| Box::new(c) as Box<dyn Source>)
             .map_err(|e| {
                 let hint = if e.raw_os_error() == Some(libc::EBUSY) {
-                    " (busy: another process is streaming it, e.g. a running pimax-passthrough)"
+                    " (busy: another process is streaming it, e.g. a running omarchyvr-passthrough)"
                 } else {
                     ""
                 };

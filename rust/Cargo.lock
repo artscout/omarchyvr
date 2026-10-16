@@ -2144,6 +2144,238 @@ dependencies = [
 ]
 
 [[package]]
+name = "omarchyvr-ai"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "omarchyvr-config",
+]
+
+[[package]]
+name = "omarchyvr-anchor"
+version = "0.1.0"
+dependencies = [
+ "apriltag-sys",
+ "libc",
+ "pimax-cam",
+ "pimax-ctrltrack",
+]
+
+[[package]]
+name = "omarchyvr-app"
+version = "0.1.0"
+dependencies = [
+ "crash-handler",
+ "eframe",
+ "egui-phosphor",
+ "egui_kittest",
+ "libc",
+ "log",
+ "minidumper",
+ "omarchyvr-backgrounds",
+ "omarchyvr-config",
+ "omarchyvr-doctor",
+ "omarchyvr-gui-core",
+ "png",
+ "vello_cpu",
+]
+
+[[package]]
+name = "omarchyvr-autod"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "omarchyvr-components",
+ "omarchyvr-config",
+ "pimax",
+ "pimax-proto",
+]
+
+[[package]]
+name = "omarchyvr-backgrounds"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "toml",
+]
+
+[[package]]
+name = "omarchyvr-components"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "proptest",
+]
+
+[[package]]
+name = "omarchyvr-config"
+version = "0.1.0"
+dependencies = [
+ "pimax-lens",
+]
+
+[[package]]
+name = "omarchyvr-desktest"
+version = "0.1.0"
+dependencies = [
+ "miniz_oxide 0.8.9",
+]
+
+[[package]]
+name = "omarchyvr-doctor"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "omarchyvr-config",
+ "pimax-lens",
+]
+
+[[package]]
+name = "omarchyvr-gui-core"
+version = "0.1.0"
+dependencies = [
+ "flate2",
+ "libc",
+ "log",
+ "memchr",
+ "omarchyvr-components",
+ "omarchyvr-config",
+ "omarchyvr-doctor",
+ "omarchyvr-record",
+ "omarchyvr-tools",
+ "pimax-device",
+ "regex-lite",
+ "serde_json",
+]
+
+[[package]]
+name = "omarchyvr-hud"
+version = "0.1.0"
+dependencies = [
+ "ash",
+ "openxr",
+ "pimax-lens",
+ "pimax-lenstest",
+]
+
+[[package]]
+name = "omarchyvr-passthrough"
+version = "0.1.0"
+dependencies = [
+ "ash",
+ "libc",
+ "miniz_oxide 0.8.9",
+ "openxr",
+ "pimax-cam",
+]
+
+[[package]]
+name = "omarchyvr-perf"
+version = "0.1.0"
+
+[[package]]
+name = "omarchyvr-record"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "omarchyvr-components",
+]
+
+[[package]]
+name = "omarchyvr-room"
+version = "0.1.0"
+dependencies = [
+ "miniz_oxide 0.8.9",
+ "pimax-cam",
+]
+
+[[package]]
+name = "omarchyvr-roommap"
+version = "0.1.0"
+dependencies = [
+ "omarchyvr-anchor",
+ "omarchyvr-hud",
+ "omarchyvr-room",
+ "pimax-cam",
+ "pimax-ctrltrack",
+]
+
+[[package]]
+name = "omarchyvr-slam"
+version = "0.1.0"
+dependencies = [
+ "omarchyvr-config",
+ "omarchyvr-room",
+ "pimax-cam",
+]
+
+[[package]]
+name = "omarchyvr-tools"
+version = "0.1.0"
+dependencies = [
+ "flate2",
+ "libc",
+ "log",
+ "omarchyvr-autod",
+ "omarchyvr-backgrounds",
+ "omarchyvr-components",
+ "omarchyvr-config",
+ "omarchyvr-record",
+ "pimax",
+ "pimax-proto",
+ "regex-lite",
+ "serde_json",
+]
+
+[[package]]
+name = "omarchyvr-voice"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "libloading 0.8.9",
+ "omarchyvr-backgrounds",
+ "omarchyvr-config",
+ "omarchyvr-voicebench",
+ "pipewire",
+ "serde",
+ "serde_json",
+ "toml",
+ "wayland-client",
+ "wayland-protocols-misc",
+ "whisper-rs",
+]
+
+[[package]]
+name = "omarchyvr-voicebench"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "libloading 0.8.9",
+]
+
+[[package]]
+name = "omarchyvr-voicehud"
+version = "0.1.0"
+dependencies = [
+ "ab_glyph",
+ "ash",
+ "libc",
+ "miniz_oxide 0.8.9",
+ "openxr",
+ "serde_json",
+]
+
+[[package]]
+name = "omarchyvr-xrtest"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "openxr",
+ "pimax-hands",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2251,44 +2483,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pimax-ai"
-version = "0.1.0"
-dependencies = [
- "libc",
- "pimax-config",
-]
-
-[[package]]
-name = "pimax-anchor"
-version = "0.1.0"
-dependencies = [
- "apriltag-sys",
- "libc",
- "pimax-cam",
- "pimax-ctrltrack",
-]
-
-[[package]]
-name = "pimax-autod"
-version = "0.1.0"
-dependencies = [
- "libc",
- "pimax",
- "pimax-components",
- "pimax-config",
- "pimax-proto",
-]
-
-[[package]]
-name = "pimax-backgrounds"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "toml",
-]
-
-[[package]]
 name = "pimax-cam"
 version = "0.1.0"
 dependencies = [
@@ -2309,21 +2503,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pimax-components"
-version = "0.1.0"
-dependencies = [
- "libc",
- "proptest",
-]
-
-[[package]]
-name = "pimax-config"
-version = "0.1.0"
-dependencies = [
- "pimax-lens",
-]
-
-[[package]]
 name = "pimax-ctrltrack"
 version = "0.1.0"
 dependencies = [
@@ -2333,17 +2512,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "pimax-desktest"
-version = "0.1.0"
-dependencies = [
- "miniz_oxide 0.8.9",
-]
-
-[[package]]
 name = "pimax-device"
 version = "0.1.0"
 dependencies = [
- "pimax-doctor",
+ "omarchyvr-doctor",
  "pimax-proto",
 ]
 
@@ -2356,15 +2528,6 @@ dependencies = [
  "pimax",
  "pimax-proto",
  "proptest",
-]
-
-[[package]]
-name = "pimax-doctor"
-version = "0.1.0"
-dependencies = [
- "libc",
- "pimax-config",
- "pimax-lens",
 ]
 
 [[package]]
@@ -2388,24 +2551,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pimax-gui-core"
-version = "0.1.0"
-dependencies = [
- "flate2",
- "libc",
- "log",
- "memchr",
- "pimax-components",
- "pimax-config",
- "pimax-device",
- "pimax-doctor",
- "pimax-record",
- "pimax-tools",
- "regex-lite",
- "serde_json",
-]
-
-[[package]]
 name = "pimax-hands"
 version = "0.1.0"
 dependencies = [
@@ -2415,22 +2560,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "pimax-hud"
-version = "0.1.0"
-dependencies = [
- "ash",
- "openxr",
- "pimax-lens",
- "pimax-lenstest",
-]
-
-[[package]]
 name = "pimax-ipd"
 version = "0.1.0"
 dependencies = [
  "libc",
+ "omarchyvr-hud",
  "pimax-eye",
- "pimax-hud",
 ]
 
 [[package]]
@@ -2463,21 +2598,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pimax-passthrough"
-version = "0.1.0"
-dependencies = [
- "ash",
- "libc",
- "miniz_oxide 0.8.9",
- "openxr",
- "pimax-cam",
-]
-
-[[package]]
-name = "pimax-perf"
-version = "0.1.0"
-
-[[package]]
 name = "pimax-proto"
 version = "0.1.0"
 dependencies = [
@@ -2487,131 +2607,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "pimax-record"
-version = "0.1.0"
-dependencies = [
- "libc",
- "pimax-components",
-]
-
-[[package]]
-name = "pimax-room"
-version = "0.1.0"
-dependencies = [
- "miniz_oxide 0.8.9",
- "pimax-cam",
-]
-
-[[package]]
-name = "pimax-roommap"
-version = "0.1.0"
-dependencies = [
- "pimax-anchor",
- "pimax-cam",
- "pimax-ctrltrack",
- "pimax-hud",
- "pimax-room",
-]
-
-[[package]]
 name = "pimax-selfcal"
 version = "0.1.0"
 dependencies = [
+ "omarchyvr-passthrough",
  "pimax-cam",
- "pimax-passthrough",
-]
-
-[[package]]
-name = "pimax-setup"
-version = "0.1.0"
-dependencies = [
- "crash-handler",
- "eframe",
- "egui-phosphor",
- "egui_kittest",
- "libc",
- "log",
- "minidumper",
- "pimax-backgrounds",
- "pimax-config",
- "pimax-doctor",
- "pimax-gui-core",
- "png",
- "vello_cpu",
-]
-
-[[package]]
-name = "pimax-slam"
-version = "0.1.0"
-dependencies = [
- "pimax-cam",
- "pimax-config",
- "pimax-room",
-]
-
-[[package]]
-name = "pimax-tools"
-version = "0.1.0"
-dependencies = [
- "flate2",
- "libc",
- "log",
- "pimax",
- "pimax-autod",
- "pimax-backgrounds",
- "pimax-components",
- "pimax-config",
- "pimax-proto",
- "pimax-record",
- "regex-lite",
- "serde_json",
-]
-
-[[package]]
-name = "pimax-voice"
-version = "0.1.0"
-dependencies = [
- "libc",
- "libloading 0.8.9",
- "pimax-backgrounds",
- "pimax-config",
- "pimax-voicebench",
- "pipewire",
- "serde",
- "serde_json",
- "toml",
- "wayland-client",
- "wayland-protocols-misc",
- "whisper-rs",
-]
-
-[[package]]
-name = "pimax-voicebench"
-version = "0.1.0"
-dependencies = [
- "libc",
- "libloading 0.8.9",
-]
-
-[[package]]
-name = "pimax-voicehud"
-version = "0.1.0"
-dependencies = [
- "ab_glyph",
- "ash",
- "libc",
- "miniz_oxide 0.8.9",
- "openxr",
- "serde_json",
-]
-
-[[package]]
-name = "pimax-xrtest"
-version = "0.1.0"
-dependencies = [
- "libc",
- "openxr",
- "pimax-hands",
 ]
 
 [[package]]

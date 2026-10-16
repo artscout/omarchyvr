@@ -1,0 +1,16 @@
+[package]
+name = "omarchyvr-perf"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Always-on performance readout for the Pimax Dream Air: reads the frame statistics file Monado writes (PIMAX_PERF_FILE) and shows compositor fps, app fps, missed frames and app CPU/GPU time on a WayVR wrist panel (over wayvrctl batch), coloured green / yellow / red."
+
+[lib]
+name = "omarchyvr_perf"
+path = "src/lib.rs"
+
+[[bin]]
+name = "omarchyvr-perf"
+path = "src/main.rs"
+
+[dependencies]

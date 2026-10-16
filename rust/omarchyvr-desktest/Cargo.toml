@@ -1,0 +1,19 @@
+[package]
+name = "omarchyvr-desktest"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Offline analysis for the VR-desktop tests: Monado metrics.pb (frame timing, compositor GPU time by set of client sessions) and the compositor target dump (crop/scale to PNG, line-pair modulation, edge rise)."
+
+[lib]
+name = "omarchyvr_desktest"
+path = "src/lib.rs"
+
+[[bin]]
+name = "omarchyvr-desktest"
+path = "src/main.rs"
+
+[dependencies]
+miniz_oxide = { workspace = true }
+
+[dev-dependencies]

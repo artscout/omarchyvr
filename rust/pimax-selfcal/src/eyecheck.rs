@@ -1,6 +1,6 @@
 //! Eye-view check: what the calibration error looks like in the passthrough, and whether a correction removes it.
 //!
-//! The passthrough (`pimax-passthrough`) renders an eye's view from the camera on that eye's side. Rendering the
+//! The passthrough (`omarchyvr-passthrough`) renders an eye's view from the camera on that eye's side. Rendering the
 //! same eye view once only from camera A and once only from camera B must give the same picture where both see
 //! the scene (up to horizontal parallax for things not at the reprojection depth). A relative rotation between
 //! the cameras shows as a shift between the two pictures; the vertical part of it is what the two eyes of the
@@ -11,11 +11,11 @@ use crate::scene::Scene;
 use crate::viz::Rgb;
 use pimax_cam::calib::DeviceCalib;
 use pimax_cam::geom;
-use pimax_passthrough::check;
-use pimax_passthrough::lut::{Lut, LutParams};
-use pimax_passthrough::remap;
-use pimax_passthrough::rig::{Rig, DEFAULT_HEAD_OFFSET_MM};
-use pimax_passthrough::view::{EyeView, Fov};
+use omarchyvr_passthrough::check;
+use omarchyvr_passthrough::lut::{Lut, LutParams};
+use omarchyvr_passthrough::remap;
+use omarchyvr_passthrough::rig::{Rig, DEFAULT_HEAD_OFFSET_MM};
+use omarchyvr_passthrough::view::{EyeView, Fov};
 
 /// Geometry of the check.
 #[derive(Clone, Copy, Debug, PartialEq)]

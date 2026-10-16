@@ -1,4 +1,4 @@
-use pimax_hud::{FrameResult, Hud, Opts, Placement};
+use omarchyvr_hud::{FrameResult, Hud, Opts, Placement};
 use pimax_ipd::devices::{Real, Sim};
 use pimax_ipd::png_sink::PngSink;
 use pimax_ipd::{run, Plan};
@@ -27,13 +27,13 @@ or more than 4 mm from the current lens IPD, unless --mm gives the value. The sc
   --simulate     no headset: fake measurement, screens written as PNG files (default DIR /tmp/pimax-ipd-sim)
 
 manual: pick the sharpest IPD by hand. The panel shows a sharpness test pattern, the target IPD, the live lens IPD
-and a status. A/D -/+0.5 mm, W/S +/-1 mm (58-72; arrows work too), Enter saves the lens IPD to ~/.config/pimax/ipd.env and
+and a status. A/D -/+0.5 mm, W/S +/-1 mm (58-72; arrows work too), Enter saves the lens IPD to ~/.config/omarchyvr/ipd.env and
 exits, q exits (Esc does nothing). Keys only change the target on screen; the motor command is sent 700 ms after the last key,
 never during a move (waits until the lens is within 0.3 mm or 6 s), at least 1.5 s after the previous one.
 No eye tracking is used: the eye chip is not opened.
 
-The eye chip can be opened by one process only: start Monado without eye tracking (pimax vr start --force with
-PIMAX_MONADO_BUILD=~/src/monado-eye/build, or pimax desk start --force without --eye) and run with
+The eye chip can be opened by one process only: start Monado without eye tracking (omarchyvr vr start --force with
+PIMAX_MONADO_BUILD=~/src/monado-eye/build, or omarchyvr desk start --force without --eye) and run with
 XR_RUNTIME_JSON=~/src/monado-eye/build/openxr_monado-dev.json.
 ";
 
@@ -127,8 +127,8 @@ fn real_main() -> Result<i32, String> {
     let mut dev = Real::new(usb, apply);
     if no_hud {
         struct Null;
-        impl pimax_hud::Sink for Null {
-            fn show(&self, _: pimax_hud::Screen) {}
+        impl omarchyvr_hud::Sink for Null {
+            fn show(&self, _: omarchyvr_hud::Screen) {}
         }
         return Ok(run(&mut dev, &Null, &plan, &mut say, &skip, &stop));
     }
@@ -154,7 +154,7 @@ fn real_main() -> Result<i32, String> {
 }
 
 /// Pump the HUD frames until the worker is done (or the runtime ends the session); returns the worker's code.
-fn hud_loop(hud: &mut Hud, handle: &pimax_hud::HudHandle, worker: std::thread::JoinHandle<i32>, skip: &AtomicBool) -> Result<i32, String> {
+fn hud_loop(hud: &mut Hud, handle: &omarchyvr_hud::HudHandle, worker: std::thread::JoinHandle<i32>, skip: &AtomicBool) -> Result<i32, String> {
     let mut err = None;
     let mut done_at: Option<std::time::Instant> = None;
     loop {
@@ -335,8 +335,8 @@ fn manual_main(mut a: Args) -> Result<i32, String> {
     let mut save = |mm: f32| manual::save_env(mm);
     if no_hud {
         struct Null;
-        impl pimax_hud::Sink for Null {
-            fn show(&self, _: pimax_hud::Screen) {}
+        impl omarchyvr_hud::Sink for Null {
+            fn show(&self, _: omarchyvr_hud::Screen) {}
         }
         let out = manual::run(&mut pacer, &mut motor, &Null, &rx, &clock, &mut say, &mut save, &stop);
         return Ok(if out == manual::Outcome::NoLens { 2 } else { 0 });

@@ -6,7 +6,7 @@
 //!                        [--all-pairs] [--accept-sigma PX] [--prior-deg D] [--write [FILE|default]] [--force]
 //!     estimate rotation corrections; print the report; with --out also write report.txt, summary.json, the
 //!     candidate overlay, match lists and before/after pictures; with --write, install the overlay (default
-//!     ~/.config/pimax/cam-calib-overlay.json; the old one is kept as .prev) if the sanity gate passes
+//!     ~/.config/omarchyvr/cam-calib-overlay.json; the old one is kept as .prev) if the sanity gate passes
 //! pimax-selfcal check SCENES... [--overlay [FILE|default]] [--pairs ...] [--calib XML] [--no-eye]
 //!     measure the vertical disparity per pair and the passthrough eye-view shift with the factory calibration
 //!     and, when an overlay is given, with the overlay on top
@@ -958,7 +958,7 @@ fn usage() -> &'static str {
      \x20 pairs SCENES... [--out DIR]             matches and vertical disparity per scene and pair\n\
      \x20 lens SCENES...                          image circle vs principal point\n\
      \x20 selftest [--out DIR] [--angle DEG]      synthetic end-to-end check\n\
-     \x20 show|rollback|clear [FILE]              the installed overlay (default ~/.config/pimax/cam-calib-overlay.json)\n\
+     \x20 show|rollback|clear [FILE]              the installed overlay (default ~/.config/omarchyvr/cam-calib-overlay.json)\n\
      SCENES: tile directory, tile prefix, or FILE.pxcam[@FIRST[:COUNT[:STEP]]]. Offline: never opens the headset."
 }
 

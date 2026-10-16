@@ -1,10 +1,10 @@
-//! The example checks against pimax-doctor's fake host (no real machine access).
+//! The example checks against omarchyvr-doctor's fake host (no real machine access).
 
 use pimax_device::check::{run_all, Ctx, Severity};
 use pimax_device::checks::{cpu, default_checks, doctor::DoctorBridge, gpu};
 use pimax_device::{by_id, Check};
-use pimax_doctor::fake::FakeHost;
-use pimax_doctor::Opts;
+use omarchyvr_doctor::fake::FakeHost;
+use omarchyvr_doctor::Opts;
 use std::path::PathBuf;
 
 const SVC: &str = "/home/u/src/monado/build/src/xrt/targets/service/monado-service";
@@ -79,7 +79,7 @@ fn doctor_bridge_maps_every_doctor_check() {
     let mut h = FakeHost::healthy();
     let cx = Ctx { host: &h, opts: &o, module: by_id("dream-air") };
     let f = DoctorBridge.run(&cx);
-    let doc = pimax_doctor::run_checks(&h, &o);
+    let doc = omarchyvr_doctor::run_checks(&h, &o);
     assert_eq!(f.len(), doc.checks.len());
     assert!(f.iter().all(|x| x.check.starts_with("doctor.") && x.fix.is_none()));
     // break setcap: the doctor's free-text fix becomes the catalogue fix

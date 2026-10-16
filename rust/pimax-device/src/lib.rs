@@ -2,7 +2,7 @@
 //!
 //! Design: docs/ARCHITECTURE.md. This crate never opens a device, runs a command or touches system config:
 //! modules build reports, [`hid::Gate`] checks them against the module's allowlist before writing to a writer the
-//! caller opened, checks read through `pimax_doctor::Host`, and fixes are rendered for the user to run.
+//! caller opened, checks read through `omarchyvr_doctor::Host`, and fixes are rendered for the user to run.
 //!
 //! Nothing outside `devices/` assumes the vendor is Pimax: a module is identified by its descriptor's USB ids.
 

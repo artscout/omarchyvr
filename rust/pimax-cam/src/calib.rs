@@ -99,7 +99,7 @@ impl std::fmt::Display for CalibError {
                 for p in c {
                     write!(f, " {}", p.display())?;
                 }
-                write!(f, "); read one with `pimax calib`")
+                write!(f, "); read one with `omarchyvr calib`")
             }
         }
     }
@@ -241,7 +241,7 @@ impl DeviceCalib {
         DeviceCalib::parse(&s)
     }
 
-    /// Default search order: `$PIMAX_CAM_CALIB`, `$PIMAX_CALIB`, `~/.config/pimax/headset-calibration.xml`,
+    /// Default search order: `$PIMAX_CAM_CALIB`, `$PIMAX_CALIB`, `~/.config/omarchyvr/headset-calibration.xml`,
     /// `~/pimax-re/analysis/headset-calibration.xml`.
     pub fn default_candidates() -> Vec<PathBuf> {
         let mut c = Vec::new();
@@ -252,7 +252,7 @@ impl DeviceCalib {
         }
         if let Some(h) = std::env::var_os("HOME") {
             let h = PathBuf::from(h);
-            c.push(h.join(".config/pimax/headset-calibration.xml"));
+            c.push(h.join(".config/omarchyvr/headset-calibration.xml"));
             c.push(h.join("pimax-re/analysis/headset-calibration.xml"));
         }
         c

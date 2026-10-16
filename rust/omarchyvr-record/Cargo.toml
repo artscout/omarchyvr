@@ -1,0 +1,18 @@
+[package]
+name = "omarchyvr-record"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Records what the headset shows: reads the squashed eye images from Monado's recorder tap (shared memory, never stalls the compositor) and encodes them with ffmpeg (NVENC, x264 fallback) into a fragmented mp4. `omarchyvr record start|stop|status`; a leaf component of omarchyvrd (docs/RECORD.md)."
+
+[lib]
+name = "omarchyvr_record"
+path = "src/lib.rs"
+
+[[bin]]
+name = "omarchyvr-record"
+path = "src/main.rs"
+
+[dependencies]
+libc = { workspace = true }
+omarchyvr-components = { path = "../omarchyvr-components" }

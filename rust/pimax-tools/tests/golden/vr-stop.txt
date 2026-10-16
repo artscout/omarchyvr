@@ -1,8 +1,0 @@
-$ pimax vr stop --dry-run
-exit Some(0)
---- stdout
-pimax vr: would stop, in this order (SIGINT by pid, never by name):
-  1. monado-service: pid 999999 from $ROOT/session/monado.pid, SIGINT, wait 5 s, then SIGKILL
-  2. broker: no pid file $ROOT/session/broker.pid (skipped) (pimax-cam), wait 10 s
-  then the kernel log check (Xid / Idling display engine)
---- stderr

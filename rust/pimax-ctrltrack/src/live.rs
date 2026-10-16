@@ -296,7 +296,7 @@ pub fn show(a: &[String]) {
     }
 }
 
-/// `pimax-ctrltrack health [--out POSEFILE] [--max-age S]`: the writer's heartbeat as one JSON line, for pimaxd.
+/// `pimax-ctrltrack health [--out POSEFILE] [--max-age S]`: the writer's heartbeat as one JSON line, for omarchyvrd.
 /// Exit 0 = fresh (younger than `--max-age`, default 2 s) with the source up; 1 = no file or no heartbeat (older
 /// writer); 2 = stale (writer hung or dead) or source down (broker / camera reopening).
 pub fn health(a: &[String]) {

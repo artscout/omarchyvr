@@ -3,7 +3,7 @@ name = "pimax-ipd"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Guided IPD test for the Pimax Dream Air with an in-headset screen (pimax-hud): look straight ahead, countdown, measure with the eye chip, show measured/lens IPD, optionally move the lenses (the one approved IPD command, refused when the measurement looks wrong). --simulate renders the screens to PNG without a headset."
+description = "Guided IPD test for the Pimax Dream Air with an in-headset screen (omarchyvr-hud): look straight ahead, countdown, measure with the eye chip, show measured/lens IPD, optionally move the lenses (the one approved IPD command, refused when the measurement looks wrong). --simulate renders the screens to PNG without a headset."
 
 [lib]
 name = "pimax_ipd"
@@ -15,5 +15,5 @@ path = "src/main.rs"
 
 [dependencies]
 pimax-eye = { path = "../pimax-eye" }
-pimax-hud = { path = "../pimax-hud" }
+omarchyvr-hud = { path = "../omarchyvr-hud" }
 libc = { workspace = true }

@@ -1,0 +1,11 @@
+$ omarchyvr vr stop --dry-run --grace 7 --no-kill
+exit Some(0)
+--- stdout
+omarchyvr vr: would stop, in this order (SIGINT by pid, never by name):
+  1. perf: pid 999999 from $ROOT/session/perf.pid (omarchyvr-perf), wait 10 s
+  2. perfwayvr: pid 999999 from $ROOT/session/perfwayvr.pid (wayvr), wait 15 s, then 15 s more; still alive once Monado is gone: SIGTERM, then SIGKILL by pid
+  3. ctrltrack: pid 999999 from $ROOT/session/ctrltrack.pid (pimax-ctrltrack), wait 10 s
+  4. monado-service: pid 999999 from $ROOT/session/monado.pid, SIGINT, wait 7 s, never SIGKILL (a hung service is left alive, the GPU gate says reboot)
+  5. broker: pid 999999 from $ROOT/session/broker.pid (pimax-cam), wait 10 s
+  then the kernel log check (Xid / Idling display engine)
+--- stderr

@@ -1,0 +1,9 @@
+[package]
+name = "omarchyvr-config"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Per-serial Pimax profiles (lens.conf, setup.toml, overlays) with atomic writes, backups, restore, diff and import of the legacy ~/.config/omarchyvr files."
+
+[dependencies]
+pimax-lens = { path = "../pimax-lens" }

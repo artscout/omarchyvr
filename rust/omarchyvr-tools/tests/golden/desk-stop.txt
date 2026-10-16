@@ -1,0 +1,11 @@
+$ omarchyvr desk stop --dry-run
+exit Some(0)
+--- stdout
+omarchyvr desk: would stop, in this order (SIGINT by pid, never by name):
+  1. wayvr: pid 999999 from $ROOT/session/wayvr.pid (wayvr), wait 15 s, then a notice and 15 s more; still alive once Monado is gone: SIGTERM, then SIGKILL by pid
+  2. passthrough: pid 999999 from $ROOT/session/passthrough.pid (omarchyvr-passt), wait 10 s
+  3. monado-service: pid 999999 from $ROOT/session/monado.pid, SIGINT, wait 30 s, then SIGKILL
+  4. broker: no pid file $ROOT/session/broker.pid (skipped) (pimax-cam), wait 10 s
+  then the kernel log check (Xid / Idling display engine)
+  then the VR screens' outputs (PIMAX-*) are removed once no monado-service runs
+--- stderr

@@ -1,6 +1,6 @@
 //! Live tests against the real headset. `#[ignore]` by default; run explicitly:
 //!     cargo test -p pimax --test live -- --ignored --test-threads=1 --nocapture
-//! They run IN PARALLEL with the pimax-keepalived service and are strictly read-only: passive sessions (no wake, no keepalive),
+//! They run IN PARALLEL with the omarchyvr-keepalived service and are strictly read-only: passive sessions (no wake, no keepalive),
 //! identity reads 0x16/0x03/0x50, calibration 0x0a reads and the controller attach burst. No video-prepare, IPD,
 //! brightness, eye power or pairing is ever sent. `PIMAX_LIVE_NO_CONTROLLERS=1` skips the attach burst.
 mod common;
@@ -12,7 +12,7 @@ const S: fn(u64) -> Duration = Duration::from_secs;
 
 fn service_active() -> bool {
     std::process::Command::new("systemctl")
-        .args(["--user", "is-active", "pimax-keepalived"])
+        .args(["--user", "is-active", "omarchyvr-keepalived"])
         .output()
         .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "active")
         .unwrap_or(false)
@@ -21,7 +21,7 @@ fn service_active() -> bool {
 fn passive() -> (Session, std::sync::mpsc::Receiver<Event>) {
     let (s, rx) = Session::open_channel(Config::passive(), 200_000, true).expect("open");
     s.wait_connected(S(5))
-        .expect("headset connected (is it plugged in and is pimax-keepalived running?)");
+        .expect("headset connected (is it plugged in and is omarchyvr-keepalived running?)");
     (s, rx)
 }
 
@@ -201,7 +201,7 @@ fn live_zz_service_unharmed() {
     let (s, _rx) = passive();
     std::thread::sleep(S(7)); // longer than the firmware's 5.4 s no-keepalive window: the service alone keeps it alive
     drop(s);
-    assert!(service_active(), "pimax-keepalived still active");
+    assert!(service_active(), "omarchyvr-keepalived still active");
     assert_eq!(
         discovery::usb_devnum(),
         before,

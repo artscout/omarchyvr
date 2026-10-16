@@ -165,7 +165,7 @@ pub fn service_correction_for(var: Option<&str>, home: Option<PathBuf>) -> Optio
         Some("none" | "off" | "0") => None,
         Some(p) if !p.is_empty() => Some(p.to_string()),
         _ => home
-            .map(|h| h.join(".config/pimax/eye-correction.toml"))
+            .map(|h| h.join(".config/omarchyvr/eye-correction.toml"))
             .filter(|p| p.exists())
             .map(|p| p.display().to_string()),
     }
@@ -244,10 +244,10 @@ mod tests {
     fn service_correction_detection() {
         let dir = std::env::temp_dir().join(format!("pimax-gx-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(dir.join(".config/pimax")).unwrap();
+        std::fs::create_dir_all(dir.join(".config/omarchyvr")).unwrap();
         let home = Some(dir.clone());
         assert_eq!(service_correction_for(None, home.clone()), None);
-        std::fs::write(dir.join(".config/pimax/eye-correction.toml"), "x").unwrap();
+        std::fs::write(dir.join(".config/omarchyvr/eye-correction.toml"), "x").unwrap();
         assert!(service_correction_for(None, home.clone())
             .unwrap()
             .ends_with("eye-correction.toml"));

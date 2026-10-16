@@ -1,5 +1,5 @@
 //! `pimax-cam`: Dream Air camera tool. Opening the live camera needs the headset lock
-//! (`flock -w 3600 /tmp/pimax-headset.lock pimax-cam ...`); replays and `calib` do not.
+//! (`flock -w 3600 /tmp/omarchyvr-headset.lock pimax-cam ...`); replays and `calib` do not.
 //!
 //! ```text
 //! pimax-cam info      [--source S]                       device, formats, first frames' metadata
@@ -19,7 +19,7 @@
 //! ```
 //! SRC / S: empty or `auto` (live camera), `/dev/videoN`, `broker[:SOCKET]` (frames of a running broker), or a
 //! `.pxcam` recording.
-//! `--overlay F`: apply a learned calibration overlay (`pimax-selfcal`; `default` = `~/.config/pimax/cam-calib-overlay.json`)
+//! `--overlay F`: apply a learned calibration overlay (`pimax-selfcal`; `default` = `~/.config/omarchyvr/cam-calib-overlay.json`)
 //! on top of the factory calibration. Without it the factory calibration is used unchanged.
 
 use pimax_cam::calib::{DeviceCalib, RigConvention};
@@ -205,7 +205,7 @@ fn cmd_record(mut a: Args) -> R<()> {
         .map_err(|e| format!("{out}: {e}"))?;
     let mut st = CaptureStats::default();
     let t0 = clock::monotonic_ns();
-    // SIGINT/SIGTERM end the recording cleanly (the file is flushed): `pimax record tracking stop`
+    // SIGINT/SIGTERM end the recording cleanly (the file is flushed): `omarchyvr record tracking stop`
     // SAFETY: the handler only stores to an atomic.
     unsafe {
         libc::signal(libc::SIGINT, rec_on_signal as *const () as libc::sighandler_t);

@@ -252,7 +252,7 @@ fn fu_pairs(r: &FitReport) -> u32 {
 }
 
 /// `imufit --pool LOG...`: one calibration per hand over all logs, printed as JSON lines (the format of
-/// `~/.config/pimax/ctrl-imu.json`) and as the built-in default (`fuse::default_calib`).
+/// `~/.config/omarchyvr/ctrl-imu.json`) and as the built-in default (`fuse::default_calib`).
 pub fn run_pooled(paths: &[&Path], save: Option<&Path>) -> Result<(), String> {
     let mut by_hand: [Vec<Log>; 2] = [Vec::new(), Vec::new()];
     let mut names: [Vec<String>; 2] = [Vec::new(), Vec::new()];

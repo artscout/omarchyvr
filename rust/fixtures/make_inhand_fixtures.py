@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Cut the in-hand detector fixtures (rust/pimax-hands/src/inhand.rs tests) out of a session's controller IMU log.
 
-Source: ~/.local/state/pimax/sessions/2026-10-16-1818/ctrl-imu-left.csv (pimax-ctrlfuse log v1, `I` rows: host_ns,
+Source: ~/.local/state/omarchyvr/sessions/2026-10-16-1818/ctrl-imu-left.csv (pimax-ctrlfuse log v1, `I` rows: host_ns,
 dev_us, gyro x y z, accel x y z, raw LSB). Output: inhand_<name>.csv.gz, one line per sample: `dt_us,gx,gy,gz,ax,ay,az`
 (dt_us = microseconds since the previous sample, the first line since the segment start).
 
@@ -15,7 +15,7 @@ Segments (seconds from the first sample; what the controller did, read from the 
 import gzip, os, sys
 
 SRC = sys.argv[1] if len(sys.argv) > 1 else os.path.expanduser(
-    "~/.local/state/pimax/sessions/2026-10-16-1818/ctrl-imu-left.csv")
+    "~/.local/state/omarchyvr/sessions/2026-10-16-1818/ctrl-imu-left.csv")
 OUT = os.path.dirname(os.path.abspath(__file__))
 SEGS = {"desk": (0, 20), "desk_bump": (51, 102), "pickup": (14, 30), "held": (120, 180), "putdown": (283, 312)}
 

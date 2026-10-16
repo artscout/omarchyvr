@@ -1339,7 +1339,7 @@ impl GazeTest {
             correction: self.candidate.as_ref(),
         });
         if self.candidate.is_some() {
-            text.push_str("press Y to accept the correction and write ~/.config/pimax/eye-correction.toml (the service reads it at start: relink/restart Monado, see analysis/eye-monado.md)\n");
+            text.push_str("press Y to accept the correction and write ~/.config/omarchyvr/eye-correction.toml (the service reads it at start: relink/restart Monado, see analysis/eye-monado.md)\n");
         }
         self.report = Some(r);
         vec![Effect::Print(text), Effect::SaveResults(json)]
@@ -1511,7 +1511,7 @@ pub fn write_with_backup(path: &Path, text: &str, stamp: &str) -> Result<Option<
 }
 
 /// Where the results JSON goes: `--gaze-out` (a directory, or a file name ending in .json), else
-/// `~/.local/share/pimax/eye-accuracy/eye-accuracy-<stamp>.json`.
+/// `~/.local/share/omarchyvr/eye-accuracy/eye-accuracy-<stamp>.json`.
 pub fn results_path(out: Option<&Path>, stamp: &str) -> PathBuf {
     let file = format!("eye-accuracy-{stamp}.json");
     match out {
@@ -1519,7 +1519,7 @@ pub fn results_path(out: Option<&Path>, stamp: &str) -> PathBuf {
         Some(p) => p.join(file),
         None => std::env::var_os("HOME")
             .map_or_else(|| PathBuf::from("."), PathBuf::from)
-            .join(".local/share/pimax/eye-accuracy")
+            .join(".local/share/omarchyvr/eye-accuracy")
             .join(file),
     }
 }

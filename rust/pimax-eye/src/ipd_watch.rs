@@ -403,7 +403,7 @@ pub fn run(cfg: crate::live::Config, info: Option<std::path::PathBuf>, cmd: std:
         let line = ipd::monado_line(t);
         let _ = writeln!(out, "last applied lens IPD {t:.2} mm; Monado render IPD (read once at session start): {line}");
         if let Some(home) = std::env::var_os("HOME") {
-            let p = std::path::PathBuf::from(home).join(".config/pimax/ipd.env");
+            let p = std::path::PathBuf::from(home).join(".config/omarchyvr/ipd.env");
             write_env(&p, &line, out);
         }
     }

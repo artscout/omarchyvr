@@ -14,7 +14,7 @@ pub struct Scene {
 }
 
 fn read_png(p: &Path) -> Result<Vec<u8>, String> {
-    let g = pimax_passthrough::pngdec::read(p)?;
+    let g = omarchyvr_passthrough::pngdec::read(p)?;
     if (g.width, g.height) != (TILE_W, TILE_H) {
         return Err(format!(
             "{}: {}x{}, expected {TILE_W}x{TILE_H}",
@@ -84,13 +84,13 @@ pub fn from_pxcam(
     count: usize,
     step: usize,
 ) -> Result<Vec<Scene>, String> {
-    let mut cam = pimax_passthrough::frames::open_source(&path.to_string_lossy(), false, false)
+    let mut cam = omarchyvr_passthrough::frames::open_source(&path.to_string_lossy(), false, false)
         .map_err(|e| format!("{}: {e}", path.display()))?;
-    let mut ts = pimax_passthrough::frames::TileSet::black();
+    let mut ts = omarchyvr_passthrough::frames::TileSet::black();
     let mut out = Vec::new();
     let mut idx = 0usize;
     while out.len() < count {
-        if !pimax_passthrough::frames::next_tracking(&mut cam, 200, &mut ts)
+        if !omarchyvr_passthrough::frames::next_tracking(&mut cam, 200, &mut ts)
             .map_err(|e| e.to_string())?
         {
             break;

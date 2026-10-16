@@ -1,0 +1,25 @@
+[package]
+name = "omarchyvr-autod"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Auto mode for the Pimax Dream Air: a small user daemon that starts the VR desk/game session when the headset is put on and stops it when it is left alone (pure state machine, dry-run by default, JSON-lines control socket, simulator)."
+
+[lib]
+name = "omarchyvr_autod"
+path = "src/lib.rs"
+
+[[bin]]
+name = "omarchyvr-autod"
+path = "src/main.rs"
+
+[[bin]]
+name = "omarchyvrd"
+path = "src/bin/omarchyvrd.rs"
+
+[dependencies]
+pimax = { workspace = true }
+pimax-proto = { workspace = true, features = ["std"] }
+omarchyvr-components = { path = "../omarchyvr-components" }
+omarchyvr-config = { path = "../omarchyvr-config" }
+libc = { workspace = true }

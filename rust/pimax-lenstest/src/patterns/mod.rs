@@ -326,7 +326,7 @@ impl Pattern {
                 "Then the accuracy grid, 17 dots up to 35 deg out: look at each dot (0.6 s settle, then 1 s measured).",
                 "Result: error mean/median/95%/max, precision, valid %, centre/mid/edge, saved as JSON (path is printed).",
                 "Then a live ring shows where the tracker thinks you look; the green ring is the fitted correction.",
-                "Keys: SPACE/A next, R restart, Y accept and write ~/.config/pimax/eye-correction.toml (backup kept), Q quit.",
+                "Keys: SPACE/A next, R restart, Y accept, write ~/.config/omarchyvr/eye-correction.toml (backup kept), Q quit.",
             ],
         }
     }

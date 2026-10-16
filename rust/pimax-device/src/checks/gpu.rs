@@ -4,7 +4,7 @@ use crate::check::{Area, Check, Ctx, Finding, FixRef, Severity};
 use std::path::Path;
 
 /// `gpu.merged_head_sync`: the patched nvidia-modeset exposes `merged_head_sync` and it is 1 (ported from
-/// pimax-doctor `nvidia` / `merged-head-sync`). Only for modules whose display needs the 2Heads1OR patches.
+/// omarchyvr-doctor `nvidia` / `merged-head-sync`). Only for modules whose display needs the 2Heads1OR patches.
 pub struct MergedHeadSync;
 
 const PARAM: &str = "/sys/module/nvidia_modeset/parameters/merged_head_sync";

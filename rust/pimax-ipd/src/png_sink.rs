@@ -1,6 +1,6 @@
 //! A [`Sink`] that writes every distinct screen to `NN.png` (for `--simulate` and tests).
 
-use pimax_hud::{Screen, Sink};
+use omarchyvr_hud::{Screen, Sink};
 use std::path::PathBuf;
 use std::sync::Mutex;
 
@@ -36,7 +36,7 @@ impl Sink for PngSink {
         }
         g.0 += 1;
         let p = self.dir.join(format!("{:02}.png", g.0));
-        if let Err(e) = pimax_hud::screen::write_png(&screen, &p) {
+        if let Err(e) = omarchyvr_hud::screen::write_png(&screen, &p) {
             eprintln!("cannot write {}: {e}", p.display());
         }
         g.1 = Some(screen);

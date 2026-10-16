@@ -1,0 +1,9 @@
+# Unplug: a 2 s USB glitch changes nothing; a real unplug stops our session.
+at 0 plugged=1 motion=worn
+expect 8 active(desk)
+at 50 plugged=0
+at 52 plugged=1
+expect 60 active(desk)
+at 100 plugged=0 motion=unknown
+expect 105 active(desk)     # unplug debounce 6 s
+expect 107 unplugged        # omarchyvr desk stop --grace 30

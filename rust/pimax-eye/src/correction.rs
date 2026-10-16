@@ -12,7 +12,7 @@
 //! An affine map has zero coefficients in the last three places. The corrected direction is `(u', v', -1)`
 //! normalised. Directions that do not point forward (z >= 0) and tangents beyond [`MAX_TANGENT`] are left alone.
 //!
-//! # File (`~/.config/pimax/eye-correction.toml`)
+//! # File (`~/.config/omarchyvr/eye-correction.toml`)
 //!
 //! ```toml
 //! model = "affine"                       # or "quadratic" (informational)
@@ -207,7 +207,7 @@ impl Correction {
         Correction::parse(&t).map_err(|e| format!("{}: {e}", path.display()))
     }
 
-    /// `~/.config/pimax/eye-correction.toml` (`None` without `$HOME`).
+    /// `~/.config/omarchyvr/eye-correction.toml` (`None` without `$HOME`).
     pub fn default_path() -> Option<PathBuf> {
         default_path_in(std::env::var_os("HOME").map(PathBuf::from))
     }
@@ -247,7 +247,7 @@ impl Correction {
 }
 
 fn default_path_in(home: Option<PathBuf>) -> Option<PathBuf> {
-    home.map(|h| h.join(".config/pimax/eye-correction.toml"))
+    home.map(|h| h.join(".config/omarchyvr/eye-correction.toml"))
 }
 
 #[cfg(test)]
@@ -337,7 +337,7 @@ mod tests {
     #[test]
     fn select_follows_the_variable_and_the_default_file() {
         let dir = std::env::temp_dir().join(format!("pimax-corr-{}", std::process::id()));
-        let cfgdir = dir.join(".config/pimax");
+        let cfgdir = dir.join(".config/omarchyvr");
         std::fs::create_dir_all(&cfgdir).unwrap();
         let home = Some(dir.clone());
         // no file, no variable

@@ -56,7 +56,7 @@ fn from_p(p: &P) -> pimax_hands_pose {
 }
 
 /// New fuser for `hand` (0 left, 1 right): config from the environment, calibration from
-/// `~/.config/pimax/ctrl-imu.json` (or PIMAX_CTRL_IMU_CALIB), else the built-in one (gyro on by default;
+/// `~/.config/omarchyvr/ctrl-imu.json` (or PIMAX_CTRL_IMU_CALIB), else the built-in one (gyro on by default;
 /// PIMAX_CTRL_TRACK_IMU=0 turns it off), log to `$PIMAX_CTRL_IMU_LOG-<hand>.csv` when set.
 #[no_mangle]
 pub extern "C" fn pimax_ctrlfuse_create(hand: c_int) -> *mut PimaxCtrlFuse {

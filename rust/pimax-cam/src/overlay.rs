@@ -1,5 +1,5 @@
 //! Learned calibration overlay: small corrections on top of the factory calibration, kept in a separate file
-//! (default `~/.config/pimax/cam-calib-overlay.json`) so the factory blob is never modified.
+//! (default `~/.config/omarchyvr/cam-calib-overlay.json`) so the factory blob is never modified.
 //!
 //! Version 1 holds per-camera **rotation corrections about the camera centre**, the output of `pimax-selfcal`.
 //! Semantics (rig convention `X_i = R X_0 + t`, the verified one): for camera `i` with rotation vector `w_i`
@@ -297,8 +297,8 @@ impl DeviceCalib {
     }
 }
 
-/// Default overlay path: `$PIMAX_CAM_OVERLAY`, else `$XDG_CONFIG_HOME/pimax/cam-calib-overlay.json`, else
-/// `~/.config/pimax/cam-calib-overlay.json`.
+/// Default overlay path: `$PIMAX_CAM_OVERLAY`, else `$XDG_CONFIG_HOME/omarchyvr/cam-calib-overlay.json`, else
+/// `~/.config/omarchyvr/cam-calib-overlay.json`.
 pub fn default_path() -> Option<PathBuf> {
     if let Some(v) = std::env::var_os("PIMAX_CAM_OVERLAY").filter(|v| !v.is_empty()) {
         return Some(PathBuf::from(v));
@@ -307,7 +307,7 @@ pub fn default_path() -> Option<PathBuf> {
         .filter(|v| !v.is_empty())
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))?;
-    Some(base.join("pimax/cam-calib-overlay.json"))
+    Some(base.join("omarchyvr/cam-calib-overlay.json"))
 }
 
 /// `<path>.prev`.
@@ -470,7 +470,7 @@ mod tests {
 
     #[test]
     fn save_rollback_clear() {
-        let dir = std::env::temp_dir().join(format!("pimax-overlay-test-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("omarchyvr-overlay-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let path = dir.join("sub/cam-calib-overlay.json");
         let c = calib();

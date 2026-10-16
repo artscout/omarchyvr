@@ -1,11 +1,11 @@
 //! Head IMU log for offline replays (`PIMAX_HEAD_IMU_LOG=<file>`): every IMU sample the 6DoF output gets and every
 //! tracker pose time, so a "Record tracking" take (cameras.pxcam + this log) can be replayed through Basalt
-//! (`pimax-slam take-euroc`). Monado owns the headset's HID interface, so this is the only place the head IMU of a
+//! (`omarchyvr-slam take-euroc`). Monado owns the headset's HID interface, so this is the only place the head IMU of a
 //! running session can be saved.
 //!
 //! A leaf: the IMU thread only sends a small message into a channel; a writer thread owns the file. If the file
 //! cannot be written the log stops and nothing else changes. It writes for the first `PIMAX_HEAD_IMU_LOG_MIN`
-//! minutes (default 10) and afterwards only while `$XDG_RUNTIME_DIR/pimax-imu-log.on` exists (the tracking
+//! minutes (default 10) and afterwards only while `$XDG_RUNTIME_DIR/omarchyvr-imu-log.on` exists (the tracking
 //! recorder creates it for the length of a take).
 //!
 //! Format (text, one line each):
@@ -32,11 +32,11 @@ pub struct HeadImuLog {
     pub dropped: u64,
 }
 
-/// File that keeps the log writing after the first minutes (created by `pimax record tracking`).
+/// File that keeps the log writing after the first minutes (created by `omarchyvr record tracking`).
 pub fn flag_path() -> Option<PathBuf> {
     std::env::var_os("XDG_RUNTIME_DIR")
         .filter(|v| !v.is_empty())
-        .map(|d| PathBuf::from(d).join("pimax-imu-log.on"))
+        .map(|d| PathBuf::from(d).join("omarchyvr-imu-log.on"))
 }
 
 impl HeadImuLog {
@@ -56,7 +56,7 @@ impl HeadImuLog {
         let (tx, rx) = sync_channel::<Msg>(8192);
         let span_ns = (minutes.max(0.0) * 60e9) as i64;
         std::thread::Builder::new()
-            .name("pimax-imu-log".into())
+            .name("omarchyvr-imu-log".into())
             .spawn(move || {
                 let mut w = std::io::BufWriter::with_capacity(1 << 16, f);
                 if writeln!(w, "{HEADER}").is_err() {

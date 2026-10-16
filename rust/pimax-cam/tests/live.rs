@@ -1,5 +1,5 @@
 //! Hardware tests: need the headset plugged in and the shared lock, e.g.
-//! `flock -w 3600 /tmp/pimax-headset.lock cargo test -p pimax-cam --test live -- --ignored --test-threads=1 --nocapture`
+//! `flock -w 3600 /tmp/omarchyvr-headset.lock cargo test -p pimax-cam --test live -- --ignored --test-threads=1 --nocapture`
 //! Capture only (UVC stream); nothing is sent to the headset.
 use pimax_cam::camera::Camera;
 use pimax_cam::frame::FrameKind;

@@ -4,7 +4,7 @@
 //!   calibration's "body" frame (OpenXR head axes, x right, y up, z back), i.e. the raw IMU axes after the
 //!   driver's `PIMAX_AXIS_MODE=1` mapping (x and z negated). Camera axes are OpenCV (x right, y down, z forward).
 //! * [`ImuNoise`]: IMU noise model. The factory file has `IMUNoise` all 0.0, so we use conservative defaults or a
-//!   file measured from a still recording (`pimax-slam imu-noise`, `~/.config/pimax/slam-imu.json`).
+//!   file measured from a still recording (`omarchyvr-slam imu-noise`, `~/.config/omarchyvr/slam-imu.json`).
 //! * [`basalt_calib_json`]: the calibration in Basalt's cereal JSON format (`camera_type` `kb4`), for offline runs
 //!   (`basalt_vio`, `monado-cli slambatch` with a `SLAM_CONFIG`) and for every recording.
 //! * [`Supervisor`]: decides when the tracker's poses are trustworthy (acquire after N consistent frames, lose on
@@ -134,7 +134,7 @@ impl Default for ImuNoise {
     /// accel 0.081686; the active file has zeros). Our earlier datasheet-based 4e-4 / 4e-3 made Basalt trust a
     /// biased IMU over vision: on the 2026-10-14 walk (gyro bias seeded) the still drift went 10.3 -> 7.5 cm at
     /// 5 s and the loop error 6.8 -> 1.7 % with these (analysis/slam-drift.md). Bias random walks stay (larger
-    /// ones made it worse). Replace with a measurement (`pimax-slam imu-noise`) if one ever beats these.
+    /// ones made it worse). Replace with a measurement (`omarchyvr-slam imu-noise`) if one ever beats these.
     fn default() -> Self {
         ImuNoise {
             accel_noise_std: [0.081686; 3],
@@ -156,12 +156,12 @@ fn vec3_of(v: Option<&Value>, d: Vec3) -> Vec3 {
 }
 
 impl ImuNoise {
-    /// Default file search: `$PIMAX_SLAM_IMU`, then `~/.config/pimax/slam-imu.json`.
+    /// Default file search: `$PIMAX_SLAM_IMU`, then `~/.config/omarchyvr/slam-imu.json`.
     pub fn default_path() -> Option<PathBuf> {
         if let Some(v) = std::env::var_os("PIMAX_SLAM_IMU").filter(|v| !v.is_empty()) {
             return Some(PathBuf::from(v));
         }
-        std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config/pimax/slam-imu.json"))
+        std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config/omarchyvr/slam-imu.json"))
     }
 
     /// Parse the JSON written by [`ImuNoise::to_json`] (missing keys keep the defaults; a scalar applies to all
@@ -252,12 +252,12 @@ impl Default for SlamSetup {
     }
 }
 
-/// The driver's gyro bias cache (`$XDG_CACHE_HOME/pimax/gyro-bias`, else `~/.cache/pimax/gyro-bias`).
+/// The driver's gyro bias cache (`$XDG_CACHE_HOME/omarchyvr/gyro-bias`, else `~/.cache/omarchyvr/gyro-bias`).
 pub fn gyro_bias_cache_path() -> Option<PathBuf> {
     if let Some(x) = std::env::var_os("XDG_CACHE_HOME").filter(|v| !v.is_empty()) {
-        return Some(PathBuf::from(x).join("pimax/gyro-bias"));
+        return Some(PathBuf::from(x).join("omarchyvr/gyro-bias"));
     }
-    std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache/pimax/gyro-bias"))
+    std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache/omarchyvr/gyro-bias"))
 }
 
 /// Parse the driver's cache text: three numbers, raw IMU axes, deg/s (`pimax_hmd.c` `bias_cache_save`). Returns

@@ -1,0 +1,5 @@
+$ omarchyvr vr start --dry-run --hands
+exit Some(2)
+--- stdout
+--- stderr
+omarchyvr: --hands needs --6dof (Mercury reads the stereo pairs from the camera broker; the hands are world-locked through the 6DoF head pose)

@@ -176,7 +176,7 @@ pub fn final_block(a: &Align, cal: &[EyeCal; 2], lens_path: &str) -> String {
     format!(
         "---- align result: vergence {:+.2} deg/eye, vertical {:+.2} deg ----\n{lines}\
          ---- write a variant file (lens.conf is not touched; later lines win) ----\n\
-         mkdir -p ~/.config/pimax/lens-ipd && {{ cat {lens_path}; cat <<'EOF'\n{lines}EOF\n}} > ~/.config/pimax/lens-ipd/measured.conf\n",
+         mkdir -p ~/.config/omarchyvr/lens-ipd && {{ cat {lens_path}; cat <<'EOF'\n{lines}EOF\n}} > ~/.config/omarchyvr/lens-ipd/measured.conf\n",
         a.verg_deg(),
         a.vert_deg()
     )
@@ -264,13 +264,13 @@ mod tests {
         assert!(t.contains("vertical -0.10 deg"), "{t}");
         assert!(t.contains("[left] center = 0.0338 0.0077"), "{t}");
         assert!(t.contains("[right] center = -0.0338 0.0103"), "{t}");
-        let b = final_block(&a, &EyeCal::DEFAULT, "~/.config/pimax/lens.conf");
+        let b = final_block(&a, &EyeCal::DEFAULT, "~/.config/omarchyvr/lens.conf");
         assert!(
             b.contains("[left]\ncenter = 0.0338 0.0077\n[right]\ncenter = -0.0338 0.0103\n"),
             "{b}"
         );
         assert!(
-            b.contains("lens-ipd/measured.conf") && b.contains("cat ~/.config/pimax/lens.conf")
+            b.contains("lens-ipd/measured.conf") && b.contains("cat ~/.config/omarchyvr/lens.conf")
         );
         for l in hud_lines(&a, &EyeCal::DEFAULT) {
             assert!(l.len() <= 64, "{l}");

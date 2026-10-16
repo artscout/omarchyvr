@@ -1,0 +1,35 @@
+[package]
+name = "omarchyvr-voice"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Local voice-to-text for the Dream Air: PipeWire capture of the headset mic, Silero/energy VAD, Parakeet TDT 0.6B v3 on the CPU (sherpa-onnx C API, English + Spanish) with partial and final transcripts, a JSON-lines Unix socket for subscribers (the VR HUD), and voice commands (\"Pimax ...\": a TOML intent catalogue, offline matcher, optional local/remote LLM fallback, actions with confirmation and undo)."
+
+[lib]
+name = "omarchyvr_voice"
+path = "src/lib.rs"
+
+[[bin]]
+name = "omarchyvr-voice"
+path = "src/main.rs"
+
+[features]
+default = ["pipewire"]
+# Native PipeWire capture (needs libpipewire-0.3 + libclang at build time). Without it only WAV/stdin input works.
+pipewire = ["dep:pipewire"]
+# whisper.cpp (whisper-rs, Vulkan) as an alternative engine, for comparisons: `--engine whisper`.
+whisper = ["dep:whisper-rs"]
+
+[dependencies]
+omarchyvr-voicebench = { path = "../omarchyvr-voicebench" }
+omarchyvr-config = { path = "../omarchyvr-config" }
+omarchyvr-backgrounds = { path = "../omarchyvr-backgrounds" }
+libc = { workspace = true }
+libloading = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "1"
+pipewire = { version = "0.10", optional = true }
+whisper-rs = { version = "0.16", features = ["vulkan"], optional = true }
+wayland-client = "0.31"
+wayland-protocols-misc = { version = "0.3", features = ["client"] }

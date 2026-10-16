@@ -17,7 +17,7 @@
 //!   +56 f32 aim_from_imu[4]  rotation x y z w (controller IMU axes in the aim frame, for gyro deltas)
 //! 208 heartbeat (added 2026-10-15, same version: older readers ignore it; 0 = an older writer):
 //!   208 u64 beat_ns     CLOCK_MONOTONIC time of the writer's last loop pass (at least every 0.5 s while alive,
-//!                       with or without frames or controllers): the liveness signal for pimaxd / Monado
+//!                       with or without frames or controllers): the liveness signal for omarchyvrd / Monado
 //!   216 u64 led_frames  LED frames processed since start
 //!   224 u32 source_up   1 = camera frames arriving, 0 = source reopening (broker or camera gone)
 //!   228 u32 reopens     times the source came back (broker restart, camera reopen)
@@ -315,7 +315,7 @@ mod tests {
     #[test]
     fn write_read_roundtrip() {
         let p =
-            std::env::temp_dir().join(format!("pimax-ctrltrack-test-{}.pose", std::process::id()));
+            std::env::temp_dir().join(format!("omarchyvr-ctrltrack-test-{}.pose", std::process::id()));
         let mut w = PoseWriter::create(&p).unwrap();
         let h = HandPose {
             frame_ns: 123,

@@ -28,7 +28,7 @@ fn factory() -> DeviceCalib {
 
 fn morning2() -> scene::Scene {
     let p = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../pimax-passthrough/tests/fixtures/morning2_tile");
+        .join("../omarchyvr-passthrough/tests/fixtures/morning2_tile");
     scene::from_prefix(p.to_str().unwrap()).unwrap()
 }
 

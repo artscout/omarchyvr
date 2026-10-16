@@ -69,11 +69,11 @@ impl LedModel {
         LedModel::parse(&t).map_err(|e| format!("{}: {e}", path.display()))
     }
 
-    /// Default model files (left, right): `$PIMAX_CTRL_MODEL_DIR`, else `~/.config/pimax/controllers`, else the
+    /// Default model files (left, right): `$PIMAX_CTRL_MODEL_DIR`, else `~/.config/omarchyvr/controllers`, else the
     /// lab's Windows dump (`~/pimax-re/pimax-data/ProgramData-Pimax/slam/H1`). Each holds one folder per controller
     /// serial with a `controller_params.json` (the Pimax `slam/H1/<serial>/` layout); the two folders are taken in
     /// name order, as the tracker has always used them. Nothing per-unit is compiled in; with no folder found the
-    /// paths point at `~/.config/pimax/controllers/{left,right}.json` so the error names where to put them.
+    /// paths point at `~/.config/omarchyvr/controllers/{left,right}.json` so the error names where to put them.
     pub fn default_paths() -> [std::path::PathBuf; 2] {
         let home = std::env::var_os("HOME")
             .map(std::path::PathBuf::from)
@@ -82,14 +82,14 @@ impl LedModel {
         if let Some(d) = std::env::var_os("PIMAX_CTRL_MODEL_DIR").filter(|v| !v.is_empty()) {
             dirs.push(d.into());
         }
-        dirs.push(home.join(".config/pimax/controllers"));
+        dirs.push(home.join(".config/omarchyvr/controllers"));
         dirs.push(home.join("pimax-re/pimax-data/ProgramData-Pimax/slam/H1"));
         for d in &dirs {
             if let Some(p) = Self::pair_in(d) {
                 return p;
             }
         }
-        let c = home.join(".config/pimax/controllers");
+        let c = home.join(".config/omarchyvr/controllers");
         [c.join("left.json"), c.join("right.json")]
     }
 

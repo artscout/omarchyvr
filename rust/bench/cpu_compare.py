@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""CPU / memory / wakeups of `pimax keepalived` (Rust) versus the python daemon over the same wall-clock window.
+"""CPU / memory / wakeups of `omarchyvr keepalived` (Rust) versus the python daemon over the same wall-clock window.
 
     cargo build --release && python3 rust/bench/cpu_compare.py [seconds=60]
 
-* "python service": the already running pimax-keepalived.service (MainPID), measured passively - nothing is changed.
-* "rust": a second daemon `pimax keepalived --no-wake` started for the window (extra keepalives with the same rate byte
+* "python service": the already running omarchyvr-keepalived.service (MainPID), measured passively - nothing is changed.
+* "rust": a second daemon `omarchyvr keepalived --no-wake` started for the window (extra keepalives with the same rate byte
   as the service sends; no wake packet, no video command).
 * "python copy" (--python-copy): an extra instance of pimax_keepalived.py with the wake replaced by a plain keepalive,
   for an apples-to-apples pair when the service is not wanted as reference.
@@ -13,7 +13,7 @@ CPU time comes from /proc/<pid>/task/*/schedstat (ns resolution, all threads).
 import os, signal, subprocess, sys, time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-BIN = os.path.join(ROOT, "rust/target/release/pimax")
+BIN = os.path.join(ROOT, "rust/target/release/omarchyvr")
 SECS = float(next((a for a in sys.argv[1:] if not a.startswith("--")), 60))
 
 
@@ -65,7 +65,7 @@ def measure(procs, secs):
 
 def main():
     procs, children = {}, []
-    svc = subprocess.run(["systemctl", "--user", "show", "-p", "MainPID", "--value", "pimax-keepalived"], capture_output=True, text=True).stdout.strip()
+    svc = subprocess.run(["systemctl", "--user", "show", "-p", "MainPID", "--value", "omarchyvr-keepalived"], capture_output=True, text=True).stdout.strip()
     if svc and svc != "0":
         procs["python service (pimax_keepalived.py)"] = int(svc)
     if "--python-copy" in sys.argv:
@@ -74,7 +74,7 @@ def main():
         p = subprocess.Popen([sys.executable, "-c", code], stdout=subprocess.DEVNULL); children.append(p)
         procs["python copy (no wake)"] = p.pid
     r = subprocess.Popen([BIN, "keepalived", "--no-wake"], stdout=subprocess.DEVNULL); children.append(r)
-    procs["rust  pimax keepalived"] = r.pid
+    procs["rust  omarchyvr keepalived"] = r.pid
     time.sleep(2)  # settle
     try:
         el, res = measure(procs, SECS)
@@ -88,7 +88,7 @@ def main():
     for n, v in res.items():
         print(f"{n:42} {v['cpu_ms']:9.1f} {v['cpu_pct']:8.3f} {v['wake_per_s']:10.1f} {v['rss_kb']:8d} {v['threads']:8d}")
     ks = [v for n, v in res.items() if n.startswith("python")]
-    rr = res["rust  pimax keepalived"]
+    rr = res["rust  omarchyvr keepalived"]
     if ks:
         print(f"rust uses {rr['cpu_ms'] / ks[0]['cpu_ms'] * 100:.0f} % of the python CPU time, {rr['rss_kb'] / ks[0]['rss_kb'] * 100:.0f} % of its RSS")
 

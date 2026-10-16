@@ -87,7 +87,7 @@ pub fn catalogue_prompt() -> String {
     s
 }
 
-/// One line of `~/.local/state/pimax/fixes.log` (tab separated: time, id, outcome, commands, undo).
+/// One line of `~/.local/state/omarchyvr/fixes.log` (tab separated: time, id, outcome, commands, undo).
 pub fn log_line(unix_s: u64, p: &Planned, outcome: &str) -> String {
     let clean = |s: &str| s.replace(['\t', '\n'], " ");
     format!("{unix_s}\t{}\t{}\t{}\t{}\n", p.fix.id, clean(outcome), clean(&p.commands.join(" && ")), clean(&p.undo.join(" && ")))
@@ -122,7 +122,7 @@ mod tests {
         let Proposal::Fix(p) = &parse_reply("FIX runtime.stop_stale_monado")[0] else { panic!() };
         let l = log_line(1, p, "ok\nreally");
         assert_eq!(l.matches('\n').count(), 1);
-        assert!(l.starts_with("1\truntime.stop_stale_monado\tok really\tpimax vr stop --grace 30\t"));
+        assert!(l.starts_with("1\truntime.stop_stale_monado\tok really\tomarchyvr vr stop --grace 30\t"));
         assert!(catalogue_prompt().contains("cpu.setcap_monado"));
     }
 }

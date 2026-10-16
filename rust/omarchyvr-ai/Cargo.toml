@@ -1,0 +1,18 @@
+[package]
+name = "omarchyvr-ai"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "The local AI for Pimax voice control: installs llama.cpp's llama-server (official GitHub release) and a small tool-calling model (Qwen3.5 GGUF from Hugging Face) into ~/.local/share/omarchyvr/ai with checksums and resume, and serves it on 127.0.0.1 at low priority (install / serve / status / stop)."
+
+[lib]
+name = "omarchyvr_ai"
+path = "src/lib.rs"
+
+[[bin]]
+name = "omarchyvr-ai"
+path = "src/main.rs"
+
+[dependencies]
+libc = { workspace = true }
+omarchyvr-config = { path = "../omarchyvr-config" }

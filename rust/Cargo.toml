@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["pimax", "pimax-*"]   # glob: new crates named pimax-<x> join automatically
+members = ["pimax", "pimax-*", "omarchyvr-*"]   # globs: crates named pimax-<x> (hardware) or omarchyvr-<x> (product) join automatically
 
 [workspace.package]
 version = "0.1.0"
@@ -34,5 +34,5 @@ inherits = "release"
 [profile.dev.package.pimax-selfcal]
 opt-level = 3
 
-[profile.dev.package.pimax-room]
+[profile.dev.package.omarchyvr-room]
 opt-level = 3

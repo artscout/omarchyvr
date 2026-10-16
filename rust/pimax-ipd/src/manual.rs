@@ -6,8 +6,8 @@
 //! fake [`Motor`]. The only HID write is [`pimax_eye::ipd::send_motor`] (`58 06 5c 05 01 <mm*100 LE>`).
 
 use pimax_eye::ipd;
-use pimax_hud::screen::{Line, Screen, CYAN, GREEN, RED, WHITE, YELLOW};
-use pimax_hud::Sink;
+use omarchyvr_hud::screen::{Line, Screen, CYAN, GREEN, RED, WHITE, YELLOW};
+use omarchyvr_hud::Sink;
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::time::Duration;
@@ -360,10 +360,10 @@ pub fn run(
     }
 }
 
-/// Write `OXR_DEBUG_IPD_MM=<mm>` to ~/.config/pimax/ipd.env (same as `pimax-eye ipd --apply`).
+/// Write `OXR_DEBUG_IPD_MM=<mm>` to ~/.config/omarchyvr/ipd.env (same as `pimax-eye ipd --apply`).
 pub fn save_env(mm: f32) -> Result<String, String> {
     let home = std::env::var_os("HOME").ok_or("HOME is not set")?;
-    let p = PathBuf::from(home).join(".config/pimax/ipd.env");
+    let p = PathBuf::from(home).join(".config/omarchyvr/ipd.env");
     let line = ipd::monado_line(mm);
     std::fs::create_dir_all(p.parent().unwrap_or(std::path::Path::new("."))).map_err(|e| e.to_string())?;
     std::fs::write(&p, format!("{line}\n")).map_err(|e| format!("{}: {e}", p.display()))?;

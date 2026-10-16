@@ -1,0 +1,30 @@
+[package]
+name = "omarchyvr-xrtest"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "OpenXR test clients for the Dream Air Monado driver. xr-handtest: headless XR_EXT_hand_tracking check (controller-driven hands). xr-gaze: prints the XR_EXT_eye_gaze_interaction pose at 10 Hz."
+
+[lib]
+name = "omarchyvr_xrtest"
+path = "src/lib.rs"
+
+[[bin]]
+name = "xr-handtest"
+path = "src/main.rs"
+
+[[bin]]
+name = "xr-gaze"
+path = "src/bin/xr_gaze.rs"
+
+[[bin]]
+name = "xr-pinchtest"
+path = "src/bin/xr_pinch.rs"
+
+[dependencies]
+# Runtime loaded with dlopen (default feature `loaded`): no link-time dependency on libopenxr_loader.
+openxr = "0.22"
+pimax-hands = { path = "../pimax-hands" }
+libc = { workspace = true }
+
+[dev-dependencies]

@@ -1,0 +1,12 @@
+# Idle-sleep: taken off and left: dim after 60 s, sleep (session stopped by the launcher) 600 s later.
+# Put on again: a new session starts.
+at 0 plugged=1 motion=worn
+expect 8 active(desk)
+at 30 motion=still
+expect 91 idle-dim(desk)
+expect 689 idle-dim(desk)
+expect 691 sleep            # omarchyvr desk stop --grace 30
+expect 750 sleep
+at 800 motion=worn
+expect 805 worn
+expect 808 active(desk)

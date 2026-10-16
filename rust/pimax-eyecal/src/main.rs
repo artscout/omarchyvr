@@ -13,7 +13,7 @@ pimax-eyecal: eye-tracking calibration and accuracy test for the Pimax Dream Air
 
 Put the headset on, keep the head still and follow the dots with the eyes only. 9 (or 13) calibration targets
 within ±15 deg horizontally / ±12 deg vertically, then 10 different validation targets; the accuracy shown is that
-of the validation targets. Then: A live cursor, menu/Y save to ~/.config/pimax/eye-calibration.toml (the old file
+of the validation targets. Then: A live cursor, menu/Y save to ~/.config/omarchyvr/eye-calibration.toml (the old file
 is kept as .bak-<utc>), S check through the runtime (what OpenXR apps such as WayVR get), P smooth pursuit.
 
   --points N        9 (default) or 13 calibration targets (13 also fit a quadratic model)
@@ -23,8 +23,8 @@ is kept as .bak-<utc>), S check through the runtime (what OpenXR apps such as Wa
                     axis is detected by the fit and the tracker restarted with the other setting
   --head-limit DEG  head rotation that restarts a target (default 2.5)
   --res-div N       render at 1/N of the recommended resolution
-  --calibration P   write the calibration to P instead of ~/.config/pimax/eye-calibration.toml
-  --no-raw-log      do not write ~/.local/share/pimax/eye-calibration/eyecal-<utc>-raw.csv
+  --calibration P   write the calibration to P instead of ~/.config/omarchyvr/eye-calibration.toml
+  --no-raw-log      do not write ~/.local/share/omarchyvr/eye-calibration/eyecal-<utc>-raw.csv
   --simulate        run the whole procedure on a simulated wearer and chip (no headset), print the report
 
   --refit RUN.json  fit the calibration targets of a saved run again (RUN.json and RUN-raw.csv, no headset) with the
@@ -37,7 +37,7 @@ is kept as .bak-<utc>), S check through the runtime (what OpenXR apps such as Wa
   --ivt             --refit: only the longest velocity-threshold fixation of every window (default: all steady samples)
 
 The EyeChip is opened directly (no other gaze app may run: WayVR holds it through the runtime); results go to
-~/.local/share/pimax/eye-calibration/eyecal-<utc>.json.
+~/.local/share/omarchyvr/eye-calibration/eyecal-<utc>.json.
 Keys: space/a next, r redo, y save, p pursuit, c cursor, s runtime check, q quit.
 ";
 

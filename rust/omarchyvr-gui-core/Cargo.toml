@@ -1,0 +1,22 @@
+[package]
+name = "omarchyvr-gui-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Core of the Pimax desktop app (no UI): live status, the LESSONS.md preflight rules, the setup checklist and the pimax-device checks with their fixes, safe command building (pkexec, terminals, jobs), tools catalogue, docs tables, onboarding, Autofix."
+
+[dependencies]
+flate2 = { workspace = true }
+libc = { workspace = true }
+log = { workspace = true }
+memchr = "2"
+regex-lite = "0.1"
+serde_json = "1"
+omarchyvr-config = { path = "../omarchyvr-config" }
+omarchyvr-doctor = { path = "../omarchyvr-doctor" }
+# headset modules, system checks with the fix catalogue, onboarding progress (no device I/O of its own)
+pimax-device = { path = "../pimax-device" }
+omarchyvr-tools = { path = "../omarchyvr-tools" }
+# the Record card (settings, status, start/stop of the recorder)
+omarchyvr-record = { path = "../omarchyvr-record" }
+omarchyvr-components = { path = "../omarchyvr-components" }

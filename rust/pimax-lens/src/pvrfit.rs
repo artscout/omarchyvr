@@ -1494,7 +1494,7 @@ pub fn conf_text(dump: &Dump, fits: &[EyeFit; 2], cant_deg: f64, opt: &Options) 
     let mut s = String::new();
     let _ = writeln!(s, "# Pimax Dream Air lens model from Pimax's own PVR distortion (pvr_getHmdDistortedUV), written by `pimax-lens fit-pvr`.");
     let _ = writeln!(s, "# headset {} serial {}; cant_deg from the HmdToEye poses; terms {}, per-channel polynomials {}.", dump.product, dump.serial, opt.terms, opt.per_channel);
-    let _ = writeln!(s, "# Test:  PIMAX_LENS_CONF=$HOME/.config/pimax/lens-ipd/pvr.conf   (lens.conf itself is not touched)");
+    let _ = writeln!(s, "# Test:  PIMAX_LENS_CONF=$HOME/.config/omarchyvr/lens-ipd/pvr.conf   (lens.conf itself is not touched)");
     let _ = writeln!(s, "cant_deg = {cant_deg:.4}\n");
     let _ = writeln!(s, "[common]");
     let _ = writeln!(s, "scale = 1.0");
@@ -1552,8 +1552,8 @@ fn opt_value(args: &[String], name: &str) -> Option<String> {
 }
 
 /// Run `fit-pvr`. Returns the text for stdout, or an error text for stderr. Reads the current lens config
-/// (`--conf`, else the usual `PIMAX_LENS_CONF` / `~/.config/pimax/lens.conf`) for the comparison but never writes
-/// it; writes the variant to `--out` (default `~/.config/pimax/lens-ipd/pvr.conf`) unless `--dry-run`.
+/// (`--conf`, else the usual `PIMAX_LENS_CONF` / `~/.config/omarchyvr/lens.conf`) for the comparison but never writes
+/// it; writes the variant to `--out` (default `~/.config/omarchyvr/lens-ipd/pvr.conf`) unless `--dry-run`.
 pub fn cli(args: &[String], env: &dyn Fn(&str) -> Option<String>) -> Result<String, String> {
     let flags_with_value = ["--out", "--conf", "--terms", "--inlier-deg"];
     let mut input = None;
@@ -1645,7 +1645,7 @@ pub fn cli(args: &[String], env: &dyn Fn(&str) -> Option<String>) -> Result<Stri
                     None => std::path::PathBuf::from(env("HOME").unwrap_or_else(|| ".".into()))
                         .join(".config"),
                 };
-                base.join("pimax/lens-ipd/pvr.conf")
+                base.join("omarchyvr/lens-ipd/pvr.conf")
             });
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
@@ -1945,7 +1945,7 @@ mod tests {
 
     #[test]
     fn cli_fits_a_file_compares_and_writes_only_the_variant() {
-        let dir = std::env::temp_dir().join(format!("pimax-fit-pvr-test-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("omarchyvr-fit-pvr-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let input = dir.join("d.json");

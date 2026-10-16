@@ -43,7 +43,7 @@
 //! disagree by more than [`Combine::max_disagree_deg`], the eye with the smaller expected error is used alone. An eye
 //! that comes back after being invalid is ignored for [`Combine::holdoff`] samples (eyelid artefacts at blink end).
 //!
-//! # File (`~/.config/pimax/eye-calibration.toml`)
+//! # File (`~/.config/omarchyvr/eye-calibration.toml`)
 //!
 //! Written by `pimax-eyecal` (an existing file is kept as `.bak-<utc>`), read by the service at every tracker start
 //! (`PIMAX_EYE_CALIBRATION=<path>|none`; unset: the default file when it exists). See [`Calibration::to_toml`].
@@ -806,9 +806,9 @@ impl Calibration {
         Calibration::parse(&t).map_err(|e| format!("{}: {e}", path.display()))
     }
 
-    /// `~/.config/pimax/eye-calibration.toml`.
+    /// `~/.config/omarchyvr/eye-calibration.toml`.
     pub fn default_path() -> Option<PathBuf> {
-        std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config/pimax/eye-calibration.toml"))
+        std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config/omarchyvr/eye-calibration.toml"))
     }
 
     /// Selection by `PIMAX_EYE_CALIBRATION` (`none`/`off`/`0`: no calibration; a path: that file, which must load;
@@ -820,7 +820,7 @@ impl Calibration {
                 let p = PathBuf::from(p);
                 Calibration::load(&p).map(|c| Some((c, p)))
             }
-            _ => match home.map(|h| h.join(".config/pimax/eye-calibration.toml")) {
+            _ => match home.map(|h| h.join(".config/omarchyvr/eye-calibration.toml")) {
                 Some(p) if p.exists() => Calibration::load(&p).map(|c| Some((c, p))),
                 _ => Ok(None),
             },
@@ -1176,11 +1176,11 @@ mod tests {
     fn select_follows_the_variable() {
         let dir = std::env::temp_dir().join(format!("pimax-cal-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(dir.join(".config/pimax")).unwrap();
+        std::fs::create_dir_all(dir.join(".config/omarchyvr")).unwrap();
         let home = Some(dir.clone());
         assert!(Calibration::select(None, home.clone()).unwrap().is_none());
         let c = Calibration::identity(FrameConv::default(), 0.064);
-        std::fs::write(dir.join(".config/pimax/eye-calibration.toml"), c.to_toml()).unwrap();
+        std::fs::write(dir.join(".config/omarchyvr/eye-calibration.toml"), c.to_toml()).unwrap();
         assert!(Calibration::select(None, home.clone()).unwrap().is_some());
         assert!(Calibration::select(Some("none"), home.clone()).unwrap().is_none());
         assert!(Calibration::select(Some("/nonexistent.toml"), home).is_err());

@@ -3,10 +3,10 @@
 //! V4L2 lets one process stream `/dev/video0`, but passthrough, 6DoF head tracking (Monado), controller tracking (LED
 //! frames) and hand tracking all want the same four cameras. `pimax-cam broker` opens the [`Source`] once and
 //! publishes each frame into a shared-memory ring; a client uses the source spec `broker` (or `broker:<socket>`) and
-//! gets a [`BrokerSource`], an ordinary [`Source`], so nothing else changes for it (`pimax-passthrough run --source
+//! gets a [`BrokerSource`], an ordinary [`Source`], so nothing else changes for it (`omarchyvr-passthrough run --source
 //! broker`, `PIMAX_CAM_SOURCE=broker` for the Monado driver, `pimax-cam stats --source broker`).
 //!
-//! Protocol (Unix `SOCK_SEQPACKET` socket, default `$XDG_RUNTIME_DIR/pimax-cam-broker.sock`):
+//! Protocol (Unix `SOCK_SEQPACKET` socket, default `$XDG_RUNTIME_DIR/omarchyvr-cam-broker.sock`):
 //! * on connect the server sends one hello datagram ([`Hello`]) with the ring's memfd attached (`SCM_RIGHTS`);
 //! * then one 8-byte datagram per published frame: its index `k` (u64 LE); the frame sits in slot `k % slots`.
 //!
@@ -46,12 +46,12 @@ const BEAT_OFFSET: usize = 96; // u64: server loop heartbeat, CLOCK_MONOTONIC ns
 const MAX_DESC: usize = 200;
 const HELLO_FIXED: usize = 4 + 6 * 4;
 
-/// Default socket: `$XDG_RUNTIME_DIR/pimax-cam-broker.sock` (or `/tmp/pimax-cam-broker-<uid>.sock`).
+/// Default socket: `$XDG_RUNTIME_DIR/omarchyvr-cam-broker.sock` (or `/tmp/omarchyvr-cam-broker-<uid>.sock`).
 pub fn default_socket() -> PathBuf {
     match std::env::var_os("XDG_RUNTIME_DIR") {
-        Some(d) if !d.is_empty() => PathBuf::from(d).join("pimax-cam-broker.sock"),
+        Some(d) if !d.is_empty() => PathBuf::from(d).join("omarchyvr-cam-broker.sock"),
         // SAFETY: getuid cannot fail.
-        _ => PathBuf::from(format!("/tmp/pimax-cam-broker-{}.sock", unsafe {
+        _ => PathBuf::from(format!("/tmp/omarchyvr-cam-broker-{}.sock", unsafe {
             libc::getuid()
         })),
     }
@@ -193,7 +193,7 @@ impl Ring {
         };
         let len = layout.ring_len();
         // SAFETY: valid NUL-terminated name; the returned fd is owned below.
-        let raw = unsafe { libc::memfd_create(c"pimax-cam-broker".as_ptr(), libc::MFD_CLOEXEC) };
+        let raw = unsafe { libc::memfd_create(c"omarchyvr-cam-broker".as_ptr(), libc::MFD_CLOEXEC) };
         if raw < 0 {
             return Err(io::Error::last_os_error());
         }
@@ -935,7 +935,7 @@ pub struct Probe {
 }
 
 impl Probe {
-    /// One JSON object (for pimaxd and shells).
+    /// One JSON object (for omarchyvrd and shells).
     pub fn to_json(&self) -> String {
         let opt = |v: Option<String>| v.unwrap_or_else(|| "null".into());
         format!(

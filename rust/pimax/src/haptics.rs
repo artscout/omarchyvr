@@ -83,7 +83,7 @@ impl Limiter {
     }
 }
 
-/// File name (in `$XDG_RUNTIME_DIR`) of a test pulse request for the running VR session: `pimax controllers buzz`
+/// File name (in `$XDG_RUNTIME_DIR`) of a test pulse request for the running VR session: `omarchyvr controllers buzz`
 /// and the app's "Test vibration" button write `SLOT AMP MS\n` (atomically, by rename); the Monado Pimax driver
 /// polls it every 100 ms, removes it and sends the pulse on its own session (the one that owns the headset HID).
 pub const REQUEST_FILE: &str = "pimax-haptic-request";
@@ -224,7 +224,7 @@ mod tests {
         ] {
             assert_eq!(parse_request(bad), None, "{bad:?}");
         }
-        let d = std::env::temp_dir().join(format!("pimax-haptic-test-{}", std::process::id()));
+        let d = std::env::temp_dir().join(format!("omarchyvr-haptic-test-{}", std::process::id()));
         let _ = std::fs::remove_file(&d);
         assert_eq!(take_request(&d), Ok(None));
         std::fs::write(&d, format_request(2, 40, 200)).unwrap();

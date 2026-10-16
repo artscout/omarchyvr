@@ -1,13 +1,13 @@
 //! System checks and the Fix catalogue.
 //!
-//! A [`Check`] is pure: it reads the machine through `pimax_doctor::Host` (real or fake) and returns findings. It
+//! A [`Check`] is pure: it reads the machine through `omarchyvr_doctor::Host` (real or fake) and returns findings. It
 //! never changes anything. A finding may point to a [`Fix`] **by id** from the fixed [`CATALOGUE`]; the fix's
 //! commands are templates whose `{arg}` slots are filled only with values that pass [`safe_arg`]. That catalogue is
 //! also the only thing the Autofix LLM may propose (see [`crate::autofix`]), so no free-form shell ever reaches the
 //! user's terminal from a model. Root fixes are shown for the user to run; this crate runs nothing.
 
 use crate::module::HeadsetModule;
-use pimax_doctor::{Host, Opts};
+use omarchyvr_doctor::{Host, Opts};
 
 /// Which part of the system a check covers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -35,7 +35,7 @@ impl Area {
     }
 }
 
-/// Severity, same order as `pimax_doctor::Level`.
+/// Severity, same order as `omarchyvr_doctor::Level`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Severity {
     Info,
@@ -55,13 +55,13 @@ impl Severity {
     }
 }
 
-impl From<pimax_doctor::Level> for Severity {
-    fn from(l: pimax_doctor::Level) -> Self {
+impl From<omarchyvr_doctor::Level> for Severity {
+    fn from(l: omarchyvr_doctor::Level) -> Self {
         match l {
-            pimax_doctor::Level::Info => Severity::Info,
-            pimax_doctor::Level::Ok => Severity::Ok,
-            pimax_doctor::Level::Warn => Severity::Warn,
-            pimax_doctor::Level::Fail => Severity::Fail,
+            omarchyvr_doctor::Level::Info => Severity::Info,
+            omarchyvr_doctor::Level::Ok => Severity::Ok,
+            omarchyvr_doctor::Level::Warn => Severity::Warn,
+            omarchyvr_doctor::Level::Fail => Severity::Fail,
         }
     }
 }
@@ -132,8 +132,8 @@ pub const CATALOGUE: &[Fix] = &[
         why: "Start the user keepalive service so the headset stays attached.",
         root: false,
         reboot: false,
-        commands: &["systemctl --user enable --now pimax-keepalived"],
-        undo: &["systemctl --user disable --now pimax-keepalived"],
+        commands: &["systemctl --user enable --now omarchyvr-keepalived"],
+        undo: &["systemctl --user disable --now omarchyvr-keepalived"],
         reversible: true,
         args: &[],
     },
@@ -142,7 +142,7 @@ pub const CATALOGUE: &[Fix] = &[
         why: "A monado-service from an earlier run is still alive; stop it cleanly (SIGINT, 30 s grace, never SIGKILL).",
         root: false,
         reboot: false,
-        commands: &["pimax vr stop --grace 30"],
+        commands: &["omarchyvr vr stop --grace 30"],
         undo: &[],
         reversible: true,
         args: &[],
@@ -152,8 +152,8 @@ pub const CATALOGUE: &[Fix] = &[
         why: "Let every Steam game reach Monado without per-game launch options (PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1 for Steam itself). Quit and start Steam once afterwards (or log out and in).",
         root: false,
         reboot: false,
-        commands: &["pimax vr steam-setup on"],
-        undo: &["pimax vr steam-setup off"],
+        commands: &["omarchyvr vr steam-setup on"],
+        undo: &["omarchyvr vr steam-setup off"],
         reversible: true,
         args: &[],
     },

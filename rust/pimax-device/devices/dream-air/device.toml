@@ -16,9 +16,9 @@ command_interface = 0                 # IF0: commands and replies; IF1-IF3 must 
 [display]
 status = "works"
 mode = [7104, 3840]                   # two rotated 3552x3840 panels side by side; pimax-lens/src/pvrfit.rs:1716,1731
-refresh_hz = [72, 90]                 # pimax-tools/src/vr/config.rs:30-58 (90 Hz experimental)
-edid_vendor = "PVR"                   # pimax-tools/src/vr/edid.rs:5
-edid_product = 0x1019                 # pimax-tools/src/vr/edid.rs:7
+refresh_hz = [72, 90]                 # omarchyvr-tools/src/vr/config.rs:30-58 (90 Hz experimental)
+edid_vendor = "PVR"                   # omarchyvr-tools/src/vr/edid.rs:5
+edid_product = 0x1019                 # omarchyvr-tools/src/vr/edid.rs:7
 needs = ["edid_override_non_desktop", "nvidia_2heads1or_patches", "drm_lease"]
 
 [tracking]
@@ -36,7 +36,7 @@ optical_tracking = "experimental"
 status = "works"
 usb_vid = 0x2104                      # Tobii EyeChip; pimax-eye/src/replay.rs:21-23
 usb_pid = 0x0561
-calibration = "~/.config/pimax/eye-calibration.toml"
+calibration = "~/.config/omarchyvr/eye-calibration.toml"
 
 [ipd]
 status = "works"
@@ -60,7 +60,7 @@ source_match = []
 
 [calibration]
 factory = "usb READ_DOC 0x0a, 84 blocks, zlib XML"   # pimax-proto/src/calib.rs:38
-paths = ["~/.config/pimax/lens.conf", "~/.config/pimax/ipd.env", "~/.config/pimax/eye-calibration.toml", "~/.cache/pimax/gyro-bias", "~/.local/share/pimax/roommap"]
+paths = ["~/.config/omarchyvr/lens.conf", "~/.config/omarchyvr/ipd.env", "~/.config/omarchyvr/eye-calibration.toml", "~/.cache/omarchyvr/gyro-bias", "~/.local/share/omarchyvr/roommap"]
 
 [onboarding]
 steps = ["detect", "checks", "fixes", "udev", "ipd", "pair", "eye_cal", "room", "done"]
@@ -105,7 +105,7 @@ source = "pimax-proto/src/frame.rs:70"
 [[hid]]
 id = "stop"
 bytes = "58 04 1a 05 04"
-source = "pimax-tools/src/vr/reset.rs:27-28"
+source = "omarchyvr-tools/src/vr/reset.rs:27-28"
 
 [[hid]]
 id = "read_serial"
@@ -117,7 +117,7 @@ source = "pimax-proto/src/frame.rs:77; pimax/src/session.rs:479"
 id = "read_info"
 bytes = "58 03 50 {slot:u8}"
 params = ["slot=0|2|3"]
-source = "pimax-proto/src/frame.rs:78; pimax-tools/src/info.rs:46"
+source = "pimax-proto/src/frame.rs:78; omarchyvr-tools/src/info.rs:46"
 
 [[hid]]
 id = "read_version"
@@ -161,7 +161,7 @@ params = ["slot=2|3"]
 policy = "once_per_request"
 min_interval_ms = 30000
 approved = "user, 2026-10-14 (once per user request, never retried)"
-source = "pimax-autod/src/pairing.rs:87-92; captures/20261013-124629-controllers-hub2.pcap frames 59024, 98342, 182552"
+source = "omarchyvr-autod/src/pairing.rs:87-92; captures/20261013-124629-controllers-hub2.pcap frames 59024, 98342, 182552"
 
 [[hid]]
 id = "haptic"
@@ -178,7 +178,7 @@ params = ["slot=2|3"]                 # 2 left, 3 right; reply 4c 04 05 SS 01 07
 policy = "once_per_request"
 min_interval_ms = 1000
 approved = "user, 2026-10-15 (Windows capture: left 58 03 05 02 redo take 3 t=40.871, right 58 03 05 03 t=52.533)"
-source = "pimax-autod/src/unpair.rs unpair_report(); analysis/windows-capture-20261015.md redo take 3"
+source = "omarchyvr-autod/src/unpair.rs unpair_report(); analysis/windows-capture-20261015.md redo take 3"
 
 [[hid]]
 id = "sys_reset"
@@ -186,7 +186,7 @@ bytes = "58 04 28 00 00"
 policy = "once_per_request"
 min_interval_ms = 30000
 approved = "user, 2026-10-15 (Windows capture take 2: eSpiCmdSysReset 58 04 28 00 00 at t=8.722, reply 4c 04 28 00 01 07; headset back on USB 7.8 s later)"
-source = "pimax-tools/src/vr/reset.rs sys_frames(); analysis/windows-capture-20261015.md take 2"
+source = "omarchyvr-tools/src/vr/reset.rs sys_frames(); analysis/windows-capture-20261015.md take 2"
 
 [[hid]]
 id = "camera_ae"
@@ -202,7 +202,7 @@ source = "pimax-cam/src/ae.rs:30-36,118-129 (limits ae.rs:386-389); camera-frame
 # bulk endpoint, not this HID interface; pimax-eye refuses them in its own code.
 [[hid_denied]]
 prefix = "58 ?? 19"
-why = "DeviceCheckResult: not approved (pimax-autod/src/pairing.rs:14)"
+why = "DeviceCheckResult: not approved (omarchyvr-autod/src/pairing.rs:14)"
 
 [[hid_denied]]
 prefix = "58 ?? 3c 05 00 00"

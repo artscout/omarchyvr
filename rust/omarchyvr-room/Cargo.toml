@@ -1,0 +1,19 @@
+[package]
+name = "omarchyvr-room"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Room memory for Dream Air 6DoF tracking: ORB features, stereo keyframes from the factory calibration, a persistent room map, relocalisation (gravity-aware 4-DoF PnP) and anchors in room coordinates."
+
+[lib]
+name = "omarchyvr_room"
+path = "src/lib.rs"
+
+[[bin]]
+name = "omarchyvr-room"
+path = "src/main.rs"
+
+[dependencies]
+pimax-cam = { path = "../pimax-cam" }
+
+miniz_oxide = { workspace = true }

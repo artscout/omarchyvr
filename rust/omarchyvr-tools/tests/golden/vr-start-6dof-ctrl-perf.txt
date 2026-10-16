@@ -1,0 +1,44 @@
+$ omarchyvr vr start --dry-run --6dof --ctrl-track --perf
+exit Some(0)
+--- stdout
+omarchyvr vr: --perf would also run, after the service: $ROOT/home/src/target-desk/release/wayvr (minimal WayVR, no screens), $ROOT/home/pimax-re/rust/target/release/omarchyvr-perf
+       PIMAX_PERF_FILE=$ROOT/run/omarchyvr-perf.stats for monado-service
+omarchyvr vr: --6dof would first run: $ROOT/home/pimax-re/rust/target/release/omarchyvr-slam export --out $ROOT/session/basalt, then $ROOT/home/pimax-re/rust/target/release/pimax-cam broker (socket $ROOT/run/omarchyvr-cam-broker.sock)
+omarchyvr vr: --ctrl-track would also run, after the service: $ROOT/home/pimax-re/rust/target/release/pimax-ctrltrack live --source broker:$ROOT/run/omarchyvr-cam-broker.sock
+omarchyvr vr: preflight
+  [warn] headset   34a4:0044 on USB but only 0/4 hidraw interfaces (udev rule linux/70-pimax.rules installed?)
+  [ok  ] camera    34a4:0014 on USB, video node present
+  [ok  ] keepalive omarchyvr-keepalived is active
+  [ok  ] display   DP-1 connected
+  [ok  ] kernel    no Xid / display engine errors in this boot's kernel log
+  [ok  ] service   no monado-service running
+  [ok  ] wayland   WAYLAND_DISPLAY and XDG_RUNTIME_DIR set
+  [warn] priority  $ROOT/build/src/xrt/targets/service/monado-service lacks cap_sys_nice: the compositor cannot raise its GPU/thread priority and frames can be late under load. Fix (root): sudo setcap cap_sys_nice+ep $ROOT/build/src/xrt/targets/service/monado-service   (every relink of monado-service drops it; the Pimax app fixes it too: Fix on Home, or just Play, one password window)
+  [warn] openxr runtime $ROOT/home/.config/openxr/1/active_runtime.json does not exist: OpenXR games find no runtime (`omarchyvr vr start` creates it, pointing at $ROOT/build/openxr_monado-dev.json)
+
+would start: $ROOT/build/src/xrt/targets/service/monado-service
+  XRT_COMPOSITOR_FORCE_WAYLAND_DIRECT=1
+  XRT_COMPOSITOR_WAYLAND_CONNECTOR=DP-1
+  XRT_COMPOSITOR_FORCE_NVIDIA=0
+  XRT_COMPOSITOR_DESIRED_MODE=2
+  PIMAX_FPS=72
+  XRT_COMPOSITOR_LOG=info
+  XRT_COMPOSITOR_SCALE_PERCENTAGE=100
+  PIMAX_LOG=info
+  XR_RUNTIME_JSON=$ROOT/build/openxr_monado-dev.json
+  PIMAX_CAM_SOURCE=broker
+  PIMAX_SLAM=1
+  PIMAX_CAM_AE=1
+  VIT_SYSTEM_LIBRARY_PATH=$ROOT/home/.local/lib/libbasalt.so
+  SLAM_CONFIG=$ROOT/session/basalt/pimax-basalt.toml
+  PIMAX_HEAD_IMU_LOG=$ROOT/session/head-imu.csv
+  PIMAX_CTRL_TRACK=1
+  PIMAX_CTRL_IMU_LOG=$ROOT/session/ctrl-imu
+  PIMAX_CTRL_INHAND=always
+  PIMAX_PERF_FILE=$ROOT/run/omarchyvr-perf.stats
+  PIMAX_DEBUG_PTRACE=1
+  IPC_IGNORE_VERSION=1
+  XRT_NO_STDIN=1
+  XRT_COMPOSITOR_OUTPUT_GAMMA=0.85
+  log: $ROOT/session/monado.log
+--- stderr

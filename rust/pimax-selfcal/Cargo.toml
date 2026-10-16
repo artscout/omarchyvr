@@ -17,4 +17,4 @@ path = "src/main.rs"
 pimax-cam = { path = "../pimax-cam" }
 # eye-view (passthrough) before/after check and the PNG decoder; OpenXR/Vulkan in that crate are dlopen'ed,
 # nothing here links or opens a runtime.
-pimax-passthrough = { path = "../pimax-passthrough" }
+omarchyvr-passthrough = { path = "../omarchyvr-passthrough" }

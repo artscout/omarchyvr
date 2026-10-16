@@ -129,7 +129,7 @@ impl Config {
     /// `PIMAX_EYE_CAL=1` (send the calibration blob), `PIMAX_EYE_SKIP_AUTH=1`, `PIMAX_EYE_LATENCY_MS`,
     /// `PIMAX_EYE_USB_RESET=0` (no USB reset recovery), `PIMAX_EYE_POWER_ON=0` (never power the eye module),
     /// `PIMAX_EYE_USB` (usbfs node), `PIMAX_EYE_CORRECTION=path|none` (see [`crate::correction`]; unset: the file
-    /// `~/.config/pimax/eye-correction.toml` when it exists).
+    /// `~/.config/omarchyvr/eye-correction.toml` when it exists).
     pub fn from_env() -> Config {
         let mut c = Config {
             conv: FrameConv::from_env(),

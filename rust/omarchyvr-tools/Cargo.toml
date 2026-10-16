@@ -1,0 +1,31 @@
+[package]
+name = "omarchyvr-tools"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "The `omarchyvr` command line tool: keepalived, probe, imu, controllers, calib, video-on, logtail, info."
+
+[lib]
+name = "omarchyvr_tools"
+path = "src/lib.rs"
+
+[[bin]]
+name = "omarchyvr"
+path = "src/main.rs"
+
+[dependencies]
+pimax = { workspace = true }
+pimax-proto = { workspace = true, features = ["std"] }
+libc = { workspace = true }
+log = { workspace = true }
+regex-lite = "0.1"
+serde_json = "1"
+omarchyvr-autod = { path = "../omarchyvr-autod" }
+omarchyvr-components = { path = "../omarchyvr-components" }
+omarchyvr-record = { path = "../omarchyvr-record" }
+omarchyvr-config = { path = "../omarchyvr-config" }
+omarchyvr-backgrounds = { path = "../omarchyvr-backgrounds" }
+
+[dev-dependencies]
+flate2 = { workspace = true }
+libc = { workspace = true }

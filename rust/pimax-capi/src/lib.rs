@@ -492,7 +492,7 @@ pub unsafe extern "C" fn pimax_haptic(
     c_int::from(pulse.is_none())
 }
 
-/// Take a test pulse request (`$XDG_RUNTIME_DIR/pimax-haptic-request`, written by `pimax controllers buzz` / the app)
+/// Take a test pulse request (`$XDG_RUNTIME_DIR/pimax-haptic-request`, written by `omarchyvr controllers buzz` / the app)
 /// and queue it. Returns the slot (2/3) when one was sent, 0 when there was none, -EINVAL for a malformed request
 /// (removed).
 #[no_mangle]

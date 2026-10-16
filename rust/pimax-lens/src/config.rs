@@ -1,6 +1,6 @@
 //! `lens.conf` parsing.
 //!
-//! The grammar is the one of the C parser this crate replaces (`pimax_lens.c` of the Monado `pimax` branch):
+//! The grammar is the one of the C parser this crate replaces (`pimax_lens.c` of the Monado `omarchyvr` branch):
 //! INI-like, `#` and `;` start comments, `[common]`/`[both]` (or no section) apply to both eyes, `[left]`/`[right]`
 //! override one eye, later lines win, bad lines are reported and skipped. Every key of the old file format keeps its
 //! meaning; the new keys are optional and default to "no change", so an old file gives bit-identical results.
@@ -472,17 +472,17 @@ pub fn parse(text: &str, aspect: f32) -> (LensConfig, Vec<Warning>) {
     (cfg, w)
 }
 
-/// Where the config is read from: `PIMAX_LENS_CONF`, else `$XDG_CONFIG_HOME/pimax/lens.conf`,
-/// else `$HOME/.config/pimax/lens.conf` (`./.config/...` without HOME), like the C driver did.
+/// Where the config is read from: `PIMAX_LENS_CONF`, else `$XDG_CONFIG_HOME/omarchyvr/lens.conf`,
+/// else `$HOME/.config/omarchyvr/lens.conf` (`./.config/...` without HOME), like the C driver did.
 pub fn config_path(env: &dyn Fn(&str) -> Option<String>) -> PathBuf {
     if let Some(p) = env("PIMAX_LENS_CONF").filter(|p| !p.is_empty()) {
         return PathBuf::from(p);
     }
     if let Some(x) = env("XDG_CONFIG_HOME").filter(|x| !x.is_empty()) {
-        return PathBuf::from(x).join("pimax/lens.conf");
+        return PathBuf::from(x).join("omarchyvr/lens.conf");
     }
     let home = env("HOME").unwrap_or_else(|| ".".to_string());
-    PathBuf::from(home).join(".config/pimax/lens.conf")
+    PathBuf::from(home).join(".config/omarchyvr/lens.conf")
 }
 
 /// `PIMAX_CANT_DEG=<deg>` overrides `cant_deg`; `None` if unset, `Err(text)` if unparsable or out of range.
@@ -751,19 +751,19 @@ mod tests {
         );
         assert_eq!(
             config_path(&env(&[("XDG_CONFIG_HOME", "/xdg"), ("HOME", "/h")])),
-            PathBuf::from("/xdg/pimax/lens.conf")
+            PathBuf::from("/xdg/omarchyvr/lens.conf")
         );
         assert_eq!(
             config_path(&env(&[("HOME", "/h")])),
-            PathBuf::from("/h/.config/pimax/lens.conf")
+            PathBuf::from("/h/.config/omarchyvr/lens.conf")
         );
         assert_eq!(
             config_path(&env(&[])),
-            PathBuf::from("./.config/pimax/lens.conf")
+            PathBuf::from("./.config/omarchyvr/lens.conf")
         );
         assert_eq!(
             config_path(&env(&[("PIMAX_LENS_CONF", ""), ("HOME", "/h")])),
-            PathBuf::from("/h/.config/pimax/lens.conf")
+            PathBuf::from("/h/.config/omarchyvr/lens.conf")
         );
         assert!(forced_off(&env(&[("PIMAX_LENS_OFF", "1")])));
         assert!(forced_off(&env(&[("PIMAX_LENS_OFF", "yes")])));

@@ -13,7 +13,7 @@
 //! right_why=no reports
 //! ```
 //! Run-time mode change: `$XDG_RUNTIME_DIR/pimax-ctrl-inhand-mode` with `auto`, `always` or `off` (the app, the CLI
-//! `pimax controllers use ...` and voice write it); [`pimax_inhand_poll_mode`] reads and deletes it.
+//! `omarchyvr controllers use ...` and voice write it); [`pimax_inhand_poll_mode`] reads and deletes it.
 
 #![allow(non_camel_case_types, clippy::missing_safety_doc)]
 

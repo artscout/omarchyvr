@@ -3,7 +3,7 @@
 use crate::check::{Area, Check, Ctx, Finding, FixRef, Severity};
 use std::path::Path;
 
-/// `cpu.cap_sys_nice`: monado-service carries cap_sys_nice (ported from pimax-doctor `setcap`, checks.rs:716).
+/// `cpu.cap_sys_nice`: monado-service carries cap_sys_nice (ported from omarchyvr-doctor `setcap`, checks.rs:716).
 pub struct CapSysNice;
 
 /// Path of monado-service inside a build dir.

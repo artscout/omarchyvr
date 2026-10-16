@@ -1,0 +1,59 @@
+# omarchyvr-voice audit: the real requests of the live Work session of 2026-10-16 (voiceact.log, ai.log, voice.log), as
+# heard, with what the user meant (docs/VOICE-DECISIONS.md 10-17). Columns: intent, phrase, optional slots k=v,k=v.
+# "none" = nothing may run: a sentence cut off mid-way waits for its rest instead (act: held, joined with the next).
+vr.screens.more	can you create 2 screens more	n=2
+vr.screens.more	create 2 screens more	n=2
+none	set up a nice
+vr.preset.cinema	and you make cinema mode
+win.ws.new	uh can you open a new window
+win.organize	can you move the windows in a nice layout
+none	can you move
+vr.screens.more	do 2 more screens	n=2
+vr.screens.more	can you do 2 more screens	n=2
+none	can you move uh 1 of the
+none	can you move all the
+browser.open	can you open youtube	site=youtube
+omarchy.focus.app	can i focus you 2	app=youtube
+none	can you write uh
+none	can you write uh something in the
+win.screen.open	can you focus youtube in a new window	app=youtube
+none	canwii
+vr.screens.more	can we have 2 more screens	n=2
+vr.screens.count	can we can we have 2 more screens can we have 4 screens	n=4
+vr.screens.more	can we have 2 screams up there more	n=2
+vr.passthrough.off	can we stop us through max
+win.screen.goto	can we focus in the main window	side=main
+vr.screens.hide_others	clot screens	# user rule 2026-10-16: close screens hides them
+# sentences the wake word did not reach (Max not first) or the second half of a cut-off one, joined
+vr.screens.more	windows, can we ha max, can we have 2 more windows	n=2
+win.screen.gather	move all the terminals to one window	app=terminals
+win.screen.nudge	can you move uh one of the screens to the right	side=right
+win.screen.gather	can you move all the command line in one page
+omarchy.focus.app	can i focus youtube	app=youtube
+vr.screens.hide_others	close the other two screens	# user rule 2026-10-16: hides, no app closes
+# variants of the same requests
+vr.screens.count	4 screens	n=4
+vr.screens.count	give me four screens	n=4
+vr.screens.count	six screens please	n=6
+vr.screens.count	can we have two screens	n=2
+vr.screens.more	two more screens	n=2
+vr.screens.more	add two more screens	n=2
+vr.screens.one_more	one more screen
+vr.screens.add	a screen to the left	side=left
+vr.screens.add	add a screen up there	side=up
+vr.screens.add	add a screen on the top left	side=up-left
+win.screen.open	open chrome in a new window	app=chrome
+win.screen.open	put youtube on its own screen	app=youtube
+win.screen.open	open a terminal on a new screen	app=terminal
+win.screen.goto	go to the main window	side=main
+win.screen.goto	focus the main screen	side=main
+vr.passthrough.off	stop passthrough
+vr.passthrough.off	turn the pass through off
+vr.passthrough.off	stop the past through
+vr.screens.hide_others	close screens	# user rule 2026-10-16
+win.screen.gather	put all the terminals on one screen	app=terminals
+win.screen.gather	all the browsers together	app=browsers
+# several steps (the plan path: "and" / "then" / two commands)
+vr.screens.more ; win.screen.open	two more screens and put chrome there	n=2
+win.close ; win.screen.goto	close this and go to the main screen
+vr.preset.cinema ; vr.passthrough.off	cinema mode and then turn off passthrough

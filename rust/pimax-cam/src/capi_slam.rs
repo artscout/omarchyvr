@@ -56,7 +56,7 @@ fn imu_from_c(c: &CSlamImu) -> ImuNoise {
     }
 }
 
-/// IMU noise model: `path` (NULL = `$PIMAX_SLAM_IMU` or `~/.config/pimax/slam-imu.json` if present). Returns 1 =
+/// IMU noise model: `path` (NULL = `$PIMAX_SLAM_IMU` or `~/.config/omarchyvr/slam-imu.json` if present). Returns 1 =
 /// loaded from a file, 0 = defaults (no file), -1 = bad file (defaults written to `out`, error message set).
 ///
 /// # Safety
@@ -192,7 +192,7 @@ pub unsafe extern "C" fn pimax_cam_slam_write_basalt(
             cams: ids.iter().map(|&i| i as usize).collect(),
             cam_hz,
             cam_time_offset_ns,
-            // Same seed as `pimax-slam export` for live runs: the bias the driver cached from its last still window.
+            // Same seed as `omarchyvr-slam export` for live runs: the bias the driver cached from its last still window.
             gyro_bias: slam::gyro_bias_cache().unwrap_or([0.0; 3]),
         };
         // SAFETY: per contract.
@@ -672,7 +672,7 @@ mod tests {
     #[cfg_attr(not(lab_data), ignore = "needs the private lab data (real calibration, room recording or eye transcript)")]
     fn write_files_and_cams() {
         let c = load();
-        let dir = std::env::temp_dir().join(format!("pimax-slam-capi-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("omarchyvr-slam-capi-{}", std::process::id()));
         let d = CString::new(dir.to_str().unwrap()).unwrap();
         let mut imu = std::mem::MaybeUninit::<CSlamImu>::zeroed();
         let missing = CString::new("/nonexistent/slam-imu.json").unwrap();
