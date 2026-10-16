@@ -1492,6 +1492,20 @@ mod tests {
     }
 
     #[test]
+    fn cloud_ai_is_off_by_default() {
+        // no file, or a file without providers: no cloud provider, no key, no default provider; voice "fallback" then
+        // means the local omarchyvr-ai server only (agent.rs settings_and_providers_from_ai_toml checks `local`)
+        for c in [AiConfig::default(), AiConfig::parse("").unwrap(), AiConfig::parse("strip_titles = true\n").unwrap()] {
+            assert!(c.providers.is_empty() && c.default.is_none() && c.uses.is_empty());
+            assert!(c.providers.iter().all(|p| p.kind != Kind::Anthropic && p.kind != Kind::OpenAi));
+            assert!(c.resolve_with(Feature::Voice, &|_| None, None).is_err(), "nothing to send to without a key");
+        }
+        // a provider the user adds (a key) is kept
+        let c = AiConfig::parse("default = \"claude\"\n[providers.claude]\nkind = \"anthropic\"\napi_key = \"sk-ant-x\"\n").unwrap();
+        assert_eq!(c.providers.len(), 1);
+    }
+
+    #[test]
     fn asr_setting_parses_renders_and_defaults_to_the_processor() {
         assert_eq!(AiConfig::default().asr, Asr::Cpu);
         assert!(!AiConfig::default().asr_on_gpu());

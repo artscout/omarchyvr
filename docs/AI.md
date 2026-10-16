@@ -67,7 +67,9 @@ use `serve --cpu`, or `--gpu-layers N` with a smaller N.
 
 ## 2. Settings (`~/.config/omarchyvr/ai.toml`)
 
-Do not create the file by hand unless you want to. The AI tab writes it (mode 0600). An example:
+Do not create the file by hand unless you want to. The AI tab writes it (mode 0600). No cloud model is configured by default:
+with no file or no providers nothing is ever sent to a cloud service (`voice_ai = "fallback"` then means the local omarchyvr-ai
+server only). The first-run setup does not offer a cloud model; it is added on the AI page by users who have a key. An example:
 
 ```toml
 voice_ai = "fallback"        # off | fallback | always
