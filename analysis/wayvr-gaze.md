@@ -1,6 +1,6 @@
 # WayVR: eye-gaze pointer and hands
 
-Source: `~/src/wayvr`, branch `eye-gaze` (commits a8a2469 gaze, 88db4e0 hands). Release build: `CARGO_TARGET_DIR=~/src/target-desk cargo build --release`.
+Source: `~/src/wayvr`, branch `eye-gaze` (commits a8a2469 gaze, 88db4e0 hands). Release build: `CARGO_TARGET_DIR=$WAYVR_TARGET cargo build --release`.
 
 ## Gaze pointer
 - Pose: the existing "handsfree" action space bound to `/user/eyes_ext/input/gaze_ext/pose` (profile `ext/eye_gaze_interaction`), located each frame at the predicted display time in stage space.
@@ -17,8 +17,8 @@ Source: `~/src/wayvr`, branch `eye-gaze` (commits a8a2469 gaze, 88db4e0 hands). 
 ## Test (user)
 Config file `~/src/desk-out/wayvr-home-am/config/wayvr/conf.d/20-gaze.yaml` (next to `10-am.yaml`, which sets `capture_method: screencopy`).
 ```
-PIMAX_EYE=1 XR_RUNTIME_JSON=~/src/monado-eye/build/openxr_monado-dev.json IPC_IGNORE_VERSION=1 \
-  ~/src/target-desk/release/wayvr --openxr --show --no-autostart
+PIMAX_EYE=1 XR_RUNTIME_JSON=~/.local/lib/omarchyvr/monado/openxr_monado-dev.json IPC_IGNORE_VERSION=1 \
+  ~/.local/lib/omarchyvr/wayvr/wayvr --openxr --show --no-autostart
 ```
 (use the same XDG_* home env as the overnight recipe; start the Monado service with `PIMAX_EYE=1` as in eye-monado.md). Look at an overlay: a small cursor follows the gaze; pull a trigger while looking (not pointing a controller at an overlay) to click. Try `gaze_dwell_ms: 800`. Log lines: "Hand tracking enabled", "Missing EXT_..." warnings.
 Not run offline: no headset/runtime tests. Note: creating the gaze space (done at startup by stock WayVR already) makes Monado open the EyeChip.

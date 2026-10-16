@@ -100,17 +100,17 @@ pub fn idle_machine() -> (FakeMachine, Paths) {
     // builds
     let cache_desk = include_str!("../tests/fixtures/CMakeCache-desk.txt");
     let cache_pimax = include_str!("../tests/fixtures/CMakeCache-pimax.txt");
-    let cache_slam = cache_desk.replace("monado-eye", "monado-slam");
-    for (dir, cache, slam, eye, cap, branch) in [
-        ("/home/u/src/monado-eye", cache_desk.to_string(), true, true, true, "desk"),
-        ("/home/u/src/monado-slam", cache_slam, true, false, false, "slam"),
-        ("/home/u/src/monado", cache_pimax.to_string(), false, false, true, "pimax"),
+    let cache_slam = cache_desk.replace("monado-desk", "monado-slam");
+    for (bdir, dir, cache, slam, eye, cap, branch) in [
+        ("/home/u/.local/lib/omarchyvr/monado", "/home/u/src/monado-desk", cache_desk.to_string(), true, true, true, "desk"),
+        ("/home/u/src/monado-slam/build", "/home/u/src/monado-slam", cache_slam, true, false, false, "slam"),
+        ("/home/u/src/monado/build", "/home/u/src/monado", cache_pimax.to_string(), false, false, true, "pimax"),
     ] {
-        let svc = format!("{dir}/build/src/xrt/targets/service/monado-service");
+        let svc = format!("{bdir}/src/xrt/targets/service/monado-service");
         m.file(&svc, service_binary(slam, eye));
         m.set_meta(&svc, FileMeta { len: service_binary(slam, eye).len() as u64, mtime: 1_791_960_000, ino: 77, mode: 0o100755, is_dir: false });
-        m.file(&format!("{dir}/build/CMakeCache.txt"), cache);
-        m.file(&format!("{dir}/build/openxr_monado-dev.json"), "{}\n");
+        m.file(&format!("{bdir}/CMakeCache.txt"), cache);
+        m.file(&format!("{bdir}/openxr_monado-dev.json"), "{}\n");
         m.file(&format!("{dir}/.git/HEAD"), format!("ref: refs/heads/{branch}\n"));
         m.cmd(&format!("getcap {svc}"), 0, &if cap { format!("{svc} cap_sys_nice=ep\n") } else { String::new() });
     }
@@ -125,11 +125,11 @@ pub fn idle_machine() -> (FakeMachine, Paths) {
         m.file(&format!("/home/u/.local/bin/{b}"), "elf");
     }
     for f in [
-        "/home/u/src/target-desk/release/wayvr",
+        "/home/u/.local/lib/omarchyvr/wayvr/wayvr",
         "/home/u/src/wayvr/Cargo.toml",
         "/home/u/.local/lib/libbasalt.so",
         "/home/u/models/parakeet-tdt-0.6b-v3-int8/tokens.txt",
-        "/home/u/src/venv-voice/lib/python3.14/site-packages/sherpa_onnx/lib/libsherpa-onnx-c-api.so",
+        "/home/u/.local/lib/omarchyvr/sherpa-onnx/lib/libsherpa-onnx-c-api.so",
         "/home/u/omarchyvr/analysis/tools/run_slam_view.sh",
         "/home/u/omarchyvr/analysis/tools/vr_runtime_switch.sh",
         "/home/u/omarchyvr/rust/target/release/omarchyvr-app",
@@ -143,7 +143,7 @@ pub fn idle_machine() -> (FakeMachine, Paths) {
 pub fn running_machine() -> (FakeMachine, Paths) {
     let (mut m, p) = idle_machine();
     let s = "/tmp/omarchyvr-session";
-    let svc = "/home/u/src/monado-eye/build/src/xrt/targets/service/monado-service";
+    let svc = "/home/u/.local/lib/omarchyvr/monado/src/xrt/targets/service/monado-service";
     let env = [
         ("PIMAX_FPS", "72"),
         ("XRT_COMPOSITOR_DESIRED_MODE", "2"),
@@ -157,7 +157,7 @@ pub fn running_machine() -> (FakeMachine, Paths) {
     m.process(372448, "pimax-cam", "/home/u/omarchyvr/rust/target/release/pimax-cam broker", &[], 3_509_000, &["/dev/video0"]);
     m.process(372460, "monado-service", svc, &env, 3_510_000, &["/dev/bus/usb/001/009", "/dev/hidraw3"]);
     m.process(372563, "omarchyvr-passt", "/home/u/omarchyvr/rust/target/release/omarchyvr-passthrough run --source broker", &[], 3_511_000, &[]);
-    m.process(378947, "wayvr", "/home/u/src/target-desk/release/wayvr --openxr --show --no-autostart", &[], 3_512_000, &[]);
+    m.process(378947, "wayvr", "/home/u/.local/lib/omarchyvr/wayvr/wayvr --openxr --show --no-autostart", &[], 3_512_000, &[]);
     for (n, pid) in [("broker", 372448), ("monado", 372460), ("passthrough", 372563), ("wayvr", 378947)] {
         m.file(&format!("{s}/{n}.pid"), format!("{pid}\n"));
     }
@@ -176,7 +176,7 @@ mod tests {
     fn demo_machines_build() {
         let (m, p) = idle_machine();
         assert!(crate::procs::monado_pids(&m).is_empty());
-        assert_eq!(p.desk_build().dir, Path::new("/home/u/src/monado-eye/build"));
+        assert_eq!(p.desk_build().dir, Path::new("/home/u/.local/lib/omarchyvr/monado"));
         let (r, _) = running_machine();
         assert_eq!(crate::procs::monado_pids(&r), vec![372460]);
         let age = crate::procs::age_secs(&r, 372460).unwrap();

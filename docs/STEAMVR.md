@@ -77,7 +77,7 @@ The Monado commit "steamvr_drv: Pimax under SteamVR" adds:
 - IPD from `OXR_DEBUG_IPD_MM` (it was a fixed 63 mm);
 - a null-safe cleanup.
 
-Build: `~/src/monado-eye/build-all-next2`, configured with every cache option copied from `build-all`.
+Build: `~/.local/lib/omarchyvr/monado-all-next2`, configured with every cache option copied from `build-all`.
 
 ### First headset test (2026-10-15 17:19): fixed
 

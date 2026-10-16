@@ -33,8 +33,8 @@ never during a move (waits until the lens is within 0.3 mm or 6 s), at least 1.5
 No eye tracking is used: the eye chip is not opened.
 
 The eye chip can be opened by one process only: start Monado without eye tracking (omarchyvr vr start --force with
-PIMAX_MONADO_BUILD=~/src/monado-eye/build, or omarchyvr desk start --force without --eye) and run with
-XR_RUNTIME_JSON=~/src/monado-eye/build/openxr_monado-dev.json.
+PIMAX_MONADO_BUILD=~/.local/lib/omarchyvr/monado, or omarchyvr desk start --force without --eye) and run with
+XR_RUNTIME_JSON=~/.local/lib/omarchyvr/monado/openxr_monado-dev.json.
 ";
 
 struct Args(Vec<String>);

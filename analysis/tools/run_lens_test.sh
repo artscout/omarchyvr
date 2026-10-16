@@ -44,7 +44,7 @@ mkdir -p "$LOGDIR"
 die() { echo "run_lens_test: $*" >&2; exit 1; }
 [ -x "$SVC" ] || die "no monado-service at $SVC (set MONADO_BUILD)"
 [ -r "$RT" ] || die "no OpenXR runtime json at $RT (set MONADO_BUILD)"
-[ -n "$APP" ] && [ -x "$APP" ] || die "pimax-lenstest not built: (cd ~/pimax-re/rust && cargo build --release -p pimax-lenstest), or set LENSTEST"
+[ -n "$APP" ] && [ -x "$APP" ] || die "pimax-lenstest not built: (cd ~/omarchyvr/rust && cargo build --release -p pimax-lenstest), or set LENSTEST"
 if pgrep -x monado-service >/dev/null; then die "a monado-service is already running; stop it first (Ctrl-C in its terminal)"; fi
 
 # options of this script; everything else goes to the client

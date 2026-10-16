@@ -1,5 +1,5 @@
 # Both panels show the LEFT half: DSC / 2Head1OR analysis (NVIDIA open 610.57.04)
-Source tree: /home/user/src/open-gpu-kernel-modules (tag 610.57.04). NT=src/common/modeset/timing, NM=src/nvidia-modeset/src.
+Source tree: ~/src/open-gpu-kernel-modules (tag 610.57.04). NT=src/common/modeset/timing, NM=src/nvidia-modeset/src.
 Research only; nothing was run or changed. Confidence: H = read in code, M = inference, L = guess (no bridge datasheet).
 
 ## 1. What the driver sends for 7104x3840@72 (pclk 2170.07 MHz)

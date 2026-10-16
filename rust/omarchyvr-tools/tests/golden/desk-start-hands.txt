@@ -1,24 +1,24 @@
 $ omarchyvr desk start --dry-run --6dof --hands
 exit Some(0)
 --- stdout
-omarchyvr desk: camera hands on (Mercury, XR_EXT_hand_tracking + hand_interaction): Monado from $ROOT/home/src/monado-eye/build
+omarchyvr desk: camera hands on (Mercury, XR_EXT_hand_tracking + hand_interaction): Monado from $ROOT/home/.local/lib/omarchyvr/monado
 omarchyvr desk: would start, in this order:
   0. $ROOT/home/.local/bin/omarchyvr-slam export --out $ROOT/session/basalt, then $ROOT/home/.local/bin/pimax-cam broker (socket $ROOT/run/omarchyvr-cam-broker.sock)
   1a. VR screens: 4 (the main desktop output + PIMAX-LEFT, PIMAX-RIGHT, PIMAX-UP as headless outputs of its size, created before Monado; hyprctl eval 'hl.monitor(...)', hyprctl output create headless)
-  1. monado-service ($ROOT/home/src/monado-eye/build/src/xrt/targets/service/monado-service)
+  1. monado-service ($ROOT/home/.local/lib/omarchyvr/monado/src/xrt/targets/service/monado-service)
   2. $ROOT/home/.local/bin/omarchyvr-passthrough run --gain 0.35 --source broker  (log $ROOT/session/passthrough.log)
-       XR_RUNTIME_JSON=$ROOT/home/src/monado-eye/build/openxr_monado-dev.json
+       XR_RUNTIME_JSON=$ROOT/home/.local/lib/omarchyvr/monado/openxr_monado-dev.json
        IPC_IGNORE_VERSION=1
        PIMAX_CAM_SOURCE=broker
-  3. $ROOT/home/src/target-desk/release/wayvr --openxr --show --no-autostart --log-to $ROOT/session/wayvr.log  (log $ROOT/session/wayvr.stdout)
-       XR_RUNTIME_JSON=$ROOT/home/src/monado-eye/build/openxr_monado-dev.json
+  3. $ROOT/home/.local/lib/omarchyvr/wayvr/wayvr --openxr --show --no-autostart --log-to $ROOT/session/wayvr.log  (log $ROOT/session/wayvr.stdout)
+       XR_RUNTIME_JSON=$ROOT/home/.local/lib/omarchyvr/monado/openxr_monado-dev.json
        IPC_IGNORE_VERSION=1
        XDG_CONFIG_HOME=$ROOT/home/.local/share/omarchyvr/wayvr-home/config
        XDG_DATA_HOME=$ROOT/home/.local/share/omarchyvr/wayvr-home/data
        XDG_STATE_HOME=$ROOT/home/.local/share/omarchyvr/wayvr-home/state
        RUST_LOG=info
-  4. $ROOT/home/.local/bin/omarchyvr desk screens watch --wayvrctl-bin $ROOT/home/src/target-desk/release/wayvrctl  (log $ROOT/session/screens.log)
-  5. $ROOT/home/.local/bin/omarchyvr-perf run --file $ROOT/run/omarchyvr-perf.stats --wayvrctl $ROOT/home/src/target-desk/release/wayvrctl  (log $ROOT/session/perf.log)
+  4. $ROOT/home/.local/bin/omarchyvr desk screens watch --wayvrctl-bin $ROOT/home/.local/lib/omarchyvr/wayvr/wayvrctl  (log $ROOT/session/screens.log)
+  5. $ROOT/home/.local/bin/omarchyvr-perf run --file $ROOT/run/omarchyvr-perf.stats --wayvrctl $ROOT/home/.local/lib/omarchyvr/wayvr/wayvrctl  (log $ROOT/session/perf.log)
 omarchyvr vr: preflight
   [warn] headset   34a4:0044 on USB but only 0/4 hidraw interfaces (udev rule linux/70-pimax.rules installed?)
   [ok  ] camera    34a4:0014 on USB, video node present
@@ -27,10 +27,10 @@ omarchyvr vr: preflight
   [ok  ] kernel    no Xid / display engine errors in this boot's kernel log
   [ok  ] service   no monado-service running
   [ok  ] wayland   WAYLAND_DISPLAY and XDG_RUNTIME_DIR set
-  [warn] priority  $ROOT/home/src/monado-eye/build/src/xrt/targets/service/monado-service lacks cap_sys_nice: the compositor cannot raise its GPU/thread priority and frames can be late under load. Fix (root): sudo setcap cap_sys_nice+ep $ROOT/home/src/monado-eye/build/src/xrt/targets/service/monado-service   (every relink of monado-service drops it; the Pimax app fixes it too: Fix on Home, or just Play, one password window)
-  [warn] openxr runtime $ROOT/home/.config/openxr/1/active_runtime.json does not exist: OpenXR games find no runtime (`omarchyvr vr start` creates it, pointing at $ROOT/home/src/monado-eye/build/openxr_monado-dev.json)
+  [warn] priority  $ROOT/home/.local/lib/omarchyvr/monado/src/xrt/targets/service/monado-service lacks cap_sys_nice: the compositor cannot raise its GPU/thread priority and frames can be late under load. Fix (root): sudo setcap cap_sys_nice+ep $ROOT/home/.local/lib/omarchyvr/monado/src/xrt/targets/service/monado-service   (every relink of monado-service drops it; the Pimax app fixes it too: Fix on Home, or just Play, one password window)
+  [warn] openxr runtime $ROOT/home/.config/openxr/1/active_runtime.json does not exist: OpenXR games find no runtime (`omarchyvr vr start` creates it, pointing at $ROOT/home/.local/lib/omarchyvr/monado/openxr_monado-dev.json)
 
-would start: $ROOT/home/src/monado-eye/build/src/xrt/targets/service/monado-service
+would start: $ROOT/home/.local/lib/omarchyvr/monado/src/xrt/targets/service/monado-service
   XRT_COMPOSITOR_FORCE_WAYLAND_DIRECT=1
   XRT_COMPOSITOR_WAYLAND_CONNECTOR=DP-1
   XRT_COMPOSITOR_FORCE_NVIDIA=0
@@ -39,7 +39,7 @@ would start: $ROOT/home/src/monado-eye/build/src/xrt/targets/service/monado-serv
   XRT_COMPOSITOR_LOG=info
   XRT_COMPOSITOR_SCALE_PERCENTAGE=100
   PIMAX_LOG=info
-  XR_RUNTIME_JSON=$ROOT/home/src/monado-eye/build/openxr_monado-dev.json
+  XR_RUNTIME_JSON=$ROOT/home/.local/lib/omarchyvr/monado/openxr_monado-dev.json
   PIMAX_CAM_SOURCE=broker
   PIMAX_SLAM=1
   PIMAX_CAM_AE=1

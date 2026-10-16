@@ -161,7 +161,7 @@ it, today's 32 % can be replayed and the `undetected` class split into out-of-vi
 **Command.** Run it in a desk session that is already running with `--6dof --ctrl-track`:
 
 ```bash
-~/pimax-re/rust/target/release/pimax-cam record ~/ctrl-lock-$(date +%Y%m%d-%H%M).pxcam --source broker --seconds 60
+~/omarchyvr/rust/target/release/pimax-cam record ~/ctrl-lock-$(date +%Y%m%d-%H%M).pxcam --source broker --seconds 60
 ```
 
 **Checklist:**

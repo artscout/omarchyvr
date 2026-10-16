@@ -185,7 +185,7 @@ mod tests {
         m.process(
             372460,
             "monado-service",
-            "/home/u/src/monado-eye/build/src/xrt/targets/service/monado-service",
+            "/home/u/.local/lib/omarchyvr/monado/src/xrt/targets/service/monado-service",
             &[("PIMAX_FPS", "72"), ("PIMAX_EYE", "1")],
             40_050, // started at 400.5 s of uptime -> 600 s old
             &["/dev/hidraw3"],

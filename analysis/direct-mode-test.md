@@ -32,7 +32,7 @@ Runs XR_EYETEST_SECONDS (default 20) then exits the session.
 
 ## Commands
 ```
-cd ~/pimax-re/analysis/tools
+cd ~/omarchyvr/analysis/tools
 gcc -O2 -o xr_eyetest xr_eyetest.c -lopenxr_loader -lvulkan -ldl
 XRT_COMPOSITOR_DESIRED_MODE=2 SECS=25 ./run_direct_test.sh /tmp/omarchyvr-direct-test
 # logs: monado.log client.log fwlog.txt in that dir. Manual stop: pkill -x -INT monado-service

@@ -76,7 +76,7 @@ Totals: capture about 55 min, setup/menus/pauses about 25 min, info/log/install-
 
 ## After
 
-Shut down Windows, boot Linux, `omarchyvr mount-shared`, move the session folder to `~/pimax-re/pimax-data/windows-<date>/` (git-ignored).
+Shut down Windows, boot Linux, `omarchyvr mount-shared`, move the session folder to `~/omarchyvr/pimax-data/windows-<date>/` (git-ignored).
 Agents then: (1) decode haptic/pair/audio/refresh commands with `analysis/tools/usbp.py` and update `analysis/controller-activation.md`,
 `init-sequence.md`, `windows-linux-command-diff.md`; (2) align pose logs (UTC FILETIME) with the pcaps and compare to Linux SLAM with
 `omarchyvr-slam ate`/`corrections`; (3) read camera mode/exposure/frame rate from the camera hub traffic and from the new install files;

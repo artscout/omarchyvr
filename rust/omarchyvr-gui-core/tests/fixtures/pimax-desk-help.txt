@@ -4,10 +4,10 @@ usage: omarchyvr desk <command> [options]
         [+ the options of `omarchyvr vr start`: --fps, --monado-build, --connector, --dry-run, --force, --no-notify, ...]
       monado-service (like `omarchyvr vr start`), then omarchyvr-passthrough run (the main OpenXR app), then WayVR as an
       overlay (CPU screencopy config). --no-passthrough: Monado + WayVR only. --eye: PIMAX_EYE=1 and the build in
-      ~/src/monado-eye/build (unless --monado-build or PIMAX_MONADO_BUILD says otherwise). --6dof: live 6DoF head
+      ~/.local/lib/omarchyvr/monado (unless --monado-build or PIMAX_MONADO_BUILD says otherwise). --6dof: live 6DoF head
       tracking: starts `pimax-cam broker` first (stopped last by `desk stop`), PIMAX_SLAM=1 PIMAX_CAM_AE=1
       PIMAX_CAM_SOURCE=broker + the Basalt config for Monado, passthrough reads the broker; needs the merged Monado
-      build (eye + slam, branch desk in ~/src/monado-eye) and refuses a build without the 6DoF code.
+      build (eye + slam, branch desk of the Monado fork) and refuses a build without the 6DoF code.
       --ctrl-track (with --6dof): optical 6DoF controllers: `pimax-ctrltrack live --source broker` (LED frames ->
       controller poses in the head frame, $XDG_RUNTIME_DIR/pimax-ctrltrack.pose) and PIMAX_CTRL_TRACK=1 for Monado,
       which puts the controllers there. Out of view: gyro orientation (calibrated online from the optical poses,
@@ -30,4 +30,4 @@ usage: omarchyvr desk <command> [options]
       (default 30 s); then the kernel log check (Xid / Idling display engine).
   status
       pids of the desk processes and `omarchyvr vr status`.
-environment: PIMAX_MONADO_BUILD (default ~/src/monado-eye/build if built, else ~/src/monado/build), PIMAX_VR_SESSION_DIR.
+environment: PIMAX_MONADO_BUILD (default ~/.local/lib/omarchyvr/monado if built, else ~/src/monado/build), PIMAX_VR_SESSION_DIR.

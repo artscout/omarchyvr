@@ -507,14 +507,14 @@ mod tests {
         let mut a = AppCore::demo(false, store("ready"));
         let r = a.readiness();
         assert_eq!(r.headset.0, Some(true));
-        assert!(matches!(r.cap, super::CapState::Ok(ref s) if s.ends_with("monado-eye/build/src/xrt/targets/service/monado-service")), "{r:?}");
+        assert!(matches!(r.cap, super::CapState::Ok(ref s) if s.ends_with("omarchyvr/monado/src/xrt/targets/service/monado-service")), "{r:?}");
         assert_eq!(r.last.0, None);
         assert_eq!(a.cap_missing(), None);
         drop_cap(&mut a);
         assert!(a.cap_missing().is_some());
         // demo: nothing runs, the command is only shown
         a.fix_cap();
-        assert!(a.message.contains("/usr/bin/pkexec /usr/bin/setcap cap_sys_nice+ep /home/u/src/monado-eye/build"), "{}", a.message);
+        assert!(a.message.contains("/usr/bin/pkexec /usr/bin/setcap cap_sys_nice+ep /home/u/.local/lib/omarchyvr/monado"), "{}", a.message);
         assert!(a.job.is_none());
     }
 
@@ -526,7 +526,7 @@ mod tests {
         let r = a.readiness();
         assert_eq!(r.runtime.0, Some(true), "{r:?}");
         assert!(r.runtime.1.contains("SteamVR"), "{r:?}");
-        a.facts.openxr_runtime = Some(std::path::PathBuf::from("/home/u/src/monado-eye/build/openxr_monado-dev.json"));
+        a.facts.openxr_runtime = Some(std::path::PathBuf::from("/home/u/.local/lib/omarchyvr/monado/openxr_monado-dev.json"));
         let r = a.readiness();
         assert_eq!(r.runtime.0, Some(false), "{r:?}");
     }

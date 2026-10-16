@@ -336,7 +336,7 @@ impl Catalogue {
             c.paths.pimax = "omarchyvr".into();
         }
         if c.paths.wayvrctl.is_empty() {
-            c.paths.wayvrctl = "~/src/target-desk/release/wayvrctl".into();
+            c.paths.wayvrctl = "~/.local/lib/omarchyvr/wayvr/wayvrctl".into();
         }
         Ok(c)
     }

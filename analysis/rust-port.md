@@ -82,7 +82,7 @@ poll wake-up, read, decode and callback dispatch, not USB.
 ## Switch-over plan (EXECUTED 2026-10-13 22:47: keepalive drop-in rust.conf active; Monado built with PIMAX_USE_RUST_LIBPIMAX=ON)
 ### (a) systemd user service: python -> `omarchyvr keepalived`
 1. Build and install the binary (no effect on the running service):
-   `cd ~/pimax-re/rust && cargo build --release && install -Dm755 target/release/omarchyvr ~/.local/bin/omarchyvr`
+   `cd ~/omarchyvr/rust && cargo build --release && install -Dm755 target/release/omarchyvr ~/.local/bin/omarchyvr`
 2. Re-run `cargo test --workspace` and the two live suites.
 3. Exact unit diff. `~/.config/systemd/user/omarchyvr-keepalived.service` is a symlink to `linux/omarchyvr-keepalived.service`, so either edit that file:
 ```diff
@@ -93,7 +93,7 @@ poll wake-up, read, decode and callback dispatch, not USB.
 +Description=Pimax Dream Air USB keepalive, Rust (wake + 58 04 39 every 213 ms)
  
  [Service]
--ExecStart=/usr/bin/python3 %h/pimax-re/linux/pimax_keepalived.py
+-ExecStart=/usr/bin/python3 %h/omarchyvr/linux/pimax_keepalived.py
 +ExecStart=%h/.local/bin/omarchyvr keepalived
  Restart=always
  RestartSec=1
@@ -124,8 +124,8 @@ links `libpimax_capi.a` (+ `-ldl -lm -lrt -lutil -lpthread`, the native-static-l
 `libpimax/src/pimax.c` and `decode.c`. No driver source changes are needed: the driver imports `pimax_open/close/wait_connected/
 video_prepare/controller_attach` and uses the pimax.h structs, all identical.
 ```
-cd ~/pimax-re/rust && cargo build --release -p pimax-capi
-cd ~/src/monado && git apply ~/pimax-re/rust/monado-opt-in-rust-libpimax.patch
+cd ~/omarchyvr/rust && cargo build --release -p pimax-capi
+cd ~/src/monado && git apply ~/omarchyvr/rust/monado-opt-in-rust-libpimax.patch
 cmake -S . -B build -DPIMAX_USE_RUST_LIBPIMAX=ON && ninja -C build        # a Monado restart picks it up
 ```
 Rollback: `cmake -S . -B build -DPIMAX_USE_RUST_LIBPIMAX=OFF && ninja -C build` (or `git apply -R` the patch); the C library is untouched.

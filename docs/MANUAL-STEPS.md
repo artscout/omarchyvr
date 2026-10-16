@@ -1,6 +1,6 @@
 # Manual steps for the Pimax Dream Air Linux stack
 
-Every command and step we use to run the stack, so the Pimax GUI can take them over. Paths are relative to `~/pimax-re` unless absolute. Entries marked "unverified" come from notes, not from a run I could check.
+Every command and step we use to run the stack, so the Pimax GUI can take them over. Paths are relative to `~/omarchyvr` unless absolute. Entries marked "unverified" come from notes, not from a run I could check.
 
 GUI column: yes / partly / no, from docs/GUI.md. "partly" means the GUI detects or offers the step but does not do all of it.
 
@@ -39,7 +39,7 @@ Rule file in the repo: `linux/70-pimax.rules` (hidraw and USB for 34a4, Tobii 21
 
 ### 1.4 Keepalive service (user)
 ```
-ln -sf ~/pimax-re/linux/omarchyvr-keepalived.service ~/.config/systemd/user/
+ln -sf ~/omarchyvr/linux/omarchyvr-keepalived.service ~/.config/systemd/user/
 mkdir -p ~/.config/systemd/user/omarchyvr-keepalived.service.d
 printf '[Service]\nExecStart=\nExecStart=%%h/.local/bin/omarchyvr keepalived\n' > ~/.config/systemd/user/omarchyvr-keepalived.service.d/rust.conf
 systemctl --user daemon-reload && systemctl --user enable --now omarchyvr-keepalived
@@ -51,7 +51,7 @@ systemctl --user daemon-reload && systemctl --user enable --now omarchyvr-keepal
 
 ### 1.5 OpenXR active runtime
 ```
-ln -sfn ~/src/monado-eye/build/openxr_monado-dev.json ~/.config/openxr/1/active_runtime.json
+ln -sfn ~/.local/lib/omarchyvr/monado/openxr_monado-dev.json ~/.config/openxr/1/active_runtime.json
 ```
 - What: makes OpenXR apps use our Monado build.
 - Automatic now: `omarchyvr vr start` and `omarchyvr desk start` set this link themselves; `--no-set-runtime` skips it. `stop` leaves it in place. `omarchyvr vr steam-options` then prints only `PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1 %command%`, which every Steam VR game still needs (LESSONS row 27).
@@ -68,7 +68,7 @@ Status checked 2026-10-15 by `ls` only: the pacman hooks are installed. `/etc/pa
 
 Install, if it has to be redone (one command, from linux/nvidia-pimax-patch.hook header):
 ```
-sudo env L="$HOME/pimax-re/linux" bash -c 'install -Dm755 $L/nvidia-patch-reapply.sh /usr/local/lib/omarchyvr/nvidia-patch-reapply.sh && for p in nvidia-2h1or-viewport nvidia-2h1or-flip-fix nvidia-evo-makeroom-bounded-wait; do install -Dm644 $L/$p.patch /usr/local/lib/omarchyvr/$p.patch; done && install -Dm644 $L/nvidia-pimax-patch.hook /etc/pacman.d/hooks/65-nvidia-pimax-patch.hook && install -Dm644 $L/nvidia-pimax-verify.hook /etc/pacman.d/hooks/75-nvidia-pimax-verify.hook'
+sudo env L="${PIMAX_REPO:-$HOME/omarchyvr}/linux" bash -c 'install -Dm755 $L/nvidia-patch-reapply.sh /usr/local/lib/omarchyvr/nvidia-patch-reapply.sh && for p in nvidia-2h1or-viewport nvidia-2h1or-flip-fix nvidia-evo-makeroom-bounded-wait; do install -Dm644 $L/$p.patch /usr/local/lib/omarchyvr/$p.patch; done && install -Dm644 $L/nvidia-pimax-patch.hook /etc/pacman.d/hooks/65-nvidia-pimax-patch.hook && install -Dm644 $L/nvidia-pimax-verify.hook /etc/pacman.d/hooks/75-nvidia-pimax-verify.hook'
 ```
 Manual rebuild after a patch: `sudo linux/nvidia-patch-reapply.sh --rebuild` (dkms build, then `limine-mkinitcpio` on this Limine host, else `mkinitcpio -P`; then reboot). Check: `sudo modinfo nvidia_modeset` must list `merged_head_sync`, or `cat /sys/module/nvidia_modeset/parameters/merged_head_sync` prints 1. Remove: `sudo rm /etc/pacman.d/hooks/65-nvidia-pimax-patch.hook /etc/pacman.d/hooks/75-nvidia-pimax-verify.hook && sudo rm -r /usr/local/lib/omarchyvr`.
 - Root: yes.
@@ -88,12 +88,12 @@ After a headset power cycle the Tobii module stays off until: `pimax-eye power-o
 
 ## 2. After every Monado rebuild (root)
 ```
-sudo setcap cap_sys_nice+ep ~/src/monado-eye/build/src/xrt/targets/service/monado-service
+sudo setcap cap_sys_nice+ep ~/.local/lib/omarchyvr/monado/src/xrt/targets/service/monado-service
 sudo setcap cap_sys_nice+ep ~/src/monado/build/src/xrt/targets/service/monado-service
-getcap ~/src/monado-eye/build/src/xrt/targets/service/monado-service
+getcap ~/.local/lib/omarchyvr/monado/src/xrt/targets/service/monado-service
 ```
 - What: GPU realtime priority for monado-service. Every relink drops it, and runs then stutter or fail the request.
-- When: after every `ninja` of a Monado build you run. The same goes for `~/src/monado-slam/build/...` (the slam build also needed it, transcripts).
+- When: after every `ninja` of a Monado build you run. The same goes for `~/.local/lib/omarchyvr/monado/...` (the slam build also needed it, transcripts).
 - Root: yes. Source: docs/LESSONS.md row 7, STATUS.md, analysis/eye-precision.md.
 - GUI: partly (the GUI checks with getcap and offers the setcap through pkexec, docs/GUI.md row 7).
 - GUI should: run getcap after every build and show the setcap line when it is missing.
@@ -102,20 +102,20 @@ getcap ~/src/monado-eye/build/src/xrt/targets/service/monado-service
 
 ### 3.1 Launcher (on PATH)
 ```
-cd ~/pimax-re/rust && cargo build --release -p omarchyvr-tools
+cd ~/omarchyvr/rust && cargo build --release -p omarchyvr-tools
 install -m755 target/release/omarchyvr ~/.local/bin/pimax.new && mv -f ~/.local/bin/pimax.new ~/.local/bin/omarchyvr
 ```
 The `.new` then `mv` step replaces the binary atomically. The keepalive service runs the installed file, so do not touch the service (omarchyvr-tools).
 
 ### 3.2 Auto-mode daemon (on PATH)
 ```
-cd ~/pimax-re/rust && cargo build --release -p omarchyvr-autod -p omarchyvr-tools
+cd ~/omarchyvr/rust && cargo build --release -p omarchyvr-autod -p omarchyvr-tools
 install -m755 target/release/omarchyvr-autod ~/.local/bin/omarchyvr-autod
 ```
 `~/.local/bin/omarchyvr-autod` is installed (ls). Install `omarchyvr` only while nothing runs (docs/LESSONS.md row 8).
 
 ### 3.3 Other tools (run from the build directory)
-Not copied to `~/.local/bin` as far as I saw. Run them as `~/pimax-re/rust/target/release/<name>`, or install them the same way as 3.2.
+Not copied to `~/.local/bin` as far as I saw. Run them as `~/omarchyvr/rust/target/release/<name>`, or install them the same way as 3.2.
 
 | Tool | Build | Notes |
 |---|---|---|
@@ -128,22 +128,22 @@ Not copied to `~/.local/bin` as far as I saw. Run them as `~/pimax-re/rust/targe
 | pimax-cam | `-p pimax-cam` | camera broker (started by desk --6dof) |
 | omarchyvr-app | `cargo build --release -p omarchyvr-app` | the GUI (docs/GUI.md) |
 | omarchyvr-doctor | `cargo build --release -p omarchyvr-doctor` | read-only health checks |
-| omarchyvr-passthrough | built in `~/src/target-passthrough` | passthrough main app (transcripts) |
-| wayvr | `CARGO_TARGET_DIR=~/src/target-desk cargo build --release -j 12 -p wayvr -p wayvrctl --no-default-features --features openxr,osc,wayland,x11` in `~/src/wayvr` | desk overlay (transcripts) |
+| omarchyvr-passthrough | built in `$CARGO_TARGET_DIR` | passthrough main app (transcripts) |
+| wayvr | `CARGO_TARGET_DIR=$WAYVR_TARGET cargo build --release -j 12 -p wayvr -p wayvrctl --no-default-features --features openxr,osc,wayland,x11` in `~/src/wayvr` | desk overlay (transcripts) |
 
 Sources for the table: docs/INVENTORY.md, STATUS.md, transcripts. Unverified: exact package names for pimax-eye and pimax-ctrltrack.
 
 ### 3.4 Monado builds
-- Eye build: `~/src/monado-eye/build` (branch desk; needed for `--eye`, `--anchor`, `--ctrl-track`).
+- Eye build: `~/.local/lib/omarchyvr/monado` (branch desk; needed for `--eye`, `--anchor`, `--ctrl-track`).
 - Plain build: `~/src/monado/build`.
 - Relink: `ninja -C <build>`, then setcap (section 2).
 - Full reconfigure when Proton games fail to load Monado: `cmake -S ~/src/monado -B ~/src/monado/build -DXRT_HAVE_SYSTEM_CJSON=OFF && ninja -C ~/src/monado/build` (analysis/steamvr-games.md).
 
 ### 3.5 Auto-mode unit (user, not installed by anything)
 ```
-install -Dm644 ~/pimax-re/packaging/systemd/omarchyvr-autod.service ~/.config/systemd/user/omarchyvr-autod.service
+install -Dm644 ~/omarchyvr/packaging/systemd/omarchyvr-autod.service ~/.config/systemd/user/omarchyvr-autod.service
 systemctl --user daemon-reload && systemctl --user start omarchyvr-autod
-cp ~/pimax-re/packaging/auto.toml.example ~/.config/omarchyvr/auto.toml   # dry_run = true by default
+cp ~/omarchyvr/packaging/auto.toml.example ~/.config/omarchyvr/auto.toml   # dry_run = true by default
 ```
 - Root: no. Source: docs/AUTO-MODE.md, packaging/systemd/omarchyvr-autod.service.
 - GUI: yes. Setup > Install > Auto mode daemon builds it and installs the unit and the dry-run `auto.toml` (the `cp` line). Developer > Auto mode then has Start and Start at login.
@@ -167,7 +167,7 @@ omarchyvr vr stop --grace 30
 ### 4.2 Desk mode (Monado + passthrough + WayVR)
 ```
 omarchyvr desk start
-omarchyvr desk start --eye                  # eye tracking (uses ~/src/monado-eye/build)
+omarchyvr desk start --eye                  # eye tracking (uses ~/.local/lib/omarchyvr/monado)
 omarchyvr desk start --6dof --ctrl-track    # 6DoF, controllers
 omarchyvr desk start --voice --voice-hud    # captions; voice-hud adds the old overlay
 omarchyvr desk start --preset cinema|work|assistant
@@ -220,7 +220,7 @@ omarchyvr vr stop --all --grace 30 # also stops other monado-service processes o
 
 ### 6.3 Controller gyro (imufit)
 - After a 6DoF desk session with controllers, the logs are in `/tmp/omarchyvr-session/ctrl-imu-{left,right}.csv`.
-- Fit and save: `~/pimax-re/rust/target/release/pimax-ctrltrack imufit /tmp/omarchyvr-session/ctrl-imu-*.csv --save` (writes `~/.config/omarchyvr/ctrl-imu.json`). Without `--save` it only prints.
+- Fit and save: `~/omarchyvr/rust/target/release/pimax-ctrltrack imufit /tmp/omarchyvr-session/ctrl-imu-*.csv --save` (writes `~/.config/omarchyvr/ctrl-imu.json`). Without `--save` it only prints.
 - The fit also saves every 30 s and at shutdown.
 - Source: analysis/controller-6dof.md.
 - GUI: yes. Tracking > Tests (developer mode) > Fit controller gyros and Save the fit (after a confirmation), when the last session left logs.

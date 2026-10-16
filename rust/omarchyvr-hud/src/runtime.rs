@@ -111,8 +111,8 @@ mod tests {
 
     #[test]
     fn json_next_to_the_service() {
-        let exe = Path::new("/home/u/src/monado-eye/build/src/xrt/targets/service/monado-service");
-        assert_eq!(json_for_service(exe), Some(PathBuf::from("/home/u/src/monado-eye/build/openxr_monado-dev.json")));
+        let exe = Path::new("/home/u/.local/lib/omarchyvr/monado/src/xrt/targets/service/monado-service");
+        assert_eq!(json_for_service(exe), Some(PathBuf::from("/home/u/.local/lib/omarchyvr/monado/openxr_monado-dev.json")));
         assert_eq!(json_for_service(Path::new("/usr/bin/monado-service")), None);
     }
 

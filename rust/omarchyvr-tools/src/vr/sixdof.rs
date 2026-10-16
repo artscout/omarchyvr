@@ -336,7 +336,7 @@ mod tests {
         let lookup = move |k: &str| env.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
         let mut a = Args(args.iter().map(|s| s.to_string()).collect());
         let mut vr = parse_options(&mut a, &lookup).unwrap();
-        let s = parse(&mut a, &lookup, &mut vr, Path::new("/home/u"), false, Some("/home/u/src/monado-eye/build".into()));
+        let s = parse(&mut a, &lookup, &mut vr, Path::new("/home/u"), false, Some("/home/u/.local/lib/omarchyvr/monado".into()));
         (vr, s)
     }
 
@@ -364,7 +364,7 @@ mod tests {
         assert!(get(&vr, "PIMAX_SLAM_RECORD").is_none());
         assert!(get(&vr, "PIMAX_HEAD_IMU_LOG").unwrap().ends_with("/head-imu.csv"));
         assert_eq!(s.sock, PathBuf::from("/run/user/7/omarchyvr-cam-broker.sock"));
-        assert_eq!(vr.monado_build, PathBuf::from("/home/u/src/monado-eye/build"));
+        assert_eq!(vr.monado_build, PathBuf::from("/home/u/.local/lib/omarchyvr/monado"));
         assert_eq!(s.broker_spec(Path::new("/d")).args, vec!["broker".to_string()]);
     }
 

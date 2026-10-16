@@ -77,7 +77,7 @@ pub struct Paths {
     pub icon: PathBuf,
     /// Monado builds, the main desk build first.
     pub builds: Vec<BuildDir>,
-    /// WayVR binary (`~/.local/lib/omarchyvr/wayvr/wayvr`, else `~/src/target-desk/release/wayvr`).
+    /// WayVR binary (`~/.local/lib/omarchyvr/wayvr/wayvr`, else `~/.local/lib/omarchyvr/wayvr/wayvr`).
     pub wayvr_bin: PathBuf,
     /// WayVR source tree (`~/src/wayvr`).
     pub wayvr_src: PathBuf,
@@ -243,7 +243,7 @@ impl Paths {
     }
 
     /// The main desk build (LESSONS row 16: `~/.local/lib/omarchyvr/monado` of the installed set, else the lab's
-    /// `~/src/monado-eye/build`, branch `desk`).
+    /// `~/.local/lib/omarchyvr/monado`, branch `desk`).
     pub fn desk_build(&self) -> &BuildDir {
         &self.builds[0]
     }
@@ -297,8 +297,8 @@ mod tests {
         let (h, repo, s, r) = (Path::new("/home/u"), Path::new("/home/u/omarchyvr"), Path::new("/s"), Path::new("/r"));
         let none = |_: &Path| false;
         let p = Paths::new_with(h, repo, s, r, &none);
-        assert_eq!(p.desk_build().dir, PathBuf::from("/home/u/src/monado-eye/build"), "legacy fallback");
-        assert_eq!(p.wayvr_bin, PathBuf::from("/home/u/src/target-desk/release/wayvr"));
+        assert_eq!(p.desk_build().dir, PathBuf::from("/home/u/.local/lib/omarchyvr/monado"), "legacy fallback");
+        assert_eq!(p.wayvr_bin, PathBuf::from("/home/u/.local/lib/omarchyvr/wayvr/wayvr"));
         assert_eq!(p.basalt_lib, PathBuf::from("/home/u/.local/lib/libbasalt.so"));
         let installed = |f: &Path| f.starts_with("/home/u/.local/lib/omarchyvr");
         let p = Paths::new_with(h, repo, s, r, &installed);
@@ -312,7 +312,7 @@ mod tests {
         assert_eq!(p.sherpa_lib, PathBuf::from("/home/u/.local/lib/omarchyvr/sherpa-onnx/lib/libsherpa-onnx-c-api.so"));
         // only the build dir, without its CMakeCache.txt: still the lab build
         let dir_only = |f: &Path| f == Path::new("/home/u/.local/lib/omarchyvr/monado");
-        assert_eq!(Paths::new_with(h, repo, s, r, &dir_only).desk_build().dir, PathBuf::from("/home/u/src/monado-eye/build"));
+        assert_eq!(Paths::new_with(h, repo, s, r, &dir_only).desk_build().dir, PathBuf::from("/home/u/.local/lib/omarchyvr/monado"));
     }
 
     #[test]
@@ -324,10 +324,10 @@ mod tests {
         };
         let p = Paths::from_env(&env);
         assert_eq!(p.session_dir, PathBuf::from("/tmp/omarchyvr-session"));
-        assert_eq!(p.desk_build().dir, PathBuf::from("/home/u/src/monado-eye/build"));
+        assert_eq!(p.desk_build().dir, PathBuf::from("/home/u/.local/lib/omarchyvr/monado"));
         assert_eq!(
             p.desk_build().service(),
-            PathBuf::from("/home/u/src/monado-eye/build/src/xrt/targets/service/monado-service")
+            PathBuf::from("/home/u/.local/lib/omarchyvr/monado/src/xrt/targets/service/monado-service")
         );
         assert_eq!(p.builds.len(), 3);
         assert_eq!(p.bin("pimax-eye"), PathBuf::from("/home/u/omarchyvr/rust/target/release/pimax-eye"));
@@ -360,7 +360,7 @@ mod tests {
         assert_eq!(p.launcher(&|_| true), PathBuf::from("/usr/bin/omarchyvr"));
         assert_eq!(p.bin("pimax-eye"), PathBuf::from("/usr/bin/pimax-eye"));
         assert_eq!(p.doc("LESSONS.md"), PathBuf::from("/usr/share/omarchyvr/docs/LESSONS.md"));
-        assert_eq!(p.desk_build().dir, PathBuf::from("/home/u/src/monado-eye/build"), "builds stay in ~/src");
+        assert_eq!(p.desk_build().dir, PathBuf::from("/home/u/.local/lib/omarchyvr/monado"), "builds stay in ~/src");
         assert!(!is_system_install(Path::new("/home/u/.local/bin/omarchyvr-app")));
     }
 }

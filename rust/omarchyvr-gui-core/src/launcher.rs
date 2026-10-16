@@ -684,8 +684,8 @@ mod tests {
             _ => None,
         };
         let p = desk_plan(&DeskToggles::with_eye(), &env).unwrap();
-        assert_eq!(p.monado_build, PathBuf::from("/home/u/src/monado-eye/build"));
-        assert_eq!(p.service, PathBuf::from("/home/u/src/monado-eye/build/src/xrt/targets/service/monado-service"));
+        assert_eq!(p.monado_build, PathBuf::from("/home/u/.local/lib/omarchyvr/monado"));
+        assert_eq!(p.service, PathBuf::from("/home/u/.local/lib/omarchyvr/monado/src/xrt/targets/service/monado-service"));
         assert_eq!(
             p.clients.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(),
             ["passthrough", "wayvr", "screens", "perf"],

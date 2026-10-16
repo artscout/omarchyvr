@@ -7,18 +7,18 @@ omarchyvr desk: would start, in this order:
   2. $ROOT/home/.local/bin/omarchyvr-passthrough run  (log $ROOT/session/passthrough.log)
        XR_RUNTIME_JSON=$ROOT/build/openxr_monado-dev.json
        IPC_IGNORE_VERSION=1
-  3. $ROOT/home/src/target-desk/release/wayvr --openxr --show --no-autostart --log-to $ROOT/session/wayvr.log  (log $ROOT/session/wayvr.stdout)
+  3. $ROOT/home/.local/lib/omarchyvr/wayvr/wayvr --openxr --show --no-autostart --log-to $ROOT/session/wayvr.log  (log $ROOT/session/wayvr.stdout)
        XR_RUNTIME_JSON=$ROOT/build/openxr_monado-dev.json
        IPC_IGNORE_VERSION=1
        XDG_CONFIG_HOME=$ROOT/home/.local/share/omarchyvr/wayvr-home/config
        XDG_DATA_HOME=$ROOT/home/.local/share/omarchyvr/wayvr-home/data
        XDG_STATE_HOME=$ROOT/home/.local/share/omarchyvr/wayvr-home/state
        RUST_LOG=info
-  4. $ROOT/home/.local/bin/omarchyvr desk screens watch --wayvrctl-bin $ROOT/home/src/target-desk/release/wayvrctl  (log $ROOT/session/screens.log)
-  5. $ROOT/home/.local/bin/omarchyvr-perf run --file $ROOT/run/omarchyvr-perf.stats --wayvrctl $ROOT/home/src/target-desk/release/wayvrctl  (log $ROOT/session/perf.log)
+  4. $ROOT/home/.local/bin/omarchyvr desk screens watch --wayvrctl-bin $ROOT/home/.local/lib/omarchyvr/wayvr/wayvrctl  (log $ROOT/session/screens.log)
+  5. $ROOT/home/.local/bin/omarchyvr-perf run --file $ROOT/run/omarchyvr-perf.stats --wayvrctl $ROOT/home/.local/lib/omarchyvr/wayvr/wayvrctl  (log $ROOT/session/perf.log)
   6. $ROOT/home/.local/bin/omarchyvr-voice listen  (log $ROOT/session/voice.log)
-  7. $ROOT/home/.local/bin/omarchyvr-voice captions --wayvrctl $ROOT/home/src/target-desk/release/wayvrctl  (log $ROOT/session/voicecap.log)
-  8. $ROOT/home/.local/bin/omarchyvr-voice act --wayvrctl $ROOT/home/src/target-desk/release/wayvrctl  (log $ROOT/session/voiceact.log)
+  7. $ROOT/home/.local/bin/omarchyvr-voice captions --wayvrctl $ROOT/home/.local/lib/omarchyvr/wayvr/wayvrctl  (log $ROOT/session/voicecap.log)
+  8. $ROOT/home/.local/bin/omarchyvr-voice act --wayvrctl $ROOT/home/.local/lib/omarchyvr/wayvr/wayvrctl  (log $ROOT/session/voiceact.log)
   9. $ROOT/home/.local/bin/omarchyvr-voice-hud   (log $ROOT/session/voicehud.log)
        XR_RUNTIME_JSON=$ROOT/build/openxr_monado-dev.json
        IPC_IGNORE_VERSION=1

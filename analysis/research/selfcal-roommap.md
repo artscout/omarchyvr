@@ -1,6 +1,6 @@
 # Remember the room: a persistent room map and camera self-calibration for the Dream Air on Linux
 
-Date: 2026-10-14. Branch `selfcal` (worktree `~/src/pimax-re-selfcal`). Offline work only: nothing here opened the
+Date: 2026-10-14. Branch `selfcal` (worktree `~/omarchyvr`). Offline work only: nothing here opened the
 headset, the camera, HID or monado-service. Page with pictures and charts: `analysis/selfcal.html`.
 
 The user's idea: *"remember the room: save a 3D map of the room with spot points, and calibrate ourselves with the
@@ -306,14 +306,14 @@ Commands (binaries in `~/src/target-selfcal/release/`):
 ```bash
 S=~/src/target-selfcal/release/pimax-selfcal
 $S selftest --out /tmp/selftest                       # synthetic end-to-end, PASS/FAIL, pictures
-$S estimate ~/pimax-re/analysis/overnight/cam/morning2 --out /tmp/real --holdout   # report, summary.json, pictures
+$S estimate ~/omarchyvr/analysis/overnight/cam/morning2 --out /tmp/real --holdout   # report, summary.json, pictures
 $S estimate FILE.pxcam@0:200:5 --out DIR              # 200 tracking frames, every 5th
 $S estimate ... --write                                # install ~/.config/omarchyvr/cam-calib-overlay.json if the gate passes
 $S check FILE.pxcam@0:100:10 --overlay                # factory vs factory+overlay, eye-view check
 $S pairs SCENES --dy-search 24 --out DIR              # per-pair matches, rejection reasons, pictures, diagnosis
 $S lens SCENES                                        # image circle vs principal point
 $S show | rollback | clear                            # the installed overlay
-P=~/src/target-passthrough/release/omarchyvr-passthrough  # (or ~/src/target-selfcal/release/)
+P=$CARGO_TARGET_DIR/release/omarchyvr-passthrough  # (or ~/src/target-selfcal/release/)
 $P render --tiles PREFIX --out DIR --overlay default  # passthrough with the learned calibration
 $P run --overlay default                              # live client, opt-in
 ~/src/target-selfcal/release/pimax-cam rectify SRC --out DIR --overlay default

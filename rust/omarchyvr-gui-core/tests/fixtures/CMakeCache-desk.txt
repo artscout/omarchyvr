@@ -1,5 +1,5 @@
-# This is the CMakeCache file (trimmed fixture of ~/src/monado-eye/build).
-# For build in directory: /home/u/src/monado-eye/build
+# This is the CMakeCache file (trimmed fixture of ~/.local/lib/omarchyvr/monado).
+# For build in directory: /home/u/.local/lib/omarchyvr/monado
 
 //Build the Pimax camera / SLAM code
 PIMAX_CAM:BOOL=ON
@@ -8,5 +8,5 @@ CMAKE_BUILD_TYPE:STRING=RelWithDebInfo
 PIMAX_USE_RUST_LIBPIMAX:BOOL=ON
 XRT_FEATURE_SLAM:BOOL=ON
 CMAKE_GENERATOR:INTERNAL=Ninja
-CMAKE_HOME_DIRECTORY:INTERNAL=/home/u/src/monado-eye
-Monado_SOURCE_DIR:STATIC=/home/u/src/monado-eye
+CMAKE_HOME_DIRECTORY:INTERNAL=/home/u/src/monado-desk
+Monado_SOURCE_DIR:STATIC=/home/u/src/monado-desk

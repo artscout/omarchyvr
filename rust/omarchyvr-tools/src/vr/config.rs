@@ -197,7 +197,7 @@ pub fn tools_dir_for(exe: Option<&Path>, home: &Path) -> PathBuf {
 }
 
 /// `PIMAX_MONADO_BUILD`, else the desk build ([`omarchyvr_config::paths::monado_build`]: the installed
-/// `~/.local/lib/omarchyvr/monado`, else `~/src/monado-eye/build`) when built, else `~/src/monado/build`.
+/// `~/.local/lib/omarchyvr/monado`) when built, else `~/src/monado/build`.
 pub fn default_monado_build(env: &dyn Fn(&str) -> Option<String>) -> PathBuf {
     if let Some(p) = env("PIMAX_MONADO_BUILD").filter(|s| !s.is_empty()) {
         return PathBuf::from(p);
@@ -772,14 +772,10 @@ pub(crate) mod tests {
         let d = std::env::temp_dir().join(format!("omarchyvr-defbuild-{}", std::process::id()));
         let env = |k: &str| (k == "HOME").then(|| d.display().to_string());
         let inst = d.join(".local/lib/omarchyvr/monado");
-        let legacy = d.join("src/monado-eye/build");
         std::fs::create_dir_all(&inst).unwrap();
-        std::fs::create_dir_all(&legacy).unwrap();
-        std::fs::write(legacy.join("openxr_monado-dev.json"), "{}").unwrap();
-        // the installed dir without CMakeCache.txt does not count: the legacy desk build
+        // no openxr_monado-dev.json yet: the plain build under the source root
+        assert_eq!(default_monado_build(&env), d.join("src/monado/build"));
         std::fs::write(inst.join("openxr_monado-dev.json"), "{}").unwrap();
-        assert_eq!(default_monado_build(&env), legacy);
-        std::fs::write(inst.join("CMakeCache.txt"), "").unwrap();
         assert_eq!(default_monado_build(&env), inst);
         let _ = std::fs::remove_dir_all(&d);
     }

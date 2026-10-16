@@ -7,7 +7,7 @@ Tree: `~/src/monado`, local branch `omarchyvr` (one commit on top of upstream ma
     cd ~/src/monado
     cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DXRT_BUILD_DRIVER_PIMAX=ON
     ninja -C build        # monado-service, monado-cli, libopenxr_monado.so, openxr_monado-dev.json
-libpimax is compiled straight into `drv_pimax` from `PIMAX_LIBPIMAX_DIR` (CMake cache var, default `/home/user/pimax-re/libpimax`: `src/pimax.c`, `src/decode.c`).
+libpimax is compiled straight into `drv_pimax` from `PIMAX_LIBPIMAX_DIR` (CMake cache var, default `~/omarchyvr/libpimax`: `src/pimax.c`, `src/decode.c`).
 `XRT_BUILD_DRIVER_PIMAX` defaults OFF.
 
 ## Files added / changed (in the Monado tree)

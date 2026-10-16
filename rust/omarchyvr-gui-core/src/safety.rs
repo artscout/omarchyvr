@@ -680,7 +680,7 @@ mod tests {
     #[test]
     fn documented_root_fixes_pass() {
         let ok: [&[&str]; 9] = [
-            &["sudo setcap cap_sys_nice+ep '/home/u/src/monado-eye/build/src/xrt/targets/service/monado-service'"],
+            &["sudo setcap cap_sys_nice+ep '/home/u/.local/lib/omarchyvr/monado/src/xrt/targets/service/monado-service'"],
             &[
                 "sudo install -m644 '/repo/linux/70-pimax.rules' /etc/udev/rules.d/70-pimax.rules",
                 "sudo udevadm control --reload",

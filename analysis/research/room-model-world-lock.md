@@ -73,7 +73,7 @@ Known gaps are listed at the end. Several vendor numbers could not be found and 
 ### 1.7 Pimax (Dream Air / Dream Air SE; `platMap_orborb`)
 - Pimax says it develops its **own SLAM** tracking; no result confirms ORB-SLAM use. [S] https://pimax.com/blogs/blogs/pimax-launches-affordable-slam-tracked-micro-oled-vr-headset
 - One review quotes Pimax: headset and controller tracking processed "on the PC-side with our own SLAM algorithms in the runtime." [S] https://simracingcockpit.gg/pimax-dream-air-slam-review/
-- `platMap_orborb`: **not found** in any search. Name suggests an ORB-feature map store; this is an inference, tag [M]. Check the Pimax runtime in the local kit (`~/pimax-re`) before relying on it.
+- `platMap_orborb`: **not found** in any search. Name suggests an ORB-feature map store; this is an inference, tag [M]. Check the Pimax runtime in the local kit (`~/omarchyvr`) before relying on it.
 - Camera count: marketing says 4 cameras; our kit notes say 2 lower tracking cameras. **Conflict, verify against `analysis/research/dreamair-cameras.md`.**
 
 ### 1.8 Summary table

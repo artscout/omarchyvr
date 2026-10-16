@@ -59,7 +59,7 @@ OpenXR path has NOT run against Monado yet.
 
 ## Run
 
-    cd ~/pimax-re/rust && cargo build --release -p omarchyvr-voice -p omarchyvr-voicehud -p omarchyvr-tools
+    cd ~/omarchyvr/rust && cargo build --release -p omarchyvr-voice -p omarchyvr-voicehud -p omarchyvr-tools
     target/release/omarchyvr-voice info                 # library, models, VAD, socket
     target/release/omarchyvr-voice devices              # * = the source listen picks
     target/release/omarchyvr-voice listen [--levels]    # prints partial/final lines; Ctrl-C stops

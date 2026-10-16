@@ -1,5 +1,5 @@
 //! The shared-memory ring between Monado's recorder tap (the producer, `comp_recorder.c`) and this recorder (the
-//! consumer). Byte-for-byte the layout of `src/xrt/compositor/main/comp_recorder_shm.h` (monado-eye, branch desk).
+//! consumer). Byte-for-byte the layout of `src/xrt/compositor/main/comp_recorder_shm.h` (the Monado fork).
 //!
 //! The consumer creates the file under a temporary name, fills the request and renames it into place, so the
 //! producer never maps a half-written header. Live fields are only touched through atomics. Slot states: 0 free,

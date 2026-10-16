@@ -177,21 +177,21 @@ EuRoC SLAM recording (`PIMAX_SLAM_RECORD`) is set when Monado starts, so it cann
 
 ```
 # 1. Monado with the tap (commit cfad375 on branch desk; build dir build-rec, the live build is untouched)
-cd ~/src/monado-eye && nice ninja -C build-rec monado-service
-ln -sfn build-rec ~/src/monado-eye/build          # was build-p9; build-rec has everything build-p9 has, plus the tap
-sudo setcap cap_sys_nice+ep ~/src/monado-eye/build-rec/src/xrt/targets/service/monado-service   # every relink drops it
-getcap ~/src/monado-eye/build-rec/src/xrt/targets/service/monado-service
+cd forks/monado && nice ninja -C build-rec monado-service
+ln -sfn build-rec ~/.local/lib/omarchyvr/monado          # was build-p9; build-rec has everything build-p9 has, plus the tap
+sudo setcap cap_sys_nice+ep ~/.local/lib/omarchyvr/monado-rec/src/xrt/targets/service/monado-service   # every relink drops it
+getcap ~/.local/lib/omarchyvr/monado-rec/src/xrt/targets/service/monado-service
 
 # 2. The tools
-cd ~/pimax-re/rust && cargo build --release -p omarchyvr-record -p omarchyvr-tools -p omarchyvr-autod -p omarchyvr-app
+cd ~/omarchyvr/rust && cargo build --release -p omarchyvr-record -p omarchyvr-tools -p omarchyvr-autod -p omarchyvr-app
 install -m755 target/release/{pimax,omarchyvr-record,omarchyvr-autod,omarchyvr-app} ~/.local/bin/
 systemctl --user restart omarchyvrd 2>/dev/null || true   # only if omarchyvrd is installed; restarting it never stops a session
 
 # 3. Optional offline check (no headset, refuses while a session runs)
-~/pimax-re/analysis/tools/record_offline_test.sh          # EYES=both ENCODER=nvenc to try those
+~/omarchyvr/analysis/tools/record_offline_test.sh          # EYES=both ENCODER=nvenc to try those
 ```
 
-To roll back, run `ln -sfn build-p9 ~/src/monado-eye/build`. That build still has its capability. Without the tap,
+To roll back, run `ln -sfn build-p9 ~/.local/lib/omarchyvr/monado`. That build still has its capability. Without the tap,
 `omarchyvr record start` reports "this monado-service has no recorder tap".
 
 ## Live checklist

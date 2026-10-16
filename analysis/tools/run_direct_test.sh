@@ -8,8 +8,8 @@ export XRT_COMPOSITOR_LOG=debug XRT_COMPOSITOR_SCALE_PERCENTAGE=${SCALE:-100} PI
 export XR_RUNTIME_JSON=$M/openxr_monado-dev.json
 (sleep 40 | $M/src/xrt/targets/service/monado-service >"$OUT/monado.log" 2>&1) &
 sleep 3
-python3 $HOME/pimax-re/linux/pimax_logtail.py 30 >"$OUT/fwlog.txt" 2>&1 &
-XR_EYETEST_SECONDS=${SECS:-25} timeout 35 ${XR_CLIENT:-$HOME/pimax-re/analysis/tools/xr_eyetest} >"$OUT/client.log" 2>&1
+python3 ${PIMAX_REPO:-$HOME/omarchyvr}/linux/pimax_logtail.py 30 >"$OUT/fwlog.txt" 2>&1 &
+XR_EYETEST_SECONDS=${SECS:-25} timeout 35 ${XR_CLIENT:-${PIMAX_REPO:-$HOME/omarchyvr}/analysis/tools/xr_eyetest} >"$OUT/client.log" 2>&1
 wait %2 2>/dev/null
 pkill -x -INT monado-service; sleep 2
 echo logs in $OUT

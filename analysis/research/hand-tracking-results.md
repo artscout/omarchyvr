@@ -1,7 +1,7 @@
 # Camera hand tracking (Mercury): offline results
 
 Date: 2026-10-15. Recordings only: no headset access, no live session touched. Machine: i9-14900KF (32 threads).
-Monado `hands-mercury` b6e46b1 (on desk cfad375), `~/src/monado-ht/build-ht`, ONNX Runtime 1.20.1 CPU. Models:
+Monado `hands-mercury` b6e46b1 (on desk cfad375), `~/.local/lib/omarchyvr/monado`, ONNX Runtime 1.20.1 CPU. Models:
 `grayscale_detection_160x160.onnx` + `grayscale_keypoint_jan18.onnx` (hand-tracking-models 37a8a81, **no licence:
 local use only**). How to use: `docs/HANDS.md`.
 

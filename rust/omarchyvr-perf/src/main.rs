@@ -46,7 +46,7 @@ fn main() {
     let mut wayvrctl = PathBuf::from(
         std::env::var_os("HOME").unwrap_or_default(),
     )
-    .join("src/target-desk/release/wayvrctl");
+    .join(".local/lib/omarchyvr/wayvr/wayvrctl");
     let mut overlay = "perf".to_string();
     let mut interval = 500u64;
     let mut it = args.into_iter();

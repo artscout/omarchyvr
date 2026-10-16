@@ -2,7 +2,7 @@
 
 Question: should we rewrite Monado (C/C++ OpenXR runtime, BSL-1.0) in Rust, port it piece by piece, or keep it and write only our own parts in Rust?
 
-Our setup: fork at `~/src/monado` (branch `omarchyvr`, HEAD `81f7c62`). Our Rust workspace `~/pimax-re/rust` (about 53k lines, C ABI into Monado via `drivers/pimax`).
+Our setup: fork at `~/src/monado` (branch `omarchyvr`, HEAD `81f7c62`). Our Rust workspace `~/omarchyvr/rust` (about 53k lines, C ABI into Monado via `drivers/pimax`).
 
 ## 1. Size and structure (measured locally)
 

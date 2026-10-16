@@ -11,7 +11,7 @@ they do. Everything it may run is checked against the rules of [LESSONS.md](LESS
 ## Run
 
 ```bash
-cd ~/pimax-re/rust && cargo run --release -p omarchyvr-app      # or, once installed: omarchyvr-app / "Pimax" in the launcher
+cd ~/omarchyvr/rust && cargo run --release -p omarchyvr-app      # or, once installed: omarchyvr-app / "Pimax" in the launcher
 omarchyvr-app --demo               # the window with built-in demo data (mock headsets); nothing is started or sent
 omarchyvr-app --renderer wgpu      # Vulkan, only in builds with `--features wgpu` (glow = OpenGL is the default; also PIMAX_RENDERER)
 omarchyvr-app --no-supervisor      # the window in this process (no restart after a crash)
@@ -25,7 +25,7 @@ omarchyvr-app --version
 Install (no root): Setup > Launcher and app > This app > Fix builds the release binary, installs it to
 `~/.local/bin/omarchyvr-app`, the icon `linux/omarchyvr.svg` and the desktop entry `linux/omarchyvr.desktop` ("Pimax") to
 `~/.local/share/applications`. Or as a package: [packaging/README.md](../packaging/README.md) (Arch `PKGBUILD`, an
-AppImage script). Environment: `PIMAX_REPO` (default `~/pimax-re`), `PIMAX_VR_SESSION_DIR`, `PIMAX_MONADO_BUILD`,
+AppImage script). Environment: `PIMAX_REPO` (default `~/omarchyvr`), `PIMAX_VR_SESSION_DIR`, `PIMAX_MONADO_BUILD`,
 `PIMAX_RENDERER`, `PIMAX_NO_SUPERVISOR=1`, and the doctor's `PIMAX_SYSFS_ROOT` / `PIMAX_PROC_ROOT` / `PIMAX_DEV_ROOT`.
 
 Desk mode (and the VR session of a tool) is started in its own transient user scope

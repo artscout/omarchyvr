@@ -39,7 +39,7 @@ pub fn calibration_path(env: &dyn Fn(&str) -> Option<String>) -> PathBuf {
 }
 
 /// The mode, from the flags and what exists. `default_is_eye_build`: the Monado build in use is the eye build
-/// (`~/src/monado-eye/build`, the default when built) and its monado-service exists.
+/// (`~/.local/lib/omarchyvr/monado`, the default when built) and its monado-service exists.
 pub fn decide(eye: bool, no_eye: bool, default_is_eye_build: bool, calibrated: bool) -> (EyeMode, Option<String>) {
     if no_eye {
         return (EyeMode::Off, None);
@@ -49,7 +49,7 @@ pub fn decide(eye: bool, no_eye: bool, default_is_eye_build: bool, calibrated: b
     }
     match (default_is_eye_build, calibrated) {
         (true, true) => (EyeMode::Silent, None),
-        (false, _) => (EyeMode::Off, Some("eye tracking off: the Monado build is not ~/src/monado-eye/build".into())),
+        (false, _) => (EyeMode::Off, Some("eye tracking off: the Monado build is not the installed desk build".into())),
         (true, false) => (
             EyeMode::Off,
             Some("eye tracking off: no ~/.config/omarchyvr/eye-calibration.toml (calibrate in the Pimax app, Eye tab)".into()),
@@ -138,7 +138,7 @@ mod tests {
         let (m, n) = decide(false, false, true, false);
         assert!(m == EyeMode::Off && n.unwrap().contains("calibration"));
         let (m, n) = decide(false, false, false, true);
-        assert!(m == EyeMode::Off && n.unwrap().contains("monado-eye"));
+        assert!(m == EyeMode::Off && n.unwrap().contains("installed desk build"));
     }
 
     fn opts() -> StartOptions {

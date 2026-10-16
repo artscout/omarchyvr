@@ -53,7 +53,7 @@ fn world(tag: &str) -> PathBuf {
         script(&rel.join(b), "#!/bin/bash\nexit 0\n");
     }
     for b in ["wayvr", "wayvrctl"] {
-        script(&home.join("src/target-desk/release").join(b), "#!/bin/bash\nexit 0\n");
+        script(&home.join(".local/lib/omarchyvr/wayvr").join(b), "#!/bin/bash\nexit 0\n");
     }
     // the camera-hands build (Mercury: the binary has PIMAX_HT_HZ) and its models, for the --hands cases
     let ht = home.join("src/monado-ht/build-ht");
@@ -153,7 +153,7 @@ fn hands_dry_run_output_matches_the_golden_files() {
     for (name, args, no_build) in HANDS_CASES {
         let root = world(name);
         // the default desk build, so the cases without --hands-build look like the real machine
-        let desk = root.join("home/src/monado-eye/build");
+        let desk = root.join("home/.local/lib/omarchyvr/monado");
         let marker = if *no_build { "# PIMAX_SLAM\0\n" } else { "# PIMAX_SLAM\0PIMAX_HT_HZ\0\n" };
         script(&desk.join("src/xrt/targets/service/monado-service"), &format!("#!/bin/bash\nexit 0\n{marker}"));
         fs::write(desk.join("openxr_monado-dev.json"), "{}").unwrap();

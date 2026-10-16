@@ -301,7 +301,7 @@ mod tests {
             }
             o => panic!("{o:?}"),
         }
-        let svc = "/home/u/src/monado-eye/build/src/xrt/targets/service/monado-service";
+        let svc = "/home/u/.local/lib/omarchyvr/monado/src/xrt/targets/service/monado-service";
         match run("cpu.setcap_monado", &[("path", svc)], true) {
             FixAction::Root(r) => assert_eq!(r.lines, vec![format!("sudo setcap -r {svc}")]),
             o => panic!("{o:?}"),

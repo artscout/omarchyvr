@@ -35,7 +35,7 @@ Sources (pinned; each SHA-256 is checked):
 A CPU-only runtime (`--runtime cpu`, 17 MiB) is available for machines without Vulkan.
 
 ```sh
-cd ~/pimax-re/rust && cargo build --release -p omarchyvr-ai
+cd ~/omarchyvr/rust && cargo build --release -p omarchyvr-ai
 target/release/omarchyvr-ai install            # 4.1 GB into ~/.local/share/omarchyvr/ai; resumes; run again after a failure
 target/release/omarchyvr-ai install --dry-run  # what it would fetch
 target/release/omarchyvr-ai serve              # GPU, all layers, 127.0.0.1:8080, waits until loaded

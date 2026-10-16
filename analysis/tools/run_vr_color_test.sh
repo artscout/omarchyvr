@@ -15,7 +15,7 @@ OUT=${1:?usage: run_vr_color_test.sh OUTDIR [MONADO_BUILD]}
 BUILD=${2:-$HOME/src/monado/build}
 PIMAX=${PIMAX_BIN:-omarchyvr}
 SECS=${SECS:-8}
-T=$HOME/pimax-re/analysis/tools
+T=${PIMAX_REPO:-$HOME/omarchyvr}/analysis/tools
 mkdir -p "$OUT/dump"
 export SCALE=${SCALE:-50}
 

@@ -1,7 +1,7 @@
 //! The wrist performance readout (`omarchyvr-perf`): `desk start` runs it by default (`--no-perf`), `vr start --perf` too.
 //!
 //! * Monado writes frame statistics to `$XDG_RUNTIME_DIR/omarchyvr-perf.stats` when `PIMAX_PERF_FILE` is set (the
-//!   launcher sets it; patch in `~/src/monado-eye`, `comp_multi_system.c`).
+//!   launcher sets it; patch in the Monado fork, `comp_multi_system.c`).
 //! * `omarchyvr-perf run` turns that file into text and colours for the WayVR custom panel `perf` (`gui/perf.xml`, a
 //!   `FollowHand Right` overlay, not grabbable) with `wayvrctl batch`.
 //! * Desk mode already runs WayVR. In game mode (`vr start --perf`) the launcher starts a second, minimal WayVR

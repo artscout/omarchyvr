@@ -5,7 +5,7 @@ Run `~/.local/share/omarchyvr/slam-recordings/20261014-150658-live` (`PIMAX_CAM_
 
 ## Verdict
 **The device did nothing wrong. A host-side deadlock in the Basalt tracker pipeline, triggered by the camera gap
-that the first AE push causes (the same gap appears on Windows).** Fixed in `~/src/monado-slam` (branch `slam`,
+that the first AE push causes (the same gap appears on Windows).** Fixed in `forks/monado` (branch `slam`,
 commit `d3138d4`, local only).
 
 ## Evidence
@@ -54,7 +54,7 @@ Not changed: the AE frame, its timing, the Rust controller. Possible follow-up: 
 tracker starts (the re-init hole then happens before SLAM init).
 
 ## Live test (user)
-After the relink: `sudo setcap cap_sys_nice+ep ~/src/monado-slam/build/src/xrt/targets/service/monado-service`,
-then `PIMAX_CAM_AE=1 ~/pimax-re/analysis/tools/run_slam_view.sh 60`. Pass: one `camera gap` warning near the start,
+After the relink: `sudo setcap cap_sys_nice+ep ~/.local/lib/omarchyvr/monado/src/xrt/targets/service/monado-service`,
+then `PIMAX_CAM_AE=1 ~/omarchyvr/analysis/tools/run_slam_view.sh 60`. Pass: one `camera gap` warning near the start,
 `slam:`/`camera:` stats lines every 5 s through the run, camera ~50 fps, exposure in the AE status moving
 into 1.1k-4.1k.

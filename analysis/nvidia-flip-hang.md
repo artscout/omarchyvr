@@ -218,8 +218,8 @@ What the fix patch does:
 
 Install (root; the DISPLAY.md / nvidia-patch-reapply.sh flow):
 ```
-sudo ~/pimax-re/linux/nvidia-patch-reapply.sh --patch ~/pimax-re/linux/nvidia-2h1or-flip-fix.patch
-sudo ~/pimax-re/linux/nvidia-patch-reapply.sh --patch ~/pimax-re/linux/nvidia-evo-makeroom-bounded-wait.patch --rebuild
+sudo ~/omarchyvr/linux/nvidia-patch-reapply.sh --patch ~/omarchyvr/linux/nvidia-2h1or-flip-fix.patch
+sudo ~/omarchyvr/linux/nvidia-patch-reapply.sh --patch ~/omarchyvr/linux/nvidia-evo-makeroom-bounded-wait.patch --rebuild
 modinfo -k "$(uname -r)" nvidia-modeset | grep -c merged_head_sync     # expect 1
 sudo reboot
 cat /sys/module/nvidia_modeset/parameters/merged_head_sync              # expect 1
@@ -236,7 +236,7 @@ build/install + limine-mkinitcpio + reboot.
 
 Branch `flipsafe` in `~/src/monado-flipsafe` (worktree of ~/src/monado, based on hangfix e64d487), commit 02889c9.
 Configured like ~/src/monado/build (RelWithDebInfo, Ninja, XRT_HAVE_SYSTEM_CJSON=OFF, XRT_BUILD_DRIVER_PIMAX=ON,
-PIMAX_USE_RUST_LIBPIMAX=ON, PIMAX_RUST_TARGET_DIR=~/pimax-re/rust/target/release, PIMAX_CAM=OFF), built, ctest 27/27
+PIMAX_USE_RUST_LIBPIMAX=ON, PIMAX_RUST_TARGET_DIR=~/omarchyvr/rust/target/release, PIMAX_CAM=OFF), built, ctest 27/27
 (new tests_gpu_wedge). Not run on hardware.
 
 D1, exit without a wedge. The teardown that blocked was `image_cleanup()`'s `vkDeviceWaitIdle()`

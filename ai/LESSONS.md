@@ -12,7 +12,7 @@ It goes with [INVENTORY.md](../docs/INVENTORY.md) (components, commands, history
 | 4 | Camera view invisible: Monado shows the main app that is active; a helper client (pose printer) connected later and took the display. | Only one main OpenXR app. Helpers must be `XR_EXTX_overlay` sessions (`POSECLI_OVERLAY=1`). Start the main app first. |
 | 5 | Headset black although the app was FOCUSED: `run_slam.sh` started Monado without the launcher's compositor env. | Every Monado start uses the one env builder in `rust/omarchyvr-tools/src/vr/config.rs` (`XRT_COMPOSITOR_DESIRED_MODE=2` for 72 Hz / 3 for 90 Hz, `PIMAX_FPS`, `XRT_COMPOSITOR_WAYLAND_CONNECTOR=DP-1`, `XRT_COMPOSITOR_FORCE_WAYLAND_DIRECT=1`, `XRT_COMPOSITOR_FORCE_NVIDIA=0`). Never hand-roll it. |
 | 6 | `omarchyvr desk start --6dof` ran 3DoF only: the merged build had `PIMAX_CAM=OFF`. The launcher's check (strings in the binary) passed anyway. Log: `PIMAX_SLAM set, but Monado was built without -DPIMAX_CAM=ON`. | Check `PIMAX_CAM:BOOL=ON` in the build's `CMakeCache.txt` (and grep the log for "built without -DPIMAX_CAM=ON" after start). Offer "reconfigure + rebuild" (`cmake -DPIMAX_CAM=ON . && ninja` in the build dir). |
-| 7 | Every Monado relink drops `cap_sys_nice` (GPU priority); runs then stutter or fail the priority request. | After any build, `getcap <build>/src/xrt/targets/service/monado-service` must show `cap_sys_nice=ep`; otherwise show the exact `sudo setcap cap_sys_nice+ep ...` with a pkexec button. Check every build the GUI can start (`~/src/monado-eye/build` main, `~/src/monado-slam/build`, `~/src/monado/build`). |
+| 7 | Every Monado relink drops `cap_sys_nice` (GPU priority); runs then stutter or fail the priority request. | After any build, `getcap <build>/src/xrt/targets/service/monado-service` must show `cap_sys_nice=ep`; otherwise show the exact `sudo setcap cap_sys_nice+ep ...` with a pkexec button. Check every build the GUI can start (`~/.local/lib/omarchyvr/monado` main, plus any build set in `paths.toml`). |
 | 8 | Replacing `~/.local/bin/omarchyvr` while desk mode runs. | Install the launcher only when nothing runs (`cargo build --release -p omarchyvr-tools && install -m755 target/release/omarchyvr ~/.local/bin/omarchyvr`). |
 
 ## Display and GPU
@@ -37,7 +37,7 @@ It goes with [INVENTORY.md](../docs/INVENTORY.md) (components, commands, history
 ## Paths and misc
 | # | Lesson |
 |---|---|
-| 16 | Main Monado build for desk mode: `~/src/monado-eye/build`, branch `desk` (eye + hands + 6DoF merged, `PIMAX_CAM=ON`). Local only, never pushed (same for WayVR `~/src/wayvr` branch `eye-gaze`). |
+| 16 | Main Monado build for desk mode: `~/.local/lib/omarchyvr/monado`, branch `desk` (eye + hands + 6DoF merged, `PIMAX_CAM=ON`). Local only, never pushed (same for WayVR `~/src/wayvr` branch `eye-gaze`). |
 | 17 | Logs: desk/VR `/tmp/omarchyvr-session/monado.log`; 6DoF test runs `~/.local/share/omarchyvr/slam-recordings/<stamp>-live/monado.log`, helper logs in `/tmp/pimax-slamview.*`. |
 | 18 | `~/.config/omarchyvr/ipd.env` (`OXR_DEBUG_IPD_MM`) is written by `pimax-eye ipd --apply` but not yet read by the launcher: the GUI should pass it to Monado. Eye calibration saves to `~/.config/omarchyvr/eye-calibration.toml` (none saved yet). |
 | 19 | The headset microphone sends zeros while the display is off. |

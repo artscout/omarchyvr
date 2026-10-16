@@ -8,18 +8,18 @@
 #   NO_MODELS=1 run_hands_offline.sh          models missing: hands must be off, the service must keep running
 #   CLIENT=none SECS=60 run_hands_offline.sh  service only (CPU / frame stats)
 #
-# Environment: MONADO_BUILD (default ~/src/monado-ht/build-ht), PXCAM (default ~/ctrl-test.pxcam), SECS (30),
+# Environment: MONADO_BUILD (default ~/.local/lib/omarchyvr/monado), PXCAM (default ~/ctrl-test.pxcam), SECS (30),
 #   OUT (default /tmp/pimax-hands-offline), CLIENT (hand|pinch|none), plus PIMAX_HT_* / PIMAX_* passed through.
 # Output: $OUT/monado.log, $OUT/client.log, $OUT/cpu.txt (per-thread CPU of the service), $OUT/summary.txt
 set -u
-M=${MONADO_BUILD:-$HOME/src/monado-ht/build-ht}
+M=${MONADO_BUILD:-$HOME/.local/lib/omarchyvr/monado}
 SVC=$M/src/xrt/targets/service/monado-service
 RT=$M/openxr_monado-dev.json
 PXCAM=${PXCAM:-$HOME/ctrl-test.pxcam}
 SECS=${SECS:-30}
 OUT=${OUT:-/tmp/pimax-hands-offline}
 CLIENT=${CLIENT:-hand}
-TOOLS=${TOOLS:-$HOME/pimax-re/rust/target/release}
+TOOLS=${TOOLS:-${PIMAX_REPO:-$HOME/omarchyvr}/rust/target/release}
 
 die() { echo "run_hands_offline: $*" >&2; exit 1; }
 for f in "$SVC" "$RT" "$PXCAM"; do [ -e "$f" ] || die "missing $f"; done

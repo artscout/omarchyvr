@@ -1,7 +1,7 @@
 # Tracking-camera auto-exposure (AE): evidence, frame, controller (2026-10-14)
 
 Status: controller implemented in Rust (`rust/pimax-cam/src/ae.rs`, C ABI `capi_ae.rs`), wired into the Monado
-driver (`~/src/monado-slam`, branch `slam`) behind `PIMAX_CAM_AE`, **default off. Never sent to the headset yet:
+driver (`forks/monado`, branch `slam`) behind `PIMAX_CAM_AE`, **default off. Never sent to the headset yet:
 sending needs the user's approval** (the frame is derived from Windows captures).
 
 ## 1. Why

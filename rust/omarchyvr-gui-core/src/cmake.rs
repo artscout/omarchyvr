@@ -72,7 +72,7 @@ mod tests {
     fn desk_build_has_the_camera_code() {
         let c = CMakeCache::parse(DESK);
         assert_eq!(c.pimax_cam(), Some(true));
-        assert_eq!(c.source_dir(), Some("/home/u/src/monado-eye"));
+        assert_eq!(c.source_dir(), Some("/home/u/src/monado-desk"));
         assert_eq!(c.generator(), Some("Ninja"));
         assert_eq!(c.bool("PIMAX_USE_RUST_LIBPIMAX"), Some(true));
     }

@@ -721,7 +721,7 @@ pub fn steamvr_chosen() -> bool {
     super::steamvr::games_runtime(&|k| std::env::var(k).ok()) == super::steamvr::Games::SteamVr
 }
 
-/// The default Monado build (env override, else `~/src/monado-eye/build`).
+/// The default Monado build (env override, else `~/.local/lib/omarchyvr/monado`).
 fn service_build(_home: &Path) -> PathBuf {
     super::config::default_monado_build(&|k| std::env::var(k).ok())
 }
@@ -949,8 +949,8 @@ mod tests {
     #[test]
     fn steamvr_mode_judges_every_line_against_steamvr() {
         // SteamVR first + our driver registered
-        let ok = r#"{"runtime":["/h/.local/share/Steam/steamapps/common/SteamVR/"],"external_drivers":["/h/src/monado-eye/build/steamvr-monado"]}"#;
-        assert_eq!(openvr_check_steamvr(Some(ok), "/h/src/monado-eye/build/steamvr-monado").status, Status::Pass);
+        let ok = r#"{"runtime":["/h/.local/share/Steam/steamapps/common/SteamVR/"],"external_drivers":["/h/.local/lib/omarchyvr/monado/steamvr-monado"]}"#;
+        assert_eq!(openvr_check_steamvr(Some(ok), "/h/.local/lib/omarchyvr/monado/steamvr-monado").status, Status::Pass);
         // no driver registered
         let nodrv = r#"{"runtime":["/h/.local/share/Steam/steamapps/common/SteamVR/"]}"#;
         let c = openvr_check_steamvr(Some(nodrv), "/h/b/steamvr-monado");
@@ -1013,8 +1013,8 @@ mod tests {
         assert_eq!(manifest_library(r#"{"runtime":{"library_path":"/a/b.so"}}"#).as_deref(), Some("/a/b.so"));
         assert_eq!(manifest_library("{}"), None);
         assert_eq!(
-            build_root_of_service(Path::new("/h/monado-eye/build/src/xrt/targets/service/monado-service")),
-            Some(PathBuf::from("/h/monado-eye/build"))
+            build_root_of_service(Path::new("/h/monado/build/src/xrt/targets/service/monado-service")),
+            Some(PathBuf::from("/h/monado/build"))
         );
         assert_eq!(build_root_of_service(Path::new("/usr/bin/monado-service")), None);
     }

@@ -35,13 +35,13 @@ pub const USAGE: &str = "usage: omarchyvr desk <command> [options]
         [+ the options of `omarchyvr vr start`: --fps, --monado-build, --connector, --dry-run, --force, --no-notify, ...]
       monado-service (like `omarchyvr vr start`), then omarchyvr-passthrough run (the main OpenXR app), then WayVR as an
       overlay (CPU screencopy config). --no-passthrough: Monado + WayVR only. Eye tracking (visual only: a dim dot, never input; ~/.config/omarchyvr/eye.conf) is on when the
-      eye build (~/src/monado-eye/build) and ~/.config/omarchyvr/eye-calibration.toml exist: PIMAX_EYE=1 and
+      eye build (~/.local/lib/omarchyvr/monado) and ~/.config/omarchyvr/eye-calibration.toml exist: PIMAX_EYE=1 and
       conf.d/55-eye.yaml (no gaze pointer, a dim gaze dot, no voice targeting; docs/EYE.md); --no-eye turns
-      it off. --eye: PIMAX_EYE=1 and the build in ~/src/monado-eye/build (unless --monado-build or
+      it off. --eye: PIMAX_EYE=1 and the build in ~/.local/lib/omarchyvr/monado (unless --monado-build or
       PIMAX_MONADO_BUILD says otherwise) with the gaze pointer as configured. --6dof: live 6DoF head
       tracking: starts `pimax-cam broker` first (stopped last by `desk stop`), PIMAX_SLAM=1 PIMAX_CAM_AE=1
       PIMAX_CAM_SOURCE=broker + the Basalt config for Monado, passthrough reads the broker; needs the merged Monado
-      build (eye + slam, branch desk in ~/src/monado-eye) and refuses a build without the 6DoF code.
+      build (eye + slam, branch desk of the Monado fork) and refuses a build without the 6DoF code.
       --ctrl-track (with --6dof; also `omarchyvr vr start --ctrl-track`): optical 6DoF controllers: `pimax-ctrltrack live --source broker` (LED frames ->
       controller poses in the head frame, $XDG_RUNTIME_DIR/pimax-ctrltrack.pose) and PIMAX_CTRL_TRACK=1 for Monado,
       which puts the controllers there. Out of view: gyro orientation (fitted from the optical poses,
@@ -123,7 +123,7 @@ pub const USAGE: &str = "usage: omarchyvr desk <command> [options]
       pids of the desk processes and `omarchyvr vr status` (plus a omarchyvrd line when it runs).
   omarchyvrd: with an executing omarchyvrd, `start` asks it to start the session and follows it (see `omarchyvr vr help`);
       start/stop --no-daemon (or PIMAX_NO_DAEMON=1), --dry-run, --wait and --force take the direct path.
-environment: PIMAX_MONADO_BUILD (default ~/src/monado-eye/build if built, else ~/src/monado/build), PIMAX_VR_SESSION_DIR.";
+environment: PIMAX_MONADO_BUILD (default ~/.local/lib/omarchyvr/monado if built, else ~/src/monado/build), PIMAX_VR_SESSION_DIR.";
 
 /// Seconds a client gets to exit after SIGINT.
 const CLIENT_GRACE: Duration = Duration::from_secs(10);
@@ -1197,7 +1197,7 @@ mod tests {
         );
         assert_eq!(
             o.wayvr_bin,
-            PathBuf::from("/home/u/src/target-desk/release/wayvr")
+            PathBuf::from("/home/u/.local/lib/omarchyvr/wayvr/wayvr")
         );
         assert_eq!(
             o.wayvr_home,
@@ -1243,7 +1243,7 @@ mod tests {
         assert!(o.eye);
         assert_eq!(
             o.vr.monado_build,
-            PathBuf::from("/home/u/src/monado-eye/build")
+            PathBuf::from("/home/u/.local/lib/omarchyvr/monado")
         );
         assert!(o.vr.extra_env.contains(&("PIMAX_EYE".into(), "1".into())));
         let env = crate::vr::config::build_env(&o.vr, &|_| None);
@@ -1258,7 +1258,7 @@ mod tests {
     #[test]
     fn sixdof_uses_the_merged_build_the_broker_env_and_a_broker_passthrough() {
         let o = parse(&["--6dof"], &[]).unwrap();
-        assert_eq!(o.vr.monado_build, PathBuf::from("/home/u/src/monado-eye/build"));
+        assert_eq!(o.vr.monado_build, PathBuf::from("/home/u/.local/lib/omarchyvr/monado"));
         assert!(o.sixdof.is_some());
         assert!(o.vr.extra_env.contains(&("PIMAX_SLAM".into(), "1".into())));
         assert!(!o.vr.extra_env.iter().any(|(k, _)| k == "PIMAX_EYE"));
@@ -1346,7 +1346,7 @@ mod tests {
         assert_eq!(p[2].args, ["listen"]);
         assert_eq!(p[2].log, PathBuf::from("/tmp/omarchyvr-session/voice.log"));
         assert_eq!(p[3].args[0], "captions");
-        assert_eq!(p[3].args[2], "/home/u/src/target-desk/release/wayvrctl");
+        assert_eq!(p[3].args[2], "/home/u/.local/lib/omarchyvr/wayvr/wayvrctl");
         assert_eq!(p[4].args[0], "act");
         assert_eq!(p[5].program, PathBuf::from("/b/hud"));
         assert!(p[5]
@@ -1388,7 +1388,7 @@ mod tests {
         let p = plan(&o);
         assert_eq!(p.iter().map(|s| s.name).collect::<Vec<_>>(), ["passthrough", "wayvr", "screens", "perf"]);
         assert_eq!(p[2].program, PathBuf::from("/home/u/.local/bin/omarchyvr"));
-        assert_eq!(p[2].args, ["desk", "screens", "watch", "--wayvrctl-bin", "/home/u/src/target-desk/release/wayvrctl"]);
+        assert_eq!(p[2].args, ["desk", "screens", "watch", "--wayvrctl-bin", "/home/u/.local/lib/omarchyvr/wayvr/wayvrctl"]);
         assert_eq!(p[2].log, PathBuf::from("/tmp/omarchyvr-session/screens.log"));
         assert!(plan(&parse(&["--screens", "1"], &[]).unwrap()).iter().all(|s| s.name != "screens"));
         assert_eq!(parse(&["--screens", "2"], &[]).unwrap().screens, 2);
@@ -1413,7 +1413,7 @@ mod tests {
         assert_eq!(p[2].program, PathBuf::from("/home/u/.local/bin/omarchyvr-perf"));
         assert_eq!(
             p[2].args,
-            ["run", "--file", "/run/user/7/omarchyvr-perf.stats", "--wayvrctl", "/home/u/src/target-desk/release/wayvrctl"]
+            ["run", "--file", "/run/user/7/omarchyvr-perf.stats", "--wayvrctl", "/home/u/.local/lib/omarchyvr/wayvr/wayvrctl"]
         );
         assert!(o.vr.extra_env.contains(&("PIMAX_PERF_FILE".into(), "/run/user/7/omarchyvr-perf.stats".into())));
         let n = parse(&["--no-perf"], &[]).unwrap();

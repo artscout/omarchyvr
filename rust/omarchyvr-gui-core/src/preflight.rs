@@ -317,7 +317,7 @@ pub fn evaluate(
             if let Some(k) = b.markers {
                 if !k.slam {
                     o.add(Some(6), "slam-code", Sev::Block, "This Monado build has no 6DoF code (no PIMAX_SLAM)",
-                        "Use the desk build (~/src/monado-eye/build, branch desk).", vec![]);
+                        "Use the desk build (~/.local/lib/omarchyvr/monado, branch desk).", vec![]);
                 } else if t.sixdof && !k.imu_gate {
                     o.add(Some(12), "ae-safe", Sev::Block, "Build lacks the Basalt IMU gate (Monado slam d3138d4)",
                         "With auto exposure on, the first 0x51 push froze cameras and IMU in builds without it. Rebuild from branch desk.", vec![]);
@@ -608,10 +608,10 @@ mod tests {
     fn build_without_camera_code_or_capability() {
         let (mut m, p) = demo::idle_machine();
         m.file(
-            "/home/u/src/monado-eye/build/CMakeCache.txt",
+            "/home/u/.local/lib/omarchyvr/monado/CMakeCache.txt",
             include_str!("../tests/fixtures/CMakeCache-desk.txt").replace("PIMAX_CAM:BOOL=ON", "PIMAX_CAM:BOOL=OFF"),
         );
-        let svc = "/home/u/src/monado-eye/build/src/xrt/targets/service/monado-service";
+        let svc = "/home/u/.local/lib/omarchyvr/monado/src/xrt/targets/service/monado-service";
         m.cmd(&format!("getcap {svc}"), 0, "");
         let pf = eval_on(&m, &p, DeskToggles::with_eye());
         assert_eq!(sev(&pf, "pimax-cam"), Sev::Block);

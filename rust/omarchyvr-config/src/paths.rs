@@ -122,8 +122,7 @@ pub fn repo_dir_with(home: &Path, exists: &dyn Fn(&Path) -> bool) -> PathBuf {
     }
 }
 
-/// The Monado CMake build dir: `monado_build` in `paths.toml`, else `<lib_dir>/monado` when it has `CMakeCache.txt`, else
-/// the legacy `<src_dir>/monado-eye/build`.
+/// The Monado CMake build dir: `monado_build` in `paths.toml`, else `<lib_dir>/monado` (the installed build).
 pub fn monado_build(home: &Path) -> PathBuf {
     monado_build_with(home, &on_disk)
 }
@@ -133,15 +132,17 @@ pub fn monado_build_with(home: &Path, exists: &dyn Fn(&Path) -> bool) -> PathBuf
     if let Some(p) = key_path(home, "monado_build") {
         return p;
     }
-    let installed = lib_dir(home).join("monado");
-    if exists(&installed.join("CMakeCache.txt")) {
-        installed
-    } else {
-        src_dir(home).join("monado-eye/build")
-    }
+    let _ = exists;
+    lib_dir(home).join("monado")
 }
 
-/// `installed` (under [`lib_dir`]) when it exists, else `legacy`; `key` in `paths.toml` wins over both.
+/// `key` in `paths.toml`, else `<lib_dir>/<rel>`.
+fn fixed(home: &Path, key: &str, rel: &str, exists: &dyn Fn(&Path) -> bool) -> PathBuf {
+    let _ = exists;
+    key_path(home, key).unwrap_or_else(|| lib_dir(home).join(rel))
+}
+
+/// `installed` (under [`lib_dir`]) when it exists, else `fallback`; `key` in `paths.toml` wins over both.
 fn installed_or(home: &Path, key: &str, installed: PathBuf, legacy: PathBuf, exists: &dyn Fn(&Path) -> bool) -> PathBuf {
     if let Some(p) = key_path(home, key) {
         return p;
@@ -153,14 +154,14 @@ fn installed_or(home: &Path, key: &str, installed: PathBuf, legacy: PathBuf, exi
     }
 }
 
-/// WayVR: `wayvr_bin` in `paths.toml`, else `<lib_dir>/wayvr/wayvr` if it exists, else `<src_dir>/target-desk/release/wayvr`.
+/// WayVR: `wayvr_bin` in `paths.toml`, else `<lib_dir>/wayvr/wayvr` if it exists, else `<lib_dir>/wayvr/wayvr`.
 pub fn wayvr_bin(home: &Path) -> PathBuf {
     wayvr_bin_with(home, &on_disk)
 }
 
 /// [`wayvr_bin`] with an injectable `exists`.
 pub fn wayvr_bin_with(home: &Path, exists: &dyn Fn(&Path) -> bool) -> PathBuf {
-    installed_or(home, "wayvr_bin", lib_dir(home).join("wayvr/wayvr"), src_dir(home).join("target-desk/release/wayvr"), exists)
+    fixed(home, "wayvr_bin", "wayvr/wayvr", exists)
 }
 
 /// `wayvrctl`: like [`wayvr_bin`] (`wayvrctl_bin` in `paths.toml`).
@@ -170,7 +171,7 @@ pub fn wayvrctl_bin(home: &Path) -> PathBuf {
 
 /// [`wayvrctl_bin`] with an injectable `exists`.
 pub fn wayvrctl_bin_with(home: &Path, exists: &dyn Fn(&Path) -> bool) -> PathBuf {
-    installed_or(home, "wayvrctl_bin", lib_dir(home).join("wayvr/wayvrctl"), src_dir(home).join("target-desk/release/wayvrctl"), exists)
+    fixed(home, "wayvrctl_bin", "wayvr/wayvrctl", exists)
 }
 
 /// Basalt (`basalt_lib`): `<lib_dir>/basalt/lib/libbasalt.so` if it exists, else `~/.local/lib/libbasalt.so`.
@@ -183,38 +184,24 @@ pub fn basalt_lib_with(home: &Path, exists: &dyn Fn(&Path) -> bool) -> PathBuf {
     installed_or(home, "basalt_lib", lib_dir(home).join("basalt/lib/libbasalt.so"), home.join(".local/lib/libbasalt.so"), exists)
 }
 
-/// sherpa-onnx C API (`sherpa_lib`): `<lib_dir>/sherpa-onnx/lib/libsherpa-onnx-c-api.so` if it exists, else the old
-/// virtualenv under `<src_dir>/venv-voice`.
+/// sherpa-onnx C API (`sherpa_lib`): `<lib_dir>/sherpa-onnx/lib/libsherpa-onnx-c-api.so` (`sherpa_lib` in `paths.toml` wins).
 pub fn sherpa_lib(home: &Path) -> PathBuf {
     sherpa_lib_with(home, &on_disk)
 }
 
 /// [`sherpa_lib`] with an injectable `exists`.
 pub fn sherpa_lib_with(home: &Path, exists: &dyn Fn(&Path) -> bool) -> PathBuf {
-    installed_or(
-        home,
-        "sherpa_lib",
-        lib_dir(home).join("sherpa-onnx/lib/libsherpa-onnx-c-api.so"),
-        src_dir(home).join("venv-voice/lib/python3.14/site-packages/sherpa_onnx/lib/libsherpa-onnx-c-api.so"),
-        exists,
-    )
+    fixed(home, "sherpa_lib", "sherpa-onnx/lib/libsherpa-onnx-c-api.so", exists)
 }
 
-/// whisper.cpp's server (`whisper_server`): `<lib_dir>/whisper.cpp/bin/whisper-server` if it exists, else
-/// `~/src/whisper.cpp/build-vk/bin/whisper-server`.
+/// whisper.cpp's server (`whisper_server`): `<lib_dir>/whisper.cpp/bin/whisper-server` (`whisper_server` in `paths.toml` wins).
 pub fn whisper_server(home: &Path) -> PathBuf {
     whisper_server_with(home, &on_disk)
 }
 
 /// [`whisper_server`] with an injectable `exists`.
 pub fn whisper_server_with(home: &Path, exists: &dyn Fn(&Path) -> bool) -> PathBuf {
-    installed_or(
-        home,
-        "whisper_server",
-        lib_dir(home).join("whisper.cpp/bin/whisper-server"),
-        home.join("src/whisper.cpp/build-vk/bin/whisper-server"),
-        exists,
-    )
+    fixed(home, "whisper_server", "whisper.cpp/bin/whisper-server", exists)
 }
 
 /// WayVR's `$HOME` for the desk (`wayvr_home`): `<data_dir>/wayvr-home`. No fallback.
@@ -283,21 +270,18 @@ mod tests {
         // repo: installed data copy, else ~/omarchyvr
         assert_eq!(repo_dir_with(h, &none), h.join("omarchyvr"));
         assert_eq!(repo_dir_with(h, &all), h.join(".local/share/omarchyvr/data"));
-        // monado build: installed build dir, else the lab build
-        assert_eq!(monado_build_with(h, &none), h.join("src/monado-eye/build"));
+        // monado build: the installed build dir
+        assert_eq!(monado_build_with(h, &none), h.join(".local/lib/omarchyvr/monado"));
         assert_eq!(monado_build_with(h, &all), h.join(".local/lib/omarchyvr/monado"));
-        let only = |want: &'static str| move |p: &Path| p == Path::new("/nonexistent-home-for-paths-test").join(want);
-        assert_eq!(monado_build_with(h, &only(".local/lib/omarchyvr/monado/CMakeCache.txt")), h.join(".local/lib/omarchyvr/monado"));
-        assert_eq!(monado_build_with(h, &only(".local/lib/omarchyvr/monado")), h.join("src/monado-eye/build"), "needs the cache file");
-        assert_eq!(wayvr_bin_with(h, &none), h.join("src/target-desk/release/wayvr"));
+        assert_eq!(wayvr_bin_with(h, &none), h.join(".local/lib/omarchyvr/wayvr/wayvr"));
         assert_eq!(wayvr_bin_with(h, &all), h.join(".local/lib/omarchyvr/wayvr/wayvr"));
-        assert_eq!(wayvrctl_bin_with(h, &none), h.join("src/target-desk/release/wayvrctl"));
+        assert_eq!(wayvrctl_bin_with(h, &none), h.join(".local/lib/omarchyvr/wayvr/wayvrctl"));
         assert_eq!(wayvrctl_bin_with(h, &all), h.join(".local/lib/omarchyvr/wayvr/wayvrctl"));
         assert_eq!(basalt_lib_with(h, &none), h.join(".local/lib/libbasalt.so"));
         assert_eq!(basalt_lib_with(h, &all), h.join(".local/lib/omarchyvr/basalt/lib/libbasalt.so"));
-        assert!(sherpa_lib_with(h, &none).ends_with("src/venv-voice/lib/python3.14/site-packages/sherpa_onnx/lib/libsherpa-onnx-c-api.so"));
+        assert_eq!(sherpa_lib_with(h, &none), h.join(".local/lib/omarchyvr/sherpa-onnx/lib/libsherpa-onnx-c-api.so"));
         assert_eq!(sherpa_lib_with(h, &all), h.join(".local/lib/omarchyvr/sherpa-onnx/lib/libsherpa-onnx-c-api.so"));
-        assert_eq!(whisper_server_with(h, &none), h.join("src/whisper.cpp/build-vk/bin/whisper-server"));
+        assert_eq!(whisper_server_with(h, &none), h.join(".local/lib/omarchyvr/whisper.cpp/bin/whisper-server"));
         assert_eq!(whisper_server_with(h, &all), h.join(".local/lib/omarchyvr/whisper.cpp/bin/whisper-server"));
         assert_eq!(wayvr_home(h), h.join(".local/share/omarchyvr/wayvr-home"));
         assert_eq!(wayvr_home_perf(h), h.join(".local/share/omarchyvr/wayvr-home-perf"));

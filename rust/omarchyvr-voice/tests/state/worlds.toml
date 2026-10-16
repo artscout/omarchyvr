@@ -48,7 +48,7 @@ screens = 3
 preset = "work-3"
 apps = [
   "t1 foot 1 ~/pimax-re",
-  "t2 foot 1 ~/src/monado-eye",
+  "t2 foot 1 ~/src/monado",
   "c1 google-chrome 2 tabs=Gmail - Inbox|YouTube - Dune trailer*|GitHub - pimax-re",
   "p1 pimax 3",
 ]
@@ -98,7 +98,7 @@ preset = "assistant"
 hidden = [5]
 apps = [
   "t1 foot 1 ~/pimax-re",
-  "t2 foot 1 ~/src/monado-eye",
+  "t2 foot 1 ~/src/monado",
   "c1 google-chrome 2 tabs=Gmail - Inbox|YouTube - lofi beats|GitHub - pimax-re|Monado docs|Hacker News*|Reddit - r/VirtualReality|Google Search - dune showtimes|Wikipedia - Dune (2021 film)|Netflix|Google Calendar",
   "t3 foot 3 title=btop",
   "v1 mpv 4 fs title=\"Arrival.2016.mkv - mpv\"",
@@ -191,7 +191,7 @@ hidden = [3]
 apps = [
   "c1 google-chrome 1 tabs=Google Calendar|GitHub - pimax-re|YouTube - Dune part two trailer|Gmail - Inbox|Hacker News*|Weather - Madrid|Amazon",
   "t1 foot 2 ~/pimax-re",
-  "t2 foot 2 ~/src/monado-eye",
+  "t2 foot 2 ~/src/monado",
   "t3 kitty 2 title=btop",
   "t4 foot 3 ~/src/wayvr",
   "n1 org.gnome.Nautilus 4",

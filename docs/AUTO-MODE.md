@@ -43,7 +43,7 @@ Unplugged -> Plugged -> Worn (start) -> Active(desk|game) -> IdleDim -> Sleep (s
 
 ## Setup
 ```sh
-cd ~/pimax-re/rust && cargo build --release -p omarchyvr-autod -p omarchyvr-tools
+cd ~/omarchyvr/rust && cargo build --release -p omarchyvr-autod -p omarchyvr-tools
 cp ../packaging/auto.toml.example ~/.config/omarchyvr/auto.toml         # defaults; dry_run = true
 target/release/omarchyvr-autod config                                    # effective settings + warnings
 target/release/omarchyvr-autod run                                       # foreground, log on stderr

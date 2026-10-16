@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MIT OR Apache-2.0
 #
-# lab-sync.sh: bring the lab's (pimax-re) changes between two lab commits into this repo, with the new names.
+# lab-sync.sh: bring the old lab repository's (pimax-re) changes between two lab commits into this repo, with the new names.
 #
-#   tools/lab-sync.sh [--check] OLD_LAB_COMMIT NEW_LAB_COMMIT [LAB_DIR=~/pimax-re]
+#   tools/lab-sync.sh [--check] OLD_LAB_COMMIT NEW_LAB_COMMIT LAB_DIR
 #
 # For each of the two lab commits: a shared clone of the lab at that commit runs ITS tools/export-public.sh --no-test
 # (so scrubbing and branding are those of that commit), then tools/apply-names.py applies tools/names.tsv (old name ->
@@ -16,8 +16,8 @@ set -euo pipefail
 
 CHECK=0
 if [[ ${1:-} == --check ]]; then CHECK=1; shift; fi
-[[ $# -ge 2 && $# -le 3 ]] || { sed -n '3,15p' "$0" >&2; exit 2; }
-OLD=$1 NEW=$2 LAB=${3:-$HOME/pimax-re}
+[[ $# -eq 3 ]] || { sed -n '3,15p' "$0" >&2; exit 2; }
+OLD=$1 NEW=$2 LAB=$3
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 NAMES=$HERE/tools/names.tsv
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/lab-sync.XXXXXX")

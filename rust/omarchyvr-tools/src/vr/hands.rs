@@ -3,7 +3,7 @@
 //!
 //! Design (the simplest one that cannot break a session):
 //! * One Monado build carries everything (ai/CLAUDE.md section 3), hands included: `--hands` only sets the
-//!   variables below on the build the start uses anyway (`~/src/monado-eye/build`). Another build only when it is
+//!   variables below on the build the start uses anyway (`~/.local/lib/omarchyvr/monado`). Another build only when it is
 //!   named: `--hands-build DIR` or `PIMAX_HANDS_BUILD` (service binary AND runtime manifest move together). An
 //!   explicit `--monado-build` / `PIMAX_MONADO_BUILD` / `--service-bin` wins and is used as it is.
 //! * Hands are on only when that monado-service has the Mercury code (the `PIMAX_HT_HZ` option name in the binary)
@@ -164,7 +164,7 @@ mod tests {
 
     fn world(name: &str, marker: bool, models: bool) -> PathBuf {
         let d = crate::vr::test_dir(name);
-        let svc = d.join("home/src/monado-eye/build/src/xrt/targets/service/monado-service");
+        let svc = d.join("home/.local/lib/omarchyvr/monado/src/xrt/targets/service/monado-service");
         std::fs::create_dir_all(svc.parent().unwrap()).unwrap();
         std::fs::write(&svc, if marker { &b"x\0PIMAX_SLAM\0PIMAX_HT_HZ\0y"[..] } else { &b"x\0PIMAX_SLAM\0y"[..] }).unwrap();
         if models {
@@ -189,7 +189,7 @@ mod tests {
         };
         let mut a = Args(args.iter().map(|s| s.to_string()).collect());
         let mut vr = parse_options(&mut Args(Vec::new()), &env).unwrap();
-        vr.monado_build = home.join("src/monado-eye/build");
+        vr.monado_build = home.join(".local/lib/omarchyvr/monado");
         let r = parse(&mut a, &env, &mut vr, &home, build_given, sixdof);
         if r.is_ok() {
             assert!(a.0.is_empty(), "left over: {:?}", a.0);
@@ -207,7 +207,7 @@ mod tests {
         let (r, vr) = run(&d, &[], &[], false, true);
         assert_eq!(r.unwrap(), Hands::default());
         assert!(val(&vr, "PIMAX_HANDS").is_none());
-        assert!(vr.monado_build.ends_with("src/monado-eye/build"));
+        assert!(vr.monado_build.ends_with(".local/lib/omarchyvr/monado"));
         assert!(run(&d, &["--hands-roles"], &[], false, true).0.is_err());
         assert!(run(&d, &["--hands-build", "/x"], &[], false, true).0.is_err());
     }
@@ -229,7 +229,7 @@ mod tests {
         let (r, vr) = run(&d, &["--hands", "--hands-roles"], &[], false, true);
         let h = r.unwrap();
         assert!(h.on && h.asked);
-        assert!(vr.monado_build.ends_with("src/monado-eye/build"), "{:?}", vr.monado_build);
+        assert!(vr.monado_build.ends_with(".local/lib/omarchyvr/monado"), "{:?}", vr.monado_build);
         assert_eq!(val(&vr, "PIMAX_HANDS"), Some("mercury"));
         assert_eq!(val(&vr, "PIMAX_HT_STATS"), Some("1"));
         assert_eq!(val(&vr, "PIMAX_HT_ROLES"), Some("hands"));
@@ -251,7 +251,7 @@ mod tests {
         let (r, vr) = run(&d, &["--hands"], &[], false, true);
         let h = r.unwrap();
         assert!(!h.on && h.asked && h.note.as_deref().unwrap().contains("WITHOUT camera hands"));
-        assert!(vr.monado_build.ends_with("src/monado-eye/build"), "normal build kept");
+        assert!(vr.monado_build.ends_with(".local/lib/omarchyvr/monado"), "normal build kept");
         assert!(val(&vr, "PIMAX_HANDS").is_none());
 
         let d = world("hands-nomarker", false, true);
@@ -287,17 +287,17 @@ mod tests {
         for f in MODELS {
             std::fs::write(m.join(f), "onnx").unwrap();
         }
-        // the explicit build (monado-eye/build here) does not exist: warn, keep it, no hands
+        // the explicit build (the desk build here) does not exist: warn, keep it, no hands
         let (r, vr) = run(&d, &["--hands"], &[], true, true);
         assert!(!r.unwrap().on);
-        assert!(vr.monado_build.ends_with("src/monado-eye/build"));
+        assert!(vr.monado_build.ends_with(".local/lib/omarchyvr/monado"));
         // an explicit build with Mercury: kept, hands on
-        let eb = d.join("home/src/monado-eye/build/src/xrt/targets/service/monado-service");
+        let eb = d.join("home/.local/lib/omarchyvr/monado/src/xrt/targets/service/monado-service");
         std::fs::create_dir_all(eb.parent().unwrap()).unwrap();
         std::fs::write(&eb, b"PIMAX_HT_HZ\0").unwrap();
         let (r, vr) = run(&d, &["--hands"], &[], true, true);
         let h = r.unwrap();
         assert!(h.on && h.note.unwrap().contains("(as given)"));
-        assert!(vr.monado_build.ends_with("src/monado-eye/build"));
+        assert!(vr.monado_build.ends_with(".local/lib/omarchyvr/monado"));
     }
 }

@@ -181,8 +181,8 @@ mod tests {
         assert_eq!(quote(""), "''");
         let c = Cmd::new("omarchyvr", &["desk", "start", "--fps", "72"]).env("OXR_DEBUG_IPD_MM", "65.9");
         assert_eq!(c.display(), "OXR_DEBUG_IPD_MM=65.9 omarchyvr desk start --fps 72");
-        let c = Cmd::new("ninja", &[]).cwd("/home/u/src/monado-eye/build");
-        assert_eq!(c.display(), "cd /home/u/src/monado-eye/build && ninja");
+        let c = Cmd::new("ninja", &[]).cwd("/home/u/.local/lib/omarchyvr/monado");
+        assert_eq!(c.display(), "cd /home/u/.local/lib/omarchyvr/monado && ninja");
     }
 
     #[test]

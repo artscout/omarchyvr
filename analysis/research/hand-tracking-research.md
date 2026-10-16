@@ -18,7 +18,7 @@ Date: 2026-10-15. Read-only research. Nothing built, committed or run. Verified 
 
 **Open mismatches:** the calibration says 640x480 per camera, but only 466 rows carry image (rows 24..489). Either the crop is 7..486 or the calibration size is wrong. This must be settled before Mercury gets a `t_stereo_camera_calibration`. Also the calibration has `TimeAlignment delta="0"` and a separate `SFConfig delta=0.001638`.
 
-## 2. Monado in our tree (`~/src/monado-eye`, branch `desk`, HEAD 5aa6c98)
+## 2. Monado in our tree (`forks/monado`, branch `desk`, HEAD 5aa6c98)
 
 **Our build does not have hand tracking.** From `build/CMakeCache.txt`:
 - `ONNXRuntime_LIBRARY` and `ONNXRuntime_INCLUDE_DIR` are `NOTFOUND`, so `XRT_HAVE_ONNXRUNTIME` cannot be on.
@@ -126,4 +126,4 @@ Local survey with the same entries: `analysis/research/handtracking-oss-survey.m
 - https://docs.ultraleap.com, https://monado.pages.freedesktop.org/monado/md_drivers_ultraleap_v2_readme.html (search)
 - https://arxiv.org/pdf/2303.07399 (RTMPose)
 - https://store.pimax.com/products/pimax-dream-air?country=BR, https://simracingcockpit.gg/pimax-dream-air-slam-review/, https://www.auganix.org/?p=17112 (Dream Air specs, search)
-- Local: `analysis/handtracking.html`, `analysis/hands-desk.md`, `analysis/camera-frames.md`, `analysis/camera-broker.md`, `analysis/imu-camera.md`, `analysis/headset-calibration.xml`, `analysis/research/handtracking-oss-survey.md`, `analysis/research/dreamair-cameras.md`, `~/src/monado-eye/src/xrt/drivers/pimax/pimax_camera.c`, `~/src/monado-eye/src/xrt/tracking/hand/mercury/hg_model.cpp`, `~/src/monado-eye/scripts/get-ht-models.sh`, `~/src/monado-eye/build/CMakeCache.txt`
+- Local: `analysis/handtracking.html`, `analysis/hands-desk.md`, `analysis/camera-frames.md`, `analysis/camera-broker.md`, `analysis/imu-camera.md`, `analysis/headset-calibration.xml`, `analysis/research/handtracking-oss-survey.md`, `analysis/research/dreamair-cameras.md`, `forks/monado/src/xrt/drivers/pimax/pimax_camera.c`, `forks/monado/src/xrt/tracking/hand/mercury/hg_model.cpp`, `forks/monado/scripts/get-ht-models.sh`, `~/.local/lib/omarchyvr/monado/CMakeCache.txt`

@@ -44,7 +44,7 @@ Options (append to the `.cmd`): `-Parts "1 3"`, `-Seconds 180`, `-GridN 129`, `-
 ## 2. On Linux: fit the distortion
 
 ```
-cd ~/pimax-re/rust
+cd omarchyvr/rust
 cargo run --release -p pimax-lens -- fit-pvr /path/to/pimax-windows-dump-.../pimax-distortion-<serial>.json
 ```
 

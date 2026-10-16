@@ -1,6 +1,6 @@
 # 6DoF head tracking for the Dream Air on Linux: design and phase 1 (2026-10-14)
 
-Status: phase 1 implemented and tested offline (no headset run yet). Monado worktree `~/src/monado-slam`, branch
+Status: phase 1 implemented and tested offline (no headset run yet). Monado worktree `forks/monado`, branch
 `slam`; Rust in `rust/pimax-cam` (module `slam`, C ABI `capi_slam`) and the new tool crate `rust/omarchyvr-slam`;
 launcher `analysis/tools/run_slam.sh`. Basalt is built in `~/src/basalt` and installed in `~/.local`.
 
@@ -224,8 +224,8 @@ Until then, every session starts at the origin facing the initial 3DoF heading (
 | Piece | Where |
 |---|---|
 | Basalt (VIT 2.0.1, matches Monado) | `~/src/basalt` (df6e970), `~/.local/lib/libbasalt.so`; build: `-DBASALT_BUILD_SHARED_LIBRARY_ONLY=ON -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DSKIP_PERFORMANCE_COMPARISON=ON` |
-| Driver glue (C, thin) | `~/src/monado-slam` branch `slam`: `pimax_camera.c/.h`, `pimax_hmd.c`; `t_tracker_slam.cpp/t_tracking.h` (latest pose, reset) |
-| Build | `~/src/monado-slam/build` (`-DPIMAX_CAM=ON`, Mercury on, `PIMAX_RUST_TARGET_DIR=~/src/target-slam/release`) |
+| Driver glue (C, thin) | `forks/monado` branch `slam`: `pimax_camera.c/.h`, `pimax_hmd.c`; `t_tracker_slam.cpp/t_tracking.h` (latest pose, reset) |
+| Build | `~/.local/lib/omarchyvr/monado` (`-DPIMAX_CAM=ON`, Mercury on, `PIMAX_RUST_TARGET_DIR=$CARGO_TARGET_DIR/release`) |
 | Rust: calibration export, IMU model, supervisor + C ABI | `rust/pimax-cam/src/slam.rs`, `capi_slam.rs`, `include/pimax_cam.h` |
 | Rust tools | `rust/omarchyvr-slam` (`export`, `check`, `imu-noise`, `timing`, `ate`, `loop`, `smoke-euroc`) |
 | Launcher | `analysis/tools/run_slam.sh record / live / replay` |

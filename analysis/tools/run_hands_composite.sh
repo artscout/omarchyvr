@@ -10,14 +10,14 @@
 #
 #   run_hands_composite.sh                 3 dumps -> $OUT/png/*.png (both eyes side by side, upright)
 #   NO_PASSTHROUGH=1 run_hands_composite.sh   WayVR alone (its skybox behind the hands)
-# Environment: MONADO_BUILD (default ~/src/monado-eye/build), WAYVR, PASSTHROUGH, LENSTEST, PXCAM, OUT, SECS (warm-up, 8),
+# Environment: MONADO_BUILD (default ~/.local/lib/omarchyvr/monado), WAYVR, PASSTHROUGH, LENSTEST, PXCAM, OUT, SECS (warm-up, 8),
 #   plus anything Monado/pimax reads (PIMAX_CTRL_*, PIMAX_LENS_CONF ...), passed through.
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
-M=${MONADO_BUILD:-$HOME/src/monado-eye/build}
+M=${MONADO_BUILD:-$HOME/.local/lib/omarchyvr/monado}
 SVC=$M/src/xrt/targets/service/monado-service
 RT=$M/openxr_monado-dev.json
-WAYVR=${WAYVR:-$HOME/src/target-desk/release/wayvr}
+WAYVR=${WAYVR:-$HOME/.local/lib/omarchyvr/wayvr/wayvr}
 PT=${PASSTHROUGH:-$HERE/../../rust/target/release/omarchyvr-passthrough}
 LENSTEST=${LENSTEST:-$HERE/../../rust/target/release/pimax-lenstest}
 PXCAM=${PXCAM:-$HERE/../../rust/pimax-cam/tests/fixtures/evening2.pxcam}

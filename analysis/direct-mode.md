@@ -89,4 +89,4 @@ The XLIB direct path (`VK_EXT_acquire_xlib_display`) needs an X server with the 
 - https://monado.freedesktop.org/direct-mode.html
 - https://forums.developer.nvidia.com/t/nvidia-proprietary-non-open-modules-completely-unable-to-acquire-a-drm-lease-on-any-display-server-all-known-nvidia-drivers-any-hardware/341244
 - https://gaiasky.space/news/2026/gaiasky-vr-linux-monado
-- Local: /home/user/pimax-re/libpimax/src/pimax.c:194-206; libpimax/README.md:26
+- Local: ~/omarchyvr/libpimax/src/pimax.c:194-206; libpimax/README.md:26

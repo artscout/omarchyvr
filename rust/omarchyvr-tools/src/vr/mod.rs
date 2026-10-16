@@ -179,7 +179,7 @@ pub const USAGE: &str = "usage: omarchyvr vr <command> [options]
       --ppm writes a preview.
   dump-diff A.raw B.raw
       compare two dumps: differing pixels, size of the differences, and how many are in flat areas (not on an edge).
-environment: PIMAX_MONADO_BUILD (default ~/src/monado-eye/build if built, else ~/src/monado/build), PIMAX_VR_SESSION_DIR, PIMAX_NO_NOTIFY=1,
+environment: PIMAX_MONADO_BUILD (default ~/.local/lib/omarchyvr/monado if built, else ~/src/monado/build), PIMAX_VR_SESSION_DIR, PIMAX_NO_NOTIFY=1,
   XRT_COMPOSITOR_LOG, PIMAX_LOG, SCALE / XRT_COMPOSITOR_SCALE_PERCENTAGE are passed on to monado-service.";
 
 /// Fresh scratch directory for unit tests (`$TMPDIR/omarchyvr-vr-test-<pid>-<name>`).
@@ -380,7 +380,7 @@ pub fn run(mut a: Args) -> CliResult {
             // argv0: parse_options has already taken --monado-build out of `a`
             let build_given = argv0.iter().any(|x| x == "--monado-build" || x.starts_with("--monado-build="))
                 || real_env("PIMAX_MONADO_BUILD").is_some_and(|v| !v.is_empty());
-            // --6dof: camera broker + SLAM; needs the merged build (default ~/src/monado-eye/build)
+            // --6dof: camera broker + SLAM; needs the merged build (default ~/.local/lib/omarchyvr/monado)
             let sixdof = sixdof::parse(&mut a, &real_env, &mut opts, &home, build_given, Some(omarchyvr_config::paths::monado_build(&home)));
             // --ctrl-track: optical controllers (needs --6dof); shared with `desk start`
             let ctrl_track = sixdof::parse_ctrl_track(&mut a, &real_env, &mut opts, &home, &sixdof)?;

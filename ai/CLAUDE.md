@@ -36,7 +36,7 @@ Every change ends in a new complete build of the whole set (Monado + WayVR + all
     `PIMAX_CTRL_TRACK`, `held from the tracker` (IMU gate), plus each new feature's marker. The app's preflight
     (omarchyvr-gui-core builds.rs / preflight.rs) refuses builds without them.
   - Lesson 2026-10-15: build-rec was configured from scratch with the Pimax driver OFF; the app blocked 6DoF.
-    Always copy the cache options from the live build and check the markers before switching `~/src/monado-eye/build`.
+    Always copy the cache options from the live build and check the markers before switching `~/.local/lib/omarchyvr/monado`.
   - Every relink drops cap_sys_nice: the app's Fix/Play button restores it (pkexec).
 - **Rust** (`rust/`): build the whole workspace from a clean worktree of committed HEAD
   (`CARGO_TARGET_DIR=rust/target-clean`), then install all binaries together. No half-installed sets.

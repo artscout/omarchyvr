@@ -2,7 +2,7 @@
 #
 # Packaged: the desktop app (omarchyvr-app), the launcher (omarchyvr), the tools the app and the launcher start, the docs,
 # scripts and NVIDIA patches the app reads (/usr/share/omarchyvr), the udev rule, the desktop entry and the icon.
-# NOT packaged: the Monado and WayVR builds (~/src/monado-eye, ~/src/wayvr and the other builds the app checks),
+# NOT packaged: the Monado and WayVR builds (~/.local/lib/omarchyvr/monado, ~/.local/lib/omarchyvr/wayvr and the other builds the app checks),
 # Basalt, the voice models and the sherpa-onnx library. They stay user builds in the home directory.
 # Root steps (udev reload, NVIDIA patches and pacman hooks, setcap) stay with the app's Setup page.
 #
@@ -11,7 +11,7 @@
 # To build from somewhere else, change source=. Keep the "omarchyvr::" prefix: build() and package() use
 # $srcdir/omarchyvr. Examples:
 #   source=("omarchyvr::git+https://github.com/laughtt/omarchyvr.git")
-#   source=("omarchyvr::git+file:///home/user/omarchyvr#branch=some-branch")
+#   source=("omarchyvr::git+file:///path/to/omarchyvr#branch=some-branch")
 #
 # The packaged launcher (/usr/bin/omarchyvr) finds its tools next to itself (omarchyvr-tools vr::config::tools_dir); a
 # launcher run from the home directory uses the tools in ~/.local/bin (the installed set of ./install.sh).

@@ -527,7 +527,7 @@ pub(crate) mod tests {
 
     #[test]
     fn nothing_is_sent_before_send_and_fixes_wait_for_approval() {
-        let svc = "/home/u/src/monado-eye/build/src/xrt/targets/service/monado-service";
+        let svc = "/home/u/.local/lib/omarchyvr/monado/src/xrt/targets/service/monado-service";
         let t = Arc::new(Counting {
             probes: AtomicUsize::new(0),
             sends: AtomicUsize::new(0),

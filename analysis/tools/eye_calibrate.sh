@@ -12,16 +12,16 @@
 #
 #   eye_calibrate.sh [--points 13] [--pursuit] [--recenter] [other pimax-eyecal options, see pimax-eyecal --help]
 #
-# Environment: MONADO_BUILD (default ~/src/monado-eye/build), MODE (default 2), LOGDIR (default
+# Environment: MONADO_BUILD (default ~/.local/lib/omarchyvr/monado), MODE (default 2), LOGDIR (default
 # /tmp/pimax-eyecal), HEADSET_LOCK=1 (take /tmp/omarchyvr-headset.lock for the run).
 # Relinking the Monado eye build drops its file capability; restore it with:
-#   sudo setcap cap_sys_nice+ep ~/src/monado-eye/build/src/xrt/targets/service/monado-service
+#   sudo setcap cap_sys_nice+ep ~/.local/lib/omarchyvr/monado/src/xrt/targets/service/monado-service
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
 if [ "${HEADSET_LOCK:-0}" = 1 ] && [ -z "${_EYECAL_LOCKED:-}" ]; then
 	_EYECAL_LOCKED=1 exec flock -o -w 3600 /tmp/omarchyvr-headset.lock "$0" "$@"
 fi
-M=${MONADO_BUILD:-$HOME/src/monado-eye/build}
+M=${MONADO_BUILD:-$HOME/.local/lib/omarchyvr/monado}
 SVC=$M/src/xrt/targets/service/monado-service
 RT=$M/openxr_monado-dev.json
 APP=${EYECAL:-$HERE/../../rust/target/release/pimax-eyecal}
@@ -29,7 +29,7 @@ LOGDIR=${LOGDIR:-/tmp/pimax-eyecal}
 mkdir -p "$LOGDIR"
 die() { echo "eye_calibrate: $*" >&2; exit 1; }
 [ -x "$SVC" ] || die "no monado-service at $SVC (set MONADO_BUILD)"
-[ -x "$APP" ] || die "pimax-eyecal not built: (cd ~/pimax-re/rust && cargo build --release -p pimax-eyecal)"
+[ -x "$APP" ] || die "pimax-eyecal not built: (cd ~/omarchyvr/rust && cargo build --release -p pimax-eyecal)"
 pgrep -x monado-service >/dev/null && die "a monado-service is already running; stop it first (omarchyvr vr stop / desk stop)"
 if command -v getcap >/dev/null && ! getcap "$SVC" | grep -q cap_sys_nice; then
 	echo "eye_calibrate: warning: $SVC has no cap_sys_nice (dropped by the relink); restore it with:" >&2

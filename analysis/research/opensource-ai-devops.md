@@ -1,4 +1,4 @@
-# Open-source AI devops pipelines: what to copy for pimax-re
+# Open-source AI devops pipelines: what to copy for omarchyvr
 
 Research note, 2026-10-15. Goal: easy install on many machines, users test on whatever headset/GPU/driver they have, an AI agent diagnoses failures and opens PRs, and automatic tests show whether a change is an improvement.
 

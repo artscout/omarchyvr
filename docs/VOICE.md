@@ -642,12 +642,12 @@ window matches the name you said, a model can pick the window.
 ### What needs a rebuild or restart (do it with desk mode stopped)
 ```sh
 omarchyvr desk stop
-cd ~/pimax-re/rust && cargo build --release -p omarchyvr-voice -p omarchyvr-passthrough -p omarchyvr-tools
+cd ~/omarchyvr/rust && cargo build --release -p omarchyvr-voice -p omarchyvr-passthrough -p omarchyvr-tools
 install -m755 target/release/omarchyvr ~/.local/bin/omarchyvr      # the launcher (desk preset, cinema default, voiceact)
-cp ~/src/target-desk-test/release/wayvr ~/src/target-desk-test/release/wayvrctl ~/src/target-desk/release/
+cp $WAYVR_TARGET/release/wayvr $WAYVR_TARGET/release/wayvrctl ~/.local/lib/omarchyvr/wayvr/
 omarchyvr desk start --voice
 ```
-The launcher runs `omarchyvr-voice` and `omarchyvr-passthrough` from `~/pimax-re/rust/target/release`, so building them is
+The launcher runs `omarchyvr-voice` and `omarchyvr-passthrough` from `~/omarchyvr/rust/target/release`, so building them is
 enough.
 Older parts keep working:
 - An older WayVR (before `aac483a`) has no `desk-layout` or `skybox`. Presets then only change the passthrough and

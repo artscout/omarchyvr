@@ -36,11 +36,11 @@ confirm_s = 8.0
 
 [paths]
 pimax = "omarchyvr"
-wayvrctl = "~/src/target-desk/release/wayvrctl"
+wayvrctl = "~/.local/lib/omarchyvr/wayvr/wayvrctl"
 
 [backdrop]
 # skybox images: <wayvr home>/config/wayvr/<skybox_dir>/*.dds (named by file stem), after the built-in ones
-wayvr_home = "~/src/desk-out/wayvr-home-am"
+wayvr_home = "~/.local/share/omarchyvr/wayvr-home"
 skybox_dir = "skybox"
 
 [llm]

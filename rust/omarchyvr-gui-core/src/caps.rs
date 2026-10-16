@@ -61,15 +61,20 @@ pub fn check_service_path(service: &Path, home: &Path) -> Result<PathBuf, String
     if resolved.file_name().and_then(|n| n.to_str()) != Some("monado-service") {
         return Err(format!("{} is not named monado-service", resolved.display()));
     }
-    let src_root = omarchyvr_config::paths::src_dir(home);
-    let src = std::fs::canonicalize(&src_root).map_err(|e| format!("{}: {e}", src_root.display()))?;
-    let rel = resolved.strip_prefix(&src).ok();
-    let top_ok = rel
-        .and_then(|r| r.components().next())
-        .and_then(|c| c.as_os_str().to_str())
-        .is_some_and(|top| top.starts_with("monado"));
-    if !top_ok || rel.is_none_or(|r| r.components().count() < 2) {
-        return Err(format!("{} is not under {}/monado*/", resolved.display(), src.display()));
+    // the installed build (`<lib_dir>/monado`) or a Monado tree under the source root (`<src_dir>/monado*/`)
+    let lib = omarchyvr_config::paths::lib_dir(home).join("monado");
+    let installed = std::fs::canonicalize(&lib).ok().is_some_and(|l| resolved.starts_with(&l) && resolved != l);
+    if !installed {
+        let src_root = omarchyvr_config::paths::src_dir(home);
+        let src = std::fs::canonicalize(&src_root).map_err(|e| format!("{}: {e}", src_root.display()))?;
+        let rel = resolved.strip_prefix(&src).ok();
+        let top_ok = rel
+            .and_then(|r| r.components().next())
+            .and_then(|c| c.as_os_str().to_str())
+            .is_some_and(|top| top.starts_with("monado"));
+        if !top_ok || rel.is_none_or(|r| r.components().count() < 2) {
+            return Err(format!("{} is not under {} or {}/monado*/", resolved.display(), lib.display(), src.display()));
+        }
     }
     if resolved.to_str().is_none_or(|s| s.chars().any(char::is_control)) {
         return Err(format!("{} has characters the fix does not accept", resolved.display()));
@@ -124,7 +129,7 @@ mod tests {
 
     #[test]
     fn modern_and_old_formats() {
-        let p = "/home/u/src/monado-eye/build/src/xrt/targets/service/monado-service";
+        let p = "/home/u/.local/lib/omarchyvr/monado/src/xrt/targets/service/monado-service";
         assert!(has_sys_nice(&format!("{p} cap_sys_nice=ep\n")));
         assert!(has_sys_nice(&format!("{p} = cap_sys_nice+ep\n")));
         assert!(has_sys_nice(&format!("{p} cap_net_raw,cap_sys_nice=eip\n")));

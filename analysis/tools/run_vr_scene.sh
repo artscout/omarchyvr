@@ -14,7 +14,7 @@ echo "*** Keep the headset still for 3 seconds (gyro auto-calibration) ***"
 (sleep $((SECS+15)) | $M/src/xrt/targets/service/monado-service >"$OUT/monado.log" 2>&1) &
 SVC=$!
 sleep 3
-python3 $HOME/pimax-re/linux/pimax_logtail.py $((SECS+5)) >"$OUT/fwlog.txt" 2>&1 &
+python3 ${PIMAX_REPO:-$HOME/omarchyvr}/linux/pimax_logtail.py $((SECS+5)) >"$OUT/fwlog.txt" 2>&1 &
 TAIL=$!
 sleep 1
 echo "*** Starting scene ($APP $APP_ARGS) for ${SECS}s ***"

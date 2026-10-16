@@ -912,7 +912,7 @@ mod tests {
         };
         add(1, "/usr/lib/systemd/systemd");
         assert_eq!(detect_session(&root), Session::None);
-        add(10, "/home/u/src/target-desk/release/wayvr|--openxr");
+        add(10, "/home/u/.local/lib/omarchyvr/wayvr/wayvr|--openxr");
         assert_eq!(detect_session(&root), Session::Work);
         add(20, "/home/u/.local/share/Steam/steamapps/common/SteamVR/bin/linux64/vrserver|--keepalive");
         assert_eq!(detect_session(&root), Session::SteamVr, "SteamVR's own files are not a game");

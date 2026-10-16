@@ -25,8 +25,8 @@ The client renders a normal pinhole image covering `fov` (left/right/up/down hal
 ## Tuning procedure
 `xr_grid` is head-locked and ray-cast for the FOV the runtime reports: square grid every 0.2 m on a wall at 2 m (bright every 1 m), red centre cross, circles at 10 (white), 20 (yellow), 30 (green), 40 (cyan), 50 (magenta) deg from the axis, orange frame = edge of the rendered FOV, left eye bluish background, right reddish.
 
-    mkdir -p ~/.config/omarchyvr && cp ~/pimax-re/analysis/tools/lens.conf.example ~/.config/omarchyvr/lens.conf
-    SECS=90 ~/pimax-re/analysis/tools/run_lens_tune.sh       # direct mode, logs in /tmp/pimax-lens-tune
+    mkdir -p ~/.config/omarchyvr && cp ~/omarchyvr/analysis/tools/lens.conf.example ~/.config/omarchyvr/lens.conf
+    SECS=90 ~/omarchyvr/analysis/tools/run_lens_tune.sh       # direct mode, logs in /tmp/pimax-lens-tune
     # edit ~/.config/omarchyvr/lens.conf, run again. (Windowed: see Verification.)
 
 Do it with the head still, one eye at a time (close the other), eye on the lens centre:
@@ -48,7 +48,7 @@ In windowed mode the window shows the framebuffer, so the compositor's 90/270 de
 
 **What moved.** `rust/pimax-lens` (crate, `staticlib` + `rlib`) holds the distortion math, the lens.conf parser, the visibility mask and the
 debug grid. `pimax_lens.c` in Monado only converts types (`FOV` to radians, the UV triplet, the `xrt_visibility_mask` struct) and calls the
-C ABI of `rust/pimax-lens/include/pimax_lens_rs.h`. Build: `(cd ~/pimax-re/rust && cargo build --release -p pimax-lens)` puts
+C ABI of `rust/pimax-lens/include/pimax_lens_rs.h`. Build: `(cd ~/omarchyvr/rust && cargo build --release -p pimax-lens)` puts
 `libpimax_lens.a` next to `libpimax_capi.a`; the pimax CMake block links both from `PIMAX_RUST_TARGET_DIR`, and stops with the cargo command
 if the library is missing. Two Rust staticlibs in one binary link without symbol clashes (checked with the real `monado-service`).
 

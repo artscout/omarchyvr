@@ -154,10 +154,10 @@ lenstest's upload code, but it **has not run against a runtime**: that is the li
 Preconditions: the display freeze is under control well enough that a plain client (xr_room) runs, so use the
 current recommended env for worn sessions. The service must **not** use the camera (no `PIMAX_HANDS=mercury`, no
 `PIMAX_CAM=1`), which is the default. Build (already built, offline):
-`cd ~/src/pimax-re-passthrough/rust && CARGO_TARGET_DIR=~/src/target-passthrough cargo build --release -p omarchyvr-passthrough`.
+`cd ~/omarchyvr/rust && CARGO_TARGET_DIR=$CARGO_TARGET_DIR cargo build --release -p omarchyvr-passthrough`.
 
 ```bash
-P=~/src/target-passthrough/release/omarchyvr-passthrough
+P=$CARGO_TARGET_DIR/release/omarchyvr-passthrough
 export XR_RUNTIME_JSON=$HOME/src/monado/build/openxr_monado-dev.json IPC_IGNORE_VERSION=1
 
 # 0. service as usual (headset on the desk until the gyro is calibrated)

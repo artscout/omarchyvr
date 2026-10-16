@@ -1547,7 +1547,7 @@ pub fn execute(fx: &Effect, out: Option<&Path>, correction_path: Option<&Path>) 
             };
             match write_with_backup(&path, text, &st) {
                 Ok(b) => format!(
-                    "correction written: {}{}\nthe service reads it when it starts: rebuild/relink the eye Monado (cargo build --release -p pimax-capi, then ninja -C ~/src/monado-eye/build; relinking drops setcap cap_sys_nice, see analysis/eye-monado.md) and restart monado-service",
+                    "correction written: {}{}\nthe service reads it when it starts: rebuild/relink the eye Monado (cargo build --release -p pimax-capi, then ninja -C ~/.local/lib/omarchyvr/monado; relinking drops setcap cap_sys_nice, see analysis/eye-monado.md) and restart monado-service",
                     path.display(),
                     b.map_or(String::new(), |b| format!(" (previous file kept as {})", b.display()))
                 ),

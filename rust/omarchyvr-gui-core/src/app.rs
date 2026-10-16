@@ -2797,7 +2797,7 @@ mod tests {
         b.follow_up = Some(FollowUp::Setcap(b.paths.desk_build().service()));
         b.job_finished(JobKind::Fix("rebuild-desk".into()), "Fix", Ok(()));
         match &b.pending {
-            Some(Pending::Root { fix, .. }) => assert!(fix.lines[0].starts_with("sudo setcap cap_sys_nice+ep /home/u/src/monado-eye/build")),
+            Some(Pending::Root { fix, .. }) => assert!(fix.lines[0].starts_with("sudo setcap cap_sys_nice+ep /home/u/.local/lib/omarchyvr/monado")),
             p => panic!("{p:?}"),
         }
         // root fixes: only after confirmation; the slam build's setcap is runnable

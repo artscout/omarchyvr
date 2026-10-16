@@ -3,12 +3,12 @@
 #   camera broker (one camera stream shared) -> Monado SLAM (run_slam.sh live, reads the broker)
 #   -> omarchyvr-passthrough (reads the broker) so you see where you walk.
 #
-#   run_slam_view.sh [SECS]     default 90 s. Env: PIMAX_CAM_AE (default 0), PXCAM (raw .pxcam of all frames), M (Monado build, default ~/src/monado-slam/build)
+#   run_slam_view.sh [SECS]     default 90 s. Env: PIMAX_CAM_AE (default 0), PXCAM (raw .pxcam of all frames), M (Monado build, default ~/.local/lib/omarchyvr/monado)
 # Stops everything it started (by PID) at the end and prints a short check of the run.
 set -u
 SECS=${1:-90}
 export PIMAX_CAM_AE=${PIMAX_CAM_AE:-0}
-M=${M:-$HOME/src/monado-slam/build}
+M=${M:-$HOME/.local/lib/omarchyvr/monado}
 T=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 BIN=$HOME/.local/bin
 RECROOT=$HOME/.local/share/omarchyvr/slam-recordings

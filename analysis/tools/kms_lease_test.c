@@ -168,7 +168,7 @@ int main(int argc, char **argv) {
     ADD(plane_id, DRM_MODE_OBJECT_PLANE, "CRTC_W", W); ADD(plane_id, DRM_MODE_OBJECT_PLANE, "CRTC_H", H);
 
     char cmd[256];
-    snprintf(cmd, sizeof cmd, "python3 /home/user/pimax-re/linux/pimax_video_on.py %d 40 > /tmp/kms-test-fwlog.txt 2>&1 &", hz);
+    snprintf(cmd, sizeof cmd, "python3 ~/omarchyvr/linux/pimax_video_on.py %d 40 > /tmp/kms-test-fwlog.txt 2>&1 &", hz);
     system(cmd); sleep(2);
     int r = drmModeAtomicCommit(fd, rqa, DRM_MODE_ATOMIC_ALLOW_MODESET, NULL);
     if (r) { fprintf(stderr, "ATOMIC COMMIT FAILED: %s\n", strerror(errno)); }

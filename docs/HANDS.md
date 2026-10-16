@@ -4,8 +4,8 @@ Controller-free hands for the Dream Air: Monado's Mercury hand tracker runs on t
 (factory cameras 0 `trackingA` and 1 `trackingB`, baseline 111.6 mm). It is **off by default** and **experimental**.
 It has been measured on recordings only. No live session has run it yet (see "Live test" below).
 
-* Monado: worktree `~/src/monado-ht`, branch `hands-mercury` (= `desk` cfad375 + one commit), build dir
-  `~/src/monado-ht/build-ht`. It is a superset of the desk build (eye, 6DoF, controllers, recorder tap) plus
+* Monado: worktree `forks/monado`, branch `hands-mercury` (= `desk` cfad375 + one commit), build dir
+  `~/.local/lib/omarchyvr/monado`. It is a superset of the desk build (eye, 6DoF, controllers, recorder tap) plus
   Mercury and ONNX Runtime 1.20.1 (CPU, vendored in `~/src/onnxruntime-1.20.1`, found through the binary's RUNPATH).
   The branch is local only. Never push it.
 * Driver code: `src/xrt/drivers/pimax/pimax_ht.{c,h}` (thread, rate limits, joints -> OpenXR),
@@ -34,9 +34,9 @@ omarchyvr vr start --6dof --hands --hands-roles     # VR, the hands take the con
 How the build is chosen (the simplest design that cannot break a start):
 
 1. One Monado build carries everything (`ai/CLAUDE.md` section 3), hands included: `--hands` does **not**
-   switch builds any more. It only sets the variables on the build the start uses (`~/src/monado-eye/build`).
+   switch builds any more. It only sets the variables on the build the start uses (`~/.local/lib/omarchyvr/monado`).
    Another build is used only when it is named (`--hands-build DIR` / `PIMAX_HANDS_BUILD`); then the service binary
-   and the runtime manifest move together. (The separate `~/src/monado-ht/build-ht` of the first tests is no longer
+   and the runtime manifest move together. (The separate `~/.local/lib/omarchyvr/monado` of the first tests is no longer
    switched to by default.)
 2. Hands are on only when that `monado-service` contains the Mercury code (the launcher looks for
    the `PIMAX_HT_HZ` option name in the binary) and both greyscale models are installed. Otherwise the start prints
@@ -132,16 +132,16 @@ when no hand is tracked (the pointer is then simply absent).
 ## Install (between sessions only: no Monado running)
 
 The models are already in `~/.local/share/monado/hand-tracking-models` on this machine. On another machine:
-`~/src/monado-ht/scripts/get-ht-models.sh` (needs `git-lfs`).
+`forks/monado/scripts/get-ht-models.sh` (needs `git-lfs`).
 
 ```sh
 # 1. Monado hands build (also after every pull or edit of hands-mercury)
-nice -n 19 ninja -C ~/src/monado-ht/build-ht -j8
+nice -n 19 ninja -C ~/.local/lib/omarchyvr/monado -j8
 # 2. every relink drops the capability: the compositor needs it for its realtime priority
-sudo setcap cap_sys_nice+ep ~/src/monado-ht/build-ht/src/xrt/targets/service/monado-service
-getcap ~/src/monado-ht/build-ht/src/xrt/targets/service/monado-service   # must print cap_sys_nice=ep
+sudo setcap cap_sys_nice+ep ~/.local/lib/omarchyvr/monado/src/xrt/targets/service/monado-service
+getcap ~/.local/lib/omarchyvr/monado/src/xrt/targets/service/monado-service   # must print cap_sys_nice=ep
 # 3. launcher (and omarchyvrd if you use it), installed only while nothing runs (docs/LESSONS.md row 8)
-cd ~/pimax-re/rust && nice -n 19 cargo build --release -j8 -p omarchyvr-tools -p omarchyvr-autod
+cd ~/omarchyvr/rust && nice -n 19 cargo build --release -j8 -p omarchyvr-tools -p omarchyvr-autod
 install -m755 target/release/omarchyvr ~/.local/bin/pimax.new && mv -f ~/.local/bin/pimax.new ~/.local/bin/omarchyvr
 install -m755 target/release/omarchyvr-autod ~/.local/bin/omarchyvr-autod
 omarchyvr desk start --6dof --hands --dry-run   # must say "camera hands on ... Monado from .../build-ht"
@@ -158,14 +158,14 @@ Configure a fresh hands build like the desk build, plus
    `omarchyvr vr start --6dof --hands`
 2. `grep -E "hands" /tmp/omarchyvr-session/monado.log | tail`: you want `hands: Mercury up`, then a stats line every
    5 s. Hold your hands in front of the headset, 25-50 cm away, and watch `left active` / `right active`.
-3. Joints: `XR_RUNTIME_JSON=~/src/monado-ht/build-ht/openxr_monado-dev.json ~/pimax-re/rust/target/release/xr-handtest --source any --no-grip-check --require any --min-valid 0.3 --seconds 30`
+3. Joints: `XR_RUNTIME_JSON=~/.local/lib/omarchyvr/monado/openxr_monado-dev.json ~/omarchyvr/rust/target/release/xr-handtest --source any --no-grip-check --require any --min-valid 0.3 --seconds 30`
 4. Lit bare-hands recording, to measure detection offline (it reads the broker and does not open the camera):
-   `~/pimax-re/rust/target/release/pimax-cam record ~/hands-lit.pxcam --seconds 40 --source broker`.
+   `~/omarchyvr/rust/target/release/pimax-cam record ~/hands-lit.pxcam --seconds 40 --source broker`.
    During the recording, show each hand for about 10 s, then both, then open and close and pinch. Then:
-   `nice -n 19 ~/src/monado-ht/build-ht/src/xrt/drivers/pimax_ht_bench ~/hands-lit.pxcam --tsv /tmp/hands-lit.tsv`
+   `nice -n 19 ~/.local/lib/omarchyvr/monado/src/xrt/drivers/pimax_ht_bench ~/hands-lit.pxcam --tsv /tmp/hands-lit.tsv`
    The `detection:` line is the rate. Add `--dump /tmp/hands-dump` for images with the keypoints.
 5. Pinch as a controller: `omarchyvr vr stop`, then `omarchyvr vr start --6dof --hands --hands-roles`, then
-   `XR_RUNTIME_JSON=~/src/monado-ht/build-ht/openxr_monado-dev.json ~/pimax-re/rust/target/release/xr-pinchtest --seconds 20`.
+   `XR_RUNTIME_JSON=~/.local/lib/omarchyvr/monado/openxr_monado-dev.json ~/omarchyvr/rust/target/release/xr-pinchtest --seconds 20`.
    While it runs, pinch with each hand. The pinch value should rise above 0.
 6. Desk mode: `omarchyvr desk start --6dof --hands`. WayVR then sees hands only if it uses hand tracking or the
    controller roles (`--hands-roles`).

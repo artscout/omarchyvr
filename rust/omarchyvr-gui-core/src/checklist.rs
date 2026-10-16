@@ -515,20 +515,15 @@ pub fn build(facts: &Facts, live: &Live, p: &Paths) -> Vec<Item> {
     // Desk mode parts
     v.push(if facts.has(&p.wayvr_bin) {
         Item::new("wayvr", Group::Desk, "WayVR (eye-gaze branch)", Level::Ok, p.wayvr_bin.display().to_string(), None, Fix::None)
-    } else if facts.has(&p.wayvr_src) {
-        let target = p.wayvr_bin.parent().and_then(|x| x.parent()).map(|x| x.display().to_string()).unwrap_or_default();
-        Item::new("wayvr", Group::Desk, "WayVR (eye-gaze branch)", Level::Fail, format!("{} missing", p.wayvr_bin.display()), None,
-            user("Build WayVR into ~/src/target-desk (the launcher starts it from there).",
-                vec![Cmd::new("cargo", &["build", "--release"]).cwd(&p.wayvr_src).env("CARGO_TARGET_DIR", target)]))
     } else {
         Item::new("wayvr", Group::Desk, "WayVR (eye-gaze branch)", Level::Fail, format!("{} missing and no source in {}", p.wayvr_bin.display(), p.wayvr_src.display()), None,
-            manual("Clone the WayVR fork (branch eye-gaze) to ~/src/wayvr, then build it here.", &[]))
+            manual("Run the installer (./install.sh builds the WayVR fork into ~/.local/lib/omarchyvr/wayvr), or set wayvr_bin in paths.toml.", &[]))
     });
     v.push(if facts.has(&p.basalt_lib) {
         Item::new("basalt", Group::Desk, "Basalt (6DoF back end)", Level::Ok, p.basalt_lib.display().to_string(), None, Fix::None)
     } else {
         Item::new("basalt", Group::Desk, "Basalt (6DoF back end)", Level::Warn, format!("{} missing: 6DoF cannot start", p.basalt_lib.display()), None,
-            manual("Build Basalt in ~/src/basalt and install it to ~/.local (analysis/research/6dof-head-tracking.md).", &[]))
+            manual("Run the installer (./install.sh builds Basalt into ~/.local/lib/omarchyvr/basalt), or set basalt_lib in paths.toml.", &[]))
     });
     let missing: Vec<&(&str, &str)> = RELEASE_BINS.iter().filter(|(b, _)| !facts.has(&p.bin(b)) && !facts.has(&p.installed_bin(b))).collect();
     v.push(if missing.is_empty() {
@@ -568,7 +563,7 @@ pub fn build(facts: &Facts, live: &Live, p: &Paths) -> Vec<Item> {
     } else {
         Item::new("voice", Group::Extras, "Voice models", Level::Warn,
             format!("missing: {}{}", if facts.has(&p.voice_model) { "" } else { "Parakeet v3 model " }, if facts.has(&p.sherpa_lib) { "" } else { "sherpa-onnx C library" }), Some(19),
-            manual("Put parakeet-tdt-0.6b-v3-int8 into ~/models and sherpa-onnx into ~/src/venv-voice (the download source is not recorded in the repo yet).", &[]))
+            manual("Put parakeet-tdt-0.6b-v3-int8 into ~/models and install sherpa-onnx into ~/.local/lib/omarchyvr/sherpa-onnx (or set sherpa_lib in paths.toml).", &[]))
     });
     v.push(if !facts.openvr.exists {
         Item::new("steam-runtime", Group::Extras, "Steam runtime (OpenVR)", Level::Info, "no openvrpaths.vrpath (Tools > Steam runtime)", Some(20), Fix::None)
@@ -694,7 +689,7 @@ mod tests {
     fn broken_pieces_get_the_right_fix_kind() {
         let (mut m, p) = demo::idle_machine();
         m.file(
-            "/home/u/src/monado-eye/build/CMakeCache.txt",
+            "/home/u/.local/lib/omarchyvr/monado/CMakeCache.txt",
             include_str!("../tests/fixtures/CMakeCache-desk.txt").replace("PIMAX_CAM:BOOL=ON", "PIMAX_CAM:BOOL=OFF"),
         );
         m.host.files.remove(std::path::Path::new("/etc/pacman.d/hooks/65-nvidia-pimax-patch.hook"));
@@ -708,8 +703,8 @@ mod tests {
         // row 6: user fix = reconfigure + ninja, then the setcap prompt; only while nothing runs
         match &item(&v, "pimax-cam-desk").fix {
             Fix::User(u) => {
-                assert_eq!(u.steps[0].display(), "cd /home/u/src/monado-eye/build && cmake -DPIMAX_CAM=ON .");
-                assert_eq!(u.steps[1].display(), "cd /home/u/src/monado-eye/build && ninja");
+                assert_eq!(u.steps[0].display(), "cd /home/u/.local/lib/omarchyvr/monado && cmake -DPIMAX_CAM=ON .");
+                assert_eq!(u.steps[1].display(), "cd /home/u/.local/lib/omarchyvr/monado && ninja");
                 assert_eq!(u.follow_up, Some(FollowUp::Setcap(p.desk_build().service())));
                 assert!(u.needs_idle);
             }
@@ -821,7 +816,7 @@ mod tests {
         let spaced = Paths::new(std::path::Path::new("/home/a b"), std::path::Path::new("/home/a b/omarchyvr"), std::path::Path::new("/tmp/s"), std::path::Path::new("/run/user/1"));
         let b = &spaced.builds[0];
         let fix = setcap_fix(&b.service());
-        assert_eq!(fix.lines[0], "sudo setcap cap_sys_nice+ep '/home/a b/src/monado-eye/build/src/xrt/targets/service/monado-service'");
+        assert_eq!(fix.lines[0], "sudo setcap cap_sys_nice+ep '/home/a b/.local/lib/omarchyvr/monado/src/xrt/targets/service/monado-service'");
         assert!(fix.pkexec.is_ok(), "{:?}", fix.pkexec);
         let h = hooks_fix(&spaced);
         assert!(h.lines[0].contains("L='/home/a b/omarchyvr/linux'"), "{}", h.lines[0]);

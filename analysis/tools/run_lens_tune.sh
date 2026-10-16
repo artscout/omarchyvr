@@ -12,7 +12,7 @@ export XR_RUNTIME_JSON=$M/openxr_monado-dev.json
 [ -n "$PIMAX_LENS_CONF" ] && export PIMAX_LENS_CONF
 (sleep $((SECS + 20)) | $M/src/xrt/targets/service/monado-service >"$OUT/monado.log" 2>&1) &
 sleep 3
-XR_GRID_SECONDS=$SECS XR_GRID_DIST=${DIST:-2.0} timeout $((SECS + 15)) $HOME/pimax-re/analysis/tools/xr_grid >"$OUT/client.log" 2>&1
+XR_GRID_SECONDS=$SECS XR_GRID_DIST=${DIST:-2.0} timeout $((SECS + 15)) ${PIMAX_REPO:-$HOME/omarchyvr}/analysis/tools/xr_grid >"$OUT/client.log" 2>&1
 pkill -x -INT monado-service; sleep 2
 grep "pimax lens" "$OUT/monado.log" | head -8
 echo logs in $OUT

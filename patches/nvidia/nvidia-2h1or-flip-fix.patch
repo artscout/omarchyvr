@@ -1,6 +1,6 @@
 nvidia-open 610.57.04: 2Heads1OR flip hang fixes (Pimax Dream Air, 7104x3840 DSC). Apply with -p1 on top of
 nvidia-2h1or-viewport.patch (it also applies without it). NOT verified on hardware yet. Background, file:line
-references and the test plan: ~/pimax-re/analysis/nvidia-flip-hang.md.
+references and the test plan: analysis/nvidia-flip-hang.md in this repository.
 
 1. nvkms-hw-flip.c LimitMergedHeadSyncObjects(): a 2Heads1OR flip programs the client's semaphores and completion
    notifier on the PRIMARY merged hardware head only; the secondary head's window follows through the interlock and

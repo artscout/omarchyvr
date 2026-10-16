@@ -1,7 +1,7 @@
 # 6DoF controller tracking (LED constellation): phase 1, offline (2026-10-14)
 
 Goal: real 6DoF poses for the two Pimax Dream Air controllers. The headset cameras see the controllers' IR LEDs in the
-LED frames, and the poses get fused with the controller IMU, then fed to Monado (`~/src/monado-slam` branch `slam`).
+LED frames, and the poses get fused with the controller IMU, then fed to Monado (`forks/monado` branch `slam`).
 Phase 1 was offline only. No HID or USB command was sent, and neither Monado nor the headset was started.
 
 ## Summary
@@ -188,7 +188,7 @@ During the 90 s, with the room lit as for `ctrl-test`:
 Then run the offline part (no device):
 
 ```bash
-cd ~/pimax-re/rust && cargo build --release -p pimax-ctrltrack
+cd ~/omarchyvr/rust && cargo build --release -p pimax-ctrltrack
 ./target/release/pimax-ctrltrack track ~/ctrl-imu.pxcam --fit-extrinsics --csv /tmp/ctrl-imu-poses.csv
 ```
 
@@ -206,7 +206,7 @@ Built before the full constellation port, so the controllers show up at their re
    for 2 s).
 3. It publishes `body_from_aim` per hand to `$XDG_RUNTIME_DIR/pimax-ctrltrack.pose`. This is a 256 B seqlock file;
    the layout is in `src/shm.rs`.
-4. Monado (`~/src/monado-eye`, branch `desk`, commit d8fc0df, local only; reader `pimax_ctrltrack_shm.h`, with
+4. Monado (`forks/monado`, branch `desk`, commit d8fc0df, local only; reader `pimax_ctrltrack_shm.h`, with
    `PIMAX_CTRL_TRACK=1`) takes the head pose at the LED frame's time, composes it with that pose, and holds the
    result in the tracking origin.
 5. If there is no fix for 0.5 s (`PIMAX_CTRL_TRACK_HOLD_MS`), the controller returns to the old rest pose.
@@ -472,7 +472,7 @@ Full numbers: `analysis/linux-recordings-20261016.md`.
 ## 8. Reproduce phase 1
 
 ```bash
-cd ~/pimax-re/rust && cargo build --release -p pimax-ctrltrack && cargo test -p pimax-ctrltrack
+cd ~/omarchyvr/rust && cargo build --release -p pimax-ctrltrack && cargo test -p pimax-ctrltrack
 ./target/release/pimax-ctrltrack scan ~/ctrl-test.pxcam | tail          # blob counts per LED frame
 ./target/release/pimax-ctrltrack track ~/ctrl-test.pxcam                # factory extrinsics
 ./target/release/pimax-ctrltrack track ~/ctrl-test.pxcam --fit-extrinsics --csv /tmp/p.csv --overlay /tmp/ov --overlay-every 60

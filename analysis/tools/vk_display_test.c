@@ -315,7 +315,7 @@ int main(int argc, char **argv) {
     VK(vkCreateFence(dv, &fi, NULL, &fence));
 
     if (!nofw) {
-        system("python3 /home/user/pimax-re/linux/pimax_video_on.py 72 40 > /tmp/vk-test-fwlog.txt 2>&1 &");
+        system("python3 ~/omarchyvr/linux/pimax_video_on.py 72 40 > /tmp/vk-test-fwlog.txt 2>&1 &");
         printf("started pimax_video_on.py (log /tmp/vk-test-fwlog.txt)\n");
         sleep(2);
     }

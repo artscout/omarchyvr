@@ -138,14 +138,14 @@ agree) run **causally**: each window is scored with the correction from earlier 
 
 * **Floor:** no change. `omarchyvr-roommap relocalize --apply` and `apply` now add the floor shift from the map's
   `floor.toml` (`--no-floor`: old behaviour). The output says how much.
-* **Optional glide patch:** `~/src/monado-eye` commit `6094c0c` on `desk` (local only). It changes the
+* **Optional glide patch:** `forks/monado` commit `6094c0c` on `desk` (local only). It changes the
   `pimax_anchor.h` hook:
   * The applied offset moves toward the file's at most `PIMAX_ANCHOR_SLEW` m/s (0.05) and `PIMAX_ANCHOR_SLEW_DEG`
     deg/s (2).
   * The first offset, and changes over `PIMAX_ANCHOR_SNAP` (0.25 m) or 5 deg, are applied at once (a deliberate
     placement).
   * `PIMAX_ANCHOR_SLEW=0` gives the old behaviour.
-  * Only `pimax_hmd.c.o` was compile-checked, in `~/src/monado-eye/build-floorcheck`. The live build was not
+  * Only `pimax_hmd.c.o` was compile-checked, in `~/.local/lib/omarchyvr/monado-floorcheck`. The live build was not
     touched.
 
 ## 6. Floor grid in VR

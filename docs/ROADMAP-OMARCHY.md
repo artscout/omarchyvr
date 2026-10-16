@@ -10,7 +10,7 @@ Blockers (details in section 4):
 
 1. **Monado and WayVR are not packaged.** The only PKGBUILD (`packaging/arch/PKGBUILD`, `pimax-linux-git`) builds the Rust tools and the app. The Monado and WayVR forks stay user builds in `~/src`.
 2. **NVIDIA needs a patched kernel module.** The stack relies on our `merged_head_sync` patch (flip-hang fix) and an EDID override. Stock `nvidia-open` does not have them. This is the hardest one.
-3. **Hardcoded paths.** `~/src/monado-eye/build`, `~/src/wayvr`, `~/src/target-desk`, `~/src/venv-voice`, the vendored onnxruntime and the app's Builds page all assume this machine.
+3. **Hardcoded paths.** `~/.local/lib/omarchyvr/monado`, `~/src/wayvr`, `~/src/target-desk`, `~/src/venv-voice`, the vendored onnxruntime and the app's Builds page all assume this machine.
 4. **Hand models have no licence.** They cannot be shipped. Hands must be an optional user download.
 5. **Games are not proven.** No SteamVR run, and one OpenVR game through xrizer (Dungeons of Eternity) only. There is no VR home for Play yet.
 6. Also: known failing tests, no LICENSE file in the repo, forks never upstreamed, a reverse-engineered HID protocol with no Pimax permission.
@@ -70,7 +70,7 @@ About 15 other build directories sit in `~/src` (`monado`, `monado-slam`, `monad
 
 | Item | Example | Fix |
 |---|---|---|
-| Monado build location | `~/src/monado-eye/build` (17 mentions in Rust sources), `~/src/monado/build` (6) | ask the package: `/usr/lib/monado-pimax/...`, the app reads one path from config |
+| Monado build location | `~/.local/lib/omarchyvr/monado` (17 mentions in Rust sources), `~/src/monado/build` (6) | ask the package: `/usr/lib/monado-pimax/...`, the app reads one path from config |
 | WayVR location | `~/src/wayvr` | `/usr/bin/wayvr-pimax` |
 | Cargo targets | `~/src/target-desk`, `target-eye`, ... | not needed after packaging |
 | Voice Python venv | `~/src/venv-voice` (5) | Rust/ONNX voice, or a venv the app creates under `~/.local/share/omarchyvr` |

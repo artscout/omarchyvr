@@ -234,25 +234,25 @@ mod tests {
         BuildDir {
             key: "desk",
             label: "desk",
-            dir: "/home/u/src/monado-eye/build".into(),
+            dir: "/home/u/.local/lib/omarchyvr/monado".into(),
         }
     }
 
     fn machine(getcap: &str, cache: &str) -> FakeMachine {
         let mut m = FakeMachine::new();
-        let svc = "/home/u/src/monado-eye/build/src/xrt/targets/service/monado-service";
+        let svc = "/home/u/.local/lib/omarchyvr/monado/src/xrt/targets/service/monado-service";
         let mut bin = vec![0u8; 3000];
         bin.extend_from_slice(b"PIMAX_SLAM\0...IMU samples (%lu held from the tracker in %lu camera gaps)\0PIMAX_EYE\0");
         m.file(svc, bin);
         m.cmd(&format!("getcap {svc}"), 0, getcap);
-        m.file("/home/u/src/monado-eye/build/CMakeCache.txt", cache);
-        m.file("/home/u/src/monado-eye/.git/HEAD", "ref: refs/heads/desk\n");
+        m.file("/home/u/.local/lib/omarchyvr/monado/CMakeCache.txt", cache);
+        m.file("/home/u/src/monado-desk/.git/HEAD", "ref: refs/heads/desk\n");
         m
     }
 
     #[test]
     fn desk_build_with_everything() {
-        let svc = "/home/u/src/monado-eye/build/src/xrt/targets/service/monado-service";
+        let svc = "/home/u/.local/lib/omarchyvr/monado/src/xrt/targets/service/monado-service";
         let m = machine(&format!("{svc} cap_sys_nice=ep\n"), include_str!("../tests/fixtures/CMakeCache-desk.txt"));
         let c = MarkerCache::default();
         let i = inspect(&m, &desk(), Some(&c));

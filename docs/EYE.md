@@ -1,6 +1,6 @@
 # Eye tracking in desk mode
 
-The Dream Air's eye tracker runs in the Monado fork (`~/src/monado-eye`, branch `desk`, `PIMAX_EYE=1`) with the
+The Dream Air's eye tracker runs in the Monado fork (`forks/monado`, branch `desk`, `PIMAX_EYE=1`) with the
 host-side per-eye calibration in `~/.config/omarchyvr/eye-calibration.toml` (v1: accuracy 3.08° mean, 0.54° precision).
 Monado exposes `XR_EXT_eye_gaze_interaction`; WayVR (`~/src/wayvr`, branch `eye-gaze`) reads it.
 Background: `analysis/eye-gaze-full.md`, `analysis/eye-precision.md`, `analysis/wayvr-gaze.md`.
@@ -28,7 +28,7 @@ The text below describes the developer path (targeting on).
 
 | flags | when | Monado | WayVR (`conf.d/55-eye.yaml`) |
 |---|---|---|---|
-| none | the eye build (`~/src/monado-eye/build`, the default Monado build when it is built) **and** the calibration file exist | `PIMAX_EYE=1` | `gaze_pointer: false`, `gaze_target: false` (true with `targeting=on`), `gaze_laser: true` (false with `dot=off`; dot, alpha 0.35) |
+| none | the eye build (`~/.local/lib/omarchyvr/monado`, the default Monado build when it is built) **and** the calibration file exist | `PIMAX_EYE=1` | `gaze_pointer: false`, `gaze_target: false` (true with `targeting=on`), `gaze_laser: true` (false with `dot=off`; dot, alpha 0.35) |
 | none | otherwise | – | file removed; the start output says why |
 | `--eye` | always (the old meaning) | `PIMAX_EYE=1`, eye build unless `--monado-build`/`PIMAX_MONADO_BUILD` | `gaze_target: true` only; the pointer stays as `20-gaze.yaml` / the app set it |
 | `--no-eye` | always | – | file removed |
@@ -126,12 +126,12 @@ CLI: `omarchyvr-voice gaze [--wayvrctl BIN] [--at UNIX_MS] [--input saved-gaze.j
 Done by the user, from a stopped desk session:
 
 1. Build WayVR:
-   `cd ~/src/wayvr && CARGO_TARGET_DIR=~/src/target-desk-test cargo build --release -p wayvr -p wayvrctl --no-default-features --features openxr,osc,wayland,x11`.
-   It is already built at `~/src/target-desk-test/release/`.
+   `cd ~/src/wayvr && CARGO_TARGET_DIR=$WAYVR_TARGET cargo build --release -p wayvr -p wayvrctl --no-default-features --features openxr,osc,wayland,x11`.
+   It is already built at `$WAYVR_TARGET/release/`.
 2. `omarchyvr desk stop`, then copy the binaries:
-   `mkdir -p ~/src/target-desk/release/backup && cp ~/src/target-desk/release/wayvr{,ctl} ~/src/target-desk/release/backup/`, then
-   `cp ~/src/target-desk-test/release/wayvr{,ctl} ~/src/target-desk/release/`.
-3. `cd ~/pimax-re/rust && cargo build --release -p omarchyvr-tools -p omarchyvr-voice`, then install as usual.
+   `mkdir -p ~/.local/lib/omarchyvr/wayvr/backup && cp ~/.local/lib/omarchyvr/wayvr/wayvr{,ctl} ~/.local/lib/omarchyvr/wayvr/backup/`, then
+   `cp $WAYVR_TARGET/release/wayvr{,ctl} ~/.local/lib/omarchyvr/wayvr/`.
+3. `cd ~/omarchyvr/rust && cargo build --release -p omarchyvr-tools -p omarchyvr-voice`, then install as usual.
 4. `omarchyvr desk start` (with your usual flags, without `--eye`). The output says
    `eye tracking silently on: a dim gaze dot ...`.
 
@@ -143,7 +143,7 @@ Done by the user, from a stopped desk session:
 3. **The dot:** a small, dim dot follows your eyes on the screens and panels. It disappears when you close your eyes
    and when you look into empty space.
 4. `wayvrctl gaze-laser off`: the dot disappears. Then run `wayvrctl gaze-laser on`.
-5. Look at a window for 1 s and run `~/src/target-desk/release/wayvrctl gaze --pretty`. `current.overlay` is
+5. Look at a window for 1 s and run `~/.local/lib/omarchyvr/wayvr/wayvrctl gaze --pretty`. `current.overlay` is
    `SUNSHINE`, `px` is inside that window, and `confidence` is 0.7 or more.
 6. Look at a window, then look away, and within 2 s run `omarchyvr-voice gaze`. The target is the first window
    (`last_stable`).

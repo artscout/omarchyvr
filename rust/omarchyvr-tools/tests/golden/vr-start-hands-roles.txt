@@ -1,7 +1,7 @@
 $ omarchyvr vr start --dry-run --6dof --hands --hands-roles
 exit Some(0)
 --- stdout
-omarchyvr vr: camera hands on (Mercury, hands take the controller roles): Monado from $ROOT/home/src/monado-eye/build
+omarchyvr vr: camera hands on (Mercury, hands take the controller roles): Monado from $ROOT/home/.local/lib/omarchyvr/monado
 omarchyvr vr: --6dof would first run: $ROOT/home/.local/bin/omarchyvr-slam export --out $ROOT/session/basalt, then $ROOT/home/.local/bin/pimax-cam broker (socket $ROOT/run/omarchyvr-cam-broker.sock)
 omarchyvr vr: preflight
   [warn] headset   34a4:0044 on USB but only 0/4 hidraw interfaces (udev rule linux/70-pimax.rules installed?)
@@ -11,10 +11,10 @@ omarchyvr vr: preflight
   [ok  ] kernel    no Xid / display engine errors in this boot's kernel log
   [ok  ] service   no monado-service running
   [ok  ] wayland   WAYLAND_DISPLAY and XDG_RUNTIME_DIR set
-  [warn] priority  $ROOT/home/src/monado-eye/build/src/xrt/targets/service/monado-service lacks cap_sys_nice: the compositor cannot raise its GPU/thread priority and frames can be late under load. Fix (root): sudo setcap cap_sys_nice+ep $ROOT/home/src/monado-eye/build/src/xrt/targets/service/monado-service   (every relink of monado-service drops it; the Pimax app fixes it too: Fix on Home, or just Play, one password window)
-  [warn] openxr runtime $ROOT/home/.config/openxr/1/active_runtime.json does not exist: OpenXR games find no runtime (`omarchyvr vr start` creates it, pointing at $ROOT/home/src/monado-eye/build/openxr_monado-dev.json)
+  [warn] priority  $ROOT/home/.local/lib/omarchyvr/monado/src/xrt/targets/service/monado-service lacks cap_sys_nice: the compositor cannot raise its GPU/thread priority and frames can be late under load. Fix (root): sudo setcap cap_sys_nice+ep $ROOT/home/.local/lib/omarchyvr/monado/src/xrt/targets/service/monado-service   (every relink of monado-service drops it; the Pimax app fixes it too: Fix on Home, or just Play, one password window)
+  [warn] openxr runtime $ROOT/home/.config/openxr/1/active_runtime.json does not exist: OpenXR games find no runtime (`omarchyvr vr start` creates it, pointing at $ROOT/home/.local/lib/omarchyvr/monado/openxr_monado-dev.json)
 
-would start: $ROOT/home/src/monado-eye/build/src/xrt/targets/service/monado-service
+would start: $ROOT/home/.local/lib/omarchyvr/monado/src/xrt/targets/service/monado-service
   XRT_COMPOSITOR_FORCE_WAYLAND_DIRECT=1
   XRT_COMPOSITOR_WAYLAND_CONNECTOR=DP-1
   XRT_COMPOSITOR_FORCE_NVIDIA=0
@@ -23,7 +23,7 @@ would start: $ROOT/home/src/monado-eye/build/src/xrt/targets/service/monado-serv
   XRT_COMPOSITOR_LOG=info
   XRT_COMPOSITOR_SCALE_PERCENTAGE=100
   PIMAX_LOG=info
-  XR_RUNTIME_JSON=$ROOT/home/src/monado-eye/build/openxr_monado-dev.json
+  XR_RUNTIME_JSON=$ROOT/home/.local/lib/omarchyvr/monado/openxr_monado-dev.json
   PIMAX_CAM_SOURCE=broker
   PIMAX_SLAM=1
   PIMAX_CAM_AE=1

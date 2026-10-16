@@ -46,7 +46,7 @@ new dirs first and falls back to the old ones.
 
 ## How lab -> omarchyvr syncs use the mapping
 
-Work continues in omarchyvr; the lab is the archive. To bring lab changes over: `tools/lab-sync.sh OLD NEW` (lab commits).
+Work continues in omarchyvr; the lab is the archive. To bring lab changes over: `tools/lab-sync.sh OLD NEW LAB_DIR` (lab commits; LAB_DIR is the old lab clone).
 It exports both lab commits with that commit's own `tools/export-public.sh --no-test`, applies `tools/names.tsv` to both
 exports with `tools/apply-names.py` (path renames and text substitutions), diffs them and applies the diff here with
 `git apply` (`--check` first; conflicts are left as `.rej`). Rules of `tools/names.tsv`:

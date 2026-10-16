@@ -3,7 +3,7 @@
 # (comp_recorder.c) -> shared memory -> omarchyvr-record -> ffmpeg -> mp4. Run it BETWEEN sessions (it refuses while a
 # monado-service or wayvr runs). Glue only, modelled on run_hands_composite.sh.
 #
-#   monado-service    the build with the tap (MONADO_BUILD, default ~/src/monado-eye/build-rec) on the debug-image
+#   monado-service    the build with the tap (MONADO_BUILD, default ~/.local/lib/omarchyvr/monado-rec) on the debug-image
 #                     target (WAYLAND_DISPLAY points nowhere, DISPLAY unset), PIMAX_NO_DEVICE=1, scripted hands
 #   omarchyvr-passthrough the OpenXR app (a .pxcam replay), so the compositor squashes a projection layer
 #   omarchyvr-record run  --encoder ${ENCODER:-cpu} (cpu by default: no NVENC needed), SECS seconds, then SIGINT
@@ -13,7 +13,7 @@
 #   ENCODER (cpu | nvenc | auto).
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
-M=${MONADO_BUILD:-$HOME/src/monado-eye/build-rec}
+M=${MONADO_BUILD:-$HOME/.local/lib/omarchyvr/monado-rec}
 SVC=$M/src/xrt/targets/service/monado-service
 RT=$M/openxr_monado-dev.json
 PT=${PASSTHROUGH:-$HERE/../../rust/target/release/omarchyvr-passthrough}

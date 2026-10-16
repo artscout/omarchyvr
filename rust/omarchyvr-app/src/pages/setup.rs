@@ -165,7 +165,7 @@ pub fn install(ui: &mut Ui, app: &mut PimaxApp) {
                 app.core.refresh(true);
             }
             let r = widgets::tbutton(ui, "Rebuild Monado (desk)", !busy && !running)
-                .on_hover_text("cmake -DPIMAX_CAM=ON . and ninja in ~/src/monado-eye/build, then the setcap prompt");
+                .on_hover_text("cmake -DPIMAX_CAM=ON . and ninja in ~/.local/lib/omarchyvr/monado, then the setcap prompt");
             let r = if running { r.on_disabled_hover_text("Stop desk/VR first (LESSONS row 8)") } else { r };
             if r.clicked() {
                 app.core.rebuild_desk();

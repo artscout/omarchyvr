@@ -1,7 +1,7 @@
 # Packaging
 
 Two ways to install the Pimax app (`omarchyvr-app`) and its tools. Both build from this repository.
-Neither one contains the Monado and WayVR builds (`~/src/monado-eye`, `~/src/wayvr`), Basalt, the voice models or the
+Neither one contains the Monado and WayVR builds (`~/.local/lib/omarchyvr/monado`, `~/.local/lib/omarchyvr/wayvr`), Basalt, the voice models or the
 sherpa-onnx library. Those stay user builds in the home directory, and the app checks them there.
 Root steps (udev rule reload, NVIDIA patches, pacman hooks, setcap) stay with the app's Setup page.
 

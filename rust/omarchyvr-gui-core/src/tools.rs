@@ -801,9 +801,9 @@ mod tests {
                 let n = step_names(&start.steps);
                 assert_eq!(n[0], "wait", "row 1 first");
                 assert_eq!(n[1], "guard still only WayVR Xid 31");
-                assert_eq!(n[2], "run OXR_DEBUG_IPD_MM=65.9 /home/u/.local/bin/omarchyvr vr start --fps 90 --monado-build /home/u/src/monado-eye/build --force");
+                assert_eq!(n[2], "run OXR_DEBUG_IPD_MM=65.9 /home/u/.local/bin/omarchyvr vr start --fps 90 --monado-build /home/u/.local/lib/omarchyvr/monado --force");
                 let script = script.unwrap();
-                assert!(script.contains("XR_RUNTIME_JSON=/home/u/src/monado-eye/build/openxr_monado-dev.json IPC_IGNORE_VERSION=1"));
+                assert!(script.contains("XR_RUNTIME_JSON=/home/u/.local/lib/omarchyvr/monado/openxr_monado-dev.json IPC_IGNORE_VERSION=1"));
                 assert!(script.contains("pimax-lenstest --pattern swim"));
             }
             l => panic!("{l:?}"),
@@ -990,7 +990,7 @@ mod tests {
         assert!(availability(ToolId::HandsTest, &live, &f, &ToolOptions::default(), &p).ready());
         match launch(ToolId::HandsTest, &live, &f, &ToolOptions::default(), &p, "s") {
             Launch::Job(j) => match &j.steps[0] {
-                Step::Run(c) => assert!(c.env.contains(&("XR_RUNTIME_JSON".into(), "/home/u/src/monado-eye/build/openxr_monado-dev.json".into()))),
+                Step::Run(c) => assert!(c.env.contains(&("XR_RUNTIME_JSON".into(), "/home/u/.local/lib/omarchyvr/monado/openxr_monado-dev.json".into()))),
                 s => panic!("{s:?}"),
             },
             l => panic!("{l:?}"),

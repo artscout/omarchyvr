@@ -118,10 +118,10 @@ with dumps and firmware log) and analysis/tools/run_vr_color_test.sh (sRGB vs UN
 
 ## Desk mode: `omarchyvr desk` (2026-10-14)
 `omarchyvr desk start` = Monado (as `omarchyvr vr start`, honours `PIMAX_MONADO_BUILD`), then `omarchyvr-passthrough run` (room camera view
-as the MAIN OpenXR app), then WayVR (`--openxr --show --no-autostart`, `XDG_CONFIG_HOME=~/src/desk-out/wayvr-home-am/config`,
+as the MAIN OpenXR app), then WayVR (`--openxr --show --no-autostart`, `XDG_CONFIG_HOME=~/.local/share/omarchyvr/wayvr-home/config`,
 CPU `capture_method: screencopy`) on top. WayVR creates an `XR_EXTX_overlay` session (`create_overlay_session` in
 wayvr/src/backend/openxr/helpers.rs; it refuses to start without the extension), so the passthrough app stays the main session.
-Flags: `--no-passthrough`, `--eye` (PIMAX_EYE=1 + `~/src/monado-eye/build`). Logs in the session dir (`monado.log`,
+Flags: `--no-passthrough`, `--eye` (PIMAX_EYE=1 + `~/.local/lib/omarchyvr/monado`). Logs in the session dir (`monado.log`,
 `passthrough.log`, `wayvr.log`, `wayvr.stdout`). `omarchyvr desk stop`: SIGINT WayVR, then passthrough (by pid, 10 s each), then Monado
 (SIGINT, SIGKILL only after `--grace`, default 30 s), then the Xid / "Idling display engine" kernel log check.
 Not yet tried on the headset: passthrough + WayVR overlay together (each was run separately, WayVR over xr_room in

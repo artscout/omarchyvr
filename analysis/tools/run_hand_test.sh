@@ -7,7 +7,7 @@
 #     demo      real headset open, scripted pattern instead of controller reports
 #     real      real headset and the real controllers (awake, lying still): valid joints at rest, hands follow the grips
 #   env: MONADO_BUILD (default ~/src/monado-hands/build-hands, else ~/src/monado/build)
-#        CARGO_TARGET_DIR (default ~/src/target-hands, else ~/pimax-re/rust/target)
+#        CARGO_TARGET_DIR (default $CARGO_TARGET_DIR, else ~/omarchyvr/rust/target)
 #        XR_HANDTEST (prebuilt client)  NO_BUILD=1  SECS (client seconds per phase, default 10; demo phases 24)
 #        POSE=imu (PIMAX_CTRL_POSE for the service)  OUT (log dir)  DRYRUN=1 (take the lock, print what would run)
 #        PIMAX_HEADSET_LOCK (lock file, default /tmp/omarchyvr-headset.lock)
@@ -22,7 +22,7 @@ if [ -z "${MONADO_BUILD:-}" ]; then
 fi
 if [ -z "${CARGO_TARGET_DIR:-}" ]; then
 	CARGO_TARGET_DIR=$HOME/src/target-hands
-	[ -d "$CARGO_TARGET_DIR/release" ] || CARGO_TARGET_DIR=$HOME/pimax-re/rust/target
+	[ -d "$CARGO_TARGET_DIR/release" ] || CARGO_TARGET_DIR=${PIMAX_REPO:-$HOME/omarchyvr}/rust/target
 fi
 export CARGO_TARGET_DIR
 OUT=${OUT:-/tmp/omarchyvr-hand-test.$$}
@@ -38,7 +38,7 @@ if [ -z "${XR_HANDTEST:-}" ]; then
 	if [ -z "${NO_BUILD:-}" ]; then
 		# other agents add crates to the workspace all the time; a half-written one can break the build for a while
 		for try in 1 2 3 4 5 6; do
-			(cd "$HOME/pimax-re/rust" && cargo build --release -p omarchyvr-xrtest) >"$OUT/cargo-build.log" 2>&1 && break
+			(cd "${PIMAX_REPO:-$HOME/omarchyvr}/rust" && cargo build --release -p omarchyvr-xrtest) >"$OUT/cargo-build.log" 2>&1 && break
 			echo "cargo build failed (try $try), retrying"; sleep 10
 		done
 	fi
@@ -72,7 +72,7 @@ trap stop_service EXIT
 kernel_check() {
 	if journalctl -k -b 2>/dev/null | grep -E "Xid|Idling" >"$OUT/kernel-hits.txt"; then
 		echo "KERNEL: Xid / Idling display engine seen after phase $1 - STOP all headset work:"; cat "$OUT/kernel-hits.txt"
-		{ echo; echo "## $(date '+%F %T') run_hand_test.sh (phase $1)"; cat "$OUT/kernel-hits.txt"; } >>"$HOME/pimax-re/analysis/overnight-incidents.md"
+		{ echo; echo "## $(date '+%F %T') run_hand_test.sh (phase $1)"; cat "$OUT/kernel-hits.txt"; } >>"${PIMAX_REPO:-$HOME/omarchyvr}/analysis/overnight-incidents.md"
 		return 3
 	fi
 	return 0

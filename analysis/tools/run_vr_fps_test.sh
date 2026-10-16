@@ -14,7 +14,7 @@
 set -u
 FPS=${1:?usage: run_vr_fps_test.sh FPS OUTDIR [CLIENT]}
 OUT=${2:?usage: run_vr_fps_test.sh FPS OUTDIR [CLIENT]}
-CLIENT=${3:-$HOME/pimax-re/analysis/tools/xr_room}
+CLIENT=${3:-${PIMAX_REPO:-$HOME/omarchyvr}/analysis/tools/xr_room}
 PIMAX=${PIMAX_BIN:-omarchyvr}
 SECS=${SECS:-20}
 FRAMES=${DUMP_FRAMES:-200,600}

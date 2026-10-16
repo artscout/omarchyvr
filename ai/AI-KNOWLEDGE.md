@@ -39,7 +39,7 @@ Read in this order. Each line says why.
 3. **libpimax / pimax-proto / pimax** (`rust/pimax*`, C ABI in `pimax-capi`): hidraw I/O and framing for the headset (34a4:0044), the bridge (34a4:0043) and the camera (34a4:0014). Commands come only from Windows captures and the allowlist in `rust/pimax-device/devices/<id>/device.toml`.
 4. **omarchyvr-keepalived** (user systemd service, always on): wake and 213 ms keepalive, drains the interfaces. Without it the headset sleeps.
 5. **pimax-cam broker** (`rust/pimax-cam`): the only process that opens the cameras. Everything else (6DoF, hands, controllers, passthrough, recording) reads frames from it.
-6. **Monado fork** (`~/src/monado-eye`, branch `desk`; one build): the OpenXR runtime. It carries the Pimax driver, lenses, controllers, eye gaze, SLAM (6DoF via Basalt, behind `PIMAX_SLAM`), camera hands, the room anchor and the perf stats. One build, markers checked.
+6. **Monado fork** (`~/.local/lib/omarchyvr/monado`, branch `desk`; one build): the OpenXR runtime. It carries the Pimax driver, lenses, controllers, eye gaze, SLAM (6DoF via Basalt, behind `PIMAX_SLAM`), camera hands, the room anchor and the perf stats. One build, markers checked.
 7. **SLAM and fused output**: Basalt on the camera and IMU streams, a still gate, alpha-beta fusion of the tracker into the IMU prediction (`PIMAX_SLAM_FUSE`), correction decay at rest. Output is a head pose in Monado.
 8. **driver_monado for SteamVR** (`steamvr-monado/`, built with Monado): SteamVR's vrserver loads it for tracking and Touch controllers. Games choose it with `omarchyvr vr games steamvr` or use xrizer with `monado`.
 9. **xrizer** (`~/src/xrizer`): OpenVR-to-OpenXR layer for Steam games in the default SteamVR-less mode. Its log is `~/.local/state/xrizer/xrizer.txt`.
@@ -69,7 +69,7 @@ These are the safety and process rules. Copy them into your plan. If a task need
 - **No sudo by agents.** Root is run by the user, from the app, through pkexec. Don't edit hypr, systemd system units, NVIDIA or boot config, or `~/.config/wayvr`.
 - **Never touch a live VR session.** Install and build only between sessions. Stop processes by PID only (`omarchyvr vr stop --grace 30`), never `pkill -f`. Never send keys or typing to the user's windows.
 - **Heavy work** (builds, tests, benches) runs at `nice -n 19` with `-j8`.
-- **Local commits only** for the forks (Monado, WayVR). Never push them. For pimax-re: commit only your own files and push origin main.
+- **Local commits only** for the forks (Monado, WayVR). Never push them. For omarchyvr: commit only your own files and push origin main.
 - **Secrets:** no API keys, tokens, emails or device serials in the repo. Keys go in files the user owns (`~/.config/omarchyvr/llm.key`), never in code.
 - **Mercury hand models** have no licence for redistribution: personal use only.
 - **Tests must not touch user config:** set `HOME` to a temp dir in any test that can reach `~/.config` (LESSONS 25).
@@ -112,7 +112,7 @@ Symptom, cause, fix and where it is recorded. "L n" is `docs/LESSONS.md` row n.
 | Headset black although the app is focused | Monado started without the launcher's compositor env | One env builder (`rust/omarchyvr-tools/src/vr/config.rs`); never hand-roll it | L5 |
 | Pose printer or helper took the display | Monado shows the last main app | Only one main OpenXR app; helpers are `XR_EXTX_overlay` sessions (`POSECLI_OVERLAY=1`) | L4, f7cd5f4 |
 | 6DoF ran 3DoF only: `built without -DPIMAX_CAM=ON` | Build configured from scratch with `PIMAX_CAM=OFF`; string checks passed | Check `PIMAX_CAM:BOOL=ON` in `CMakeCache.txt`; rebuild with `cmake -DPIMAX_CAM=ON .` then ninja | L6, f568424 |
-| Build for the app: 6DoF blocked by preflight | build-rec was configured with the Pimax driver OFF (2026-10-15) | Copy the cache options from the live build, check the markers before switching `~/src/monado-eye/build` | ai/CLAUDE.md section 3 |
+| Build for the app: 6DoF blocked by preflight | build-rec was configured with the Pimax driver OFF (2026-10-15) | Copy the cache options from the live build, check the markers before switching `~/.local/lib/omarchyvr/monado` | ai/CLAUDE.md section 3 |
 | Monado stutters or fails the priority request after a rebuild | Every relink drops `cap_sys_nice` | Fix/Play button (pkexec) or `setcap cap_sys_nice+ep` by the user; check with `getcap` | L7, f568424 |
 | Replacing the launcher made the next start fail | Installing the binary while desk mode runs | Install only when nothing runs | L8 |
 | Xid 31 from WayVR refuses every start for the boot | Per-app MMU fault the GPU recovers from | Xid 31 from wayvr = warning + "start anyway"; other Xids = red, reboot. Never run WayVR headless renders from the GUI | L9 |

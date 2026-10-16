@@ -57,7 +57,7 @@ sRGB chromaticities, product name newline, plus "CTA native vs DisplayID native 
 
 ## LIVE TEST (user, sudo; nothing here was run). Never `echo off > status` (broke Hyprland CRTC state).
 ```
-cd ~/pimax-re/linux
+cd ~/omarchyvr/linux
 sudo cp pimax-dp-edid-hmd.bin /sys/kernel/debug/dri/1/DP-1/edid_override   # or `cat f | sudo tee`
 echo detect | sudo tee /sys/class/drm/card1-DP-1/status
 modetest -M nvidia-drm -c | grep -A60 '^826'      # connector id 826 per notes; look for "non-desktop" value 1 and 7104x3840 modes

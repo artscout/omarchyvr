@@ -65,7 +65,7 @@ real. The emulation re-runs Basalt from each reset time (`trimstart` + slambatch
   room alignment, VIO velocity zeroed for the predictor) and a tracker that drifts 3 cm meanwhile is reset
   (fresh start with zero velocity and the right attitude), at most once per second. `PIMAX_SLAM_STILL=0`
   turns it off, `=N` sets the reset distance in cm. Monado logs the reset reason.
-* `run_slam.sh` picks the newest omarchyvr-slam build that has `stats` (the old `~/src/target-slam` one did not).
+* `run_slam.sh` picks the newest omarchyvr-slam build that has `stats` (the old `$CARGO_TARGET_DIR` one did not).
 
 ## Rest -> wear (Windows drifts too)
 
@@ -83,8 +83,8 @@ accel), which the still rule above already does whenever the headset lies still 
   5 cm. A Basalt-side static init (attitude from the mean of the first still samples, zero-velocity factor)
   would fix it at the source.
 * Live test (needs the user, AE off is fine):
-  `sudo setcap cap_sys_nice+ep ~/src/monado-slam/build/src/xrt/targets/service/monado-service` then
-  `PIMAX_CAM_AE=0 ~/pimax-re/analysis/tools/run_slam_view.sh 90`: leave the headset on the cushion 10 s
+  `sudo setcap cap_sys_nice+ep ~/.local/lib/omarchyvr/monado/src/xrt/targets/service/monado-service` then
+  `PIMAX_CAM_AE=0 ~/omarchyvr/analysis/tools/run_slam_view.sh 90`: leave the headset on the cushion 10 s
   (log must show `resetting the tracker (tracker drifting while still ...)` and `p=` unchanged), walk the loop,
   put it back on the same spot.
 

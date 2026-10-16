@@ -107,7 +107,7 @@ Effect: changes init behavior after reboot only. Risk: low, but requires reboot.
 
 ```bash
 # 1. Kernel log since the first symptom (adjust --since)
-journalctl -k --since "-2h" | grep -E 'Cannot|cannot disable|not accepting|power cycle|xhci|usb ' > ~/pimax-re/analysis/usb-incident-$(date +%H%M).log
+journalctl -k --since "-2h" | grep -E 'Cannot|cannot disable|not accepting|power cycle|xhci|usb ' > ~/omarchyvr/analysis/usb-incident-$(date +%H%M).log
 # 2. Topology and power state right now
 lsusb -t
 for d in /sys/bus/usb/devices/[0-9]*; do printf '%s %s %s %s\n' "$(basename $d)" "$(cat $d/idVendor 2>/dev/null):$(cat $d/idProduct 2>/dev/null)" "$(cat $d/power/control 2>/dev/null)" "$(cat $d/power/runtime_status 2>/dev/null)"; done
@@ -116,7 +116,7 @@ cat /proc/cmdline; grep -H . /sys/module/usbcore/parameters/* 2>/dev/null
 # 4. xHCI debugfs (if mounted): port and slot state
 sudo mount -t debugfs none /sys/kernel/debug 2>/dev/null; ls /sys/kernel/debug/usb/xhci/ 2>/dev/null
 # 5. Optional, heavier: usbmon capture (read-only)
-sudo modprobe usbmon && sudo cat /sys/kernel/debug/usb/usbmon/0u | head -n 500 > ~/pimax-re/analysis/usbmon-$(date +%H%M).txt
+sudo modprobe usbmon && sudo cat /sys/kernel/debug/usb/usbmon/0u | head -n 500 > ~/omarchyvr/analysis/usbmon-$(date +%H%M).txt
 ```
 Also note the time of the physical unplug/replug and the hub path from the log at that moment.
 

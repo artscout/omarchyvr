@@ -16,12 +16,12 @@
 # use would be measured on top of itself). To check an existing correction, set PIMAX_EYE_CORRECTION=<file> yourself.
 # The correction is read by the service (libpimax_capi) when it starts, so the Monado eye build must be relinked after
 # `cargo build --release -p pimax-capi` once, and monado-service restarted; relinking drops its file capability:
-#   ninja -C ~/src/monado-eye/build && sudo setcap cap_sys_nice+ep ~/src/monado-eye/build/src/xrt/targets/service/monado-service
+#   ninja -C ~/.local/lib/omarchyvr/monado && sudo setcap cap_sys_nice+ep ~/.local/lib/omarchyvr/monado/src/xrt/targets/service/monado-service
 #
-# Environment: MONADO_BUILD (default ~/src/monado-eye/build), PIMAX_EYE_FLIP_X/Y/Z (service AND client read them),
+# Environment: MONADO_BUILD (default ~/.local/lib/omarchyvr/monado), PIMAX_EYE_FLIP_X/Y/Z (service AND client read them),
 # everything run_lens_test.sh understands (HEADSET_LOCK=1, MODE, SCALE, ...).
 cd "$(dirname "$0")/../.." || exit 1
-export MONADO_BUILD=${MONADO_BUILD:-$HOME/src/monado-eye/build}
+export MONADO_BUILD=${MONADO_BUILD:-$HOME/.local/lib/omarchyvr/monado}
 export PIMAX_EYE=1
 export PIMAX_EYE_CORRECTION=${PIMAX_EYE_CORRECTION:-none}
 export PIMAX_CTRL_HANDS=0

@@ -713,7 +713,7 @@ mod tests {
         let s = live.service.as_ref().unwrap();
         assert_eq!(s.hz, Some(72));
         assert!(s.eye && s.sixdof && s.broker && !s.ctrl_track);
-        assert_eq!(s.build.as_deref(), Some(Path::new("/home/u/src/monado-eye/build")));
+        assert_eq!(s.build.as_deref(), Some(Path::new("/home/u/.local/lib/omarchyvr/monado")));
         assert!(live.alive("broker") && live.alive("passthrough") && live.alive("wayvr"));
         assert!(!live.alive("voice"));
         assert!(live.foreign_monado.is_empty());

@@ -367,7 +367,7 @@ pub(crate) mod tests {
 
     #[test]
     fn missing_cap_sys_nice_warns_with_the_setcap_line_for_that_path() {
-        let svc = Path::new("/home/u/src/monado-eye/build/src/xrt/targets/service/monado-service");
+        let svc = Path::new("/home/u/.local/lib/omarchyvr/monado/src/xrt/targets/service/monado-service");
         let mut m = Mock::healthy();
         m.nice = Some(false);
         let r = run_for(&m, "DP-1", Some(svc));

@@ -8,16 +8,16 @@
 #                               DIR = a recording directory (or a EuRoC root).
 #   run_slam.sh sweep DIR       replay with camera-IMU offsets -4..+4 ms (2 ms steps), loop drift per offset.
 #
-# Env: M (Monado build, default ~/src/monado-slam/build), PIMAX_SLAM_CAMS (default 0,1; try 0,1,2,3),
+# Env: M (Monado build, default ~/.local/lib/omarchyvr/monado), PIMAX_SLAM_CAMS (default 0,1; try 0,1,2,3),
 #      PIMAX_SLAM_CAM_OFFSET_US (live camera-IMU time offset), CAM_OFFSET_NS (replay: camera timestamps shifted
 #      in a linked copy of the dataset; Basalt's own cam_time_offset_ns is ignored by its VIO),
 #      PIMAX_CAM_AE (live: 0 off / dry / 1 send, see analysis/slam-exposure.md), WINLOG (Windows pose log for the
 #      comparison), VIT_SYSTEM_LIBRARY_PATH (default ~/.local/lib/libbasalt.so).
 set -u
 MODE=${1:-}
-M=${M:-$HOME/src/monado-slam/build}
+M=${M:-$HOME/.local/lib/omarchyvr/monado}
 T=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-# The newest build that has every subcommand used here (an old ~/src/target-slam binary had no "stats").
+# The newest build that has every subcommand used here (an old $CARGO_TARGET_DIR binary had no "stats").
 if [ -z "${SLAMTOOL:-}" ]; then
 	for c in $HOME/src/target-slam/release/omarchyvr-slam $HOME/.local/bin/omarchyvr-slam; do
 		[ -x "$c" ] && "$c" stats 2>&1 | grep -q "unknown command" && continue
