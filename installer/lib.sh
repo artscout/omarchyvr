@@ -109,7 +109,7 @@ gpu_vendors() {
 	done
 	printf '%s\n' "${out[@]}" | sort -u | tr '\n' ' '
 }
-nvidia_pkg_version() { pacman -Q "$NVIDIA_PACKAGE" 2>/dev/null | awk '{print $2}' | sed 's/-[0-9]*$//'; }
+nvidia_pkg_version() { { pacman -Q "$NVIDIA_PACKAGE" 2>/dev/null || true; } | awk '{print $2}' | sed 's/-[0-9]*$//'; }
 nvidia_loaded_version() { cat /sys/module/nvidia/version 2>/dev/null; }
 # open kernel modules? (the open flavour reports "Dual MIT/GPL")
 nvidia_is_open() { modinfo -F license nvidia 2>/dev/null | grep -q 'Dual MIT/GPL'; }

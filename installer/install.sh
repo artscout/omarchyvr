@@ -173,7 +173,7 @@ note "disk: ${FREE_GB} GB free for the build (needs about 40 GB)"
 BUILD_PKGS=(git base-devel cmake ninja rust clang pkgconf python patch eigen opencv onetbb boost boost-libs fmt lz4
 	vulkan-headers vulkan-icd-loader glslang shaderc hidapi libusb sdl2-compat gstreamer gst-plugins-base libjpeg-turbo
 	libbsd bluez-libs wayland wayland-protocols libdrm libxkbcommon libx11 libxcb libxrandr openxr pipewire dbus
-	systemd-libs alsa-lib fontconfig)
+	systemd-libs alsa-lib fontconfig libepoxy qt6-base)
 RUN_PKGS=(polkit)
 [[ $HAND_MODELS == 1 ]] && BUILD_PKGS+=(git-lfs)
 MISSING_BUILD=$(pacman -T "${BUILD_PKGS[@]}" 2>/dev/null | tr '\n' ' ' || true)
@@ -303,7 +303,7 @@ while IFS= read -r l; do
 	[[ -z $l || $l == \#* ]] && continue
 	must=0; [[ $l == !* ]] && { must=1; l=${l#!}; }
 	k=${l%%=*} v=${l#*=}
-	got=$(sed -n "s/^$k:BOOL=//p" "$MONADO_BUILD/CMakeCache.txt")
+	got=$(sed -n "s/^$k:[A-Z]*=//p" "$MONADO_BUILD/CMakeCache.txt")  # BOOL, or UNINITIALIZED for an option_with_deps whose deps are absent
 	if [[ "$got" != "$v" ]]; then
 		if [[ $must == 1 ]]; then warn "Monado option $k=$got (tested build: $v)"; BAD=1; else note "Monado option $k=$got (tested: $v)"; fi
 	fi
