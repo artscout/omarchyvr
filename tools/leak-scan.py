@@ -180,7 +180,7 @@ def scan_change(s, names_cmd, diff_cmd, show):
         if b"\x00" in b[:4096] or p.endswith(".gz"):
             s.blob(p, b)
         else:
-            s.text(p, texts.get(p, ""))
+            s.text(p, texts[p] if p in texts else b.decode("utf-8", "replace"))
     return len(changed)
 
 
@@ -188,14 +188,14 @@ def main():
     s = Scan()
     if sys.argv[1:2] == ["--staged"]:
         n = scan_change(s, ["diff", "--cached", "--raw", "-z", "--no-renames", "--diff-filter=ACMRT"],
-                        ["diff", "--cached", "-U0", "--no-color", "--no-ext-diff", "--diff-filter=ACMRT"],
+                        ["diff", "--cached", "-U0", "--no-color", "--no-ext-diff", "--src-prefix=a/", "--dst-prefix=b/", "--diff-filter=ACMRT"],
                         lambda p: git("show", ":" + p))
-        what = "staged change"
+        what = "staged changes"
     elif sys.argv[1:2] == ["--range"] and len(sys.argv) == 3:
         a, b = sys.argv[2].split("..")
         base = a or git("hash-object", "-t", "tree", "/dev/null", text=True).strip()
         n = scan_change(s, ["diff", "--raw", "-z", "--no-renames", "--diff-filter=ACMRT", base, b],
-                        ["diff", "-U0", "--no-color", "--no-ext-diff", "--diff-filter=ACMRT", base, b],
+                        ["diff", "-U0", "--no-color", "--no-ext-diff", "--src-prefix=a/", "--dst-prefix=b/", "--diff-filter=ACMRT", base, b],
                         lambda p: git("show", f"{b}:{p}"))
         revs = git("rev-list", b if not a else f"{a}..{b}", text=True).split()
         for r in revs:
@@ -205,17 +205,17 @@ def main():
                 if not EMAIL_OK.search(e):
                     s.hit("commit identity is not a noreply address", r[:10])
             s.text(f"commit message {r[:10]}", body)
-        what = f"changed file in {len(revs)} commits"
+        what = f"changed files in {len(revs)} commit(s)"
     else:
         print(__doc__.strip().split("\n\n")[0])
         return 2
     if s.hits:
-        print(f"leak-scan: REFUSED ({n} {what}s scanned)")
+        print(f"leak-scan: REFUSED ({n} {what} scanned)")
         for k, v in sorted(s.hits.items()):
             print(f"   HIT {k}: {', '.join(sorted(v)[:20])}")
         print("   (values are never printed; fix the files, or keep private data under .claude/)")
         return 1
-    print(f"leak-scan: clean ({n} {what}s, {len(s.priv)} private values, {len(s.eye)} eye payloads compared)")
+    print(f"leak-scan: clean ({n} {what}, {len(s.priv)} private values, {len(s.eye)} eye payloads compared)")
     return 0
 
 
