@@ -355,7 +355,7 @@ for b in wayvr wayvrctl; do put "$CACHE/wayvr-target/release/$b" "$LIBDIR/wayvr/
 # the data the app and the root job read: docs, udev rule, EDID files, NVIDIA patches and hooks, installer
 rm -rf "$DATA.new"
 mkdir -p "$DATA.new"
-(cd "$REPO" && git ls-files -z docs linux patches installer ai tools/lab-data.sh LICENSE-* NOTICE THIRD-PARTY.md README.md |
+(cd "$REPO" && git ls-files -z docs linux patches installer ai analysis/tools tools/lab-data.sh LICENSE-* NOTICE THIRD-PARTY.md README.md |
 	xargs -0 cp --parents -a -t "$DATA.new")
 git -C "$REPO" rev-parse HEAD >"$DATA.new/COMMIT"
 rm -rf "$DATA"
