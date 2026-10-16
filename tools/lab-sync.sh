@@ -36,7 +36,7 @@ export_at "$OLD" old
 export_at "$NEW" new
 
 cd "$TMP"
-diff -ruN old new >"$TMP/sync.patch" || true   # exit 1 = differences
+diff -ruN exp-old exp-new >"$TMP/sync.patch" || true   # exit 1 = differences
 if [[ ! -s $TMP/sync.patch ]]; then echo "no differences between $OLD and $NEW"; exit 0; fi
 echo "patch: $(grep -c '^+++ ' "$TMP/sync.patch") files, $(grep -c '^[+-][^+-]' "$TMP/sync.patch") changed lines"
 cd "$HERE"
@@ -50,9 +50,16 @@ if git apply --check -R -p1 "$TMP/sync.patch" 2>/dev/null; then
     echo "already applied: the patch reverse-applies cleanly (this range was synced before)"
     exit 0
 fi
-echo "conflicts:"; sed 's/^/  /' "$TMP/check.err" | head -40
+# per file: applies / already applied / conflict
+conflicts=0
+for f in $(grep '^+++ ' "$TMP/sync.patch" | sed -e 's/^+++ exp-new\///' -e 's/\t.*//'); do
+    if git apply --check -p1 --include="$f" "$TMP/sync.patch" 2>/dev/null; then echo "  would apply:     $f"
+    elif git apply --check -R -p1 --include="$f" "$TMP/sync.patch" 2>/dev/null; then echo "  already applied: $f"
+    else echo "  CONFLICT:        $f"; conflicts=1; fi
+done
 if [[ $CHECK -eq 0 ]]; then
     git apply --reject -p1 "$TMP/sync.patch" || true
     echo "hunks that applied are in the tree; the others are in *.rej:"; git ls-files --others --exclude-standard | grep '\.rej$' || true
     exit 1
 fi
+exit $conflicts
