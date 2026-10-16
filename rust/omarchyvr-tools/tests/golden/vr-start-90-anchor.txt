@@ -1,4 +1,4 @@
-$ omarchyvr vr start --dry-run --fps 90 --anchor --no-set-runtime
+$ omarchyvr vr start --dry-run --fps 90 --anchor --no-set-runtime --no-light
 exit Some(0)
 --- stdout
 omarchyvr vr: preflight

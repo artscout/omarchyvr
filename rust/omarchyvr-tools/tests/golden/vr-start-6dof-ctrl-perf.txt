@@ -1,4 +1,4 @@
-$ omarchyvr vr start --dry-run --6dof --ctrl-track --perf
+$ omarchyvr vr start --dry-run --6dof --ctrl-track --perf --no-light
 exit Some(0)
 --- stdout
 omarchyvr vr: --perf would also run, after the service: $ROOT/home/src/target-desk/release/wayvr (minimal WayVR, no screens), $ROOT/home/.local/bin/omarchyvr-perf
