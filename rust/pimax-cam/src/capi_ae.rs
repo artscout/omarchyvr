@@ -147,6 +147,8 @@ pub unsafe extern "C" fn pimax_cam_ae_update(
             err: [d.err[0] as f32, d.err[1] as f32],
             light: a.ae.light.stage as u32 | (a.ae.light.low as u32) << 2,
         };
+        // The head tracker lowers its fusion weights in a dark image (crate::headpose, PIMAX_FUSE_AUTO).
+        crate::headpose::scene::publish(o.mean[0].min(o.mean[1]) as f64);
         // SAFETY: writable per contract.
         unsafe { *out = o };
         Ok(d.send as c_int)

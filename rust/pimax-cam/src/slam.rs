@@ -602,6 +602,12 @@ pub struct Supervisor {
     rezeroing: bool,
     /// Tracker resets raised because it drifted while the headset was still (also counted in `resets`).
     pub still_resets: u64,
+    /// World-frame tilt (pitch/roll) correction the output applies on top of the tracker attitude
+    /// ([`crate::headpose`] gravity tilt correction): a re-zero or a loss holds the corrected attitude.
+    tilt: Quat,
+    /// Tracker-world head position where the still period really began (the caller detects stillness over a
+    /// window; the tracker may have drifted during it).
+    still_anchor: Option<Vec3>,
     /// Times Tracking was entered.
     pub acquisitions: u64,
     /// Times Tracking was left.
@@ -639,6 +645,8 @@ impl Supervisor {
             last_still_reset_ns: 0,
             rezeroing: false,
             still_resets: 0,
+            tilt: QUAT_ID,
+            still_anchor: None,
             acquisitions: 0,
             losses: 0,
             resets: 0,
@@ -656,8 +664,23 @@ impl Supervisor {
         self.still_p = p;
     }
 
+    /// The output's gravity tilt correction (world frame, applied on top of `world_from_slam * tracker q`):
+    /// a re-zero or a loss takes the attitude the output really shows, so it does not move at either end.
+    pub fn set_tilt(&mut self, tilt: Quat) {
+        self.tilt = qnorm(tilt);
+    }
+
+    /// The still period that is about to be entered really began with the head at this tracker-world position
+    /// (the stillness test needs a window of quiet). Ignored unless the still hold starts next.
+    pub fn set_still_anchor(&mut self, head_slam: Vec3) {
+        self.still_anchor = Some(head_slam);
+    }
+
     /// The IMU says the headset is perfectly still (call before [`Supervisor::update`]).
     pub fn set_still(&mut self, still: bool) {
+        if !still {
+            self.still_anchor = None;
+        }
         self.still = still;
     }
 
@@ -762,7 +785,7 @@ impl Supervisor {
         }
         if let Some(l) = self.last {
             self.held_pos = self.head_world(l.pos, l.q);
-            let world_q = qmul(self.w_q, qnorm(l.q));
+            let world_q = qmul(self.tilt, qmul(self.w_q, qnorm(l.q)));
             self.fix3dof = qyaw(yaw_of(qmul(world_q, qconj(qnorm(l.q3dof)))));
         }
         self.state = TrackState::Lost;
@@ -877,7 +900,7 @@ impl Supervisor {
     fn rezero(&mut self, now_ns: u64) -> u32 {
         if let Some(l) = self.last {
             self.held_pos = self.head_world(l.pos, l.q);
-            let world_q = qmul(self.w_q, qnorm(l.q));
+            let world_q = qmul(self.tilt, qmul(self.w_q, qnorm(l.q)));
             self.fix3dof = qnorm(qmul(world_q, qconj(qnorm(l.q3dof))));
         }
         self.state = TrackState::Lost;
@@ -896,7 +919,9 @@ impl Supervisor {
         };
         let head_slam = geom::add(l.pos, qrot(qnorm(l.q), self.head_in_imu));
         let Some((ref_slam, target)) = self.still_ref else {
-            self.still_ref = Some((head_slam, self.head_world(l.pos, l.q)));
+            // Hold where the head was when the quiet began (the tracker's drift since then is not motion).
+            let r = self.still_anchor.take().unwrap_or(head_slam);
+            self.still_ref = Some((r, geom::add(qrot(self.w_q, r), self.w_t)));
             return 0;
         };
         self.w_t = geom::sub(target, qrot(self.w_q, head_slam));
