@@ -209,8 +209,8 @@ says = ["move chrome over to the right screen", "send the browser to screen 3", 
 id = "f-this-left"
 split = "fresh"
 cat = "move"
-why = "The focused app to screen 2 (left); the others stay."
-expect = ["focused on 2"]
+why = "The app looked at (else the focused one) to screen 2 (left); the others stay."
+expect = ["gazed on 2"]
 worlds = { medium = "fm5", hard = "fh6" }
 says = ["move this window to the left screen", "send this to screen two", "this app on the left please"]
 
@@ -309,8 +309,8 @@ says = ["go fullscreen", "fullscreen this app"]
 id = "f-quit-this"
 split = "fresh"
 cat = "apps"
-why = "The focused app (named 'this') closes; nothing else."
-expect = ["focused closed"]
+why = "The app looked at, else the focused one (named 'this') closes; nothing else."
+expect = ["gazed closed"]
 worlds = { medium = "fm5", hard = "fh6" }
 says = ["quit this app", "exit this program"]
 

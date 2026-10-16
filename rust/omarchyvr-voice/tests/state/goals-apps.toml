@@ -18,8 +18,8 @@ says = ["put chrome on the right screen", "move the browser to the right"]
 
 [[goal]]
 id = "this-right"
-why = "The focused app to the screen on its right; the others stay."
-expect = ["focused on 3", "browsers stay", "pimax stay"]
+why = "The app looked at (else the focused one) to the screen on its right; the others stay."
+expect = ["gazed on 3", "browsers stay", "pimax stay"]
 worlds = { easy = "e3", medium = "m4s", hard = "h6b" }
 says = ["move this to the right screen", "send this app to the right", "put this one on the right screen"]
 
@@ -127,7 +127,7 @@ says = ["press enter", "hit enter"]
 [[goal]]
 id = "close-this-app"
 why = "The app named 'this' (focused and looked at) closes, nothing else."
-expect = ["focused closed"]
+expect = ["gazed closed"]
 worlds = { easy = "e1c", medium = "m3", hard = "h6b" }
 set = { medium = { focus = "p1", gaze = "3:p1" }, hard = { focus = "t3", gaze = "3:t3" } }
 says = ["close this app", "close this program"]

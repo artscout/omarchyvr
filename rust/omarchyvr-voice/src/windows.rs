@@ -999,7 +999,7 @@ fn is_everything(q: &str) -> bool {
 }
 
 /// The apps a spoken query names among `clients` (kind, name, a browser tab's title, "this" = the focused app,
-/// "everything"), the one used last first.
+/// "everything"), the one used last first. `focused` is the app "this" means (the one looked at, else the focused one).
 fn select<'a>(clients: &'a [Client], query: &str, focused: Option<&Client>) -> Vec<&'a Client> {
     let (which, q) = which_of(query);
     let mut of: Vec<&Client> = if matches!(q.as_str(), "this" | "it" | "this app" | "that" | "") && !is_everything(query) {
@@ -1044,7 +1044,10 @@ fn put(target: &str, from: Option<&str>, query: &str, r: &mut dyn Runner, wayvrc
     };
     let focused = hyprctl_json(r, "activewindow").ok().and_then(|j| parse_active(&j).ok().flatten());
     let pool: Vec<Client> = clients.iter().filter(|c| src.as_ref().is_none_or(|s| s.ws == c.workspace)).cloned().collect();
-    let of = select(&pool, query, focused.as_ref());
+    // "this" = the app looked at, else the focused one (docs/VOICE.md)
+    let gazed_addr = gaze_at(r, wayvrctl).and_then(|t| t.window).map(|w| w.address);
+    let this = gazed_addr.and_then(|a| clients.iter().find(|c| c.address == a)).or(focused.as_ref());
+    let of = select(&pool, query, this);
     let what = if is_everything(query) { "apps".to_string() } else { which_of(query).1 };
     let what = if what.is_empty() || what == "this" || what == "it" { "the app".to_string() } else { what };
     let where_ = screen_label(to.slot);
@@ -1484,14 +1487,24 @@ fn scale(which: &str, size: &str, r: &mut dyn Runner, wayvrctl: &str) {
     }
 }
 
-/// "Send this to the left screen": the focused app goes to the screen on that side of its own screen.
+/// The app "this" means: the window being looked at, else the focused one (docs/VOICE.md).
+fn this_app(r: &mut dyn Runner, wayvrctl: &str) -> Result<Option<Client>, String> {
+    if let Some(addr) = gaze_at(r, wayvrctl).and_then(|t| t.window).map(|w| w.address) {
+        if let Some(c) = hyprctl_json(r, "clients").and_then(|j| parse_clients(&j)).ok().and_then(|cs| cs.into_iter().find(|c| c.address == addr)) {
+            return Ok(Some(c));
+        }
+    }
+    hyprctl_json(r, "activewindow").and_then(|j| parse_active(&j))
+}
+
+/// "Send this to the left screen": the app looked at (else the focused one) goes to the screen on that side of its own screen.
 fn screen_move(side: &str, r: &mut dyn Runner, wayvrctl: &str) {
     let Some(side) = slot_word(side) else { return r.toast(&format!("Move left, right, up or to the main screen, not \"{side}\"")) };
     let scr = vr_screens(r);
     if scr.len() <= 1 {
         return r.toast(ONE_SCREEN);
     }
-    let src = match hyprctl_json(r, "activewindow").and_then(|j| parse_active(&j)) {
+    let src = match this_app(r, wayvrctl) {
         Ok(Some(w)) => w,
         Ok(None) => return r.toast("No app is focused"),
         Err(e) => return r.toast(&format!("Move: {e}")),
@@ -2397,6 +2410,32 @@ mod tests {
         m.monitors = "[]".into();
         run(&mut m, &["move_screen", "up"]);
         assert!(m.toasts[0].starts_with("Only one VR screen"));
+    }
+
+    #[test]
+    fn move_this_means_the_app_looked_at_else_the_focused_one() {
+        let g = |mut w: Value, x: i64, mon: &str| {
+            w["at"] = serde_json::json!([x, 0]);
+            w["size"] = serde_json::json!([960, 1000]);
+            w["monitor"] = mon.into();
+            w
+        };
+        let wins = || vec![g(win("0x1", "foot", "zsh", 2, 0, &[]), 0, "SUNSHINE"), g(win("0x9", "code", "main.rs", 11, 1, &[]), -1920, "PIMAX-LEFT")];
+        // focused: the terminal on the main screen; looking at the editor on the left screen: the editor goes right
+        let mut m = vr_mock(wins(), focused("0x1", "foot", 2));
+        m.gaze = Some(gaze_json("PIMAX-LEFT", [0.25, 0.5]));
+        run(&mut m, &["move_screen", "right"]);
+        assert!(m.dispatched.iter().any(|d| d.contains("address:0x9")) && !m.dispatched.iter().any(|d| d.contains("address:0x1")), "{:?}", m.dispatched);
+        assert_eq!(m.toasts, ["code moved to screen 1 (main)"], "{:?}", m.toasts);
+        // "put this app on screen 3" (the query "this") picks the same app
+        let mut m = vr_mock(wins(), focused("0x1", "foot", 2));
+        m.gaze = Some(gaze_json("PIMAX-LEFT", [0.25, 0.5]));
+        run(&mut m, &["put", "right", "this"]);
+        assert!(m.dispatched[0].contains("address:0x9"), "{:?}", m.dispatched);
+        // no gaze: the focused app
+        let mut m = vr_mock(wins(), focused("0x1", "foot", 2));
+        run(&mut m, &["put", "right", "this"]);
+        assert!(m.dispatched[0].contains("address:0x1"), "{:?}", m.dispatched);
     }
 
     #[test]

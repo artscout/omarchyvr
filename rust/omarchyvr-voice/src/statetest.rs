@@ -528,7 +528,7 @@ pub fn subset(cases: &[Case], n: usize, seed: u64) -> Vec<Case> {
 // --------------------------------------------------------------------------------------------- expectations
 
 /// The apps a selector names in a World: a handle (t1), a kind word (terminals, browsers, chrome, pimax, video,
-/// editors), `all`, `new` (not in `start`), `focused` (focused at the start).
+/// editors), `all`, `new` (not in `start`), `focused` (focused at the start), `gazed` (looked at at the start, else focused).
 fn select<'a>(sel: &str, w: &'a World, start: &World) -> Vec<&'a world::App> {
     let s = sel.to_lowercase();
     let kind = |k: Kind| -> Vec<&'a world::App> { w.apps.iter().filter(|a| a.kind == k).collect() };
@@ -536,6 +536,11 @@ fn select<'a>(sel: &str, w: &'a World, start: &World) -> Vec<&'a world::App> {
         "all" | "apps" => w.apps.iter().collect(),
         "new" => w.apps.iter().filter(|a| !start.apps.iter().any(|x| x.id == a.id)).collect(),
         "focused" => w.apps.iter().filter(|a| start.focus.as_deref() == Some(a.id.as_str())).collect(),
+        // "this": the app looked at, else the focused one
+        "gazed" => {
+            let id = start.gaze.as_ref().and_then(|g| g.app.clone()).or_else(|| start.focus.clone());
+            w.apps.iter().filter(|a| id.as_deref() == Some(a.id.as_str())).collect()
+        }
         "terminal" | "terminals" => kind(Kind::Terminal),
         "browser" | "browsers" => kind(Kind::Browser),
         "pimax" => kind(Kind::Pimax),

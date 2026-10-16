@@ -223,6 +223,8 @@ left", "cycle windows", "float window" are now "app" phrases):
 - **tab** = something inside an app: a browser tab, a terminal split (foot has no tabs), or a Hyprland group member.
 - **the target** is what you are looking at (WayVR gaze: the last stable fixation, at most 2.5 s old), unless the
   command names one (a number, an app). Without gaze (eye tracking off, no fixation) it is the focused app/monitor.
+  "This app", "this" and "it" (close this app, send this to the left screen, put this on screen 3) mean the app you are looking
+  at; when there is no gaze they mean the focused app.
 
 | say "Max ..." | does | intent |
 |---|---|---|
@@ -248,7 +250,7 @@ left", "cycle windows", "float window" are now "app" phrases):
 | go to / focus (in) the main window | the main (middle) VR screen | win.screen.goto |
 | new window / new screen (with VR screens) | the next free VR screen (left, right, up): the first whose workspace has no app; all busy = an empty workspace here | win.ws.new |
 | move this left / right / up / down (the VR screen itself, in space), bring it closer / push it away, zoom in / zoom out | `wayvrctl screen-nudge` on the looked-at (else focused) screen ([SCREENS.md](SCREENS.md)) | win.screen.nudge / closer / farther / bigger / smaller |
-| send this to the left / right / up / main screen, move this app to the left screen | sends the focused app to that VR screen | win.screen.move |
+| send this to the left / right / up / main screen, move this app to the left screen | sends the app you are looking at (else the focused one) to that VR screen | win.screen.move |
 | put everything in its own window / organize / separate everything | sorts the apps by kind onto the VR screens (terminals, browser, Pimax app, the rest) | win.organize |
 | put everything back together / merge everything | every app back on the main screen | win.together |
 | go to / switch to / focus the left / right / up / main screen | focuses that VR screen | win.screen.goto |

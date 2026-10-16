@@ -487,7 +487,7 @@ source = "user request 2026-10-15"
 id = "win.screen.move"
 phrases = ["send this to the {side} screen", "send it to the {side} screen", "send this app to the {side} screen", "move this app to the {side} screen", "move this app to the {side}", "put this app on the {side} screen", "send this app {side}", "manda esto a la pantalla {side}"]
 slots = { side = "side" }
-gloss = "send the focused app to another VR screen (left / right / up / main)"
+gloss = "send the app looked at (else the focused one) to another VR screen (left / right / up / main)"
 run = ["@win", "move_screen", "{side}"]
 safety = "safe"
 source = "user request 2026-10-15"
