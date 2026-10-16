@@ -4,7 +4,9 @@
 //! `payload` as HID command `0x51` option 0 to the headset. Whether it really sends is the driver's decision
 //! (`PIMAX_CAM_AE=1`; `dry` = compute and log only). Nothing here touches the device.
 
-use crate::ae::{payload, AeParams, AeSetting, AutoExposure, Mask, TileView, AE_PAYLOAD_LEN};
+use crate::ae::{
+    payload, AeParams, AeSetting, AutoExposure, LightEvent, Mask, TileView, AE_PAYLOAD_LEN,
+};
 use crate::camera::{FLAG_META_VALID, FLAG_REPLAY};
 use crate::capi::{guard, PimaxCam};
 use crate::frame::FrameKind;
@@ -52,16 +54,20 @@ pub struct CAeOut {
     pub sat: [f32; 2],
     /// Log error per pair (0 inside the deadband).
     pub err: [f32; 2],
-    /// Reserved, zero.
-    pub reserved: u32,
+    /// Low-light state: bits 0..1 = range stage (0 normal, 1 gain extended, 2 gain and exposure extended), bit 2 =
+    /// "tracking light low" warning raised.
+    pub light: u32,
 }
 
 /// Create a controller with the defaults and the `PIMAX_CAM_AE_*` environment overrides.
 #[no_mangle]
 pub extern "C" fn pimax_cam_ae_create() -> *mut CAe {
     guard(std::ptr::null_mut(), || {
+        let ae = AutoExposure::new(AeParams::from_env());
+        // Once-at-start marker (also in the binary: the build check greps for it).
+        eprintln!("{}", start_line(&ae));
         Ok(Box::into_raw(Box::new(CAe {
-            ae: AutoExposure::new(AeParams::from_env()),
+            ae,
             mask: Mask::default(),
         })))
     })
@@ -115,6 +121,9 @@ pub unsafe extern "C" fn pimax_cam_ae_update(
         let setting = AeSetting::from_info(&fi, a.ae.p.led_exposure, a.ae.p.led_gain);
         let stats = a.ae.frame_stats(&tiles, &a.mask);
         let d = a.ae.update(&setting, stats, now_ns);
+        for ev in a.ae.take_events() {
+            report(ev, &a.ae);
+        }
         let tgt = a.ae.target().unwrap_or(setting);
         let o = CAeOut {
             send: d.send as u32,
@@ -136,12 +145,69 @@ pub unsafe extern "C" fn pimax_cam_ae_update(
             ],
             sat: [d.stats[0].sat_frac as f32, d.stats[1].sat_frac as f32],
             err: [d.err[0] as f32, d.err[1] as f32],
-            reserved: 0,
+            light: a.ae.light.stage as u32 | (a.ae.light.low as u32) << 2,
         };
         // SAFETY: writable per contract.
         unsafe { *out = o };
         Ok(d.send as c_int)
     })
+}
+
+/// The headset text of the low-light warning (also shown on the app's status page).
+pub const LOW_LIGHT_TEXT: &str =
+    "Tracking cameras see too little infrared light \u{2014} daylight or an IR lamp helps";
+
+/// Start-up marker line (`PIMAX_AE_EXTENDED`).
+pub fn start_line(ae: &AutoExposure) -> String {
+    if ae.top_stage() == 0 {
+        return "PIMAX_AE_EXTENDED: off (extended range disabled or the normal caps are already the largest)".into();
+    }
+    let (e, g) = ae.caps(0);
+    let (xe, xg) = ae.caps(2);
+    format!(
+        "PIMAX_AE_EXTENDED: armed, normal {e} us / gain {g}, extended up to {xe} us / gain {xg} (gain first, exposure last)"
+    )
+}
+
+/// One log line per governor event (the app reads these from the Monado log).
+pub fn event_line(ev: LightEvent, ae: &AutoExposure) -> String {
+    let (e, g) = ae.caps(ae.light.stage);
+    match ev {
+        LightEvent::Extended(s) => format!("PIMAX_AE_EXTENDED: range extended to stage {s} (caps {e} us / gain {g})"),
+        LightEvent::Retracted => format!("PIMAX_AE_EXTENDED: back to the normal range (caps {e} us / gain {g})"),
+        LightEvent::LowRaised => format!("PIMAX_AE_LIGHT_LOW: {LOW_LIGHT_TEXT}"),
+        LightEvent::LowCleared => "PIMAX_AE_LIGHT_LOW: cleared, the cameras see enough light again".into(),
+    }
+}
+
+/// Log the event; on a raised warning also show it in the headset (WayVR's XSOverlay-format UDP listener on
+/// 127.0.0.1:42069, the channel omarchyvrd and omarchyvr-voice use for in-headset toasts; nothing listens in a
+/// SteamVR game session, then only the log and the app show it).
+fn report(ev: LightEvent, ae: &AutoExposure) {
+    eprintln!("{}", event_line(ev, ae));
+    if ev == LightEvent::LowRaised {
+        toast(LOW_LIGHT_TEXT);
+    }
+}
+
+/// XSOverlay-format message for WayVR.
+pub fn toast_message(text: &str) -> String {
+    let mut q = String::new();
+    for c in text.chars() {
+        match c {
+            '"' => q.push_str("\\\""),
+            '\\' => q.push_str("\\\\"),
+            c if (c as u32) < 0x20 => q.push(' '),
+            c => q.push(c),
+        }
+    }
+    format!("{{\"messageType\":1,\"title\":\"Pimax\",\"content\":\"{q}\",\"timeout\":8.0,\"volume\":-1.0}}")
+}
+
+fn toast(text: &str) {
+    if let Ok(s) = std::net::UdpSocket::bind("127.0.0.1:0") {
+        let _ = s.send_to(toast_message(text).as_bytes(), "127.0.0.1:42069");
+    }
 }
 
 #[cfg(test)]
@@ -160,6 +226,16 @@ mod tests {
         );
         // SAFETY: created above.
         unsafe { pimax_cam_ae_destroy(a) };
+    }
+
+    #[test]
+    fn marker_and_toast_text() {
+        let ae = AutoExposure::new(AeParams::default());
+        assert!(start_line(&ae).starts_with("PIMAX_AE_EXTENDED: armed"));
+        assert!(event_line(LightEvent::LowRaised, &ae).contains("too little infrared light"));
+        let m = toast_message(LOW_LIGHT_TEXT);
+        assert!(m.contains("\"messageType\":1") && m.contains("infrared"));
+        assert!(toast_message("a\"b").contains("a\\\"b"));
     }
 
     #[test]

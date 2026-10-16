@@ -55,6 +55,9 @@ fn head(ui: &mut Ui, app: &mut PimaxApp) {
             widgets::setting(ui, "Gyro", None, |ui| {
                 ui.label(RichText::new(gyro).size(12.0).color(p.dim));
             });
+            if app.core.live.log.camera.light_low {
+                widgets::status(ui, omarchyvr_gui_core::monlog::LIGHT_LOW_TEXT, p.warn);
+            }
         }
     });
 }

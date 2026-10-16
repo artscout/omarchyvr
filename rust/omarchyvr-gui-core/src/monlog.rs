@@ -144,7 +144,14 @@ pub struct CameraLog {
     pub lost: Option<u64>,
     /// Open failures (`camera: open`, busy device).
     pub errors: Vec<String>,
+    /// Low-light range stage of the auto exposure (0 normal, 1 gain extended, 2 gain and exposure extended).
+    pub ae_stage: u8,
+    /// "Tracking light low": even the extended range leaves the cameras too dark (`PIMAX_AE_LIGHT_LOW`).
+    pub light_low: bool,
 }
+
+/// The sentence the camera library shows in the headset and the app shows on the status page.
+pub const LIGHT_LOW_TEXT: &str = "Tracking cameras see too little infrared light \u{2014} daylight or an IR lamp helps";
 
 /// Everything parsed from one session log.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -376,6 +383,15 @@ impl MonadoLog {
             }
         } else if let Some(r) = after(t, "camera source: ") {
             c.broker = r.starts_with("broker");
+        } else if let Some(r) = after(t, "PIMAX_AE_LIGHT_LOW: ") {
+            c.light_low = !r.starts_with("cleared");
+        } else if let Some(r) = after(t, "PIMAX_AE_EXTENDED: ") {
+            if let Some(n) = after(r, "range extended to stage ") {
+                c.ae_stage = first_u64(n).unwrap_or(1).min(2) as u8;
+            } else if r.starts_with("back to the normal") {
+                c.ae_stage = 0;
+                c.light_low = false;
+            }
         } else if t.contains("auto-exposure ON") {
             c.ae = true;
         } else if t.contains("camera pipeline up") {
@@ -552,6 +568,23 @@ mod tests {
         assert_eq!(m.sixdof.state, TrackState::Tracking);
         assert_eq!((m.sixdof.acquisitions, m.sixdof.losses, m.sixdof.resets), (1, 0, 3));
         assert_eq!(m.sixdof.reason, "re-zeroed while still");
+    }
+
+    #[test]
+    fn low_light_lines_of_the_camera_auto_exposure() {
+        let mut m = parse("PIMAX_AE_EXTENDED: armed, normal 4108 us / gain 215, extended up to 10410 us / gain 449 (gain first, exposure last)\n");
+        assert_eq!((m.camera.ae_stage, m.camera.light_low), (0, false));
+        m.feed("PIMAX_AE_EXTENDED: range extended to stage 1 (caps 4108 us / gain 449)");
+        assert_eq!(m.camera.ae_stage, 1);
+        m.feed("PIMAX_AE_EXTENDED: range extended to stage 2 (caps 10410 us / gain 449)");
+        assert_eq!(m.camera.ae_stage, 2);
+        m.feed(&format!("PIMAX_AE_LIGHT_LOW: {LIGHT_LOW_TEXT}"));
+        assert!(m.camera.light_low);
+        m.feed("PIMAX_AE_LIGHT_LOW: cleared, the cameras see enough light again");
+        assert!(!m.camera.light_low);
+        m.feed("PIMAX_AE_LIGHT_LOW: Tracking cameras see too little infrared light");
+        m.feed("PIMAX_AE_EXTENDED: back to the normal range (caps 4108 us / gain 215)");
+        assert_eq!((m.camera.ae_stage, m.camera.light_low), (0, false));
     }
 
     #[test]

@@ -110,6 +110,7 @@ Start with [AGENTS.md](AGENTS.md) and [docs/AI-KNOWLEDGE.md](docs/AI-KNOWLEDGE.m
 | [docs/RESILIENCE-PLAN.md](docs/RESILIENCE-PLAN.md) | Self-healing plan |
 | [docs/ROADMAP-OMARCHY.md](docs/ROADMAP-OMARCHY.md) | Roadmap for Omarchy |
 | [docs/ROOM-SETUP.md](docs/ROOM-SETUP.md) | Floor, play area, centre, forward |
+| [docs/AUTO-EXPOSURE.md](docs/AUTO-EXPOSURE.md) | Camera auto-exposure: extended range in dim rooms, low-light warning |
 | [docs/SCREENS.md](docs/SCREENS.md) | VR screens in Work mode |
 | [docs/STEAMVR.md](docs/STEAMVR.md) | SteamVR with the Dream Air |
 | [docs/VOICE.md](docs/VOICE.md), [docs/VOICE-DECISIONS.md](docs/VOICE-DECISIONS.md) | Voice control and its decisions |

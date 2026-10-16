@@ -164,9 +164,9 @@ What changed:
   nearby). A failed recognition that makes a new map keeps the old one as `map.bin.prev`.
 - No text-to-speech engine is installed: "spoken" feedback is the in-headset panel text.
 
-Not changed: the auto-exposure ceiling (`PIMAX_CAM_AE_EXP_MAX`/`_GAIN_MAX`, Windows' 4108/215) because Basalt uses the
-same frames live; raising the gain ceiling towards 449 would roughly double night brightness without motion blur and
-needs a live A/B in a dark room first.
+The auto-exposure ceiling (Windows' 4108/215) stays the normal range, but since the low-light range (docs/AUTO-EXPOSURE.md)
+the loop extends by itself towards the power-on 10410/449 (gain first) after 5 s at the ceiling in the dark, and the
+headset says so when even that is too dark. A live A/B in a dark room is still to do.
 
 ## Engine (agents, tests)
 
