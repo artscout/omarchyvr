@@ -335,7 +335,8 @@ pimax_cam_track_get_info(const pimax_cam_track *t, pimax_cam_track_info *out);
  * motion-blur cap, then gain. The result is the payload of the HID exposure push Windows sends at 12.5 Hz:
  *   58 19 51 00 | 01 32 | e0 e1 e2 e3 | g0 g1 g2 g3 | led_e led_g   (u16 LE; LED pair constant 40/62)
  * This library never sends anything: the driver decides (PIMAX_CAM_AE=1 sends, "dry" only logs, default off).
- * Tuning: PIMAX_CAM_AE_TARGET, _EXP_MIN, _EXP_MAX, _GAIN_MIN, _GAIN_MAX, _PERIOD_MS, _K, _DEADBAND, _UPPER. */
+ * Tuning: PIMAX_CAM_AE_TARGET, _EXP_MIN, _EXP_MAX, _GAIN_MIN, _GAIN_MAX, _PERIOD_MS, _K, _DEADBAND, _UPPER, _EXTEND (0 = no automatic
+ * extended range in low light). */
 
 #define PIMAX_CAM_AE_CMD 0x51
 #define PIMAX_CAM_AE_OPT 0x00
@@ -356,7 +357,8 @@ typedef struct pimax_cam_ae_out
 	float mean[2];                             /* trimmed mean, lower / upper pair (0..255) */
 	float sat[2];                              /* saturated fraction per pair */
 	float err[2];                              /* log error per pair, 0 inside the deadband */
-	uint32_t reserved;
+	uint32_t light; /* low light: bits 0..1 range stage (0 normal, 1 gain extended, 2 gain+exposure extended),
+	                   bit 2 = "tracking light low" warning (the library already logs and toasts it) */
 } pimax_cam_ae_out;
 
 /* Defaults + PIMAX_CAM_AE_* overrides. NULL on error. */

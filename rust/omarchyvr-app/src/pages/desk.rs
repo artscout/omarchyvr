@@ -203,6 +203,12 @@ pub fn status(ui: &mut Ui, app: &mut PimaxApp) {
                     if cam.ae { ", auto exposure on" } else { "" }
                 ));
             }
+            if cam.ae_stage > 0 {
+                kv(ui, "Camera light", format!("dim room: exposure range extended ({})", if cam.ae_stage == 1 { "more gain" } else { "more gain and longer exposure" }));
+            }
+            if cam.light_low {
+                kv(ui, "Camera light", RichText::new(omarchyvr_gui_core::monlog::LIGHT_LOW_TEXT).color(p.warn));
+            }
             for e in &cam.errors {
                 kv(ui, "", RichText::new(e).color(p.fail));
             }
