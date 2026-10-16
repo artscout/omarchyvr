@@ -10,6 +10,7 @@ fn root() -> PathBuf {
 fn pimax(args: &[&str]) -> (bool, String, String) {
     let o = Command::new(env!("CARGO_BIN_EXE_omarchyvr"))
         .args(args)
+        .env("OMARCHYVR_NO_MIGRATE", "1")
         .current_dir(root())
         .output()
         .unwrap();

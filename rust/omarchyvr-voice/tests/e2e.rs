@@ -124,7 +124,9 @@ fn fixture_through_the_cli_live_driver_and_socket() {
     let dir = std::env::temp_dir().join(format!("omarchyvr-voice-e2e-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let sock = dir.join("voice.sock");
-    let mut child = Command::new(env!("CARGO_BIN_EXE_omarchyvr-voice"))
+    let mut vc = Command::new(env!("CARGO_BIN_EXE_omarchyvr-voice"));
+    vc.env("OMARCHYVR_NO_MIGRATE", "1");
+    let mut child = vc
         .args(["listen", "--input"])
         .arg(fixture())
         .args(["--fast", "--json", "--socket"])

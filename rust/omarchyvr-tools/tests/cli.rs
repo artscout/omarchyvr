@@ -8,6 +8,7 @@ fn bin() -> Command {
     let mut c = Command::new(env!("CARGO_BIN_EXE_omarchyvr"));
     let empty = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("cli-empty-sys");
     std::fs::create_dir_all(empty.join("class/hidraw")).unwrap();
+    omarchyvr_config::isolate_command(&mut c, &PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("cli-home"));
     c.env("PIMAX_SYSFS_ROOT", empty)
         .env("XDG_RUNTIME_DIR", env!("CARGO_TARGET_TMPDIR"));
     c

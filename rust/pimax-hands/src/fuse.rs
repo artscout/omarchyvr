@@ -1777,10 +1777,7 @@ impl Fuser {
             // kept pairs after trimming (the robust fit keeps about half of the live pairs)
             let need = if self.calib_from_file { 300 } else { 120 };
             if let Some(c) = self.fit.best(need, 40, 0.8) {
-                if self
-                    .calib
-                    .map_or(true, |old| !self.calib_from_file || c.r2 >= old.r2 - 0.02)
-                {
+                if fit_replaces(self.calib.map(|old| old.r2), c.r2) {
                     self.calib = Some(c);
                     self.calib_from_file = false;
                     self.fit_dirty = true;
@@ -1813,9 +1810,28 @@ impl Fuser {
     }
 }
 
+/// Slack when comparing two fits' r2: a new fit replaces the kept one only when it is at least this close or better.
+const FIT_R2_EPS: f64 = 0.02;
+
+/// Whether a new online fit (`new_r2`, already above the minimum r2 and the pair count) replaces the kept one
+/// (`old_r2`, from the file or from an earlier online fit): never a worse one.
+fn fit_replaces(old_r2: Option<f64>, new_r2: f64) -> bool {
+    old_r2.map_or(true, |old| new_r2 >= old - FIT_R2_EPS)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_online_fit_never_replaces_a_better_one() {
+        assert!(fit_replaces(None, 0.8));
+        assert!(fit_replaces(Some(0.9), 0.95));
+        assert!(fit_replaces(Some(0.9), 0.9));
+        assert!(fit_replaces(Some(0.9), 0.89));
+        assert!(!fit_replaces(Some(0.95), 0.8));
+        assert!(!fit_replaces(Some(0.9), 0.87));
+    }
 
     fn rotm(q: Q) -> M3 {
         let c = |v: V3| qrot(q, v);

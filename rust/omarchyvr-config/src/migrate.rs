@@ -162,8 +162,41 @@ pub fn migrate_legacy_dirs(home: &Path) -> Vec<String> {
     log.lines
 }
 
+/// True when the migration must not touch the real home: `OMARCHYVR_NO_MIGRATE` is set (tests set it), or the
+/// running binary lives under a cargo `target*/` directory (debug, test and clean builds).
+pub fn migration_disabled(no_migrate: Option<&std::ffi::OsStr>, exe: Option<&Path>) -> bool {
+    if no_migrate.is_some_and(|v| !v.is_empty() && v != "0") {
+        return true;
+    }
+    exe.is_some_and(|e| {
+        e.components().any(|c| {
+            c.as_os_str().to_str().is_some_and(|n| n == "target" || n.starts_with("target-"))
+        })
+    })
+}
+
+/// For tests that spawn our binaries: point HOME and every XDG dir at `dir` (created) and switch the one-time
+/// migration off, so a spawned binary can never read or move the real home. `XDG_RUNTIME_DIR` is left to the caller.
+pub fn isolate_command(cmd: &mut std::process::Command, dir: &Path) {
+    let home = dir.join("isolated-home");
+    for sub in [".config", ".local/state", ".local/share", ".cache"] {
+        let _ = fs::create_dir_all(home.join(sub));
+    }
+    cmd.env("HOME", &home)
+        .env("XDG_CONFIG_HOME", home.join(".config"))
+        .env("XDG_STATE_HOME", home.join(".local/state"))
+        .env("XDG_DATA_HOME", home.join(".local/share"))
+        .env("XDG_CACHE_HOME", home.join(".cache"))
+        .env("OMARCHYVR_NO_MIGRATE", "1");
+}
+
 /// [`migrate_legacy_dirs`] for the real `$HOME`, ignoring every error: starting must never fail because of it.
+/// Does nothing when [`migration_disabled`].
 pub fn migrate_home() {
+    let exe = std::env::current_exe().ok();
+    if migration_disabled(std::env::var_os("OMARCHYVR_NO_MIGRATE").as_deref(), exe.as_deref()) {
+        return;
+    }
     if let Some(h) = std::env::var_os("HOME").filter(|v| !v.is_empty()) {
         let _ = migrate_legacy_dirs(Path::new(&h));
     }
@@ -182,6 +215,19 @@ mod tests {
 
     fn log_text(h: &Path) -> String {
         fs::read_to_string(h.join(LOG)).unwrap_or_default()
+    }
+
+    #[test]
+    fn migration_is_off_for_the_opt_out_and_for_cargo_target_dirs() {
+        use std::ffi::OsStr;
+        let installed = Path::new("/home/u/.local/bin/omarchyvr-app");
+        assert!(!migration_disabled(None, Some(installed)));
+        assert!(!migration_disabled(Some(OsStr::new("")), Some(installed)));
+        assert!(!migration_disabled(Some(OsStr::new("0")), Some(installed)));
+        assert!(migration_disabled(Some(OsStr::new("1")), Some(installed)));
+        assert!(migration_disabled(None, Some(Path::new("/x/rust/target/debug/omarchyvr-app"))));
+        assert!(migration_disabled(None, Some(Path::new("/x/rust/target-clean/release/omarchyvrd"))));
+        assert!(migration_disabled(None, Some(Path::new("/x/target/debug/deps/e2e-abc"))));
     }
 
     #[test]
