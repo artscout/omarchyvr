@@ -498,8 +498,9 @@ pub struct ShowState {
     pub limit: u8,
     /// Shown even without an app (work-3: left and right).
     pub pinned: Vec<Slot>,
-    /// Apps of different kinds never share a screen ([`layout_plan`]). Off after "put everything back together"
-    /// (the kinds share the main screen on purpose), on again after "put everything in its own window".
+    /// Apps of different kinds never share a screen ([`layout_plan`]). OFF by default (user rule 2026-10-17: screens
+    /// and apps move only at command time; the app's "Auto-arrange apps" switch turns it on for a session). On after
+    /// "put everything in its own window", off after "put everything back together".
     pub sort: bool,
     /// Hidden by voice ("hide screen 3", "close everything"): off even with apps or the focus on it. The apps on it
     /// stay open. `show` / `more` clear it, `add SLOT` takes that slot out.
@@ -508,7 +509,7 @@ pub struct ShowState {
 
 impl Default for ShowState {
     fn default() -> Self {
-        ShowState { limit: MAX, pinned: Vec::new(), sort: true, hidden: Vec::new() }
+        ShowState { limit: MAX, pinned: Vec::new(), sort: false, hidden: Vec::new() }
     }
 }
 
@@ -520,7 +521,7 @@ impl ShowState {
             match k.trim() {
                 "limit" => s.limit = v.trim().parse::<u8>().ok().filter(|n| (1..=MAX).contains(n)).unwrap_or(MAX),
                 "pinned" => s.pinned = v.split(',').filter_map(Slot::parse).filter(|s| *s != Slot::Main).collect(),
-                "sort" => s.sort = !matches!(v.trim(), "off" | "false" | "0" | "no"),
+                "sort" => s.sort = matches!(v.trim(), "on" | "true" | "1" | "yes"),
                 "hidden" => s.hidden = v.split(',').filter_map(Slot::parse).filter(|s| *s != Slot::Main).collect(),
                 _ => {}
             }
@@ -543,8 +544,8 @@ impl ShowState {
     pub fn for_preset(p: super::preset::Preset) -> ShowState {
         use super::preset::Preset;
         match p {
-            Preset::Cinema | Preset::Work1 => ShowState { limit: 1, pinned: Vec::new(), sort: true, hidden: Vec::new() },
-            Preset::Work3 => ShowState { limit: 3, pinned: vec![Slot::Left, Slot::Right], sort: true, hidden: Vec::new() },
+            Preset::Cinema | Preset::Work1 => ShowState { limit: 1, pinned: Vec::new(), sort: false, hidden: Vec::new() },
+            Preset::Work3 => ShowState { limit: 3, pinned: vec![Slot::Left, Slot::Right], sort: false, hidden: Vec::new() },
             Preset::Assistant => ShowState::default(),
         }
     }
@@ -1495,7 +1496,7 @@ mod tests {
     fn state_file_round_trip_and_events() {
         let s = ShowState { limit: 3, pinned: vec![Slot::Left, Slot::Right], sort: true, hidden: Vec::new() };
         assert_eq!(ShowState::parse(&s.render()), s);
-        assert_eq!(ShowState::parse("limit = 9\npinned = main,up,bogus\n"), ShowState { limit: MAX, pinned: vec![Slot::Up], sort: true, hidden: Vec::new() });
+        assert_eq!(ShowState::parse("limit = 9\npinned = main,up,bogus\n"), ShowState { limit: MAX, pinned: vec![Slot::Up], sort: false, hidden: Vec::new() });
         let d = crate::vr::test_dir("screens-state");
         let p = d.join("omarchyvr-screens.state");
         assert_eq!(read_state(&p), ShowState::default());
@@ -1653,7 +1654,8 @@ mod tests {
         // the sort setting: written, read back, kept by a mode switch
         let off = ShowState { sort: false, ..ShowState::default() };
         assert_eq!(ShowState::parse(&off.render()), off);
-        assert!(ShowState::parse("limit = 1\n").sort, "on by default");
+        assert!(!ShowState::parse("limit = 1\n").sort, "off by default: apps hop screens only on a command");
+        assert!(ShowState::parse("sort = on\n").sort);
         assert!(!off.switch_to(super::super::preset::Preset::Cinema).sort);
         assert_eq!(off.switch_to(super::super::preset::Preset::Cinema).limit, 1);
     }
@@ -1681,7 +1683,15 @@ mod tests {
         let mut h = H(Vec::new(), serde_json::json!([c("0x1", "foot", 2, 0)]).to_string());
         let d = crate::vr::test_dir("screens-layout");
         let st_file = d.join("omarchyvr-screens.state");
-        let st = ShowState::for_preset(super::super::preset::Preset::Cinema);
+        // the default and every preset leave the sorting OFF: no app hops screens by itself
+        assert!(!ShowState::default().sort && !ShowState::for_preset(super::super::preset::Preset::Cinema).sort);
+        let off = ShowState::for_preset(super::super::preset::Preset::Cinema);
+        let mut h0 = H(Vec::new(), serde_json::json!([c("0x1", "foot", 2, 1), c("0x2", "google-chrome", 2, 0)]).to_string());
+        let mut seen0 = Some(layout_plan(&screen_workspaces(&monitors(&mut h0).unwrap()), &parse_windows(&serde_json::json!([c("0x1", "foot", 2, 0)]).to_string()).unwrap(), &Seen::new(), false).1);
+        layout_once(&mut h0, &off, &mut seen0, None, &mut |_| {}).unwrap();
+        assert!(!h0.0.iter().any(|x| x.contains("workspace = \"11\"")), "sort off: chrome stays on the main screen: {:?}", h0.0);
+        // the explicit command ("put everything in its own window") turns the sorting on
+        let st = ShowState { sort: true, ..off };
         write_state(&st_file, &st).unwrap();
         let mut seen = None;
         layout_once(&mut h, &st, &mut seen, Some(&st_file), &mut |_| {}).unwrap();

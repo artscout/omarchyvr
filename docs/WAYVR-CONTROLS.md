@@ -83,3 +83,9 @@ is a setting, 52 deg).
 Default in `omarchyvr desk start` (off with `--no-perf`), and `omarchyvr vr start --perf` for games. Four lines on a 10 cm panel on the back of the RIGHT wrist (the watch's pose mirrored, not grabbable, fades when turned away): `HMD 72/72` (compositor fps vs the 72/90 target), `APP 71/72` (main app: the game, or passthrough in desk mode), `miss N /5s` (late or skipped compositor frames in the last 5 s), `cpu x gpu y` (app CPU ms between xrBeginFrame and xrEndFrame, GPU ms until its fence signals). Green from 95 % of the target, yellow under 95 %, red under 85 % (times: green under 80 % of the frame period, yellow under 100 %, red beyond).
 Data: Monado (`forks/monado`, branch desk, `comp_multi_system.c`) writes `$XDG_RUNTIME_DIR/omarchyvr-perf.stats` every 0.5 s when `PIMAX_PERF_FILE` is set (the launcher sets it); `rust/omarchyvr-perf` (`omarchyvr-perf run`) reads it and drives the WayVR custom panel `perf` over `wayvrctl batch`. Needs the Monado relink (setcap) and WayVR `b26591a`+ (`~/.local/lib/omarchyvr/wayvr/wayvr`).
 Game mode: the launcher starts a second, minimal WayVR (`--openxr --headless`: an XR_EXTX_overlay session with no screens, no watch, no keyboard; config home `~/src/desk-out/wayvr-home-perf`) plus `omarchyvr-perf`; `omarchyvr vr stop` stops them first. Not yet tried with a real game on the headset.
+
+## Pointing does not move the desktop cursor (2026-10-17)
+By default, pointing at a screen (controller or hand) leaves the real desktop cursor alone; it moves when you click,
+press the trigger or grab. App: Desktop page > Next desk start > "Pointing moves the cursor" (`pointing_moves_cursor`
+in `wayvr-desk.conf`, default off). It is written as WayVR `focus_follows_mouse_mode` (the inverse) in
+`conf.d/50-pimax-app.yaml`, and the WayVR fork's own default is now `true` too. Gaze never moves it (Tracking > Eyes).

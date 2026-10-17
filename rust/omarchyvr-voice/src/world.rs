@@ -141,7 +141,7 @@ pub struct ShowRule {
 
 impl Default for ShowRule {
     fn default() -> Self {
-        ShowRule { limit: 6, pinned: Vec::new(), hidden: Vec::new(), sort: true }
+        ShowRule { limit: 6, pinned: Vec::new(), hidden: Vec::new(), sort: false }
     }
 }
 
@@ -1671,7 +1671,7 @@ pub fn snapshot(r: &mut dyn Runner, wayvrctl: &str) -> World {
             "limit" => w.show.limit = v.trim().parse().unwrap_or(6),
             "pinned" => w.show.pinned = nums(v),
             "hidden" => w.show.hidden = nums(v),
-            "sort" => w.show.sort = !matches!(v.trim(), "off" | "false" | "0" | "no"),
+            "sort" => w.show.sort = matches!(v.trim(), "on" | "true" | "1" | "yes"),
             _ => {}
         }
     }

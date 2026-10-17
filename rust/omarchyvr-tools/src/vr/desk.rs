@@ -83,9 +83,10 @@ pub const USAGE: &str = "usage: omarchyvr desk <command> [options]
       (wayvrctl desk-screens); docs/SCREENS.md.
       Desk mode always hides the WayVR keyboard (conf.d/35-desk.yaml: enable_keyboard: false).
       Logs per process in the session dir: monado.log, passthrough.log, wayvr.log, wayvr.stdout (+ voice.log, voicecap.log, voicehud.log).
-  preset NAME [--dry-run]
+  preset NAME [--replace] [--dry-run]
       switch the running desk session to a preset live (no restart): rewrites conf.d/60-preset.yaml, sets the
       passthrough (dim/normal, control socket), starts work-3's app panels if missing, `wayvrctl desk-layout`.
+      Screens already placed stay where they are (only newly shown ones are placed) unless --replace asks to re-place them.
       Used by voice commands (omarchyvr-voice act).
   captions on|off|status
       the live subtitles of the running desk session: off and on flip the flag file omarchyvr-voice reads
@@ -227,6 +228,8 @@ pub struct DeskOptions {
     pub perf: Option<PerfOptions>,
     /// `--preset`: cinema (default) / work-3 / work-1 / assistant, None = `--preset none` (see `preset`).
     pub preset: Option<super::preset::Preset>,
+    /// `desk preset NAME --replace`: the command asks to re-place the screens (default: screens already placed stay).
+    pub replace: bool,
     /// `--screens N`: VR screens (Hyprland outputs), 1 to 4 (see `screens`).
     pub screens: u8,
     /// `omarchyvr` itself (runs the screens watcher).
@@ -338,6 +341,7 @@ pub fn parse_desk(
         ctrltrack_bin,
         perf,
         preset,
+        replace: a.flag("--replace"),
         screens,
         pimax_bin,
     })
@@ -637,7 +641,7 @@ pub fn start(o: &DeskOptions, d: &Deps, sp: &dyn Spawner) -> CliResult {
     if let Some(sd) = &o.sixdof {
         sixdof::start_broker(&vr, sd, d, sp, Duration::from_secs(10))?;
     }
-    prepare_screens(o, d);
+    prepare_screens(o, d, app_wayvr.as_ref().is_some_and(|w| w.auto_arrange));
     let pid_before = session::read_pid(&vr.pid_path());
     if let Err(e) = session::start(&vr, d) {
         // nothing half-started stays behind: a Monado that is still up (no gyro line in time), the broker, the VR
@@ -701,6 +705,7 @@ pub fn start(o: &DeskOptions, d: &Deps, sp: &dyn Spawner) -> CliResult {
             &super::preset::passthrough_socket(d.env),
             &panels,
             vis.as_deref(),
+            true, // the start places the screens once
             false,
             &mut |l| vout!("omarchyvr desk: preset {}: {l}", p.name()),
         );
@@ -722,7 +727,7 @@ pub fn start(o: &DeskOptions, d: &Deps, sp: &dyn Spawner) -> CliResult {
 
 /// The VR screens' outputs, before Monado starts (never while one runs): see `screens`. Never fails the start: the
 /// report (and any error) goes to `<session dir>/screens.txt` and the output; the show state follows the preset.
-fn prepare_screens(o: &DeskOptions, d: &Deps) {
+fn prepare_screens(o: &DeskOptions, d: &Deps, auto_arrange: bool) {
     let running = !d.procs.find_by_comm(&o.vr.service_comm()).is_empty();
     let r = super::screens::prepare(o.screens, &mut super::screens::RealHypr, false, running);
     for l in r.lines() {
@@ -734,7 +739,8 @@ fn prepare_screens(o: &DeskOptions, d: &Deps) {
     }
     let _ = std::fs::create_dir_all(&o.vr.session_dir);
     let _ = std::fs::write(o.vr.session_dir.join(super::screens::REPORT_FILE), r.lines().join("\n") + "\n");
-    let st = o.preset.map(super::screens::ShowState::for_preset).unwrap_or_default();
+    // `sort` (apps hop to their own screen) follows the app's "Auto-arrange apps" switch, default off
+    let st = super::screens::ShowState { sort: auto_arrange, ..o.preset.map(super::screens::ShowState::for_preset).unwrap_or_default() };
     if let Err(e) = super::screens::write_state(&super::screens::state_path(d.env), &st) {
         verr!("omarchyvr desk: WARNING: screens state: {e}");
     }
@@ -868,7 +874,7 @@ pub(crate) fn preset_switch(
             out(&format!("still open on hidden screens: {}", hidden.join(", ")));
         }
     }
-    super::preset::apply_live(p, &o.wayvrctl_bin, pt_sock, panels, vis.as_deref(), o.vr.dry_run, out).map_err(CliError::new)?;
+    super::preset::apply_live(p, &o.wayvrctl_bin, pt_sock, panels, vis.as_deref(), o.replace, o.vr.dry_run, out).map_err(CliError::new)?;
     out(&format!("preset {}", p.name()));
     Ok(())
 }

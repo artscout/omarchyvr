@@ -323,3 +323,11 @@ Tests never reach the real compositor:
   - `rust/omarchyvr-gui-core/src/screens.rs` and `rust/omarchyvr-app/src/pages/screens.rs` (app);
   - WayVR `desk_screens`, `screen_place`, `screen_nudge` in `wayvr/src/ipc/events.rs`, the layout maths in
     `wayvr/src/windowing/viewlayout.rs`, Reset screens in `windowing/manager.rs` (`reset_screens`).
+
+## Apps do not hop screens by themselves (2026-10-17)
+The default layout never overlaps and nothing is re-sorted while you work: the watcher's `sort` is OFF at every
+session start (`sort = off` in the state file) unless the app switch "Auto-arrange apps" (Desktop page, Next desk
+start; `auto_arrange` in `wayvr-desk.conf`, default off) is on. Apps change screens only on an explicit command ("move
+left", "put everything in its own window", which turns the sorting on until "put everything back together"). Modes
+(`desk preset NAME`, voice "cinema") show and hide screens but do not re-place screens that are already placed; only
+`desk preset NAME --replace` (and the start) re-places them.
