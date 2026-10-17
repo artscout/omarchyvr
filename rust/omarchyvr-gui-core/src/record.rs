@@ -42,6 +42,11 @@ pub fn clock(secs: f64) -> String {
     format!("{}:{:02}", s / 60, s % 60)
 }
 
+/// Is this recorder error the GPU safety gate refusing (the page then offers the System page)?
+pub fn gate_blocked(note: &str) -> bool {
+    note.starts_with(omarchyvr_record::run::GATE_BLOCK_PREFIX)
+}
+
 /// The base name of a path.
 pub fn base_name(p: &str) -> String {
     p.rsplit('/').next().unwrap_or(p).to_string()

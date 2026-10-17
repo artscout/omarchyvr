@@ -303,9 +303,15 @@ impl Files {
             w.desired.ai_server = on;
         }
         let disk = Gate::load(&self.gate_path(), &w.gate.boot_id);
-        if disk.level > w.gate.level {
+        // the launcher found GPU-fault evidence at the same level as our kill-only latch: strict again
+        let upgrade = disk.fault && disk.level == GateLevel::NeedsReboot && w.gate.kill_only();
+        if disk.level > w.gate.level || upgrade {
             let why = disk.evidence.last().cloned().unwrap_or_else(|| "latched by the launcher".into());
-            w.raise_gate(disk.level, &why);
+            if disk.kill_only() {
+                w.raise_gate_kill(disk.level, &why);
+            } else {
+                w.raise_gate(disk.level, &why);
+            }
         }
         if startup {
             if disk.acked && disk.level == GateLevel::Caution && w.gate.level == GateLevel::Caution {

@@ -65,10 +65,29 @@ impl Pacer {
     }
 }
 
-/// The GPU gate as omarchyvrd latched it (ok if omarchyvrd never wrote one).
-pub fn gate_level(r: &Roots) -> GateLevel {
+/// The GPU gate as omarchyvrd latched it (fresh and ok if omarchyvrd never wrote one).
+pub fn load_gate(r: &Roots) -> omarchyvr_components::gpu::Gate {
     let boot = omarchyvr_components::gpu::boot_id(&r.proc_);
-    omarchyvr_components::gpu::Gate::load(&r.omarchyvrd_dir().join("gpu-gate"), &boot).effective()
+    omarchyvr_components::gpu::Gate::load(&r.omarchyvrd_dir().join("gpu-gate"), &boot)
+}
+
+/// The effective GPU gate level.
+pub fn gate_level(r: &Roots) -> GateLevel {
+    load_gate(r).effective()
+}
+
+/// The refusal text starts with this; the app shows its "Open System page" button for such a note.
+pub const GATE_BLOCK_PREFIX: &str = "Recording is off: the GPU safety check wants a reboot";
+
+/// Why recording is refused at needs-reboot, in plain words (the newest evidence, and the way forward).
+pub fn gate_block_message(g: &omarchyvr_components::gpu::Gate) -> String {
+    let why: String = g.evidence.last().map(|e| e.trim().chars().take(140).collect()).unwrap_or_else(|| "no detail".into());
+    let way = if g.kill_only() {
+        "Reboot the PC, or acknowledge it on the System page once a VR session has run cleanly for 5 minutes."
+    } else {
+        "Reboot the PC: the GPU logged an error this boot."
+    };
+    format!("{GATE_BLOCK_PREFIX} ({why}). {way}")
 }
 
 /// Is monado-service running (pid file + comm)?
@@ -160,9 +179,14 @@ pub fn run(s: &Settings, r: &Roots) -> i32 {
     if std::env::var_os("PIMAX_RECORD_NO_MONADO_CHECK").is_none() && !monado_running(r) {
         return cx.fail("no VR session (monado-service is not running)");
     }
-    let gate = gate_level(r);
+    let gate_state = load_gate(r);
+    let gate = gate_state.effective();
     if gate == GateLevel::NeedsReboot {
-        return cx.fail("the GPU safety gate says reboot: not recording (pimax health)");
+        return cx.fail(&gate_block_message(&gate_state));
+    }
+    if gate == GateLevel::Caution {
+        // today's behaviour: NVENC is skipped at caution, the CPU encoder records; say what unlocks the GPU encoder
+        status::event(&session_dir, "notice", "The GPU safety check is at caution and not acknowledged: recording on the CPU. Acknowledge it on the System page to use the GPU encoder.", false);
     }
     let ffmpeg = encode::ffmpeg_path();
     let Some(avail) = Available::probe(&ffmpeg) else {
@@ -391,6 +415,20 @@ pub fn run(s: &Settings, r: &Roots) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_reboot_refusal_is_plain_and_says_the_way_forward() {
+        use omarchyvr_components::gpu::Gate;
+        let mut g = Gate::new("b");
+        g.raise_kill(GateLevel::NeedsReboot, "monado-service was SIGKILLed (pid 1)");
+        let m = gate_block_message(&g);
+        assert!(m.starts_with(GATE_BLOCK_PREFIX) && m.contains("SIGKILLed") && m.contains("acknowledge it on the System page"), "{m}");
+        assert!(!m.contains("pimax health"));
+        let mut f = Gate::new("b");
+        f.raise(GateLevel::NeedsReboot, "kernel: Xid 79");
+        let m = gate_block_message(&f);
+        assert!(m.contains("Xid 79") && !m.contains("acknowledge"), "{m}");
+    }
 
     const MS: u64 = 1_000_000;
 

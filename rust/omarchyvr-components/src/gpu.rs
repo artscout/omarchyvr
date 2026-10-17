@@ -9,6 +9,13 @@
 use crate::model::GateLevel;
 use std::path::Path;
 
+/// A needs-reboot raised ONLY by process-kill evidence (Monado SIGKILLed, or still alive after its stop grace) is
+/// lowered to caution after Monado has run this long, healthy and without new GPU-fault evidence (seconds).
+pub const CLEAN_SESSION_S: f64 = 300.0;
+
+/// Identity of one Monado process (pid, start ticks): a restart is a new key.
+pub type MonadoKey = (u32, u64);
+
 /// A classified line.
 #[derive(Debug, Clone, PartialEq)]
 pub enum GpuEvent {
@@ -129,11 +136,73 @@ pub struct Gate {
     pub evidence: Vec<String>,
     /// The user acknowledged a caution (it is shown as ok but the evidence stays).
     pub acked: bool,
+    /// Any GPU-fault evidence was seen (Xid, display engine, stuck layer, D state, acquire failure ...). False: the
+    /// level comes from process kills only. Files without a `cause=` key load as true (strict).
+    pub fault: bool,
+    /// Runtime only: the Monado process the clean window follows, and when the window began.
+    clean: Option<(MonadoKey, f64)>,
+    /// Runtime only: the last Monado seen, and the one that was alive when a kill was latched (it never counts).
+    last_key: Option<MonadoKey>,
+    skip_key: Option<MonadoKey>,
 }
 
 impl Gate {
     pub fn new(boot_id: &str) -> Gate {
         Gate { boot_id: boot_id.into(), ..Default::default() }
+    }
+
+    /// The cause as written to the file.
+    pub fn cause(&self) -> &'static str {
+        if self.fault {
+            "gpu-fault"
+        } else {
+            "process-kill"
+        }
+    }
+
+    /// Needs-reboot from process kills alone (the only level a clean session can release).
+    pub fn kill_only(&self) -> bool {
+        self.level == GateLevel::NeedsReboot && !self.fault
+    }
+
+    /// Raise by process-kill evidence (Monado SIGKILLed / alive after its stop grace): not GPU-fault evidence.
+    pub fn raise_kill(&mut self, level: GateLevel, evidence: &str) -> bool {
+        let fault = self.fault;
+        let up = self.raise(level, evidence);
+        self.fault = fault;
+        self.skip_key = self.last_key;
+        up
+    }
+
+    /// Follow Monado for the evidence-based release. `monado`: the running, healthy Monado (None: down or unwell).
+    /// A restart or an unhealthy moment restarts the window. Returns true when the level was lowered.
+    pub fn clean_tick(&mut self, now: f64, monado: Option<MonadoKey>) -> bool {
+        let Some(key) = monado else {
+            self.clean = None;
+            return false;
+        };
+        self.last_key = Some(key);
+        if self.skip_key == Some(key) {
+            return false;
+        }
+        let since = match self.clean {
+            Some((k, t)) if k == key => t,
+            _ => {
+                self.clean = Some((key, now));
+                now
+            }
+        };
+        if self.kill_only() && now - since >= CLEAN_SESSION_S {
+            self.level = GateLevel::Caution;
+            self.acked = false;
+            if self.evidence.len() >= 8 {
+                self.evidence.remove(0);
+            }
+            self.evidence.push(format!("a clean {}-minute session after the kill: lowered to caution", (CLEAN_SESSION_S / 60.0).round() as u32));
+            self.clean = None;
+            return true;
+        }
+        false
     }
 
     /// The effective level (an acknowledged caution reads as ok).
@@ -151,6 +220,8 @@ impl Gate {
         if level == GateLevel::Ok {
             return false;
         }
+        self.fault = true;
+        self.clean = None;
         if self.evidence.len() >= 8 {
             self.evidence.remove(0);
         }
@@ -188,11 +259,12 @@ impl Gate {
     pub fn to_text(&self) -> String {
         // the format of omarchyvr-tools vr/gate.rs (boot_id, level, why) plus omarchyvrd's own keys (acked, evidence)
         let mut s = format!(
-            "boot_id={}\nlevel={}\nwhy={}\nacked={}\n",
+            "boot_id={}\nlevel={}\nwhy={}\nacked={}\ncause={}\n",
             self.boot_id,
             self.level.name(),
             self.evidence.last().map(|e| e.replace('\n', " ")).unwrap_or_default(),
-            self.acked
+            self.acked,
+            self.cause()
         );
         for e in &self.evidence {
             s.push_str("evidence=");
@@ -207,11 +279,13 @@ impl Gate {
         let mut g = Gate::new(current_boot);
         let mut boot = String::new();
         let mut why = None;
+        g.fault = true; // no cause= key: unknown, strict
         for l in text.lines() {
             match l.split_once('=') {
                 Some(("boot_id", v)) => boot = v.to_string(),
                 Some(("level", v)) => g.level = GateLevel::parse(v).unwrap_or_default(),
                 Some(("acked", v)) => g.acked = v == "true",
+                Some(("cause", v)) => g.fault = v.trim() != "process-kill",
                 Some(("evidence", v)) => g.evidence.push(v.to_string()),
                 Some(("why", v)) if !v.is_empty() => why = Some(v.to_string()),
                 _ => {}
@@ -219,6 +293,9 @@ impl Gate {
         }
         if boot != current_boot || current_boot.is_empty() {
             return Gate::new(current_boot);
+        }
+        if g.level == GateLevel::Ok {
+            g.fault = false;
         }
         // written by the launcher (no evidence= lines): its why= is the evidence
         if g.evidence.is_empty() {
@@ -305,5 +382,102 @@ mod tests {
         g.save(&p).unwrap();
         assert_eq!(Gate::load(&p, "b1"), g);
         let _ = std::fs::remove_dir_all(&d);
+    }
+
+    const KILL: &str = "monado-service was SIGKILLed (pid 43968)";
+    const M1: Option<MonadoKey> = Some((100, 1));
+    const M2: Option<MonadoKey> = Some((200, 2));
+
+    fn killed() -> Gate {
+        let mut g = Gate::new("b1");
+        assert!(g.raise_kill(GateLevel::NeedsReboot, KILL));
+        assert!(g.kill_only());
+        g
+    }
+
+    #[test]
+    fn kill_only_is_released_by_a_clean_session_and_then_ackable() {
+        let mut g = killed();
+        assert!(!g.clean_tick(1000.0, M1));
+        assert!(!g.clean_tick(1000.0 + CLEAN_SESSION_S - 1.0, M1), "under 5 minutes: unchanged");
+        assert_eq!(g.level, GateLevel::NeedsReboot);
+        assert!(g.clean_tick(1000.0 + CLEAN_SESSION_S, M1));
+        assert_eq!(g.level, GateLevel::Caution);
+        assert!(!g.acked);
+        assert!(g.evidence.last().unwrap().contains("lowered to caution"));
+        assert_eq!(g.effective(), GateLevel::Caution);
+        assert!(g.allows_gpu_start(true, false));
+        assert!(g.ack());
+        assert_eq!(g.effective(), GateLevel::Ok);
+        let t = g.to_text();
+        assert!(t.contains("cause=process-kill"));
+        assert_eq!(Gate::from_text(&t, "b1").level, GateLevel::Caution);
+    }
+
+    #[test]
+    fn kill_plus_a_gpu_fault_stays_needs_reboot() {
+        let mut g = killed();
+        g.raise(GateLevel::NeedsReboot, FELL);
+        assert!(!g.kill_only());
+        g.clean_tick(0.0, M1);
+        assert!(!g.clean_tick(10_000.0, M1));
+        assert_eq!(g.level, GateLevel::NeedsReboot);
+        // the fault before the kill counts too
+        let mut g = Gate::new("b1");
+        g.raise(GateLevel::NeedsReboot, FELL);
+        g.raise_kill(GateLevel::NeedsReboot, KILL);
+        g.clean_tick(0.0, M1);
+        assert!(!g.clean_tick(10_000.0, M1));
+    }
+
+    #[test]
+    fn a_monado_restart_or_an_unwell_monado_resets_the_clean_timer() {
+        let mut g = killed();
+        g.clean_tick(0.0, M1);
+        g.clean_tick(250.0, M1);
+        assert!(!g.clean_tick(290.0, M2), "a new process starts a new window");
+        assert!(!g.clean_tick(500.0, M2));
+        assert!(g.clean_tick(290.0 + CLEAN_SESSION_S, M2));
+        let mut g = killed();
+        g.clean_tick(0.0, M1);
+        g.clean_tick(200.0, None);
+        assert!(!g.clean_tick(350.0, M1), "down in between");
+        assert!(g.clean_tick(350.0 + CLEAN_SESSION_S, M1));
+    }
+
+    #[test]
+    fn the_monado_alive_at_the_kill_does_not_count() {
+        let mut g = Gate::new("b1");
+        g.clean_tick(0.0, M1);
+        g.raise_kill(GateLevel::NeedsReboot, "monado-service hung after SIGINT");
+        assert!(!g.clean_tick(10_000.0, M1));
+        assert!(!g.clean_tick(10_000.0, M2));
+        assert!(g.clean_tick(10_000.0 + CLEAN_SESSION_S, M2));
+    }
+
+    #[test]
+    fn an_old_file_without_the_cause_key_is_strict() {
+        let old = "boot_id=b1\nlevel=needs-reboot\nwhy=monado-service was SIGKILLed (pid 43968)\nacked=false\nevidence=monado-service was SIGKILLed (pid 43968)\n";
+        let mut g = Gate::from_text(old, "b1");
+        assert!(g.fault && !g.kill_only());
+        g.clean_tick(0.0, M1);
+        assert!(!g.clean_tick(10_000.0, M1));
+        assert_eq!(g.level, GateLevel::NeedsReboot);
+    }
+
+    #[test]
+    fn a_new_fault_after_the_release_raises_again() {
+        let mut g = killed();
+        g.clean_tick(0.0, M1);
+        assert!(g.clean_tick(CLEAN_SESSION_S, M1));
+        assert!(g.raise(GateLevel::NeedsReboot, FELL));
+        assert_eq!(g.effective(), GateLevel::NeedsReboot);
+        assert!(!g.kill_only());
+        assert!(!g.ack());
+        // a fault resets the window of a later kill-only level as well
+        let mut g = killed();
+        g.clean_tick(0.0, M1);
+        g.raise(GateLevel::Caution, WAYVR);
+        assert!(!g.kill_only(), "any fault evidence makes it strict");
     }
 }

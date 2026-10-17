@@ -130,7 +130,7 @@ fn evidence(ui: &mut Ui, s: &Snapshot) {
 fn reboot_banner(ui: &mut Ui, app: &mut PimaxApp, s: &Snapshot, live: bool) {
     banner(ui, theme::pal(ui).fail, |ui| {
         ui.label(RichText::new(format!("{} Reboot needed", icon::WARNING)).strong().size(16.0).color(theme::pal(ui).fail));
-        note(ui, "The GPU logged errors this boot (an Xid, or the driver does not match the kernel module): nothing starts automatically until a reboot. The app never reboots for you.");
+        note(ui, "The GPU logged errors this boot (an Xid, or the driver does not match the kernel module): nothing starts automatically until a reboot. The app never reboots for you. If the only cause was the VR runtime being killed or hung (no GPU error), it drops to a warning by itself once a VR session has run cleanly for 5 minutes, and then you can acknowledge it here.");
         evidence(ui, s);
         let r = ui.add_enabled(live, egui::Button::new("Start a session anyway, once..."));
         if r.on_hover_text("set session=on with force: passes the reboot gate once (confirmed first)").clicked() {
@@ -142,7 +142,7 @@ fn reboot_banner(ui: &mut Ui, app: &mut PimaxApp, s: &Snapshot, live: bool) {
 fn gpu_banner(ui: &mut Ui, app: &mut PimaxApp, s: &Snapshot, live: bool) {
     banner(ui, theme::pal(ui).warn, |ui| {
         ui.label(RichText::new(format!("{} GPU warning", icon::WARNING)).strong().size(16.0).color(theme::pal(ui).warn));
-        note(ui, "The GPU logged recoverable errors this boot (for example a WayVR Xid 31). Sessions start again once you acknowledge them; a reboot clears them.");
+        note(ui, "The GPU logged recoverable errors this boot (for example a WayVR Xid 31, or a VR runtime that was killed and then ran cleanly for 5 minutes). Sessions start again, and recording can use the GPU encoder, once you acknowledge them; a reboot clears them.");
         evidence(ui, s);
         let r = widgets::primary(ui, "Acknowledge", live);
         let r = if live { r.on_hover_text("ack-gpu (confirmed first)") } else { r.on_disabled_hover_text("Needs omarchyvrd running") };
