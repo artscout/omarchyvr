@@ -139,6 +139,15 @@ pub fn show(ui: &mut Ui, app: &mut PimaxApp) {
         if !app.core.ai.saved.is_empty() {
             ui.label(RichText::new(&app.core.ai.saved).size(11.5).color(p.faint));
         }
+        // the questions of the first Work press (Lara, the brain, speech), to change the answers
+        ui.horizontal_wrapped(|ui| {
+            if widgets::ghost(ui, icon::SLIDERS, "Work questions", !app.core.busy()).on_hover_text("The voice assistant (Lara and who answers) and speech to text, as the first Work asked them; downloads what a new answer needs").clicked() {
+                app.core.open_work_setup(false);
+            }
+            if !app.core.work_setup_done() {
+                ui.label(RichText::new("not answered yet: the next Work asks them").size(11.5).color(p.dim));
+            }
+        });
     });
     if !app.core.ai.loaded {
         card(ui, |ui| {

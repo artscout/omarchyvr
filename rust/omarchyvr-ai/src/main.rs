@@ -28,9 +28,20 @@ two stages (ai.toml voice_local = \"two-stage\"; docs/AI.md section 16):
   omarchyvr-ai down                    stop the router, the model and the VRAM watch
   omarchyvr-ai serve --slot router [--router ID] [--foreground]
   omarchyvr-ai watch                   (started by `up`) shrink the model off the GPU when a game needs the memory
-  omarchyvr-ai tune-lara               tune Laya to the voice commands (Lara; about an hour, processor only)";
+  omarchyvr-ai tune-lara               tune Laya to the voice commands (Lara; about an hour, processor only)
+
+Play keeps the graphics card for the game: `up` and `serve` refuse while a Play session (Monado started by
+`omarchyvr vr start`, or SteamVR) runs; the local AI starts with Work. --force overrides (tests, by hand).
+
+  omarchyvr-ai get ITEM...             download for the app's Work setup (docs/WORK-FIRST-RUN.md), reusing what is on disk
+      (size + SHA-256; Lara: its pinned versions); ITEM: runtime | lara | qwen3.5-4b | qwen3.5-2b | qwen3.5-9b | qwen3.5-0.8b.
+      One line per event on stdout: `get plan ID BYTES LABEL` (0 = already here), `get progress ID BYTES`, `get note TEXT`,
+      `get done ID`, `get error ID TEXT`, `get cancelled ID`, `get all done`. SIGTERM / SIGINT cancel: the part already
+      downloaded is kept for the next try (exit code 130).";
 
 fn main() {
+    // started from a WayVR button (through omarchyvr-voice ai-mode): the user's own XDG directories (pid files, models)
+    omarchyvr_config::paths::restore_user_xdg();
     let args: Vec<String> = std::env::args().skip(1).collect();
     let r = match args.first().map(String::as_str) {
         Some("install") => cmd_install(&args[1..]),
@@ -40,6 +51,7 @@ fn main() {
         Some("test") => cmd_test(&args[1..]),
         Some("up") => cmd_up(&args[1..]),
         Some("down") => cmd_down(),
+        Some("get") => cmd_get(&args[1..]),
         Some("fit") => cmd_fit(&args[1..]),
         Some("watch") => twostage::watch(&Dirs::home()),
         Some("tune-lara") => {
@@ -158,9 +170,11 @@ fn cmd_serve(args: &[String]) -> Result<(), String> {
                 }
             }
             "--router" => router = Some(val(&mut it, a)?.to_string()),
+            "--force" => {}
             x => return Err(format!("serve: unknown option {x}")),
         }
     }
+    play_guard(args)?;
     let dirs = Dirs::home();
     if slot == Slot::Router {
         let id = router.unwrap_or_else(|| omarchyvr_config::ai::AiConfig::load().map(|c| c.two_stage().router).unwrap_or_else(|_| "lara".into()));
@@ -246,7 +260,110 @@ fn cmd_up(args: &[String]) -> Result<(), String> {
         None => 120,
     };
     let cfg = omarchyvr_config::ai::AiConfig::load()?;
+    // nothing to load: `up` stops what runs (allowed in Play too: it only frees memory)
+    if cfg.ai_servers_wanted() {
+        play_guard(args)?;
+    }
     twostage::up(&cfg, &Dirs::home(), cpu, Duration::from_secs(wait), &mut |l| println!("{l}"))
+}
+
+/// Play keeps the graphics card for the game: no AI server starts while a Play session runs (`--force` overrides).
+fn play_guard(args: &[String]) -> Result<(), String> {
+    if args.iter().any(|a| a == "--force") {
+        return Ok(());
+    }
+    match twostage::play_running(std::path::Path::new("/proc"), &twostage::session_dir()) {
+        Some(why) => Err(format!("{why}: the local AI is not started next to a game (it would take video memory from it); it starts with Work")),
+        None => Ok(()),
+    }
+}
+
+/// SIGTERM / SIGINT during `get`: cancel the running download (its part stays for the next try).
+static CANCEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+extern "C" fn on_cancel(_: libc::c_int) {
+    CANCEL.store(true, std::sync::atomic::Ordering::SeqCst);
+}
+
+fn cancelled() -> bool {
+    CANCEL.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+/// `omarchyvr-ai get ITEM...` (see the usage): the downloads of the app's Work setup, one event per line.
+fn cmd_get(args: &[String]) -> Result<(), String> {
+    use std::io::Write;
+    // SAFETY: signal(2) with a handler that only stores to an atomic.
+    unsafe {
+        libc::signal(libc::SIGTERM, on_cancel as extern "C" fn(libc::c_int) as libc::sighandler_t);
+        libc::signal(libc::SIGINT, on_cancel as extern "C" fn(libc::c_int) as libc::sighandler_t);
+    }
+    let items: Vec<&str> = args.iter().map(String::as_str).filter(|a| !a.starts_with("--")).collect();
+    if items.is_empty() {
+        return Err("get: name what to download (runtime, lara, qwen3.5-4b, ...)".into());
+    }
+    let dirs = Dirs::home();
+    let out = |l: String| {
+        println!("{l}");
+        let _ = std::io::stdout().flush();
+    };
+    // the plan first, so the app can show every item with its size before anything starts
+    for it in &items {
+        let (bytes, label) = match *it {
+            "runtime" => (if installed_server(&dirs).is_some() { 0 } else { RUNTIME_VULKAN.size }, RUNTIME_VULKAN.label.to_string()),
+            "lara" => (if twostage::laya_installed(&dirs) { 0 } else { twostage::LAYA_DISK_MIB << 20 }, "Lara, the voice command router (Laya 421M, Apache-2.0, processor only)".to_string()),
+            id => {
+                let a = model_asset(id).ok_or_else(|| format!("get: {id} is not something this tool downloads"))?;
+                (if twostage::model_installed(&dirs, id) { 0 } else { a.size }, a.label.to_string())
+            }
+        };
+        out(format!("get plan {it} {bytes} {label}"));
+    }
+    for it in &items {
+        let mut last = std::time::Instant::now();
+        let mut tick = |bytes: u64| -> bool {
+            if cancelled() {
+                return false;
+            }
+            if last.elapsed() >= Duration::from_millis(500) {
+                last = std::time::Instant::now();
+                out(format!("get progress {it} {bytes}"));
+            }
+            true
+        };
+        let mut note = |l: &str| out(format!("get note {}", l.replace('\n', " ")));
+        let r: Result<(), String> = match *it {
+            "runtime" if installed_server(&dirs).is_some() => {
+                note("llama.cpp runtime: already on this PC");
+                Ok(())
+            }
+            "runtime" => fetch_with(&RUNTIME_VULKAN, &dirs.downloads().join(RUNTIME_VULKAN.file), &mut note, Some(&mut tick)).and_then(|tb| unpack_runtime(&RUNTIME_VULKAN, &tb, &dirs).map(|_| ())),
+            "lara" => {
+                let r = twostage::install_laya_with(&dirs, &mut note, Some(&mut tick));
+                if r.is_ok() && !twostage::lara_installed(&dirs) {
+                    // Laya as published answers at once; the tuning to the voice commands runs in the background
+                    twostage::start_tuning(&dirs, &mut note);
+                }
+                r
+            }
+            id => {
+                let a = model_asset(id).ok_or_else(|| format!("{id}: no download known"))?;
+                fetch_with(&a, &dirs.model_path(&a), &mut note, Some(&mut tick)).map(|_| ())
+            }
+        };
+        match r {
+            Ok(()) => out(format!("get done {it}")),
+            Err(e) if e == CANCELLED || cancelled() => {
+                out(format!("get cancelled {it}"));
+                std::process::exit(130);
+            }
+            Err(e) => {
+                out(format!("get error {it} {}", e.replace('\n', " ")));
+                return Err(e);
+            }
+        }
+    }
+    out("get all done".into());
+    Ok(())
 }
 
 fn cmd_down() -> Result<(), String> {

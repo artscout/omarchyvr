@@ -87,6 +87,8 @@ fn auto(a: Args) -> CliResult {
 }
 
 fn main() {
+    // run from a WayVR button (Exit Work): the user's own XDG directories, not WayVR's isolated ones
+    omarchyvr_config::paths::restore_user_xdg();
     omarchyvr_config::migrate_home(); // one time: ~/.config/omarchyvr etc. -> omarchyvr
     if let Err(e) = run() {
         if !e.msg.is_empty() {

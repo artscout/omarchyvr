@@ -54,9 +54,10 @@ WHISPER_MODEL_SOURCE=assumed
 WHISPER_MODEL_SHA256=394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2
 
 # --- local AI (llama.cpp runtime, Qwen models, Lara router) --------------------------------------------------------
-# Pinned inside rust/pimax-ai (omarchyvr-ai): `omarchyvr-ai install --two-stage --router lara` downloads and checks
-# them (URLs and sha256 in its lib.rs / twostage.rs). Lara's own weights are TRAINED on this PC (`tune-lara`): reused
-# when present, never downloaded.
+# Pinned inside rust/omarchyvr-ai: `omarchyvr-ai get` (the app's Work first run, docs/WORK-FIRST-RUN.md: only what the
+# user's answer needs) and `omarchyvr-ai install --two-stage --router lara` (install.sh --ai-models) download and check
+# them (URLs and sha256 in its lib.rs / twostage.rs). Not downloaded by install.sh by default. Lara's own weights are
+# TRAINED on this PC (`tune-lara`): reused when present, never downloaded.
 
 # --- Mercury hand models (NO licence: personal use only, never redistributed; fetched only with --hand-models) -----
 HANDMODELS_URL=https://gitlab.freedesktop.org/monado/utilities/hand-tracking-models.git

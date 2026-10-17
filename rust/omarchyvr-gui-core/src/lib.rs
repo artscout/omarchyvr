@@ -79,5 +79,7 @@ pub mod system;
 pub mod term;
 pub mod tools;
 pub mod upload;
+pub mod vram;
 pub mod wayvr;
 pub mod worker;
+pub mod worksetup;

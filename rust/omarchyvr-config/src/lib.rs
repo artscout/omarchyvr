@@ -22,6 +22,7 @@ pub mod migrate;
 pub mod paths;
 pub mod setup;
 pub mod store;
+pub mod work_setup;
 
 pub use migrate::{isolate_command, migration_disabled, migrate_home, migrate_legacy_dirs};
 pub use diff::{diff_lines, DiffLine};

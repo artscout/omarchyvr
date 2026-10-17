@@ -16,6 +16,11 @@ omarchyvr desk: would start, in this order:
        XDG_DATA_HOME=$ROOT/home/.local/share/omarchyvr/wayvr-home/data
        XDG_STATE_HOME=$ROOT/home/.local/share/omarchyvr/wayvr-home/state
        RUST_LOG=info
+       OMARCHYVR_USER_XDG_CONFIG_HOME=
+       OMARCHYVR_USER_XDG_DATA_HOME=
+       OMARCHYVR_USER_XDG_STATE_HOME=
+       OMARCHYVR_USER_XDG_CACHE_HOME=
+       PATH=$ROOT/home/.local/bin:$ROOT/bin:/usr/bin:/bin
   4. $ROOT/home/.local/bin/omarchyvr desk screens watch --wayvrctl-bin $ROOT/home/.local/lib/omarchyvr/wayvr/wayvrctl  (log $ROOT/session/screens.log)
   5. $ROOT/home/.local/bin/omarchyvr-perf run --file $ROOT/run/omarchyvr-perf.stats --wayvrctl $ROOT/home/.local/lib/omarchyvr/wayvr/wayvrctl  (log $ROOT/session/perf.log)
 omarchyvr vr: preflight

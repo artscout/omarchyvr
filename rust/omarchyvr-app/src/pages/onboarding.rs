@@ -261,7 +261,7 @@ fn stopped(ui: &mut Ui, app: &mut PimaxApp, s: &AutoSetup, stop: &Stop) {
     });
 }
 
-/// The Ready screen: Play, the optional steps in the headset, "Run setup again".
+/// The Ready screen: Play and Work, the optional steps in the headset, "Run setup again".
 fn ready(ui: &mut Ui, app: &mut PimaxApp, s: &AutoSetup) {
     let after = s.kind == RunKind::AfterReboot && s.phase == Phase::Ready;
     card(ui, |ui| {
@@ -271,11 +271,26 @@ fn ready(ui: &mut Ui, app: &mut PimaxApp, s: &AutoSetup) {
         });
         note(ui, if after { "Checked after the restart: the patched driver is loaded, the headset display mode is in place and VR has realtime priority." } else { "Everything is set up and checked." });
         ui.add_space(8.0);
-        let w = ui.available_width().min(420.0);
-        if widgets::action(ui, icon::PLAY, "Play", Kind::Primary, !app.core.busy(), w).on_hover_text("Starts VR with SteamVR and the headset").clicked() {
-            app.core.page = Page::Desk;
-            app.core.play();
-        }
+        let half = ((ui.available_width() - 10.0) / 2.0).max(120.0);
+        let busy = app.core.busy();
+        let first = if app.core.work_setup_done() { "" } else { " The first time, two questions come first (voice assistant, speech)." };
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 10.0;
+            if super::home::big_choice(ui, icon::GAME_CONTROLLER, "Play", "Games: SteamVR and OpenXR", !busy, half)
+                .on_hover_text("Starts VR for games with SteamVR and the headset: the whole graphics card is the game's")
+                .clicked()
+            {
+                app.core.page = Page::Desk;
+                app.core.play();
+            }
+            if super::home::big_choice(ui, icon::DESKTOP, "Work", "Desk: screens, voice, AI", !busy, half)
+                .on_hover_text(format!("The WayVR desk: screens, passthrough, voice, the AI.{first}"))
+                .clicked()
+            {
+                app.core.page = Page::Desk;
+                app.core.work();
+            }
+        });
         if !s.checks.is_empty() {
             ui.add_space(4.0);
             details(ui, s, &s.checks.iter().map(|c| format!("ok  {}", c.title)).collect::<Vec<_>>());

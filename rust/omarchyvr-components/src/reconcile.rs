@@ -138,7 +138,17 @@ pub fn reconcile(w: &World) -> Plan {
         }
     }
 
-    // ai.server: Work sessions only (its rule); planned here like before, so a session switch to Play stops it
+    // Play keeps the graphics card for the game: Work's parts still running in a game session are stopped (the
+    // launcher stops them before Play starts; this catches anything that came up afterwards, e.g. a toggle)
+    if mode == Mode::Vr {
+        for id in crate::graph::stop_order() {
+            if crate::spec::WORK_ONLY.contains(&id) && up(id) && !w.c(id).stopping && !p.steps.iter().any(|s| s.id == id) {
+                p.steps.push(Step::new(id, Act::Stop, Level::L2, "Play: the graphics card is for the game"));
+            }
+        }
+    }
+
+    // ai.server: Work sessions only (its rule); planned here like before (a start only while wanted)
     plan_process(w, &h, "ai.server", &mut p);
 
     if !w.intent.on() {

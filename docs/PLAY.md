@@ -16,11 +16,18 @@ omarchyvrd; their own switches, shared by both sides), **Play** and **Work**. Ho
 
 - **Play**: games, like SteamVR. `omarchyvr vr start` with the base switches (6DoF, controllers, hands, anchor, readout,
   refresh rate) for Steam (xrizer) and OpenXR games; when the auto mode daemon runs it is told
-  `set-mode game --runtime monado|steamvr`. It never starts WayVR or the desk AI. The VR home/launcher it will also
-  start is still to be decided.
+  `set-mode game --runtime monado|steamvr`. It never starts WayVR or the desk AI, and before it starts anything it
+  stops (by pid) what a crashed Work left and every local AI process, so the game has the whole graphics card; Home
+  then shows what it stopped and, while Play runs, what uses the graphics card (docs/GAME-MODE.md,
+  docs/PLAY-WORK-AUDIT.md). Eye tracking in Play only with the switch "Eye tracking in games" (off by default). The VR
+  home/launcher it will also start is still to be decided.
 - **Work**: the WayVR desk on top of the base: `omarchyvr desk start` with the base + desk switches (screens,
-  passthrough, voice, AI, captions, presets, eye tracking).
-- While our session runs, the button of the running side is **Stop Play** / **Stop Work** and the other is greyed out.
+  passthrough, voice, AI, captions, presets, eye tracking). The first Work press asks the Work questions first (voice
+  assistant, Lara, speech; docs/WORK-FIRST-RUN.md) and starts Work once they are answered; later presses start at once.
+  In the headset, the left menu button opens the Work menu with **Exit Work** (docs/WAYVR-CONTROLS.md).
+- While our session runs, the button of the running side is **Stop Play** / **Stop Work** and the other one is
+  **Switch to Work** / **Switch to Play**: one job that stops the running side completely (Work's stop takes the
+  local AI, voice and the VR screens with it), waits until Monado is gone, then starts the other side.
 - Same gate as before: the preflight must be ready (or "Start anyway" ticked for WayVR Xid 31 faults only).
 - The preflight refuses a Monado build that lacks any feature marker (PIMAX_SLAM, the IMU gate, PIMAX_EYE,
   PIMAX_CTRL_TRACK, PIMAX_ANCHOR, and PIMAX_HT_HZ when camera hands are on) and says which one in plain words.

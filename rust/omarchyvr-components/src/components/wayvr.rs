@@ -17,6 +17,11 @@ pub const WAYVR_TERM_WAIT: Duration = Duration::from_secs(5);
 /// [`end_hung_wayvr`]: wait after SIGKILL.
 pub const WAYVR_KILL_WAIT: Duration = Duration::from_secs(3);
 
+/// The XDG variables handed over as `OMARCHYVR_USER_<NAME>` (the same lists as `omarchyvr_config::paths::XDG_VARS` and
+/// `USER_XDG_PREFIX`; a test in omarchyvr-tools keeps them equal).
+pub const USER_XDG_VARS: [&str; 4] = ["XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME"];
+pub const USER_XDG_PREFIX: &str = "OMARCHYVR_USER_";
+
 /// What a WayVR process needs.
 pub struct Params<'a> {
     pub bin: &'a Path,
@@ -26,6 +31,9 @@ pub struct Params<'a> {
     pub openvr_lib: Option<&'a Path>,
     pub runtime_json: &'a Path,
     pub session_dir: &'a Path,
+    /// The directory of the `omarchyvr` tools, put first on WayVR's PATH: the watch's and the Work menu's buttons run
+    /// `omarchyvr ...` / `omarchyvr-voice ...` through `sh -c`.
+    pub tools_dir: Option<&'a Path>,
 }
 
 fn env_of(p: &Params) -> Vec<(String, String)> {
@@ -37,6 +45,16 @@ fn env_of(p: &Params) -> Vec<(String, String)> {
         ("XDG_STATE_HOME".into(), h.join("state").to_string_lossy().into_owned()),
         ("RUST_LOG".into(), "info".into()),
     ]);
+    // the user's own XDG directories, for the commands WayVR's buttons run (they inherit WayVR's isolated ones above;
+    // `omarchyvr_config::paths::user_xdg_fix` puts these back): an empty value means the user had none
+    for k in USER_XDG_VARS {
+        env.push((format!("{USER_XDG_PREFIX}{k}"), std::env::var(k).unwrap_or_default()));
+    }
+    if let Some(t) = p.tools_dir {
+        let old = std::env::var("PATH").unwrap_or_default();
+        let val = if old.is_empty() { t.to_string_lossy().into_owned() } else { format!("{}:{old}", t.display()) };
+        env.push(("PATH".into(), val));
+    }
     if let Some(l) = p.openvr_lib {
         let old = std::env::var("LD_LIBRARY_PATH").unwrap_or_default();
         let val = if old.is_empty() { l.to_string_lossy().into_owned() } else { format!("{}:{old}", l.display()) };
@@ -298,11 +316,18 @@ mod tests {
             openvr_lib: None,
             runtime_json: Path::new("/r.json"),
             session_dir: Path::new("/s"),
+            tools_dir: Some(Path::new("/t/bin")),
         };
         let d = desk_spec(&p);
         assert_eq!(d.args, ["--openxr", "--show", "--no-autostart", "--log-to", "/s/wayvr.log"]);
         assert_eq!(d.env[0], ("XR_RUNTIME_JSON".into(), "/r.json".into()));
         assert_eq!(d.env[2], ("XDG_CONFIG_HOME".into(), "/h/config".into()));
+        // the buttons' commands find the tools first and get the user's own XDG directories handed over
+        let path = d.env.iter().find(|(k, _)| k == "PATH").map(|(_, v)| v.clone()).unwrap();
+        assert!(path.starts_with("/t/bin"), "{path}");
+        for k in USER_XDG_VARS {
+            assert!(d.env.iter().any(|(e, _)| *e == format!("OMARCHYVR_USER_{k}")), "{k}");
+        }
         assert_eq!(perf_spec(&p).args[1], "--headless");
         assert_eq!(perf_spec(&p).log, Path::new("/s/perfwayvr.stdout"));
     }

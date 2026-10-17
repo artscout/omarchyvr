@@ -59,6 +59,7 @@ pub mod steamvr;
 pub mod supervise;
 pub mod sixdof;
 pub mod wayvr_conf;
+pub mod work;
 
 use crate::args::Args;
 use crate::{CliError, CliResult};
@@ -75,7 +76,7 @@ use std::time::Duration;
 /// Usage text of the `vr` subcommands.
 pub const USAGE: &str = "usage: omarchyvr vr <command> [options]
   hand-models status|download --yes   fetch the Mercury hand models from Monado's public server (no licence, personal use; docs/HANDS.md)
-  start [--fps 72|90] [--6dof [--ctrl-track] [--hands [--hands-roles]]] [--controllers always|when-held|off] [--no-eye] [--perf] [--anchor] [--light|--no-light] [--game APPID] [--dump DIR [--dump-frames 100,300]] [--wait] [--dry-run] [--force] [--debug] [--no-set-runtime]
+  start [--fps 72|90] [--6dof [--ctrl-track] [--hands [--hands-roles]]] [--controllers always|when-held|off] [--eye|--no-eye] [--perf] [--anchor] [--light|--no-light] [--game APPID] [--dump DIR [--dump-frames 100,300]] [--wait] [--dry-run] [--force] [--debug] [--no-set-runtime]
         [--no-notify] [--monado-build DIR] [--connector NAME] [--mode N] [--timeout SECS]
       the connector is found by the headset's EDID (PVR 0xD242 / product 0x1019) unless --connector is given; the
       preflight also warns when monado-service lacks cap_sys_nice and prints the setcap line for its path.
@@ -83,9 +84,13 @@ pub const USAGE: &str = "usage: omarchyvr vr <command> [options]
       rate or Monado's order, so it is not derived from the EDID.
       preflight checks, then monado-service detached (log /tmp/omarchyvr-session/monado.log); returns when
       the gyro calibration is done. --wait stays in the foreground until the service exits (desktop entry).
-      --light (default: the saved switch, on): light game mode, only what a game needs: no eye tracking, wrist readout
-      (--perf), room anchor or room search; Monado, head 6DoF, controllers (and camera hands if chosen) stay. --no-light
-      keeps them. The launcher records the choice in start-argv. docs/GAME-MODE.md.
+      Play keeps the graphics card for the game: before anything starts, a crashed Work's leftovers (voice, the desk's
+      clients, the VR screens' outputs) and the local AI (every omarchyvr-ai slot) are stopped by pid; nothing of a
+      running session is touched (docs/PLAY-WORK-AUDIT.md).
+      --light (default: the saved switch, on): light game mode, only what a game needs: no wrist readout (--perf), room
+      anchor or room search; Monado, head 6DoF, controllers and their optical tracking (and camera hands if chosen)
+      stay. --no-light keeps them. --eye / --no-eye (default: the saved switch \"Eye tracking in games\", off): the eye
+      tracker in this game session. The launcher records both choices in start-argv. docs/GAME-MODE.md.
       --game APPID: the Steam game this session is for; a game that crashes with xrizer (Half-Life: Alyx and the games the
       app found crashing, `omarchyvr vr game-runtime list`) starts the session with SteamVR for this start only.
       --anchor: PIMAX_ANCHOR=1 for Monado: its head-pose ring and the world offset file that `omarchyvr-anchor apply`
@@ -153,9 +158,11 @@ pub const USAGE: &str = "usage: omarchyvr vr <command> [options]
       play area and walls of the room setup. docs/ROOM-SETUP.md.
   game-runtime [list|set APPID steamvr|xrizer|default [NAME]|next APPID|none|archive|check APPID SINCE_UNIX]   (GUI: Play > Games that need SteamVR)
       per-game OpenVR runtime and xrizer crash evidence (xrizer's log is kept per game run); docs/GAME-MODE.md.
-  gamemode [status|on|off|light on|off|budget auto|6|8|restore]   (GUI: Game mode, Light game mode, Compositor time budget)
-      on (default): `vr start` pauses the local AI (omarchyvr-ai stop); Sunshine is never stopped or paused;
-      Stop (or `restore`) starts exactly what was paused again. budget: U_PACING_COMP_MIN_TIME_MS for the next start (auto = Monado's 3 ms).
+  gamemode [status|light on|off|eye on|off|budget auto|6|8|restore]   (GUI: Light game mode, Eye tracking in games, Compositor time budget)
+      Play always stops the local AI and Work's voice before it starts (no switch: the graphics card is for the game);
+      nothing of Work starts again at Stop (it starts with the next Work); Sunshine is never stopped or paused.
+      light: Light game mode; eye: Eye tracking in games (default off). budget: U_PACING_COMP_MIN_TIME_MS for the next
+      start (auto = Monado's 3 ms). restore: crash recovery of an old state file (Sunshine entries only).
   display [status|image standard|bright|brighter|backlight 20..100|apply]   (GUI: Brightness)
   audio [status|on|off|mic-on|mic-off|mic-test|speaker-test]      (GUI: Sound in headset, Headset microphone, Test microphone, Test headset sound)
       saves ~/.config/omarchyvr/audio.toml. While VR runs (Play, Work, SteamVR) the headset speaker (DisplayPort audio:
@@ -363,10 +370,17 @@ pub fn run(mut a: Args) -> CliResult {
             let home = PathBuf::from(real_env("HOME").unwrap_or_else(|| "/root".into()));
             // light game mode: --light / --no-light, else the saved switch (default on); the resolved choice is recorded in
             // start-argv so every restart keeps it
+            let gm = gamemode::load(&home);
             let (light_flag, no_light_flag) = (a.flag("--light"), a.flag("--no-light"));
-            let light = gamemode::resolve_light(light_flag, no_light_flag, &gamemode::load(&home)).map_err(CliError::usage)?;
+            let light = gamemode::resolve_light(light_flag, no_light_flag, &gm).map_err(CliError::usage)?;
             if !light_flag && !no_light_flag {
                 argv0.push(if light { "--light" } else { "--no-light" }.into());
+            }
+            // eye tracking in games: --eye / --no-eye, else the saved switch (default off); recorded like light
+            let (eye_flag, no_eye_flag) = (a.flag("--eye"), a.flag("--no-eye"));
+            let eye_games = gamemode::resolve_eye(eye_flag, no_eye_flag, &gm).map_err(CliError::usage)?;
+            if !eye_flag && !no_eye_flag {
+                argv0.push(if eye_games { "--eye" } else { "--no-eye" }.into());
             }
             let game = a.opt("--game")?;
             if let Some(g) = &game {
@@ -388,9 +402,10 @@ pub fn run(mut a: Args) -> CliResult {
             let ctrl_track = sixdof::parse_ctrl_track(&mut a, &real_env, &mut opts, &home, &sixdof)?;
             // --controllers: games keep the controllers always shown unless the user switched it (Play's own switch)
             let _controllers = sixdof::parse_controllers(&mut a, &real_env, &mut opts, omarchyvr_config::ctrl_inhand::CtrlMode::Always)?;
-            // eye tracking, visual only (default on when the eye build and calibration exist; --no-eye): PIMAX_EYE=1
+            // eye tracking in games, visual only (the "Eye tracking in games" switch, default off): PIMAX_EYE=1 when on and
+            // the eye build and a calibration exist
             let eye_build = omarchyvr_config::paths::monado_build(&home);
-            let (eye_mode, eye_note) = eye_desk::parse(a.flag("--eye") && !light, a.flag("--no-eye") || light, &mut opts, &eye_build, build_given, &real_env);
+            let (eye_mode, eye_note) = eye_desk::parse(false, !eye_games, &mut opts, &eye_build, build_given, &real_env);
             // --hands: camera hands (Mercury); may move the Monado build to the hands build (docs/HANDS.md)
             let hands_opt = hands::parse(&mut a, &real_env, &mut opts, &home, build_given, sixdof.is_some())?;
             // --perf: wrist readout (minimal WayVR overlay without screens + omarchyvr-perf); Monado gets PIMAX_PERF_FILE
@@ -428,6 +443,14 @@ pub fn run(mut a: Args) -> CliResult {
             }
             auto_connector(&mut opts);
             if !opts.dry_run {
+                // Play keeps the graphics card for the game: a crashed Work's leftovers and the local AI go first, by
+                // pid (nothing of a running session is touched; docs/PLAY-WORK-AUDIT.md)
+                let dirs = omarchyvr_ai::Dirs::from_env(&real_env);
+                let cleared = with_deps(&opts, &|| false, |d| work::clear_for_play(&opts, d, &dirs, &mut screens::RealHypr));
+                for l in &cleared.lines {
+                    vout!("omarchyvr vr: Play: {l}");
+                }
+                gamemode::record_stopped(&opts.session_dir, &cleared.entries);
                 // keep the last game's xrizer log before the next game truncates it
                 if let Ok(Some(p)) = gameruntime::archive_log(&home, "pre-start", gameruntime::now_unix()) {
                     vout!("omarchyvr vr: xrizer log of the last game kept: {}", p.display());
@@ -443,9 +466,6 @@ pub fn run(mut a: Args) -> CliResult {
                 return with_deps(&opts, &|| flag.load(Ordering::Relaxed), |d| {
                     let r = steamvr::start(&opts, &env, sixdof.as_ref(), ctrl_track.as_deref(), d, &desk::RealSpawner);
                     if r.is_ok() && !opts.dry_run {
-                        if let Some(l) = gamemode::on_start(&gamemode::load(&home), &gamemode::Tools::real(&home), &opts.session_dir) {
-                            vout!("omarchyvr vr: {l}");
-                        }
                         if let Some(l) = audio::on_start(&home, &opts.session_dir) {
                             vout!("omarchyvr vr: {l}");
                         }
@@ -464,9 +484,6 @@ pub fn run(mut a: Args) -> CliResult {
             if daemon::start_through(&dmn, opts.wait, opts.force) {
                 let r = daemon::start_via(&link, "vr", &RealClock::new(), &mut |m| vout!("omarchyvr vr: {m}")).map_err(CliError::new);
                 if r.is_ok() && !opts.dry_run {
-                    if let Some(l) = gamemode::on_start(&gamemode::load(&home), &gamemode::Tools::real(&home), &opts.session_dir) {
-                            vout!("omarchyvr vr: {l}");
-                        }
                         if let Some(l) = audio::on_start(&home, &opts.session_dir) {
                         vout!("omarchyvr vr: {l}");
                     }
@@ -500,9 +517,6 @@ pub fn run(mut a: Args) -> CliResult {
             }
             if started.is_ok() && !opts.dry_run {
                 daemon::tell_direct(&link, &dmn, true, "vr", &mut |m| vout!("omarchyvr vr: {m}"));
-                if let Some(l) = gamemode::on_start(&gamemode::load(&home), &gamemode::Tools::real(&home), &opts.session_dir) {
-                            vout!("omarchyvr vr: {l}");
-                        }
                         if let Some(l) = audio::on_start(&home, &opts.session_dir) {
                     vout!("omarchyvr vr: {l}");
                 }

@@ -31,6 +31,10 @@ On a PC that does not have the build packages yet, `./install.sh --install-packa
 build, to install them with pacman. A build cannot start without them. Without the option, the installer lists
 them and stops.
 
+The local AI models (llama.cpp runtime, Lara, Qwen3.5-4B: about 5.3 GB) are no longer downloaded by the installer:
+the first **Work** asks which voice assistant and speech engine you want and downloads only that, with progress and
+Cancel (docs/WORK-FIRST-RUN.md). Play never needs them. Models already on disk are kept and found.
+
 ## What gets installed
 
 | Where | What | On uninstall |
@@ -110,7 +114,8 @@ the password for the exact file. Play never relinks the installed file, so it ne
 `./install.sh --help` lists all of them. Main ones: `--prefix DIR` (staging install, no system changes),
 `--no-root`, `--dry-run-root`, `--nvidia auto|yes|no`, `--nvidia-allow-untested`, `--gpu-speech` (whisper.cpp on Vulkan for the
 "Speech on graphics card" switch), `--hand-models` (Mercury models from upstream, no licence, personal use only),
-`--no-ai`, `--lab-data DIR`.
+`--ai-models` (download the local AI models during the install, for agents and tests; by default the first Work
+asks), `--no-ai` (the default now, kept for old scripts), `--lab-data DIR`.
 
 ## Sources of the downloads
 

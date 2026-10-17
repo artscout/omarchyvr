@@ -112,6 +112,8 @@ pub fn vr_wayvr_spec(p: &PerfOptions, o: &StartOptions, openvr_lib: Option<&Path
         openvr_lib,
         runtime_json: &o.runtime_json(),
         session_dir: &o.session_dir,
+        // the wrist-panel WayVR has no buttons that run commands
+        tools_dir: None,
     })
 }
 

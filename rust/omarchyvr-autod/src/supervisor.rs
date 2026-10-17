@@ -220,7 +220,9 @@ impl Supervisor {
 /// ai.toml's `voice_local_models` (None: not set or no file).
 pub fn local_models_switch(ai_toml: &Path) -> Option<bool> {
     let text = std::fs::read_to_string(ai_toml).ok()?;
-    omarchyvr_config::ai::AiConfig::parse(&text).ok()?.voice_local_models
+    let c = omarchyvr_config::ai::AiConfig::parse(&text).ok()?;
+    // the app's choices (Local models On / Off, Lara in front of an online brain): the AI servers have work in Work
+    (c.voice_local_models.is_some() || c.voice_lara.is_some()).then(|| c.ai_servers_wanted())
 }
 
 /// What a launcher start (`<session dir>/start-argv.txt`: kind, args) asks for. The argv is authoritative for the

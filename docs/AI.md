@@ -638,10 +638,11 @@ omarchyvr-ai tune-lara     # (again) tune Laya to the catalogue
 ```
 
 omarchyvrd's `ai.server` component (System page: "Local AI (omarchyvr-ai)") now starts `omarchyvr-ai up` and stops with
-`omarchyvr-ai down`, so Play and Work bring the AI up in the saved shape; it stays a leaf (VR never waits for it).
+`omarchyvr-ai down`, so Work brings the AI up in the saved shape; it stays a leaf (VR never waits for it). Play never
+does (section 21): `up` refuses while Play runs, and Play's start stops every slot.
 
 **Video memory: Auto by default** (`vram_mib = "auto"`, the AI page's "Video memory for AI": Auto / up to 4, 6, 8, 12 GB).
-At each `up` (each Play / Work start, or a change of the setting) `omarchyvr-ai` reads the free VRAM (nvidia-smi; its own
+At each `up` (each Work start, or a change of the setting) `omarchyvr-ai` reads the free VRAM (nvidia-smi; its own
 server's memory counts as free) and what runs next to it from the process list:
 
 | session | VRAM kept free for it |
@@ -678,8 +679,9 @@ agent between two commands (no restart; a toast "AI: This PC, 2 stages" and the 
 ### Where the switch is (user decision 2026-10-16)
 
 - **Work only.** The local models belong to Work (the WayVR desk for work and movies). omarchyvrd's `ai.server` is a session
-  component whose rule is "Work and Local models On": Play / SteamVR / games never start them, and a Work session that
-  switches to Play stops them (`omarchyvr-ai down`). The switch is `voice_local_models` in ai.toml (omarchyvrd reads it each
+  component whose rule is "Work and (Local models On, or Lara in front of an online brain)" (`ai_servers_wanted`,
+  section 21): Play / SteamVR / games never start them, and a Work session that switches to Play stops them
+  (`omarchyvr-ai down`). The switch is `voice_local_models` in ai.toml (omarchyvrd reads it each
   round; it wins over omarchyvrd.toml's `ai_server`). Off and no online choice: voice has no AI agent (offline commands).
 - **App: AI page, section "Local model on this PC"** (the Local AI page was merged into the AI page 2026-10-16; Max's brain card at the top switches between Claude (CLI), the local model and Online): the switch **Local models On / Off**; **How much of the PC the AI may
   use**: Low / Medium (recommended) / High, each with its download, RAM, video memory, speed and the audit's result;
@@ -941,9 +943,9 @@ Parakeet barely touches.
   graphics-card server. Saved to ai.toml at once, so `omarchyvr-ai`, `omarchyvr-voice` and the CLI share it; each Work start
   and each restart of the session (omarchyvrd's `ai.server`, `omarchyvr-ai up`) re-reads it, so it needs no flag in
   `start-argv.txt` (a restart keeps it because it lives in ai.toml, not in the argument list).
-- **Wiring**: `omarchyvr-ai up` (Work start, the `ai.server` health watch, the Local AI buttons, the resume after Game mode)
-  starts the whisper-server on port 8082 only when the switch is On (`asr_decision`); Off stops it. Game mode / Play
-  never start it (they only bring back what `up` decides). `omarchyvr-voice listen` uses Parakeet unless the switch is On
+- **Wiring**: `omarchyvr-ai up` (Work start, the `ai.server` health watch, the Local AI buttons)
+  starts the whisper-server on port 8082 only when the switch is On (`asr_decision`); Off stops it. Play never starts
+  it (Play stops every AI slot; nothing is resumed when Play ends, section 21). `omarchyvr-voice listen` uses Parakeet unless the switch is On
   and the local models run, in which case it asks the server and falls back to Parakeet as before. The voice client,
   port and API are unchanged.
 - Not kept: a whisper CPU server on port 8082. It would be slower and less accurate than Parakeet, so no second
@@ -1041,3 +1043,41 @@ watch row; config: three default-provider tests).
 "In" tokens are almost all prompt cache (the CLI caches the system prompt and the answer schema). Haiku is the default:
 sonnet gave the same calls here and took about twice as long.
 
+
+## 21. The Work first run, Play frees the graphics card, Lara in front of an online brain (2026-10-17)
+
+User request 2026-10-17: the AI questions come the first time Work is pressed, never for Play; Play has all the video
+memory. Details: docs/WORK-FIRST-RUN.md (the questions, where each answer goes), docs/PLAY-WORK-AUDIT.md (the audit
+with file:line evidence), docs/GAME-MODE.md (Play), docs/WAYVR-CONTROLS.md (Exit Work).
+
+- **The first Work asks** who answers (the Claude Code program, Claude with an Anthropic key, Qwen3.5-4B on this PC,
+  another OpenAI-compatible API, none), whether to install Lara, and how speech becomes text (processor, graphics card,
+  off). The answers go into ai.toml (the key only there, mode 600) and the record `~/.config/omarchyvr/work-setup.toml`
+  (`omarchyvr_config::work_setup`, never a key). AI page > "Work questions" opens the same page again later.
+- **The downloads left the installer.** `./install.sh` no longer runs `omarchyvr-ai install --two-stage --router lara`
+  (5.3 GB) by default; `--ai-models` does it (agents, tests); `--no-ai` is kept. The page uses `omarchyvr-ai get ITEM...`
+  (`runtime`, `lara`, `qwen3.5-4b`): the same pinned files, sizes and SHA-256 checks as `install`, one event per line
+  (`get plan|progress|note|done|error|cancelled|all done`), SIGTERM cancels (exit 130; a `.part` file is resumed next
+  time). Files already on disk are kept and reported as "already on this PC".
+- **A local model on the processor**: "A model on this PC" without "Use the graphics card" writes
+  `[local_two_stage] gpu_layers = 0`; the simple mode (no Lara) now honours it (`twostage::plan`: CPU when `--cpu` or
+  `gpu_layers = 0`), as two stages did already (preset Low).
+- **Lara in front of an online brain** (`voice_lara = true` in ai.toml, with Claude through a key or a compatible API;
+  not with the Claude Code program, which reads every command itself): `AiConfig::lara_with_online()`. `omarchyvr-ai up`
+  then starts the router alone (`up_router_only`: port 8081, processor, no model slot, no speech server, no video
+  memory); omarchyvrd's `ai.server` follows `AiConfig::ai_servers_wanted()` (local models on, or Lara with an online
+  brain), in Work only; `omarchyvr-voice act` builds `router::for_online`: Lara names the category, the online model gets
+  that category's tools only (section 14's two stages with Lara as stage 1). Lara down: the matcher's guess is used and
+  the online model still answers (test `lara_sorts_for_an_online_model_and_its_absence_never_drops_the_online_answer`).
+  The mode label reads "Online, Lara sorts".
+- **Play frees the graphics card.** `omarchyvr vr start` stops every slot (model, router, speech server, agent, the VRAM
+  watch) by pid before anything of Play starts (`work::clear_for_play`); `omarchyvr-ai up` and `serve` refuse while Play
+  runs (`twostage::play_running`: start-argv says `vr` and its monado-service lives, or SteamVR's `vrserver` runs;
+  `--force` overrides for agents); omarchyvrd never wants `ai.server` or a voice component in a Play session
+  (`spec::WORK_ONLY`) and stops one it finds. The old "Game mode" pause and resume (`pause_ai`) is gone: nothing is
+  started again when Play ends. Exit Work, the app's Stop and "Switch to Play" stop every slot too; only a restart by
+  the supervisor (`desk stop --keep-ai`) keeps the model loaded.
+- **The check the app shows** (Home, while Play runs, every 10 s, read only, no GPU load): `nvidia-smi
+  --query-compute-apps=pid,process_name,used_memory --format=csv,noheader,nounits` and `--query-gpu=memory.free,memory.total`
+  (`rust/omarchyvr-gui-core/src/vram.rs`; on the app's read-only command allowlist): "Graphics card: nothing of Work or
+  the AI uses it: 17.0 of 24.0 GB free", or the leftover by name and pid.

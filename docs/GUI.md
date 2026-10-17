@@ -118,9 +118,13 @@ panel), Ready and Help on the right.
 - **Headset card**: the model in capitals with its state (Connected, Streaming 72 Hz, Camera missing, Not connected),
   the line art, Refresh (72 / 90 Hz), Render, IPD, Status, Model (the headset modules of `pimax-device`: the Dream Air
   is real; Dream Air SE, Crystal Light, Crystal Super and 8KX are mocks whose capabilities read "not supported yet").
-  Under it **Play** (`omarchyvr vr start ...`: Monado for Steam and OpenXR games; the app never launches a game) and
-  **Work** (`omarchyvr desk start ...`: the WayVR desk); the running side's button becomes **Stop Play** / **Stop Work**.
-  Then what runs (side and age, render size, what game mode paused, the frame health), the preflight verdict pill
+  Under it two big tiles, **Play** (`omarchyvr vr start ...`: Monado for Steam and OpenXR games; the app never
+  launches a game) and **Work** (`omarchyvr desk start ...`: the WayVR desk; the first press opens **Set up Work**
+  first, below); while a session runs the running side's button becomes **Stop Play** / **Stop Work** and the other
+  **Switch to Work** / **Switch to Play** (one job: the full stop of the running side, the wait for Monado, the other
+  start). Then what runs (side and age, render size, "Stopped for Play: ..." when Play cleared Work's leftovers or
+  the local AI, while Play runs "Graphics card: nothing of Work or the AI uses it: N of M GB free" or the leftover
+  by name and pid (`nvidia-smi --query-*`, read only, every 10 s), the frame health), the preflight verdict pill
   ("ready", "your OK", "blocked") with its reason, "Start anyway" when only WayVR Xid 31 faults stand in the way, the
   collapsed preflight details, the readiness dots (headset, Monado cap with **Fix** when a relink dropped
   cap_sys_nice, OpenXR runtime, last start; the sentence is the tooltip), the start-at-login note, and the headset and
@@ -128,14 +132,16 @@ panel), Ready and Help on the right.
 - **Controllers card**: left and right with their line art, state, battery (unknown: Monado does not report it; mock
   values in demo data) and **Pair**, **Unpair** (a one-line confirm), **Vibrate** (a 25 %, 300 ms buzz, also while VR
   runs). Pair: one StartPair per click, at most one per hand every 30 s.
-- **Quick settings**: Eye tracking, Passthrough, Subtitles, Game mode, Start at login; Camera hands in Developer mode.
+- **Quick settings**: Eye tracking, Passthrough, Subtitles, Light game mode, Eye tracking in games (Play; off by
+  default), Start at login; Camera hands in Developer mode. The old Game mode switch is gone: Play always frees the
+  graphics card ([GAME-MODE.md](GAME-MODE.md)).
 - **Tracking**: the mode chip, 6DoF, Controllers in Work, the room in one line with Set up, the gyro while a session
   runs.
 - **Sound**: Headset sound with Test sound, Headset mic with Test microphone, the input now ([AUDIO.md](AUDIO.md)).
 
 **Display**: refresh rate, render quality (Quality / Balanced / Performance, the render size under it; the render
 scale slider in Developer mode), brightness (Image: Standard / Bright / Brighter at the next start; Panel backlight
-now), performance (Game mode, Compositor budget; the wrist readout in Developer mode), the lenses (IPD
+now), performance (Light game mode, Eye tracking in games, Compositor budget; the wrist readout in Developer mode), the lenses (IPD
 58-72 mm with Apply, which moves the lenses when no session runs and writes `~/.config/omarchyvr/ipd.env`; Lenses now;
 in Developer mode Measure IPD, Lens test and the camera exposure).
 
@@ -311,6 +317,18 @@ worst first. The checks run with the doctor in the background (every 60 s and on
 Every fix the app ran, or opened in a terminal, is appended to `~/.local/state/omarchyvr/fixes.log`
 (`pimax_device::autofix::log_line`: time, id, outcome, commands, undo; the file is private to you). "Applied fixes"
 lists the newest 30 with **Undo** (the undo lines, run the same way) or **Apply again** after an undo.
+
+## Set up Work (the Work first run)
+
+Not in the sidebar: the first **Work** press opens it (Work starts by itself once it is answered), the AI page's
+**Work questions** button opens it later (it saves without starting Work); Play never shows it. Steps: **Voice
+assistant** (Claude Code on this PC / Claude with my Anthropic API key / A model on this PC (Qwen3.5-4B, processor by
+default, "Use the graphics card" switch) / Another compatible API (base URL, key, model, Test) / None; Install Lara),
+**Speech to text** (processor, graphics card next to the local model, off; the list of downloads and the button with
+the size), **Download** (each file with progress, Cancel, Try again, Back). Code: `rust/omarchyvr-gui-core/src/worksetup.rs`,
+`rust/omarchyvr-app/src/pages/worksetup.rs`; details in [WORK-FIRST-RUN.md](WORK-FIRST-RUN.md). Screenshots
+`worksetup-assistant.png`, `worksetup-assistant-local.png`, `worksetup-assistant-api.png`, `worksetup-speech.png`,
+`worksetup-download.png`, `worksetup-download-error.png`; Home while Play runs: `home-play-running.png`.
 
 ## AI (the AI tab)
 
@@ -522,7 +540,10 @@ responding". What the app does now:
   leave no system core dumps (coredumpctl);
 - **soak** (`tests/soak.rs`, ignored by default): `PIMAX_SOAK_SECS=1800 PIMAX_SOAK_MODE=idle|resize cargo test --release
   -p omarchyvr-app --test soak -- --ignored --nocapture`. Results of the 30-minute runs below.
-- screenshots of every page (`tests/pages.rs`).
+- screenshots of every page (`tests/pages.rs`);
+- **Set up Work** (`tests/worksetup.rs`): the same harness on the Work questions (not in the sidebar): Play never shows
+  them, the first Work does; every widget of each brain (with and without Lara), each speech answer and the downloads
+  (Cancel, Try again) clicked; the answers saved and Work started by itself; the next Work starts at once.
 
 Soak results (30 minutes each, release, demo data with a live desk session, a machine access delay of 1 ms):
 

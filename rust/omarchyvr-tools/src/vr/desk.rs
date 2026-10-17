@@ -113,12 +113,21 @@ pub const USAGE: &str = "usage: omarchyvr desk <command> [options]
       headset is waited for without spending tries and the session is restored once it is back; a camera that does not
       come back within 20 s gets one automatic headset restart, then you are asked. No automatic restart after a GPU
       error that needs a reboot. `desk stop` is never fought. Not started with --wait or --dry-run.
-  stop [--grace SECS] [--no-kill] [--dry-run] [--no-daemon]
-      SIGINT to the voice HUD and listener (if started), WayVR (waits until it has exited: 15 s, then a notice and 15 s
-      more), then passthrough (by pid, 10 s each), then Monado: SIGINT, SIGKILL only after --grace
-      (default 30 s); then the kernel log check (Xid / Idling display engine). --no-kill (automatic callers: the
-      watchdog, auto mode): never SIGKILL Monado; a hung one is left alive and the GPU gate says reboot.
+  stop [--grace SECS] [--no-kill] [--keep-ai] [--dry-run] [--no-daemon]
+      the one full stop of Work (the app's Stop, Exit Work in the headset, a switch to Play): SIGINT to the voice
+      processes and the leaves (if started), WayVR (waits until it has exited: 15 s, then a notice and 15 s
+      more), then passthrough (by pid, 10 s each), the local AI (every omarchyvr-ai slot: the model, Lara, the speech
+      server, the agent model, the VRAM watch; by their pid files), then Monado: SIGINT, SIGKILL only after --grace
+      (default 30 s); then the kernel log check (Xid / Idling display engine), the camera broker, the VR screens'
+      outputs, and a check that nothing of Work still runs (named as a problem otherwise). --no-kill (automatic
+      callers: the watchdog, auto mode): never SIGKILL Monado; a hung one is left alive and the GPU gate says reboot.
+      --keep-ai (a restart: `desk restart`, the watchdog): the local AI stays loaded.
       --dry-run: print what would be signalled, in order, and touch nothing.
+  exit [--now]
+      Exit Work from the headset (the Work menu's and the watch's \"Exit Work\" button): the first press asks for a
+      second one within 6 s (a toast in the headset); the second press starts `omarchyvr desk stop --grace 30`
+      detached from WayVR (log <session dir>/exit.log), so the stop outlives WayVR's own exit. --now: no question.
+      Refused when no Work session runs.
   status
       pids of the desk processes and `omarchyvr vr status` (plus a omarchyvrd line when it runs).
   omarchyvrd: with an executing omarchyvrd, `start` asks it to start the session and follows it (see `omarchyvr vr help`);
@@ -148,8 +157,34 @@ grab_dist_min: 0.4
 grab_dist_max: 8.0
 ";
 
-/// `conf.d/35-desk.yaml`: no keyboard overlay in desk mode (nothing is typed; voice shows captions instead).
-const WAYVR_DESK_CONF: &str = "enable_keyboard: false\n";
+/// `conf.d/35-desk.yaml`: no keyboard overlay in desk mode (nothing is typed; voice shows captions instead), and the
+/// left controller's menu button opens the Work menu panel (`menu_panel`; WayVR's `menu` action).
+const WAYVR_DESK_CONF: &str = "enable_keyboard: false\nmenu_panel: work_menu\n";
+
+/// The Work menu (custom panel `work_menu`): the controller's menu button opens it in front of you; "Exit Work" asks for
+/// a second press, then stops everything (`omarchyvr desk exit`, docs/WAYVR-CONTROLS.md). Hands: the watch on the left
+/// wrist has the same Exit Work button.
+pub const WORK_MENU_NAME: &str = "work_menu";
+const WORK_MENU_XML: &str = r##"<layout>
+  <macro name="menu_button" padding="14" border="2" round="10" align_items="center" justify_content="center" min_width="170" />
+  <elements>
+    <div padding="24" interactable="0" flex_direction="column" gap="12">
+      <rectangle padding="18" color="background" border="2" border_color="outline" round="14" flex_direction="column" gap="14">
+        <label text="Work" size="32" weight="bold" color="on_background" />
+        <div flex_direction="row" gap="12">
+          <Button id="btn_exit" macro="menu_button" text="Exit Work" _press="::ShellExec omarchyvr desk exit" tooltip_str="Stops everything (screens, voice, AI) and goes back to the desktop. Press it twice." tooltip_side="top" />
+          <Button id="btn_close" macro="menu_button" text="Close menu" _press="::OverlayToggle work_menu" tooltip_str="Hide this menu (the menu button opens it again)" tooltip_side="top" />
+        </div>
+        <div flex_direction="row" gap="12">
+          <Button id="btn_recenter" macro="menu_button" text="Recenter" _press="::PlayspaceRecenter" tooltip_str="Put the screens in front of you again" tooltip_side="top" />
+          <Button id="btn_dashboard" macro="menu_button" text="WayVR settings" _press="::DashToggle" tooltip_str="WayVR's own dashboard" tooltip_side="top" />
+        </div>
+        <label id="exit_hint" text="Exit Work: press it, then press it again." size="18" color="on_background_variant" />
+      </rectangle>
+    </div>
+  </elements>
+</layout>
+"##;
 
 /// The caption panel: two single-line labels in a translucent box; `omarchyvr-voice captions` sets cap_l1/cap_l2 text and
 /// shows/hides cap_box over wayvrctl (the outer div keeps the panel size when the box is hidden).
@@ -349,6 +384,8 @@ pub fn plan(o: &DeskOptions) -> Vec<ProcSpec> {
         openvr_lib: o.openvr_lib.as_deref(),
         runtime_json: &runtime,
         session_dir: dir,
+        // the watch's and the Work menu's buttons run `omarchyvr ...` (Exit Work) and `omarchyvr-voice ...`
+        tools_dir: o.pimax_bin.parent(),
     }));
     if o.screens > 1 {
         // not an XR client: Hyprland events -> which VR screens WayVR shows (wayvrctl desk-screens)
@@ -383,7 +420,7 @@ pub fn screens_spec(o: &DeskOptions) -> ProcSpec {
 }
 
 /// The clients `desk stop` signals, in order (the voice ones only when their pid file exists).
-fn stop_order(o: &DeskOptions) -> Vec<(&'static str, &PathBuf)> {
+pub(crate) fn stop_order(o: &DeskOptions) -> Vec<(&'static str, &PathBuf)> {
     let mut v = Vec::new();
     for (name, bin) in [
         ("voicehud", &o.voice_hud_bin),
@@ -422,6 +459,10 @@ pub fn ensure_wayvr_home(home: &Path, voice: bool, perf: bool) -> io::Result<Opt
     let panels_conf = conf_d.join("40-panels.yaml");
     let mut panels: Vec<&str> = Vec::new();
     let gui = home.join("config/wayvr/theme/gui");
+    // the Work menu (the controller's menu button; Exit Work), in every desk session
+    std::fs::create_dir_all(&gui)?;
+    std::fs::write(gui.join(format!("{WORK_MENU_NAME}.xml")), WORK_MENU_XML)?;
+    panels.push(WORK_MENU_NAME);
     if voice {
         std::fs::create_dir_all(&gui)?;
         std::fs::write(gui.join("captions.xml"), CAPTIONS_XML)?;
@@ -649,12 +690,12 @@ fn prepare_screens(o: &DeskOptions, d: &Deps) {
 
 /// After the session: remove the VR screens' outputs, only once no monado-service runs (and not between the
 /// watchdog's stop and start: the next start keeps them).
-fn remove_screens(o: &DeskOptions, d: &Deps) {
+fn remove_screens(o: &DeskOptions, d: &Deps, hypr: &mut dyn super::screens::Hypr) {
     if super::supervise::in_watchdog() {
         return;
     }
     let running = !d.procs.find_by_comm(&o.vr.service_comm()).is_empty();
-    let r = super::screens::remove_all(&mut super::screens::RealHypr, false, running);
+    let r = super::screens::remove_all(hypr, false, running);
     if !r.removed.is_empty() {
         vout!("omarchyvr desk: VR screens removed: {}", r.removed.join(", "));
     }
@@ -780,9 +821,19 @@ pub(crate) fn preset_switch(
     Ok(())
 }
 
-/// `desk stop`: WayVR, passthrough, then Monado with `vr stop` semantics. `kill`: Monado may be SIGKILLed after
-/// `grace` (explicit user stops only; `--no-kill` and the watchdog pass false).
-pub fn stop(o: &DeskOptions, grace: Duration, kill: bool, d: &Deps) -> CliResult {
+/// `desk stop`, the one full stop of Work (Exit Work in the headset, the app's Stop, a switch to Play): voice, the
+/// leaves, WayVR, passthrough, then Monado with `vr stop` semantics, the camera broker, the VR screens' outputs, and
+/// the local AI (every `omarchyvr-ai` slot: the model, Lara, the speech server, the agent model, the VRAM watch) unless
+/// `keep_ai` (a restart of the session: `desk restart`, the watchdog). Then what of ours still runs is named.
+/// `kill`: Monado may be SIGKILLed after `grace` (explicit user stops only; `--no-kill` and the watchdog pass false).
+/// Everything is signalled by pid (pid files, names checked), never by name.
+pub fn stop(o: &DeskOptions, grace: Duration, kill: bool, keep_ai: bool, d: &Deps) -> CliResult {
+    stop_with(o, grace, kill, keep_ai, d, &omarchyvr_ai::Dirs::from_env(d.env), &mut super::screens::RealHypr)
+}
+
+/// [`stop`] with the AI's directories and Hyprland given (tests use temporary ones and a fake `hyprctl`).
+pub fn stop_with(o: &DeskOptions, grace: Duration, kill: bool, keep_ai: bool, d: &Deps, dirs: &omarchyvr_ai::Dirs, hypr: &mut dyn super::screens::Hypr) -> CliResult {
+    let keep_ai = keep_ai || super::supervise::in_watchdog();
     if o.vr.dry_run {
         vout!("omarchyvr desk: would stop, in this order (SIGINT by pid, never by name):");
         let mut n = 1;
@@ -810,6 +861,12 @@ pub fn stop(o: &DeskOptions, grace: Duration, kill: bool, d: &Deps) -> CliResult
         vout!("  {}. broker: {} ({}), wait 10 s", n + 1, pid_note(&o.vr.session_dir.join("broker.pid")), comm_of(&cam_bin));
         vout!("  then the kernel log check (Xid / Idling display engine)");
         vout!("  then the VR screens' outputs (PIMAX-*) are removed once no monado-service runs");
+        if keep_ai {
+            vout!("  the local AI is kept (a restart of the session)");
+        } else {
+            vout!("  then the local AI: {} (by their pid files, SIGTERM, SIGKILL after 5 s)", super::work::ai_stop_note(dirs));
+        }
+        vout!("  then a check that nothing of Work is left running");
         return Ok(());
     }
     // the recorder first: it finishes its mp4 while Monado still runs (it only reads shared memory, never blocks)
@@ -818,6 +875,42 @@ pub fn stop(o: &DeskOptions, grace: Duration, kill: bool, d: &Deps) -> CliResult
     {
         verr!("omarchyvr desk: the recorder is still finishing its file; going on (it does not hold the session)");
     }
+    let (mut problems, hung) = stop_clients(o, d);
+    // the local AI belongs to Work: it goes with it (its VRAM is free before Monado's teardown even starts)
+    if !keep_ai {
+        for l in super::work::stop_ai(dirs) {
+            vout!("omarchyvr desk: {l}");
+        }
+    }
+    let monado_pids = session::stop_targets(&o.vr, d.procs).ours;
+    let mon = session::stop(&o.vr, Some(grace), false, kill, d);
+    end_hung_wayvrs(&hung, &monado_pids, &o.vr.service_comm(), "omarchyvr desk", d);
+    // The broker feeds Monado and passthrough: it goes last (pid file only exists if --6dof started it).
+    let cam_bin = o.sixdof.as_ref().map(|s| s.cam_bin.clone()).unwrap_or_else(|| {
+        super::config::tools_dir(&PathBuf::from(std::env::var("HOME").unwrap_or_default())).join("pimax-cam")
+    });
+    sixdof::stop_broker(&o.vr.session_dir, &cam_bin, d.procs, d.clock);
+    remove_screens(o, d, hypr);
+    // nothing of Work may be left behind: name whatever still runs (Monado's own verdict comes from its stop)
+    let left: Vec<String> = super::work::survivors(o, d, dirs, keep_ai).into_iter().filter(|l| !l.starts_with("monado")).collect();
+    for l in &left {
+        verr!("omarchyvr desk: WARNING: still running after the stop: {l}");
+    }
+    if left.is_empty() && !keep_ai {
+        vout!("omarchyvr desk: Work stopped: nothing of it is left running");
+    }
+    mon?;
+    problems.extend(left.into_iter().map(|l| format!("still running after the stop: {l}")));
+    match problems.first() {
+        Some(p) => Err(CliError::new(p.clone())),
+        None => Ok(()),
+    }
+}
+
+/// The clients of a desk session (voice, the leaves, WayVR, passthrough, the controller tracker), in [`stop_order`]:
+/// SIGINT by pid, a wait, never SIGKILL here (a hung WayVR is ended after Monado by [`end_hung_wayvrs`]). Returns the
+/// problems in plain words and the hung WayVRs. Also used before Play starts, for a crashed Work's leftovers.
+pub(crate) fn stop_clients(o: &DeskOptions, d: &Deps) -> (Vec<String>, Vec<HungWayvr>) {
     let mut problems: Vec<String> = Vec::new();
     let mut hung: Vec<HungWayvr> = Vec::new();
     for (name, bin) in stop_order(o) {
@@ -857,20 +950,7 @@ pub fn stop(o: &DeskOptions, grace: Duration, kill: bool, d: &Deps) -> CliResult
         }
         d.clock.sleep(Duration::from_millis(500));
     }
-    let monado_pids = session::stop_targets(&o.vr, d.procs).ours;
-    let mon = session::stop(&o.vr, Some(grace), false, kill, d);
-    end_hung_wayvrs(&hung, &monado_pids, &o.vr.service_comm(), "omarchyvr desk", d);
-    // The broker feeds Monado and passthrough: it goes last (pid file only exists if --6dof started it).
-    let cam_bin = o.sixdof.as_ref().map(|s| s.cam_bin.clone()).unwrap_or_else(|| {
-        super::config::tools_dir(&PathBuf::from(std::env::var("HOME").unwrap_or_default())).join("pimax-cam")
-    });
-    sixdof::stop_broker(&o.vr.session_dir, &cam_bin, d.procs, d.clock);
-    remove_screens(o, d);
-    mon?;
-    match problems.first() {
-        Some(p) => Err(CliError::new(p.clone())),
-        None => Ok(()),
-    }
+    (problems, hung)
 }
 
 /// A WayVR still alive after [`stop_wayvr`]'s whole wait.
@@ -994,7 +1074,7 @@ pub fn run(mut a: Args) -> CliResult {
     }
     let argv0 = a.0.clone();
     match first.as_str() {
-        "start" | "stop" | "status" | "preset" | "captions" | "screens" => {}
+        "start" | "stop" | "status" | "preset" | "captions" | "screens" | "exit" => {}
         other => {
             return Err(CliError::usage(format!(
                 "unknown desk command {other}\n{USAGE}"
@@ -1042,6 +1122,10 @@ pub fn run(mut a: Args) -> CliResult {
     let no_auto_recover = a.flag("--no-auto-recover");
     let no_watchdog = a.flag("--no-watchdog");
     let no_kill = first == "stop" && a.flag("--no-kill");
+    // a restart (`desk restart`) keeps the local AI loaded; a real stop takes it down with Work
+    let keep_ai = first == "stop" && a.flag("--keep-ai");
+    // Exit Work from the headset: the second press stops everything; --now skips the confirmation (tests, voice)
+    let exit_now = first == "exit" && a.flag("--now");
     let no_daemon = matches!(first.as_str(), "start" | "stop") && a.flag("--no-daemon");
     let mut o = parse_desk(&mut a, &real_env)?;
     reject_leftovers(&a)?;
@@ -1097,13 +1181,18 @@ pub fn run(mut a: Args) -> CliResult {
                 super::daemon::tell_direct(&link, &daemon, false, "desk", &mut |m| vout!("omarchyvr desk: {m}"));
                 super::room::on_stop(&o.vr.session_dir);
             }
-            let r = stop(&o, Duration::from_secs_f64(grace), !no_kill && !super::supervise::in_watchdog(), &deps);
+            let r = stop(&o, Duration::from_secs_f64(grace), !no_kill && !super::supervise::in_watchdog(), keep_ai, &deps);
             if !o.vr.dry_run {
                 if let Some(l) = super::audio::on_stop(&o.vr.session_dir) {
                     vout!("omarchyvr desk: {l}");
                 }
             }
             r
+        }
+        "exit" => {
+            let l = super::work::exit(&o, exit_now, &deps, &mut super::work::spawn_detached_stop).map_err(CliError::new)?;
+            vout!("omarchyvr desk: {l}");
+            Ok(())
         }
         "preset" => preset_live(&o, preset_name.as_deref().unwrap_or_default(), &deps),
         "screens" => match screens_arg.as_deref() {
@@ -1462,13 +1551,16 @@ mod tests {
         assert!(std::fs::read_to_string(&f).unwrap().contains("pipewire"));
         std::fs::write(&f, "capture_method:   screencopy\n").unwrap();
         assert_eq!(ensure_wayvr_home(&home, false, false).unwrap(), None);
-        // keyboard off always; the caption panel only with voice
+        // keyboard off always, the menu button opens the Work menu; the caption panel only with voice
         let cd = home.join("config/wayvr/conf.d");
         assert_eq!(
             std::fs::read_to_string(cd.join("35-desk.yaml")).unwrap(),
-            "enable_keyboard: false\n"
+            "enable_keyboard: false\nmenu_panel: work_menu\n"
         );
-        assert!(!cd.join("40-panels.yaml").exists());
+        // the Work menu is in every desk session: Exit Work runs the full stop (two presses)
+        assert_eq!(std::fs::read_to_string(cd.join("40-panels.yaml")).unwrap(), "custom_panels:\n  - work_menu\n");
+        let menu = std::fs::read_to_string(home.join("config/wayvr/theme/gui/work_menu.xml")).unwrap();
+        assert!(menu.contains("_press=\"::ShellExec omarchyvr desk exit\"") && menu.contains("_press=\"::OverlayToggle work_menu\""), "{menu}");
         assert_eq!(ensure_wayvr_home(&home, true, false).unwrap(), None);
         assert!(std::fs::read_to_string(cd.join("40-panels.yaml"))
             .unwrap()
@@ -1477,12 +1569,12 @@ mod tests {
             .unwrap()
             .contains("id=\"cap_l2\""));
         assert_eq!(ensure_wayvr_home(&home, false, false).unwrap(), None);
-        assert!(!cd.join("40-panels.yaml").exists());
+        assert_eq!(std::fs::read_to_string(cd.join("40-panels.yaml")).unwrap(), "custom_panels:\n  - work_menu\n");
         // the wrist panel alone, and together with the captions in one list
         assert_eq!(ensure_wayvr_home(&home, false, true).unwrap(), None);
         assert_eq!(
             std::fs::read_to_string(cd.join("40-panels.yaml")).unwrap(),
-            "custom_panels:\n  - perf\n"
+            "custom_panels:\n  - work_menu\n  - perf\n"
         );
         assert!(std::fs::read_to_string(home.join("config/wayvr/theme/gui/perf.xml"))
             .unwrap()
@@ -1490,7 +1582,7 @@ mod tests {
         assert_eq!(ensure_wayvr_home(&home, true, true).unwrap(), None);
         assert_eq!(
             std::fs::read_to_string(cd.join("40-panels.yaml")).unwrap(),
-            "custom_panels:\n  - captions\n  - perf\n"
+            "custom_panels:\n  - work_menu\n  - captions\n  - perf\n"
         );
     }
 

@@ -69,6 +69,8 @@ pub fn read_only_command(prog: &str, args: &[&str]) -> bool {
         "patch" => args.contains(&"--dry-run"),
         "omarchyvr" => args == ["desk", "help"],
         "pactl" => matches!(args.first(), Some(&("get-default-source" | "get-default-sink" | "list" | "info"))),
+        // the graphics-card check while Play runs: queries only (no GPU work, nothing changed)
+        "nvidia-smi" => !args.is_empty() && args.iter().all(|a| a.starts_with("--query-") || a.starts_with("--format=")),
         _ => false,
     }
 }

@@ -872,6 +872,11 @@ pub struct AiConfig {
     /// model is loaded and voice uses the online provider when chosen, else only the offline commands. On: they run
     /// in Work sessions only (omarchyvrd's ai.server; never in Play / SteamVR).
     pub voice_local_models: Option<bool>,
+    /// Lara (the router on this PC, processor only) in front of an online brain (`voice_lara`, the Work first-run
+    /// question; docs/WORK-FIRST-RUN.md). With a local model Lara is the two-stage router as before (`voice_local`);
+    /// with an online provider that has a key (Claude with a key, any compatible API) Lara sorts each command and the
+    /// online model acts with that category's tools only. The Claude CLI reads every command itself (no Lara).
+    pub voice_lara: Option<bool>,
     /// Speech recognition: Auto / Small (processor) / Large (graphics card) (`asr`, default auto).
     pub asr: Asr,
     /// Top-level keys this version does not know, raw values (kept on save).
@@ -1029,6 +1034,7 @@ impl AiConfig {
                     "strip_titles" => c.strip_titles = parse_bool(v, n, k)?,
                     "voice_online_backup" => c.voice_online_backup = Some(parse_bool(v, n, k)?),
                     "voice_local_models" => c.voice_local_models = Some(parse_bool(v, n, k)?),
+                    "voice_lara" => c.voice_lara = Some(parse_bool(v, n, k)?),
                     "asr" => {
                         let m = unquote(v, n)?;
                         c.asr = Asr::parse(&m).ok_or_else(|| format!("line {n}: asr {m:?} (cpu or gpu)"))?;
@@ -1176,6 +1182,9 @@ impl AiConfig {
         }
         if let Some(b) = self.voice_local_models {
             o += &format!("voice_local_models = {b}\n");
+        }
+        if let Some(b) = self.voice_lara {
+            o += &format!("voice_lara = {b}\n");
         }
         if self.asr != Asr::Cpu {
             o += &format!("asr = {}\n", quote(self.asr.id()));
@@ -1391,6 +1400,23 @@ impl AiConfig {
     /// Local models on (the switch; not set: on when voice uses a provider on this PC).
     pub fn local_models_on(&self) -> bool {
         self.voice_local_models.unwrap_or_else(|| self.runs_on() != RunsOn::Online)
+    }
+
+    /// Lara sorts the commands for an online brain (`voice_lara = true`, and voice uses an online provider reached with
+    /// a key: Claude with an API key or any compatible API; the Claude CLI reads every command itself).
+    pub fn lara_with_online(&self) -> bool {
+        self.voice_lara == Some(true) && self.provider_for(Feature::Voice).is_some_and(|p| p.is_remote() && p.kind != Kind::ClaudeCli)
+    }
+
+    /// Lara is in use: two stages on this PC, or in front of an online brain.
+    pub fn lara_on(&self) -> bool {
+        (self.local_models_on() && self.voice_local == VoiceLocal::TwoStage) || self.lara_with_online()
+    }
+
+    /// The local AI servers have work in a Work session: the local models, or Lara alone in front of an online brain.
+    /// Only Work starts them; Play never does (docs/PLAY-WORK-AUDIT.md).
+    pub fn ai_servers_wanted(&self) -> bool {
+        self.local_models_on() || self.lara_with_online()
     }
 
     /// "Local models: On / Off". On: two stages with the preset (Medium unless one was chosen), voice on this PC.
@@ -1887,5 +1913,23 @@ mod tests {
         assert!(AiConfig::parse("strip_titles = yes\n").is_err());
         assert!(is_loopback("http://127.0.0.1:8080/v1") && is_loopback("http://localhost/v1") && is_loopback("http://[::1]:1/v1"));
         assert!(!is_loopback("https://api.openai.com/v1") && !is_loopback("http://192.168.1.5:1234/v1") && !is_loopback("http://127.0.0.1.evil.com/v1"));
+    }
+
+    #[test]
+    fn lara_in_front_of_an_online_brain_and_what_the_ai_servers_have_to_do() {
+        // Claude with a key + Lara: Lara runs (router only), no local model
+        let key = "voice_lara = true\nvoice_local_models = false\n[use]\nvoice = \"claude\"\n[providers.claude]\nkind = \"anthropic\"\napi_key = \"sk-ant-TEST\"\n";
+        let c = AiConfig::parse(key).unwrap();
+        assert!(c.lara_with_online() && c.lara_on() && c.ai_servers_wanted() && !c.local_models_on());
+        assert!(AiConfig::parse(&c.render()).unwrap().voice_lara == Some(true), "the key survives a save");
+        // the Claude CLI reads every command itself: Lara is not used, nothing runs on this PC
+        let cli = AiConfig::parse("voice_lara = true\nvoice_local_models = false\n").unwrap();
+        assert!(!cli.lara_with_online() && !cli.ai_servers_wanted(), "default brain = the Claude CLI");
+        // Lara off with a key: nothing on this PC
+        let off = AiConfig::parse(&key.replace("voice_lara = true", "voice_lara = false")).unwrap();
+        assert!(!off.ai_servers_wanted() && !off.lara_on());
+        // a local model in two stages: Lara is the local router as before
+        let local = AiConfig::parse("voice_local = \"two-stage\"\nvoice_local_models = true\n[use]\nvoice = \"local\"\n[providers.local]\nkind = \"openai-compatible\"\nbase_url = \"http://127.0.0.1:8080/v1\"\nmodel = \"pimax-local\"\n").unwrap();
+        assert!(local.lara_on() && local.ai_servers_wanted() && !local.lara_with_online());
     }
 }

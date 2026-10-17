@@ -453,6 +453,113 @@ fn shots() -> Vec<Shot> {
             dark: true,
             setup: |_| crate::pages::backgrounds::demo(&std::env::temp_dir().join(format!("omarchyvr-bg-shot-{}", std::process::id()))),
         },
+        // Play running: the graphics card is the game's (the check while Play runs), what Play stopped, Switch to Work
+        Shot {
+            name: "home-play-running",
+            running: true,
+            page: Page::Desk,
+            height: 860.0,
+            dark: true,
+            setup: |a| {
+                a.core.live.started_as = Some("vr".into());
+                for p in a.core.live.session.iter_mut() {
+                    p.alive = matches!(p.name, "monado" | "broker" | "ctrltrack");
+                }
+                a.core.live.gm_paused = vec!["local AI".into(), "voice".into()];
+                a.core.vram = Some((std::time::Instant::now(), omarchyvr_gui_core::vram::demo_report()));
+            },
+        },
+        // the Work first run (docs/WORK-FIRST-RUN.md): the first Work press asks two questions before VR starts
+        Shot {
+            name: "worksetup-assistant",
+            running: false,
+            page: Page::WorkSetup,
+            height: 1180.0,
+            dark: true,
+            setup: |a| {
+                a.core.work_setup.record.done = false;
+                a.core.open_work_setup(true);
+                a.core.work_setup.choices = omarchyvr_gui_core::worksetup::Choices::default();
+            },
+        },
+        Shot {
+            name: "worksetup-assistant-local",
+            running: false,
+            page: Page::WorkSetup,
+            height: 1180.0,
+            dark: true,
+            setup: |a| {
+                use omarchyvr_gui_core::worksetup::{Brain, Choices};
+                a.core.work_setup.record.done = false;
+                a.core.open_work_setup(true);
+                a.core.work_setup.choices = Choices { brain: Brain::Local, lara: true, ..Choices::default() };
+            },
+        },
+        Shot {
+            name: "worksetup-assistant-api",
+            running: false,
+            page: Page::WorkSetup,
+            height: 1240.0,
+            dark: true,
+            setup: |a| {
+                use omarchyvr_gui_core::worksetup::{Brain, Choices};
+                a.core.work_setup.record.done = false;
+                a.core.open_work_setup(true);
+                a.core.work_setup.choices = Choices { brain: Brain::Compatible, lara: true, base_url: "https://openrouter.ai/api/v1".into(), model: "anthropic/claude-haiku-5.5".into(), ..Choices::default() };
+                a.core.work_setup.key = "sk-or-v1-demo-not-a-key".into();
+                a.core.work_setup.test = Some(Ok("OK: anthropic/claude-haiku-5.5 answered in 0.9 s".into()));
+            },
+        },
+        Shot {
+            name: "worksetup-speech",
+            running: false,
+            page: Page::WorkSetup,
+            height: 900.0,
+            dark: true,
+            setup: |a| {
+                use omarchyvr_gui_core::worksetup::{Brain, Choices, Step};
+                a.core.work_setup.record.done = false;
+                a.core.open_work_setup(true);
+                a.core.work_setup.choices = Choices { brain: Brain::Local, lara: true, ..Choices::default() };
+                a.core.work_setup.step = Step::Speech;
+            },
+        },
+        Shot {
+            name: "worksetup-download",
+            running: false,
+            page: Page::WorkSetup,
+            height: 900.0,
+            dark: true,
+            setup: |a| {
+                use omarchyvr_gui_core::worksetup::{Brain, Choices};
+                a.core.work_setup.record.done = false;
+                a.core.open_work_setup(true);
+                a.core.work_setup.choices = Choices { brain: Brain::Local, lara: true, ..Choices::default() };
+                a.core.ws_next();
+                a.core.ws_finish();
+            },
+        },
+        Shot {
+            name: "worksetup-download-error",
+            running: false,
+            page: Page::WorkSetup,
+            height: 900.0,
+            dark: true,
+            setup: |a| {
+                use omarchyvr_gui_core::worksetup::{apply_line, Brain, Choices};
+                a.core.work_setup.record.done = false;
+                a.core.open_work_setup(true);
+                a.core.work_setup.choices = Choices { brain: Brain::ClaudeKey, lara: true, ..Choices::default() };
+                a.core.ws_next();
+                a.core.ws_finish();
+                if let Some(st) = a.core.work_setup.get.clone() {
+                    if let Ok(mut s) = st.lock() {
+                        apply_line(&mut s, "get error lara downloading the Laya checkpoint convaiinnovations/laya at 55cf4c4 failed (exit status: 1); press Download again to retry (it resumes)");
+                    }
+                }
+                a.core.poll();
+            },
+        },
     ]
 }
 

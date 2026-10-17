@@ -11,6 +11,11 @@ omarchyvr desk: would start, in this order:
        XDG_DATA_HOME=$ROOT/home/.local/share/omarchyvr/wayvr-home/data
        XDG_STATE_HOME=$ROOT/home/.local/share/omarchyvr/wayvr-home/state
        RUST_LOG=info
+       OMARCHYVR_USER_XDG_CONFIG_HOME=
+       OMARCHYVR_USER_XDG_DATA_HOME=
+       OMARCHYVR_USER_XDG_STATE_HOME=
+       OMARCHYVR_USER_XDG_CACHE_HOME=
+       PATH=$ROOT/home/.local/bin:$ROOT/bin:/usr/bin:/bin
   3. $ROOT/home/.local/bin/omarchyvr desk screens watch --wayvrctl-bin $ROOT/home/.local/lib/omarchyvr/wayvr/wayvrctl  (log $ROOT/session/screens.log)
 omarchyvr vr: preflight
   [warn] headset   34a4:0044 on USB but only 0/4 hidraw interfaces (udev rule linux/70-pimax.rules installed?)

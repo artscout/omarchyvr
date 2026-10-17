@@ -63,7 +63,7 @@ missed since 2026-10-15; the card line shows late as a percentage ("92 % late") 
   shows *when* frames dropped and they can be lined up with `voice.log`, `ai.log` and the llama-server log.
 
 ## Game mode: free the graphics card while playing
-**Display** > **Performance**: one switch, "Game mode" (default on, also in Home > Quick settings). **Sunshine is never stopped or paused** (user rule; the old "Pause Sunshine" switch and `pause_sunshine` setting are gone, an old value in gamemode.toml is ignored and dropped at the next save). It only applies to **Play** (`omarchyvr vr start`), never to Work.
+**Display** > **Performance**: the "Light game mode" switch and "Eye tracking in games" (also in Home > Quick settings); the old "Game mode" switch is gone, Play always frees the graphics card. **Sunshine is never stopped or paused** (user rule; the old "Pause Sunshine" switch and `pause_sunshine` setting are gone, an old value in gamemode.toml is ignored and dropped at the next save). It only applies to **Play** (`omarchyvr vr start`), never to Work.
 - At Play start (after VR is up) it pauses the **local AI** (`omarchyvr-ai stop`: SIGTERM,
   llama-server on Vulkan). Only what was really running is paused; it is written to
   `<session dir>/gamemode-paused.txt` (`ai=gpu|cpu`; a `sunshine=<unit>` line left by an older version is only started again, never written). The voice AI is not used in Play.

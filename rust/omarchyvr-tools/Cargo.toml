@@ -25,6 +25,8 @@ omarchyvr-components = { path = "../omarchyvr-components" }
 omarchyvr-record = { path = "../omarchyvr-record" }
 omarchyvr-config = { path = "../omarchyvr-config" }
 omarchyvr-backgrounds = { path = "../omarchyvr-backgrounds" }
+# the local AI's pid files and its stop (Work owns the AI: desk stop and Play's start take it down)
+omarchyvr-ai = { path = "../omarchyvr-ai" }
 
 [dev-dependencies]
 flate2 = { workspace = true }

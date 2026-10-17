@@ -3,10 +3,39 @@
 1. **Grip on a screen**: it follows your hand rigidly. Release: it stays there in the room (world-locked, saved on `omarchyvr desk stop`, restored on the next start).
 2. **Thumbstick up/down while gripping**: push away / pull closer (0.4-8 m); the size scales with distance so it keeps its apparent size (far = cinema screen).
 3. **Grip the same screen with both hands**: pull apart / together to resize (0.3-6 m wide), turn your hands to rotate it. This is the only resize gesture.
-4. A short hint ("stick: push/pull . both grips: resize") shows by the grabbing hand. Optional pin (A right / X left click toggles grabbable): `world_lock_pin: true`. Recenter the play space: double-click left menu. **Reset screens** (all back in front): double-click B (right) or `wayvrctl reset-screens`. Unusable screens (bad pose, too close/far, out of view for 10 s) go back by themselves (see wayvr.log "auto-reset").
+4. A short hint ("stick: push/pull . both grips: resize") shows by the grabbing hand. Optional pin (A right / X left click toggles grabbable): `world_lock_pin: true`. Recenter the play space: the Work menu's Recenter (left menu button, below). **Reset screens** (all back in front): double-click B (right) or `wayvrctl reset-screens`. Unusable screens (bad pose, too close/far, out of view for 10 s) go back by themselves (see wayvr.log "auto-reset").
 
 Config: `omarchyvr desk start` rewrites `~/src/desk-out/wayvr-home-am/config/wayvr/conf.d/30-worldlock.yaml` every start (do not edit; change the constant in `rust/omarchyvr-tools/src/vr/desk.rs`). Static poses live in SLAM space: start the headset at about the same place.
 Install (desk stopped, `pgrep -x wayvr` empty): `cp $WAYVR_TARGET/release/wayvr ~/.local/lib/omarchyvr/wayvr/wayvr`, and the launcher: `cd ~/omarchyvr/rust && cargo build --release -p omarchyvr-tools && install -m755 target/release/omarchyvr ~/.local/bin/omarchyvr`.
+
+## The Work menu and Exit Work (2026-10-17)
+**Menu button:** the left controller's menu button (Touch: left menu; Index: left system; Vive: left menu; Index and
+Vive untested) opens the **Work menu** in front of you (0.6 m ahead, a little below your line of sight, never where it
+was last); the same button closes it. Buttons: **Exit Work**, **Close menu**, **Recenter** (the screens in front of
+you again), **WayVR settings** (its dashboard). The panel is the custom panel `work_menu` that `omarchyvr desk start` writes into WayVR's config home every start
+(`WORK_MENU_XML` in `rust/omarchyvr-tools/src/vr/desk.rs`; WayVR config key `menu_panel: work_menu` in 35-desk.yaml;
+the WayVR side is the binding action `menu` and `OverlayTask::ToggleMenu`, forks/wayvr). Before this change the left
+menu button recentered on a double click; Recenter is now in the menu.
+**Hands (the default, no controllers):** WayVR has no hand gesture for a menu; the watch on the left wrist has an
+always visible **Exit Work** row (red), the same command.
+
+**Exit Work** runs `omarchyvr desk exit`: the first press shows "Exit Work? Press Exit Work again to stop
+everything: screens, voice, AI." (a WayVR notification in the headset, never a desktop one); a second press within 6 s
+starts the full stop, detached from WayVR
+(`omarchyvr desk stop --grace 30` in its own session, log `/tmp/omarchyvr-session/exit.log`), so it survives WayVR
+quitting. Only a Work session reacts (in Play or with nothing running it says so and does nothing). The full stop is
+the same one the app's Stop and "Switch to Play" use, all by pid (pid files, never by name; Sunshine and processes we
+did not start are never touched):
+1. the recorder (if one runs), then voice HUD, voice actions, subtitles, voice, the VR screens watcher, the wrist
+   readout (omarchyvr-perf), WayVR, passthrough, the controller tracker (SIGINT, a wait each);
+2. the local AI: every `omarchyvr-ai` slot (model, Lara router, speech server, agent) and its VRAM watch (SIGTERM,
+   SIGKILL after 5 s);
+3. monado-service, then a hung WayVR (SIGTERM, SIGKILL once Monado is gone), then the camera broker;
+4. the VR screens' Hyprland outputs (`PIMAX-*`) are removed; headset sound is put back to what it was before Work;
+5. a last check names anything of Work still running ("Work stopped: nothing of it is left running" when clean).
+A restart by the supervisor (`--keep-ai`) keeps the AI loaded; nothing else does. Tests:
+`exit_work_stops_every_tracked_component_and_nothing_else`, `exit_work_asks_for_a_second_press_and_only_in_work`
+(rust/omarchyvr-tools/src/vr/work.rs). Audit: docs/PLAY-WORK-AUDIT.md.
 
 ## Controller models and the pointer ray (2026-10-16)
 **What you see:** with "Use controllers in Work" on, each controller in use gets a 3D model at your hand, the same
