@@ -21,6 +21,9 @@ fn build_libs() -> PathBuf {
     let dir = profile_dir();
     ONCE.call_once(|| {
         let mut c = Command::new(env!("CARGO"));
+        // the target dir this test runs from, absolute: a relative CARGO_TARGET_DIR in the caller's environment would
+        // otherwise resolve against this crate's directory (a stray <crate>/target-clean and a stale library)
+        c.env("CARGO_TARGET_DIR", std::env::current_exe().unwrap().ancestors().nth(3).unwrap());
         c.args(["build", "-p", "pimax-capi", "--manifest-path"])
             .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml"));
         if dir.file_name().unwrap() == "release" {

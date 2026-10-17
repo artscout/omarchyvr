@@ -30,6 +30,9 @@ fn tmp() -> PathBuf {
 fn build_staticlib() -> PathBuf {
     let dir = profile_dir();
     let mut c = Command::new(env!("CARGO"));
+    // the target dir this test runs from, absolute: a relative CARGO_TARGET_DIR in the caller's environment would
+    // otherwise resolve against this crate's directory (a stray <crate>/target-clean and a stale library)
+    c.env("CARGO_TARGET_DIR", std::env::current_exe().unwrap().ancestors().nth(3).unwrap());
     c.args(["build", "-p", "pimax-lens", "--manifest-path"])
         .arg(crate_dir().join("Cargo.toml"));
     if dir.file_name().unwrap() == "release" {

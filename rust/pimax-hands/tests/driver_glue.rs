@@ -58,6 +58,9 @@ fn driver_glue_turns_reports_into_the_right_joints() {
         .unwrap()
         .to_path_buf();
     let mut c = Command::new(env!("CARGO"));
+    // the target dir this test runs from, absolute: a relative CARGO_TARGET_DIR in the caller's environment would
+    // otherwise resolve against this crate's directory (a stray <crate>/target-clean and a stale library)
+    c.env("CARGO_TARGET_DIR", std::env::current_exe().unwrap().ancestors().nth(3).unwrap());
     c.args(["build", "-p", "pimax-capi"]);
     if profile_dir.file_name().unwrap() == "release" {
         c.arg("--release");
