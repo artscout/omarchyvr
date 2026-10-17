@@ -948,7 +948,7 @@ fn desk_start_dry_run_lists_monado_passthrough_wayvr_in_order() {
     assert!(t.contains(&format!("{} run", pt.display())), "{t}");
     assert!(t.contains("--openxr --show --no-autostart"), "{t}");
     assert!(t.contains("PIMAX_EYE=1"), "{t}");
-    assert!(i("1a. VR screens: 4") < i("1. monado-service"), "{t}");
+    assert!(i("1a. VR screens: 6") < i("1. monado-service"), "{t}");
     assert!(t.contains("screens watch --wayvrctl-bin"), "{t}");
     assert!(!f.root.join("hypr.state").exists(), "a dry run creates no output");
     // dry run starts and creates nothing
@@ -1091,8 +1091,8 @@ fn desk_start_and_stop_run_the_processes_in_order_and_stop_them_in_reverse() {
     let first_start = started.find("start pt").unwrap();
     assert!(started.find("hyprctl output create headless PIMAX-LEFT").unwrap() < first_start, "{started}");
     assert!(started.find("hyprctl eval hl.monitor({ output = \"PIMAX-UP\"").unwrap() < started.find("hyprctl output create headless PIMAX-UP").unwrap());
-    assert_eq!(fs::read_to_string(f.root.join("hypr.state")).unwrap().lines().count(), 3);
-    assert!(fs::read_to_string(f.session().join("screens.txt")).unwrap().starts_with("screens: 4 (SUNSHINE, left = PIMAX-LEFT"));
+    assert_eq!(fs::read_to_string(f.root.join("hypr.state")).unwrap().lines().count(), 5);
+    assert!(fs::read_to_string(f.session().join("screens.txt")).unwrap().starts_with("screens: 6 (SUNSHINE, left = PIMAX-LEFT"));
     let lines: Vec<&str> = started.lines().filter(|l| l.starts_with("start")).collect();
     assert!(lines[0].starts_with("start pt run"), "{started}");
     assert!(

@@ -78,7 +78,7 @@ pub const USAGE: &str = "usage: omarchyvr desk <command> [options]
       the desktop + 2 WayVR app panels from ~/.config/omarchyvr/work-panels.conf, flat), work-1 (one flat screen),
       assistant (= --voice captions), none; written to conf.d/60-preset.yaml every start (removed with none), the
       layout is applied over wayvrctl once WayVR runs.
-      --screens N (1-6, default 4): VR screens = Hyprland outputs. The main desktop output is the centre screen; up to
+      --screens N (1-6, default 6): VR screens = Hyprland outputs. The main desktop output is the centre screen; up to
       five headless outputs PIMAX-LEFT, PIMAX-RIGHT, PIMAX-UP, PIMAX-UPLEFT, PIMAX-UPRIGHT (the main one's size,
       left/right/above it and above left/right) are created
       BEFORE Monado (hyprctl eval 'hl.monitor(...)' + hyprctl output create headless; ~/.config/hypr is not edited)
@@ -1542,9 +1542,9 @@ mod tests {
     }
 
     #[test]
-    fn vr_screens_default_to_four_with_the_watcher_after_wayvr() {
+    fn vr_screens_default_to_six_with_the_watcher_after_wayvr() {
         let o = parse(&[], &[]).unwrap();
-        assert_eq!(o.screens, 4);
+        assert_eq!(o.screens, 6);
         let p = plan(&o);
         assert_eq!(p.iter().map(|s| s.name).collect::<Vec<_>>(), ["passthrough", "wayvr", "screens", "perf"]);
         assert_eq!(p[2].program, PathBuf::from("/home/u/.local/bin/omarchyvr"));

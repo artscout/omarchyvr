@@ -3,7 +3,7 @@ exit Some(0)
 --- stdout
 omarchyvr desk: headset data: calibration = the shipped Dream Air reference, controller models = the shipped Dream Air reference, lens = the shipped Dream Air profile, gyro = the Dream Air default until the headset rests once
 omarchyvr desk: would start, in this order:
-  1a. VR screens: 4 (the main desktop output + PIMAX-LEFT, PIMAX-RIGHT, PIMAX-UP as headless outputs of its size, created before Monado; hyprctl eval 'hl.monitor(...)', hyprctl output create headless)
+  1a. VR screens: 6 (the main desktop output + PIMAX-LEFT, PIMAX-RIGHT, PIMAX-UP, PIMAX-UPLEFT, PIMAX-UPRIGHT as headless outputs of its size, created before Monado; hyprctl eval 'hl.monitor(...)', hyprctl output create headless)
   1. monado-service ($ROOT/build/src/xrt/targets/service/monado-service)
   2. $ROOT/home/.local/lib/omarchyvr/wayvr/wayvr --openxr --show --no-autostart --log-to $ROOT/session/wayvr.log  (log $ROOT/session/wayvr.stdout)
        XR_RUNTIME_JSON=$ROOT/build/openxr_monado-dev.json

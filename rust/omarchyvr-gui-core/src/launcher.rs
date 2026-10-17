@@ -639,7 +639,7 @@ mod tests {
         assert!(!t.eye && !t.passthrough && !t.sixdof);
         let (t, _) = toggles_from_argv("desk\n--screens\n6\n", base).unwrap();
         assert_eq!(t.screens, 6);
-        assert_eq!(toggles_from_argv("desk\n--voice\n", base).unwrap().0.screens, 4, "no flag = the default");
+        assert_eq!(toggles_from_argv("desk\n--voice\n", base).unwrap().0.screens, 6, "no flag = the default");
         assert!(toggles_from_argv("", base).is_none());
         assert!(toggles_from_argv("other\n", base).is_none());
         let d = DeskToggles::default();
@@ -681,7 +681,7 @@ mod tests {
     fn command_lines() {
         let t = DeskToggles::with_eye();
         assert_eq!(desk_start_args(&t, false).join(" "), "desk start --fps 90 --eye --6dof");
-        let all = DeskToggles { eye: true, sixdof: true, ctrl_track: true, hands: false, hands_roles: false, passthrough: false, voice: true, hz90: true, perf: false, anchor: false, preset: Preset::None, eye_default_on: false, screens: 4, ctrl_work: CtrlMode::WhenHeld, ctrl_play: CtrlMode::Always, ..DeskToggles::default() };
+        let all = DeskToggles { eye: true, sixdof: true, ctrl_track: true, hands: false, hands_roles: false, passthrough: false, voice: true, hz90: true, perf: false, anchor: false, preset: Preset::None, eye_default_on: false, screens: 6, ctrl_work: CtrlMode::WhenHeld, ctrl_play: CtrlMode::Always, ..DeskToggles::default() };
         // a newer launcher: eye on by default, --no-eye to turn it off
         let newer = DeskToggles { eye_default_on: true, ..all };
         assert!(!desk_flags(&newer).contains(&"--eye".to_string()));
@@ -724,8 +724,8 @@ mod tests {
         assert!(!s.ctrl_track && s.sixdof && s.eye);
         let two = DeskToggles { screens: 2, ..DeskToggles::default() };
         assert!(desk_flags(&two).windows(2).any(|w| w == ["--screens", "2"]));
-        assert!(!desk_flags(&DeskToggles::default()).iter().any(|f| f == "--screens"), "4 is the launcher default");
-        assert_eq!(two.supported(&LauncherCaps::default()).screens, 4, "an older launcher: no flag");
+        assert!(!desk_flags(&DeskToggles::default()).iter().any(|f| f == "--screens"), "6 is the launcher default");
+        assert_eq!(two.supported(&LauncherCaps::default()).screens, 6, "an older launcher: no flag");
         assert!(parse_caps("omarchyvr desk ... [--screens 1-6]").screens);
         let off = DeskToggles { perf: false, ..DeskToggles::default() };
         assert!(off.supported(&old).perf, "an older launcher has no --no-perf to pass");
@@ -746,7 +746,7 @@ mod tests {
         assert_eq!(
             p.clients.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(),
             ["passthrough", "wayvr", "screens", "perf"],
-            "the screens watcher (4 VR screens) and the wrist performance readout run by default"
+            "the screens watcher (6 VR screens) and the wrist performance readout run by default"
         );
         assert_eq!(p.sixdof_bins.len(), 2);
         assert_eq!(p.basalt, Some(PathBuf::from("/home/u/.local/lib/libbasalt.so")));
