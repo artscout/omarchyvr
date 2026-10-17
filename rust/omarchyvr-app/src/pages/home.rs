@@ -217,7 +217,10 @@ fn session(ui: &mut Ui, app: &mut PimaxApp) {
         }
     }
     if let Some(e) = app.core.game_needs_steamvr_now() {
-        widgets::status(ui, &format!("{} crashes with xrizer. Stop VR and press Play again: the session will start with SteamVR for it (Ready check > VR games).", e.name), p.warn);
+        widgets::status(ui, &format!("{} crashes with xrizer. Switch Play to SteamVR for it (button below), or close the game.", e.name), p.warn);
+        if ui.add_enabled(!busy, eframe::egui::Button::new("Switch Play to SteamVR for this game")).on_hover_text("Stops this Play session (by pid) and starts it again with SteamVR for this game. Then close the game if it is still open and start it again from Steam.").clicked() {
+            app.core.switch_to_steamvr_for_game(&e.appid);
+        }
     }
     match phase {
         DeskPhase::Running => {

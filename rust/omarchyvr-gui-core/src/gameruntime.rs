@@ -133,6 +133,35 @@ impl AppCore {
         });
     }
 
+    /// The Steam game the next `vr start` is for: the one the user picked ("Next Play is for this game"), else the
+    /// game that already runs when Play is pressed (Steam started it first), when it is on the SteamVR list. The list
+    /// is only read by `vr start --game`, so without this a listed game launched before/after Play ran under xrizer
+    /// (Half-Life: Alyx, 2026-10-17).
+    pub fn start_game(&self) -> Option<String> {
+        if let Some(n) = &self.facts.next_game {
+            return Some(n.clone());
+        }
+        let g = self.live.game.as_ref()?;
+        self.game_runtime_list().into_iter().find(|e| e.appid == *g && e.runtime == Games::SteamVr).map(|e| e.appid)
+    }
+
+    /// The offer on Home when a listed game runs under Monado + xrizer: restart Play for this game with SteamVR
+    /// (stops the session by pid, waits for Monado to go, `vr start --game APPID`). The game itself is not touched:
+    /// it ends by itself (xrizer aborts it) or the user closes it, then starts it again from Steam.
+    pub fn switch_to_steamvr_for_game(&mut self, appid: &str) {
+        if self.demo || appid.is_empty() || !appid.bytes().all(|b| b.is_ascii_digit()) {
+            return;
+        }
+        match self.switch_job_for(true, Some(appid.to_string())) {
+            Ok(j) => {
+                self.state.last_vr = true;
+                self.save_state();
+                self.spawn(j);
+            }
+            Err(e) => self.message = e,
+        }
+    }
+
     /// A game that runs now and is on the SteamVR list while this session runs Monado + xrizer: it will crash.
     pub fn game_needs_steamvr_now(&self) -> Option<gr::Entry> {
         let g = self.game_watch.current.as_ref()?;
@@ -171,5 +200,23 @@ mod tests {
         step(&mut cur, Some("1".into()), 30);
         assert_eq!(step(&mut cur, Some("2".into()), 31), Some(GameRun { appid: "1".into(), since: 30 }));
         assert_eq!(cur.unwrap().appid, "2");
+    }
+
+    #[test]
+    fn play_is_for_the_running_listed_game_without_the_next_pick() {
+        let d = std::env::temp_dir().join(format!("gr-start-game-{}", std::process::id()));
+        let mut a = AppCore::demo(false, omarchyvr_config::Store::new(d.join("c"), d.join("k")));
+        a.facts.next_game = None;
+        a.facts.game_runtimes.clear();
+        a.live.game = Some(gr::ALYX.to_string());
+        assert_eq!(a.start_game().as_deref(), Some(gr::ALYX), "Alyx is in the built-in SteamVR list");
+        a.live.game = Some("730".to_string());
+        assert_eq!(a.start_game(), None, "a game not on the list does not change the start");
+        a.facts.next_game = Some("123".to_string());
+        assert_eq!(a.start_game().as_deref(), Some("123"), "the user's pick wins");
+        a.facts.next_game = None;
+        a.live.game = None;
+        assert_eq!(a.start_game(), None);
+        let _ = std::fs::remove_dir_all(&d);
     }
 }
