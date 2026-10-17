@@ -686,10 +686,18 @@ pub fn collect_facts(
     let path = m.env("PATH").unwrap_or_else(|| "/usr/local/bin:/usr/bin:/bin".into());
     f.systemd_run = crate::term::which("systemd-run", &path, &|x| m.exists(x));
     f.user_manager = m.exists(&p.runtime_dir.join("systemd/private"));
-    f.polkit_agent = procs::pids(m).into_iter().any(|p| {
-        procs::comm(m, p).is_some_and(|c| c.contains("polkit") && c != "polkitd")
-    });
+    f.polkit_agent = procs::pids(m).into_iter().any(|p| polkit_agent_proc(m, p));
     f
+}
+
+/// A polkit authentication agent: a dedicated one (hyprpolkitagent, polkit-gnome, ...), or the Omarchy shell
+/// (quickshell running /usr/share/omarchy/shell), which shows the password dialog itself.
+fn polkit_agent_proc(m: &dyn Machine, pid: u32) -> bool {
+    match procs::comm(m, pid) {
+        Some(c) if c.contains("polkit") => c != "polkitd",
+        Some(c) if c == "quickshell" => procs::cmdline(m, pid).iter().any(|a| a.contains("/omarchy/shell")),
+        _ => false,
+    }
 }
 
 /// The accuracy of an eye calibration file: the validation summary line, else the mean of `accuracy_deg`.
@@ -733,6 +741,21 @@ mod tests {
         assert!(live.desk_clients_alive() && live.anything_running());
         assert_eq!(live.log.sixdof.state, crate::monlog::TrackState::Tracking);
         assert!(live.proc("monado").unwrap().age.unwrap() > 0.0);
+    }
+
+    #[test]
+    fn the_omarchy_shell_counts_as_a_polkit_agent() {
+        let (mut m, _p) = demo::running_machine();
+        m.file("/proc/71001/comm", "polkitd\n");
+        assert!(!polkit_agent_proc(&m, 71001), "the polkit daemon is not an agent");
+        m.file("/proc/71002/comm", "quickshell\n");
+        m.file("/proc/71002/cmdline", "quickshell\0-n\0-p\0/usr/share/omarchy/shell\0");
+        assert!(polkit_agent_proc(&m, 71002), "Omarchy's shell shows the password dialog (2026-10-17 install)");
+        m.file("/proc/71003/comm", "quickshell\n");
+        m.file("/proc/71003/cmdline", "quickshell\0-p\0/home/u/my-bar\0");
+        assert!(!polkit_agent_proc(&m, 71003), "another quickshell config is not known to have an agent");
+        m.file("/proc/71004/comm", "hyprpolkitagent\n");
+        assert!(polkit_agent_proc(&m, 71004));
     }
 
     #[test]
