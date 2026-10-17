@@ -749,6 +749,10 @@ impl AppCore {
         self.want_plan(self.effective_toggles());
         self.want_plan(self.effective_toggles().without_eye());
         self.want_plan(self.vr_toggles());
+        // the room setup gate judges its own switches (6DoF + anchor, + controllers for Full): without these plans it
+        // stayed on "Checking this PC..." for ever (2026-10-17)
+        self.want_plan(self.room_setup_toggles(false));
+        self.want_plan(self.room_setup_toggles(true));
         changed |= self.poll_autostart();
         changed |= self.poll_gamemode_recovery();
         // the Work first run: its downloads, and ai.toml's answers once they are read
