@@ -967,7 +967,7 @@ impl Sim {
         };
         let (limit, pinned, width, distance, curv, pt): (u8, Vec<u8>, f32, f32, f32, &str) = match p {
             "cinema" => (1, vec![], 3.2, 3.5, 0.35, "dim"),
-            "cinema-huge" => (1, vec![], 6.0, 4.36, 0.2, "off"),
+            "cinema-huge" => (1, vec![], 11.0, 8.0, 0.2, "off"),
             "work-3" => (3, vec![2, 3], 1.6, 2.0, 0.0, "normal"),
             "work-1" => (1, vec![], 2.0, 2.2, 0.0, "normal"),
             "assistant" => (6, vec![], 2.0, 2.5, 0.15, "normal"),

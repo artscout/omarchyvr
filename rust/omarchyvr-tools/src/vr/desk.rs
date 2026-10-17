@@ -75,7 +75,7 @@ pub const USAGE: &str = "usage: omarchyvr desk <command> [options]
       camera (progress lines), then continues; no second reset. If the camera stays away the start stops and points to the
       app's 'Get the headset ready' guide. It refuses while monado-service runs. --no-auto-recover skips this.
       --preset (default cinema): cinema (one big curved screen, passthrough dimmed: --gain 0.35), cinema-huge (aliases imax,
-      huge-cinema, theater: one 6 m curved screen at 4.36 m = 68 degrees of view, the room black, backdrop off; docs/CINEMA.md), work-3 (alias work:
+      huge-cinema, theater: one 11 m curved screen at 8 m = 68 degrees of view, the room black, backdrop off; docs/CINEMA.md), work-3 (alias work:
       the desktop + 2 WayVR app panels from ~/.config/omarchyvr/work-panels.conf, flat), work-1 (one flat screen),
       assistant (= --voice captions), none; written to conf.d/60-preset.yaml every start (removed with none), the
       layout is applied over wayvrctl once WayVR runs.
@@ -1978,7 +1978,7 @@ mod tests {
             assert_eq!(calls.lines().count(), want, "{p:?}: {calls}");
             assert!(calls.contains("desk-screens ") && calls.contains("main=SUNSHINE"), "{p:?}: {calls}");
             if p == Preset::CinemaHuge {
-                assert!(calls.contains("skybox off") && calls.contains("--place --width 6 --distance 4.36"), "{calls}");
+                assert!(calls.contains("skybox off") && calls.contains("--place --width 11 --distance 8"), "{calls}");
             }
             for bad in ["process-stop", "process-launch", "kill", "close", "terminate", "desk-layout"] {
                 assert!(!calls.contains(bad), "{p:?} ran {bad}: {calls}");

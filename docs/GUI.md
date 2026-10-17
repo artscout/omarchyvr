@@ -209,7 +209,7 @@ every page at the window's minimum size):
 | ![Home](gui/desk-idle.png) | ![Home, running](gui/desk-running.png) |
 | ![Display](gui/display.png) | ![Tracking](gui/tracking.png) |
 | ![Room](gui/room.png) | ![Desktop](gui/desktop.png) |
-| ![Recording](gui/record.png) | ![AI](gui/ai-local.png) |
+| ![Backgrounds](gui/backgrounds.png) | ![AI](gui/ai-local.png) |
 | ![Developer](gui/developer.png) | ![Home, light](gui/desk-idle-light.png) |
 | ![Setup](gui/setup.png) | ![pkexec dialog](gui/setup-pkexec.png) |
 | ![Tools](gui/tools.png) | ![Logs](gui/logs.png) |
