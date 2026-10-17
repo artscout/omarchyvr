@@ -416,6 +416,7 @@ pub fn run(mut a: Args) -> CliResult {
             let ctrl_track = sixdof::parse_ctrl_track(&mut a, &real_env, &mut opts, &home, &sixdof)?;
             // --controllers: games keep the controllers always shown unless the user switched it (Play's own switch)
             let _controllers = sixdof::parse_controllers(&mut a, &real_env, &mut opts, omarchyvr_config::ctrl_inhand::CtrlMode::Always)?;
+            sixdof::parse_ctrl_angle(&mut a, &real_env, &mut opts)?;
             // eye tracking in games, visual only (the "Eye tracking in games" switch, default off): PIMAX_EYE=1 when on and
             // the eye build and a calibration exist
             let eye_build = omarchyvr_config::paths::monado_build(&home);

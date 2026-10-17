@@ -55,6 +55,7 @@ would start: $ROOT/home/.local/lib/omarchyvr/monado/src/xrt/targets/service/mona
   PIMAX_CTRL_TRACK=1
   PIMAX_CTRL_IMU_LOG=$ROOT/session/ctrl-imu
   PIMAX_CTRL_INHAND=auto
+  PIMAX_CTRL_ANGLE=30
   PIMAX_EYE=1
   PIMAX_EYE_CAL=1
   PIMAX_EYE_CALIBRATION=none

@@ -13,6 +13,8 @@ pub struct Setup {
     pub ctrl_pose: Option<String>,
     /// Backlight 0..=255 (only used once the flash question is settled).
     pub backlight: Option<u32>,
+    /// Controller angle in degrees, -20..=70 (`PIMAX_CTRL_ANGLE`, default 30; crate::ctrl_angle).
+    pub ctrl_angle: Option<i32>,
     /// DRM connector override.
     pub connector: Option<String>,
     /// Monado build directory.
@@ -51,6 +53,9 @@ impl Setup {
                     }
                     s.backlight = Some(n);
                 }
+                "ctrl_angle" => {
+                    s.ctrl_angle = Some(crate::ctrl_angle::parse(v).map_err(|e| bad(&e))?);
+                }
                 "ctrl_pose" => s.ctrl_pose = Some(parse_str(v).ok_or_else(|| bad("not a string"))?),
                 "connector" => s.connector = Some(parse_str(v).ok_or_else(|| bad("not a string"))?),
                 "monado_build" => {
@@ -80,6 +85,9 @@ impl Setup {
         }
         if let Some(v) = self.backlight {
             o += &format!("backlight = {v}\n");
+        }
+        if let Some(v) = self.ctrl_angle {
+            o += &format!("ctrl_angle = {v}\n");
         }
         if let Some(v) = &self.connector {
             o += &format!("connector = {}\n", quote(v));
@@ -140,6 +148,7 @@ mod tests {
             hands: Some(false),
             ctrl_pose: Some("grip".into()),
             backlight: Some(200),
+            ctrl_angle: Some(-20),
             connector: Some("DP-1".into()),
             monado_build: Some("/home/u/src/monado/build".into()),
             extra: [("future".to_string(), "[1, 2]".to_string())].into(),
@@ -151,6 +160,7 @@ mod tests {
     fn rejects_out_of_range() {
         assert!(Setup::parse("fps = 60").unwrap_err().contains("72 or 90"));
         assert!(Setup::parse("backlight = 300").is_err());
+        assert!(Setup::parse("ctrl_angle = 80").is_err());
         assert!(Setup::parse("hands = maybe").is_err());
         assert!(Setup::parse("garbage").is_err());
     }

@@ -110,3 +110,18 @@ offered to games that want them.
 5. Say "Max, controllers on". Both should show even on the desk. "Max, controllers off" hides them. Set In Work back
    to When picked up in the app.
 6. Play (a game): the controllers should always show (In games = Always).
+
+## Controller angle (PIMAX_CTRL_ANGLE)
+
+The controllers felt tilted too far forward (the pointer ran about 30 degrees below horizontal). The Monado Pimax driver
+now pitches the grip AND aim pose of both controllers about their own x axis by the **controller angle**: -20..+70
+degrees, default **+30**; positive = the pointer points higher. SteamVR (driver_monado) and xrizer derive their aim from
+the grip, so they follow without any per-runtime offset. `pimax-ctrltrack live` keeps its fixed 52 degree aim pitch
+(the model-frame definition); the correction is applied in exactly one place, the Monado output.
+
+* Saved setting: `ctrl_angle` in setup.toml (default 30). Launcher: `--ctrl-angle DEG` on `omarchyvr vr start` and
+  `omarchyvr desk start` (recorded in `start-argv.txt`); the launcher sets `PIMAX_CTRL_ANGLE` for Monado unless the
+  environment already has it.
+* Live (no restart): write the degrees to `$XDG_RUNTIME_DIR/pimax-ctrl-angle` (`omarchyvr_config::ctrl_angle::write_live`);
+  the driver re-reads it within 100 ms. The app slider (lane 1e) uses this.
+* Marker in `monado-service`: `PIMAX_CTRL_ANGLE`.

@@ -299,6 +299,7 @@ pub fn parse_desk(
     let ctrl_track = ctrl_track_bin.is_some();
     // Work: a controller is shown only while it is in the hand (PIMAX_CTRL_INHAND=auto) unless --controllers says
     let _controllers = sixdof::parse_controllers(a, env, &mut vr, omarchyvr_config::ctrl_inhand::CtrlMode::WhenHeld)?;
+    sixdof::parse_ctrl_angle(a, env, &mut vr)?;
     let ctrltrack_bin = ctrl_track_bin.unwrap_or_else(|| sixdof::default_ctrltrack_bin(&home));
     let (eye_mode, eye_note) = super::eye_desk::parse(eye, no_eye, &mut vr, &eye_build, build_given, env);
     // --hands after eye and 6DoF: it may move the build to the hands build (a superset of the desk build)
@@ -1349,6 +1350,7 @@ mod tests {
             o.vr.extra_env,
             vec![
                 ("PIMAX_CTRL_INHAND".to_string(), "auto".to_string()),
+                ("PIMAX_CTRL_ANGLE".to_string(), "30".to_string()),
                 ("PIMAX_CTRL_AIM".to_string(), DESK_CTRL_AIM.to_string()),
                 ("PIMAX_PERF_FILE".to_string(), "/tmp/omarchyvr-perf.stats".to_string()),
             ]

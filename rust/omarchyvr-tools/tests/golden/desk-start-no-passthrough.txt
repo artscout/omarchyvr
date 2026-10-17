@@ -40,6 +40,7 @@ would start: $ROOT/build/src/xrt/targets/service/monado-service
   PIMAX_LOG=info
   XR_RUNTIME_JSON=$ROOT/build/openxr_monado-dev.json
   PIMAX_CTRL_INHAND=auto
+  PIMAX_CTRL_ANGLE=30
   PIMAX_CTRL_AIM=head
   PIMAX_BIAS_TIMEOUT_MS=200
   PIMAX_DEBUG_PTRACE=1

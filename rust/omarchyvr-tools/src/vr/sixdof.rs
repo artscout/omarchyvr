@@ -256,6 +256,25 @@ pub fn parse_controllers(
     Ok(mode)
 }
 
+/// `--ctrl-angle DEG` (-20..70, default 30; docs/CONTROLLERS-INHAND.md): the controller angle. Pushes `PIMAX_CTRL_ANGLE`
+/// onto `vr.extra_env` unless the caller's environment sets it. The argv is recorded in start-argv.txt, so a restart
+/// keeps it; the running session can be changed through `omarchyvr_config::ctrl_angle::write_live`.
+pub fn parse_ctrl_angle(
+    a: &mut Args,
+    env: &dyn Fn(&str) -> Option<String>,
+    vr: &mut StartOptions,
+) -> Result<i32, CliError> {
+    use omarchyvr_config::ctrl_angle;
+    let deg = match a.opt("--ctrl-angle")? {
+        Some(v) => ctrl_angle::parse(&v).map_err(|e| CliError::usage(format!("--ctrl-angle: {e}")))?,
+        None => ctrl_angle::DEFAULT_DEG,
+    };
+    if env("PIMAX_CTRL_ANGLE").is_none() {
+        vr.extra_env.push(("PIMAX_CTRL_ANGLE".into(), deg.to_string()));
+    }
+    Ok(deg)
+}
+
 /// The controller tracker as a process to spawn (not an XR client: reads the broker, writes the pose file Monado reads).
 pub fn ctrltrack_spec(bin: &Path, s: &SixDof, session_dir: &Path) -> ProcSpec {
     comp::ctrltrack::spec(bin, &s.sock, session_dir)
@@ -342,6 +361,28 @@ mod tests {
 
     fn get<'a>(vr: &'a StartOptions, k: &str) -> Option<&'a str> {
         vr.extra_env.iter().find(|(n, _)| n == k).map(|(_, v)| v.as_str())
+    }
+
+    #[test]
+    fn ctrl_angle_env() {
+        let run = |args: &[&str], env: &[(&str, &str)]| {
+            let env: Vec<(String, String)> = env.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+            let lookup = move |k: &str| env.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
+            let mut a = Args(args.iter().map(|s| s.to_string()).collect());
+            let mut vr = parse_options(&mut a, &lookup).unwrap();
+            let r = parse_ctrl_angle(&mut a, &lookup, &mut vr);
+            (vr, r)
+        };
+        let (vr, r) = run(&[], &[]);
+        assert_eq!(r.unwrap(), 30);
+        assert_eq!(get(&vr, "PIMAX_CTRL_ANGLE"), Some("30"));
+        let (vr, _) = run(&["--ctrl-angle", "-20"], &[]);
+        assert_eq!(get(&vr, "PIMAX_CTRL_ANGLE"), Some("-20"));
+        let (vr, _) = run(&["--ctrl-angle=70"], &[]);
+        assert_eq!(get(&vr, "PIMAX_CTRL_ANGLE"), Some("70"));
+        let (vr, _) = run(&["--ctrl-angle", "10"], &[("PIMAX_CTRL_ANGLE", "5")]);
+        assert_eq!(get(&vr, "PIMAX_CTRL_ANGLE"), None, "the caller's own wins");
+        assert!(run(&["--ctrl-angle", "90"], &[]).1.is_err());
     }
 
     #[test]
