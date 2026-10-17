@@ -408,10 +408,20 @@ fi
 mkdir -p "$BIN"
 for b in "${OVR_BINS[@]}"; do put "$REL/$b" "$BIN/$b" 755 REBUILD "omarchyvr $HASH"; done
 for b in wayvr wayvrctl; do put "$CACHE/wayvr-target/release/$b" "$LIBDIR/wayvr/$b" 755 REBUILD "WayVR $(git -C "$REPO/forks/wayvr" rev-parse --short HEAD)"; done
-# the data the app and the root job read: docs, udev rule, EDID files, NVIDIA patches and hooks, installer
+# WayVR's OpenVR overlay code links libopenvr_api.so (no RUNPATH, not a system library): it goes next to wayvr, where
+# the launcher points LD_LIBRARY_PATH (2026-10-17 parity audit: the installed WayVR found it only in the lab's
+# ~/src/openvr, so Work could not start on a PC without that clone)
+OPENVR_SO=$(ls -t "$CACHE"/wayvr-target/release/build/ovr_overlay_sys-*/out/libopenvr_api.so 2>/dev/null | head -1 || true)
+if [[ -n $OPENVR_SO ]]; then
+	put "$OPENVR_SO" "$LIBDIR/wayvr/libopenvr_api.so" 755 REBUILD "OpenVR API library for WayVR (built by its ovr_overlay crate)"
+elif [[ $WAYVR_FEATURES == default || $WAYVR_FEATURES == *openvr* ]]; then
+	warn "WayVR was built with OpenVR but its libopenvr_api.so was not found in the build: Work needs it"
+fi
+# the data the app and the root job read: docs, udev rule, EDID files, NVIDIA patches and hooks, installer, and the
+# device descriptors with the shipped Dream Air reference data (rust/pimax-device/devices/*/reference)
 rm -rf "$DATA.new"
 mkdir -p "$DATA.new"
-(cd "$REPO" && git ls-files -z docs linux patches installer ai analysis/tools tools/lab-data.sh LICENSE-* NOTICE THIRD-PARTY.md README.md |
+(cd "$REPO" && git ls-files -z docs linux patches installer ai analysis/tools tools/lab-data.sh rust/pimax-device/devices LICENSE-* NOTICE THIRD-PARTY.md README.md |
 	xargs -0 cp --parents -a -t "$DATA.new")
 git -C "$REPO" rev-parse HEAD >"$DATA.new/COMMIT"
 rm -rf "$DATA"
@@ -449,6 +459,14 @@ if [[ $DRY == 0 ]]; then
 	done
 else
 	note "WOULD: systemctl --user daemon-reload; enable --now omarchyvr-keepalived.service omarchyvrd.service"
+fi
+# The user's own data of a previous install on this PC (the names before the rename, the lab tree and its copy of
+# Pimax's Windows data, the uninstaller's backups): copied into the current places, never overwriting (docs/INSTALL.md
+# "What a clean install keeps and imports"). The app's setup runs it again when it finds more.
+if [[ $DRY == 0 ]]; then
+	"$BIN/omarchyvr" import-previous 2>&1 | sed 's/^/    /' || warn "import from the previous install failed (the app's setup tries again)"
+else
+	note "WOULD: omarchyvr import-previous (the user's own data of a previous install on this PC)"
 fi
 # OpenXR / SteamVR registration (Play = SteamVR with the Monado driver of this install)
 if [[ $DRY == 0 ]]; then

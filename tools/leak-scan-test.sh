@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MIT OR Apache-2.0
-# Tests of the leak scanner's eye-chip allowance (tools/leak-scan.py, EYE_BASE_*), in a throw-away repo (a temp index
-# of its own; your clone's index is never touched):
+# Tests of the leak scanner's eye-chip allowance (tools/leak-scan.py, EYE_BASE_*) and of its Dream Air reference
+# calibration allowance (CALIB_REFERENCE, checks 5-8 at the end), in a throw-away repo (a temp index of its own; your
+# clone's index is never touched):
 #   1. the base eye start list passes (path + sha256 match)
 #   2. the same list with one added line is refused (hash differs)
 #   3. the same bytes under another path are refused
@@ -60,4 +61,68 @@ else
     git -C "$T" add -f "$BASE"
     expect "the private full list at the base path is refused" 1
 fi
-[[ $fail -eq 0 ]] && echo "leak-scan eye allowance: all checks passed" || { echo "leak-scan eye allowance: FAILED"; exit 1; }
+
+# ---- the Dream Air reference calibration (CALIB_REFERENCE, user decision 2026-10-17) ------------------------------
+#   5. the shipped reference files pass (path + sha256 match)
+#   6. a changed reference is refused, and so is the same content under another path
+#   7. a synthetic fixture (fake deviceUID) is fine
+#   8. the private originals with their serials (when this PC has them) are refused at the reference path and at their
+#      own path; nothing of them is printed (the scanner prints kinds and paths only, the paths here carry no serial)
+REF=rust/pimax-device/devices/dream-air/reference
+FILES=(headset-calibration.xml controllers/left.json controllers/right.json lens.conf)
+stage_ref() {
+    for f in "${FILES[@]}"; do
+        mkdir -p "$T/$REF/$(dirname "$f")"
+        cp "$REPO/$REF/$f" "$T/$REF/$f"
+        git -C "$T" add -f "$REF/$f"
+    done
+}
+stage_ref
+expect "the shipped reference calibration is allowed" 0
+stage_ref
+echo "cant_deg = 3.0" >>"$T/$REF/lens.conf"
+git -C "$T" add -f "$REF/lens.conf"
+expect "a changed reference lens profile is refused" 1
+stage_ref
+sed -i 's/deviceUID="reference"/deviceUID="reference2"/' "$T/$REF/headset-calibration.xml"
+git -C "$T" add -f "$REF/headset-calibration.xml"
+expect "a changed reference calibration is refused" 1
+mkdir -p "$T/docs"
+for f in headset-calibration.xml controllers/left.json lens.conf; do
+    cp "$REPO/$REF/$f" "$T/docs/copy-$(basename "$f")"
+    git -C "$T" add -f "docs/copy-$(basename "$f")"
+    expect "the reference $f under another path is refused" 1
+    rm -f "$T/docs/copy-$(basename "$f")"
+done
+mkdir -p "$T/rust/x/tests"
+printf '<?xml version="1.0" ?>\n<DeviceConfiguration deviceUID="P511X0X000000000001" cameraModel="ov7251">\n</DeviceConfiguration>\n' >"$T/rust/x/tests/synthetic.xml"
+git -C "$T" add -f rust/x/tests/synthetic.xml
+expect "a synthetic fixture with a fake deviceUID is fine" 0
+ORIG_XML="$HOME/pimax-re/analysis/headset-calibration.xml"
+H1="$HOME/pimax-re/pimax-data/ProgramData-Pimax/slam/H1"
+if [[ -f $ORIG_XML ]]; then
+    stage_ref
+    cp "$ORIG_XML" "$T/$REF/headset-calibration.xml"
+    git -C "$T" add -f "$REF/headset-calibration.xml"
+    expect "the private factory calibration at the reference path is refused" 1
+    mkdir -p "$T/analysis"
+    cp "$ORIG_XML" "$T/analysis/headset-calibration.xml"
+    git -C "$T" add -f analysis/headset-calibration.xml
+    expect "the private factory calibration at its own path is refused" 1
+    rm -f "$T/analysis/headset-calibration.xml"
+else
+    echo "SKIP the private factory calibration checks: $ORIG_XML is not on this PC"
+fi
+first=$(ls "$H1" 2>/dev/null | head -1)
+if [[ -n $first && -f $H1/$first/controller_params.json ]]; then
+    mkdir -p "$T/pimax-data/ProgramData-Pimax/slam/H1/SERIAL" "$T/rust/x/data"
+    cp "$H1/$first/controller_params.json" "$T/pimax-data/ProgramData-Pimax/slam/H1/SERIAL/controller_params.json"
+    git -C "$T" add -f pimax-data/ProgramData-Pimax/slam/H1/SERIAL/controller_params.json
+    expect "Pimax's controller models at their private path are refused" 1
+    cp "$H1/$first/controller_params.json" "$T/rust/x/data/controller_params.json"
+    git -C "$T" add -f rust/x/data/controller_params.json
+    expect "Pimax's controller models under another path are refused" 1
+else
+    echo "SKIP the private controller model checks: no Windows data under $H1"
+fi
+[[ $fail -eq 0 ]] && echo "leak-scan eye and calibration allowances: all checks passed" || { echo "leak-scan allowances: FAILED"; exit 1; }

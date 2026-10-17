@@ -648,6 +648,7 @@ pub fn build(facts: &Facts, live: &Live, p: &Paths) -> Vec<Item> {
             format!("{} free in {} (a 45 s camera recording is about 2.2 GB)", gib(free), p.home.display()), Some(15), Fix::None));
     }
     v.extend(crate::manual::items(facts, p));
+    v.extend(crate::previous::items(facts, p));
     v.sort_by_key(|i| i.group);
     v
 }

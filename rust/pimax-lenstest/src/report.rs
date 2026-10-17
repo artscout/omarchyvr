@@ -39,6 +39,8 @@ pub fn list_text(params: &Params) -> String {
 pub struct LensInfo {
     pub path: PathBuf,
     pub found: bool,
+    /// No lens.conf: the shipped Dream Air profile is in use.
+    pub reference: bool,
     pub crc32: Option<u32>,
     pub bytes: usize,
     pub lens: Lens,
@@ -57,6 +59,7 @@ pub fn load_lens(path: Option<&Path>) -> LensInfo {
     LensInfo {
         path: loaded.path.clone(),
         found: loaded.file_found,
+        reference: loaded.reference,
         crc32,
         bytes,
         log: loaded.messages.iter().map(|m| m.text.clone()).collect(),
@@ -74,6 +77,13 @@ pub fn lens_report(info: &LensInfo, full: bool) -> String {
                 "lens.conf: {} ({} bytes, crc32 {c:08x})",
                 info.path.display(),
                 info.bytes
+            );
+        }
+        _ if info.reference => {
+            let _ = writeln!(
+                s,
+                "lens.conf: {} (not found, the shipped Pimax Dream Air profile)",
+                info.path.display()
             );
         }
         _ => {

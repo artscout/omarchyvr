@@ -2213,6 +2213,7 @@ dependencies = [
 name = "omarchyvr-config"
 version = "0.1.0"
 dependencies = [
+ "flate2",
  "libc",
  "pimax-lens",
  "serde_json",

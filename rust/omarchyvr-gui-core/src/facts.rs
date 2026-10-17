@@ -408,6 +408,9 @@ pub struct Facts {
     pub findings_at: u64,
     /// The manual steps the app checks (packages, units, EDID, Hyprland, calibration runs).
     pub manual: crate::manual::ManualFacts,
+    /// The per-device data: the user's own or the shipped Dream Air reference, and what an import from the previous
+    /// install would bring back (crate::previous).
+    pub device: crate::previous::DeviceFacts,
 }
 
 impl Facts {
@@ -593,6 +596,7 @@ pub fn collect_facts(
     f.ipd_mm = m.read_str(&p.ipd_env).and_then(|t| launcher::parse_ipd_env(&t));
     f.eye_calibration = m.exists(&p.eye_calibration);
     f.eye_accuracy_deg = m.read_str(&p.eye_calibration).and_then(|t| eye_accuracy(&t));
+    f.device = crate::previous::collect(&p.home, &|k| m.env(k));
     f.free_home = m.free_bytes(&p.home);
     f.stale_env = launcher::stale_experiment_env(&|k| m.env(k));
     if let Some(meta) = m.meta(&p.openvr_paths) {

@@ -399,13 +399,15 @@ impl Summary {
                 "gyro calibration done: {:.3} {:.3} {:.3} dps over {samples} samples ({restarts} restarts)",
                 gyro_dps[0], gyro_dps[1], gyro_dps[2]
             )),
+            // the launcher's default since 2026-10-17 (PIMAX_BIAS_TIMEOUT_MS=200): start at once with the saved bias and
+            // refine it in the background the next time the headset rests
             Some(LogEvent::GyroBiasFallback {
                 gyro_dps,
                 cached,
                 restarts,
             }) => v.push(format!(
-                "gyro calibration: headset was moving ({restarts} restarts), tracking with the {} bias {:.3} {:.3} {:.3} dps",
-                if *cached { "cached" } else { "zero (no cache)" },
+                "gyro: started with the {} bias {:.3} {:.3} {:.3} dps without waiting for a still headset ({restarts} restarts); it is refined when the headset rests",
+                if *cached { "saved" } else { "zero (none saved)" },
                 gyro_dps[0], gyro_dps[1], gyro_dps[2]
             )),
             _ => v.push("gyro calibration: not finished".into()),

@@ -16,8 +16,10 @@
 pub mod ai;
 pub mod claude_cli;
 pub mod ctrl_inhand;
+pub mod devicedata;
 pub mod diff;
 pub mod eye;
+pub mod import;
 pub mod migrate;
 pub mod paths;
 pub mod setup;

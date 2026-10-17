@@ -153,7 +153,9 @@ pub fn monado_ready(log: &Path) -> bool {
     let mut b = Vec::new();
     let _ = f.take(4 << 20).read_to_end(&mut b);
     let t = String::from_utf8_lossy(&b);
-    t.contains("gyro bias done") || t.contains("tracking with the cached gyro bias")
+    // tracking runs after a still window ("gyro bias done") or right away with the saved bias (the launcher's default
+    // since 2026-10-17: "tracking with the cached gyro bias"; "zero (no cache)" when none could be written)
+    t.contains("gyro bias done") || t.contains("tracking with the cached gyro bias") || t.contains("tracking with the zero (no cache) gyro bias")
 }
 
 /// Camera hands in Monado's log: Some(true) when Mercury came up, Some(false) when it was refused or failed, None

@@ -333,7 +333,8 @@ pub fn parse_desk(
     } else {
         Some(perf::parse(a, env, &mut vr, &home, &wayvr_bin, &wayvrctl_bin)?)
     };
-    let openvr = omarchyvr_config::paths::src_dir(&home).join("openvr/lib/linux64");
+    // libopenvr_api.so for WayVR: next to the installed wayvr, else a developer clone (paths::openvr_lib_dir)
+    let openvr_lib = omarchyvr_config::paths::openvr_lib_dir(&home);
     Ok(DeskOptions {
         vr,
         passthrough: !no_passthrough,
@@ -344,7 +345,7 @@ pub fn parse_desk(
         sixdof,
         passthrough_bin,
         wayvr_bin,
-        openvr_lib: openvr.join("libopenvr_api.so").exists().then_some(openvr),
+        openvr_lib,
         wayvr_home,
         settle: Duration::from_secs_f64(settle),
         voice: voice || preset.is_some_and(|p| p.voice()),
@@ -498,6 +499,50 @@ pub fn ensure_wayvr_home(home: &Path, voice: bool, perf: bool) -> io::Result<Opt
     }))
 }
 
+/// The parts a Work session runs without, in plain words, one per line (`<session dir>/degraded.txt`, next to the logs);
+/// a full start removes it.
+pub const DEGRADED_FILE: &str = "degraded.txt";
+
+/// The one client Work cannot do without: WayVR (the desktop in the headset). Every other client is optional.
+pub fn required_client(name: &str) -> bool {
+    name == "wayvr"
+}
+
+/// What a session without this client means, in plain words, with the reason.
+pub fn degraded_note(name: &str, reason: &str) -> String {
+    let what = match name {
+        "ctrltrack" => "Optical controller tracking is off this session: the controllers still work (buttons and pointing), without their position from the cameras",
+        "passthrough" => "The room view (passthrough) is off this session: the screens show on a dark background",
+        "perf" => "The performance readout on the wrist is off this session",
+        "voice" | "voicecap" | "voiceact" => "Voice is off this session (captions and voice commands)",
+        "voicehud" => "The voice HUD is off this session",
+        n if n == super::screens::PROC_NAME => "The VR screens follow the preset only this session (they do not follow your apps)",
+        _ => "A part of Work is off this session",
+    };
+    format!("{what} ({name}: {reason}).")
+}
+
+/// A start that cannot go on: stop what THIS start began so nothing is left half-running. `monado_spawned`: this
+/// start launched a monado-service (its pid is new in the pid file): then everything goes (clients, Monado by pid, the
+/// broker, the VR screens' outputs) through the one stop path. Otherwise (the preflight refused, another session runs)
+/// only this start's broker and screen outputs go; a running session is never touched. The local AI is not touched
+/// (Work starts it only after a good start).
+fn abort_start(o: &DeskOptions, d: &Deps, why: &str, monado_spawned: bool) {
+    verr!("omarchyvr desk: the start did not complete ({why}): stopping what this start began");
+    if monado_spawned {
+        let kill = !super::supervise::in_watchdog();
+        if let Err(e) = stop(o, Duration::from_secs_f64(super::config::DEFAULT_STOP_GRACE_SECS * 6.0), kill, true, d) {
+            verr!("omarchyvr desk: WARNING: {}", e.msg);
+        }
+        return;
+    }
+    if let Some(sd) = &o.sixdof {
+        sixdof::stop_broker(&o.vr.session_dir, &sd.cam_bin, d.procs, d.clock);
+    }
+    // the outputs go only once no monado-service runs (remove_screens checks it)
+    remove_screens(o, d, &mut super::screens::RealHypr);
+}
+
 /// `desk start`.
 pub fn start(o: &DeskOptions, d: &Deps, sp: &dyn Spawner) -> CliResult {
     let mut specs = plan(o);
@@ -512,24 +557,32 @@ pub fn start(o: &DeskOptions, d: &Deps, sp: &dyn Spawner) -> CliResult {
             s.env.push(("PIMAX_CAPTIONS_SCREEN".into(), screen.clone()));
         }
     }
-    for s in &specs {
-        if !s.program.exists() {
+    // Only WayVR (the desk itself) is required. Every other client is optional: a missing one is left out with a plain
+    // note and Work starts without it (2026-10-17: a missing controller model made the whole Work start fail).
+    let mut without: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < specs.len() {
+        let s = &specs[i];
+        if s.program.exists() {
+            i += 1;
+            continue;
+        }
+        if required_client(s.name) {
             return Err(CliError::new(format!(
-                "{} does not exist{}",
-                s.program.display(),
-                match s.name {
-                    "passthrough" => " (run ./install.sh again in your omarchyvr clone (or: cd ~/omarchyvr/rust && cargo build --release -p omarchyvr-passthrough))",
-                    "voice" | "voicecap" | "voiceact" | "voicehud" => " (run ./install.sh again in your omarchyvr clone (or: cd ~/omarchyvr/rust && cargo build --release -p omarchyvr-voice -p omarchyvr-voicehud))",
-                    "ctrltrack" => " (run ./install.sh again in your omarchyvr clone (or: cd ~/omarchyvr/rust && cargo build --release -p pimax-ctrltrack))",
-                    "perf" => " (run ./install.sh again in your omarchyvr clone (or: cd ~/omarchyvr/rust && cargo build --release -p omarchyvr-perf), or start with --no-perf)",
-                    _ => "",
-                }
+                "{} does not exist (run ./install.sh again in your omarchyvr clone)",
+                s.program.display()
             )));
         }
+        let note = degraded_note(s.name, &format!("{} is not installed; ./install.sh puts it back", s.program.display()));
+        verr!("omarchyvr desk: {note}");
+        without.push(note);
+        specs.remove(i);
     }
     if let Some(sd) = &o.sixdof {
         sixdof::check(&o.vr, sd, d.env)?;
     }
+    // where the headset data comes from: the user's own or the shipped reference (the job log says it)
+    vout!("omarchyvr desk: {}", crate::import_cmd::start_line(&home_of(d), d.env));
     if o.passthrough && o.sixdof.is_none() {
         for k in ["PIMAX_CAM", "PIMAX_HANDS"] {
             if (d.env)(k).is_some_and(|v| !v.is_empty()) {
@@ -597,39 +650,41 @@ pub fn start(o: &DeskOptions, d: &Deps, sp: &dyn Spawner) -> CliResult {
         sixdof::start_broker(&vr, sd, d, sp, Duration::from_secs(10))?;
     }
     prepare_screens(o, d);
+    let pid_before = session::read_pid(&vr.pid_path());
     if let Err(e) = session::start(&vr, d) {
-        if let Some(sd) = &o.sixdof {
-            sixdof::stop_broker(&vr.session_dir, &sd.cam_bin, d.procs, d.clock);
-        }
+        // nothing half-started stays behind: a Monado that is still up (no gyro line in time), the broker, the VR
+        // screens' outputs (2026-10-17 parity audit)
+        let pid_after = session::read_pid(&vr.pid_path());
+        abort_start(o, d, &e.msg, pid_after.is_some() && pid_after != pid_before);
         return Err(e);
     }
     for s in &specs {
         vout!("omarchyvr desk: starting {} ({})", s.name, s.program.display());
         let pid = match comp::proc::start_client(s, &o.vr.session_dir, sp, d.procs, d.clock, o.settle) {
             Ok(p) => p,
-            Err(comp::proc::StartError::Spawn(e)) => {
-                let msg = format!(
-                    "cannot start {}: {e}. Monado is running: omarchyvr desk stop",
-                    s.program.display()
-                );
-                d.notifier.notify(true, "Pimax desk: not started", &msg);
-                return Err(CliError::new(msg));
-            }
-            Err(comp::proc::StartError::DiedEarly { tail, .. }) => {
-                verr!(
-                    "omarchyvr desk: {} exited right after the start. Last log lines:",
-                    s.name
-                );
-                for l in tail {
-                    verr!("  {l}");
+            Err(err) => {
+                let reason = match err {
+                    comp::proc::StartError::Spawn(e) => format!("cannot start {}: {e}", s.program.display()),
+                    comp::proc::StartError::DiedEarly { tail, .. } => {
+                        verr!("omarchyvr desk: {} exited right after the start. Last log lines:", s.name);
+                        for l in &tail {
+                            verr!("  {l}");
+                        }
+                        // the client's own last words are the plain reason when it gives one (pimax-ctrltrack does)
+                        let last = tail.iter().rev().find(|l| !l.trim().is_empty()).map(|l| l.trim().to_string());
+                        format!("it ended during start-up{} (log {})", last.map(|l| format!(": {l}")).unwrap_or_default(), s.log.display())
+                    }
+                };
+                if required_client(s.name) {
+                    let msg = format!("{}: {reason}", s.name);
+                    abort_start(o, d, &msg, true);
+                    d.notifier.notify(true, "Pimax desk: not started", &msg);
+                    return Err(CliError::new(format!("{msg}; everything that was started is stopped again")));
                 }
-                let msg = format!(
-                    "{} ended during start-up (log {}). Monado is still running: omarchyvr desk stop",
-                    s.name,
-                    s.log.display()
-                );
-                d.notifier.notify(true, "Pimax desk: not started", &msg);
-                return Err(CliError::new(msg));
+                let note = degraded_note(s.name, &reason);
+                verr!("omarchyvr desk: {note}");
+                without.push(note);
+                continue;
             }
         };
         vout!(
@@ -637,6 +692,14 @@ pub fn start(o: &DeskOptions, d: &Deps, sp: &dyn Spawner) -> CliResult {
             s.name,
             s.log.display()
         );
+    }
+    // the parts this session runs without, in plain words, next to the logs (a full start removes the file)
+    let degraded = o.vr.session_dir.join(DEGRADED_FILE);
+    if without.is_empty() {
+        let _ = std::fs::remove_file(&degraded);
+    } else {
+        let _ = std::fs::write(&degraded, without.join("\n") + "\n");
+        d.notifier.notify(true, "Pimax desk ready, with parts off", &without.join(" "));
     }
     if let Some(p) = o.preset {
         // the preset's screen layout (and work-3's app panels) once WayVR runs; best effort

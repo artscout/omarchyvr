@@ -10,12 +10,23 @@ use std::path::{Path, PathBuf};
 /// 20 Hz, so a finer detection grid (more points per image); everything else stays at Basalt's tested values.
 pub const OVERRIDES: &[(&str, f64)] = &[("config.optical_flow_detection_grid_size", 40.0)];
 
-/// Candidate base configs, best first.
+/// Basalt's generic EuRoC VIO config of the pinned Basalt commit (installer/components.lock, BSD-3-Clause,
+/// THIRD-PARTY.md), unmodified: the base every 6DoF start used on the project PC (`~/src/basalt/data/euroc`). It is
+/// the last fallback, so a clean install without a Basalt source tree still starts 6DoF (2026-10-17: the installer
+/// installs only `msdmo_config.json`, and the export found none of its candidates).
+pub const BUILTIN_BASE: &str = include_str!("../data/basalt-euroc_config.json");
+
+/// What the export records as the base when [`BUILTIN_BASE`] is used.
+pub const BUILTIN_BASE_NAME: &str = "built in: Basalt df6e970 data/euroc/euroc_config.json";
+
+/// Candidate base configs, best first (the installed Basalt's copy, which ./install.sh puts there, before Basalt's
+/// own msdmo config); with none on disk the export uses [`BUILTIN_BASE`].
 pub fn base_config_candidates() -> Vec<PathBuf> {
     let mut v = Vec::new();
     if let Some(h) = std::env::var_os("HOME").map(PathBuf::from) {
         v.push(omarchyvr_config::paths::src_dir(&h).join("basalt/data/euroc/euroc_config.json"));
         v.push(h.join(".local/share/basalt/euroc_config.json"));
+        v.push(omarchyvr_config::paths::lib_dir(&h).join("basalt/share/basalt/euroc_config.json"));
         v.push(h.join(".local/share/basalt/msdmo_config.json"));
     }
     v
@@ -134,14 +145,17 @@ pub fn export(
     let dir = dir
         .canonicalize()
         .map_err(|e| format!("{}: {e}", dir.display()))?;
-    let base = match base {
-        Some(b) => b.to_path_buf(),
-        None => base_config_candidates()
-            .into_iter()
-            .find(|p| p.is_file())
-            .ok_or("no Basalt base VIO config found (~/src/basalt/data/euroc/euroc_config.json); pass --base")?,
+    // an explicit --base must exist; otherwise the first candidate on disk, else the built-in EuRoC config
+    let (base, text) = match base {
+        Some(b) => (b.to_path_buf(), std::fs::read_to_string(b).map_err(|e| format!("{}: {e}", b.display()))?),
+        None => match base_config_candidates().into_iter().find(|p| p.is_file()) {
+            Some(b) => {
+                let t = std::fs::read_to_string(&b).map_err(|e| format!("{}: {e}", b.display()))?;
+                (b, t)
+            }
+            None => (PathBuf::from(BUILTIN_BASE_NAME), BUILTIN_BASE.to_string()),
+        },
     };
-    let text = std::fs::read_to_string(&base).map_err(|e| format!("{}: {e}", base.display()))?;
     let calib = slam::write_basalt_files(
         &dir,
         cal,
@@ -213,6 +227,27 @@ mod tests {
         assert!(t.contains(&format!("cam-calib=\"{}\"", e.calib.display())));
         assert!(e.calib.is_absolute());
         assert!(e.config.is_file());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_built_in_base_is_basalts_euroc_config_with_our_override() {
+        let out = vio_config(BUILTIN_BASE).unwrap();
+        let v = json::parse(&out).unwrap();
+        let m = v.get("value0").unwrap();
+        assert_eq!(m.get("config.optical_flow_detection_grid_size").unwrap().as_f64(), Some(40.0));
+        assert_eq!(m.get("config.optical_flow_type").unwrap().as_str(), Some("frame_to_frame"));
+    }
+
+    #[test]
+    fn a_clean_install_exports_6dof_with_the_shipped_reference_calibration() {
+        let cal = DeviceCalib::parse(pimax_cam::calib::REFERENCE_XML).unwrap();
+        let dir = std::env::temp_dir().join(format!("omarchyvr-slam-export-ref-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let base = dir.join("base.json");
+        std::fs::write(&base, BUILTIN_BASE).unwrap();
+        let e = export(&dir, &cal, &SlamSetup::default(), &ImuNoise::default(), Some(&base), false).unwrap();
+        assert!(e.calib.is_file() && e.config.is_file() && e.toml.is_file());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

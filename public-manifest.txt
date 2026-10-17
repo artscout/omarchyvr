@@ -44,6 +44,9 @@
 
 # the BASE eye start list is public on purpose (user decision 2026-10-17, docs/EYE.md; the leak scanner allows exactly it by sha256)
 + rust/pimax-eye/data/base-frames.txt
+# the Dream Air REFERENCE calibration is public on purpose (user decision 2026-10-17, "approve shipping calibrations";
+# every serial scrubbed; the leak scanner allows exactly these files by path and sha256; the headset's own data wins)
++ rust/pimax-device/devices/dream-air/reference/**
 # private fixtures: per-unit calibration, room images, Tobii (eye chip) USB transcripts and gaze captures
 - rust/pimax-cam/tests/fixtures/evening2.pxcam
 - rust/omarchyvr-passthrough/tests/fixtures/*.png

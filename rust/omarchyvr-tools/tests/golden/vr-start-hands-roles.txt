@@ -2,6 +2,7 @@ $ omarchyvr vr start --dry-run --6dof --hands --hands-roles
 exit Some(0)
 --- stdout
 omarchyvr vr: camera hands on (Mercury, hands take the controller roles): Monado from $ROOT/home/.local/lib/omarchyvr/monado
+omarchyvr vr: headset data: calibration = the shipped Dream Air reference, controller models = the shipped Dream Air reference, lens = the shipped Dream Air profile, gyro = the Dream Air default until the headset rests once
 omarchyvr vr: --6dof would first run: $ROOT/home/.local/bin/omarchyvr-slam export --out $ROOT/session/basalt, then $ROOT/home/.local/bin/pimax-cam broker (socket $ROOT/run/omarchyvr-cam-broker.sock)
 omarchyvr vr: preflight
   [warn] headset   34a4:0044 on USB but only 0/4 hidraw interfaces (udev rule linux/70-pimax.rules installed?)
@@ -34,6 +35,7 @@ would start: $ROOT/home/.local/lib/omarchyvr/monado/src/xrt/targets/service/mona
   PIMAX_HANDS=mercury
   PIMAX_HT_STATS=1
   PIMAX_HT_ROLES=hands
+  PIMAX_BIAS_TIMEOUT_MS=200
   PIMAX_DEBUG_PTRACE=1
   IPC_IGNORE_VERSION=1
   XRT_NO_STDIN=1

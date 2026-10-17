@@ -1,6 +1,7 @@
 $ omarchyvr vr start --dry-run --6dof --ctrl-track --perf --no-light
 exit Some(0)
 --- stdout
+omarchyvr vr: headset data: calibration = the shipped Dream Air reference, controller models = the shipped Dream Air reference, lens = the shipped Dream Air profile, gyro = the Dream Air default until the headset rests once
 omarchyvr vr: --perf would also run, after the service: $ROOT/home/.local/lib/omarchyvr/wayvr/wayvr (minimal WayVR, no screens), $ROOT/home/.local/bin/omarchyvr-perf
        PIMAX_PERF_FILE=$ROOT/run/omarchyvr-perf.stats for monado-service
 omarchyvr vr: --6dof would first run: $ROOT/home/.local/bin/omarchyvr-slam export --out $ROOT/session/basalt, then $ROOT/home/.local/bin/pimax-cam broker (socket $ROOT/run/omarchyvr-cam-broker.sock)
@@ -36,6 +37,7 @@ would start: $ROOT/build/src/xrt/targets/service/monado-service
   PIMAX_CTRL_IMU_LOG=$ROOT/session/ctrl-imu
   PIMAX_CTRL_INHAND=always
   PIMAX_PERF_FILE=$ROOT/run/omarchyvr-perf.stats
+  PIMAX_BIAS_TIMEOUT_MS=200
   PIMAX_DEBUG_PTRACE=1
   IPC_IGNORE_VERSION=1
   XRT_NO_STDIN=1

@@ -3,6 +3,7 @@ pub mod args;
 pub mod buzz;
 pub mod calib_cmd;
 pub mod controllers;
+pub mod import_cmd;
 pub mod imu;
 pub mod info;
 pub mod keepalived;

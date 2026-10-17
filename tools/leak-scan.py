@@ -8,8 +8,10 @@
 Same patterns as tools/export-public.sh: device serials (ASCII and UTF-16LE), provider API keys, private keys, JWTs,
 e-mail addresses (except noreply and the public ones in public-manifest.txt "~ email"), the home path, the login name,
 Windows user paths, machine values from ~/.config/omarchyvr (compared by value, never printed), eye-chip cold-start bytes
-(compared with the private frame list when it is present), denied file types, and any path under .claude/ or a
-private lab path. Only added lines of text files are scanned; binary and .gz files are scanned whole.
+(compared with the private frame list when it is present), per-device calibration content (a factory XML, Pimax's
+controller LED models, a fitted lens profile: only the shipped Dream Air reference files, by path and sha256), denied
+file types, and any path under .claude/ or a private lab path. Only added lines of text files are scanned; binary and
+.gz files are scanned whole.
 Prints the kind of hit and the path, never the value. Exit 1 on any hit.
 """
 import collections, gzip, hashlib, math, os, re, subprocess, sys
@@ -27,6 +29,23 @@ USER = os.path.basename(HOME)
 # carries those bytes stay refused.
 EYE_BASE_PATH = "rust/pimax-eye/data/base-frames.txt"
 EYE_BASE_SHA256 = "e5201907ee8ddc51a3b8533599be7872840d1e468269362dfcc2d340bd580843"
+
+# The Pimax Dream Air REFERENCE calibration (user decision 2026-10-17, "approve shipping calibrations"): the project's
+# own Windows calibration with every serial scrubbed (deviceUID "reference", the controller serial folders became
+# left/right), shipped as the default for everyone; the headset's own data always wins. The allowance is exactly these
+# paths with exactly these contents (the committed blobs). Any other file with per-device calibration content (a
+# <DeviceConfiguration> XML with a real deviceUID, Pimax's controller LED models, a fitted Pimax lens profile) is
+# refused, and so is a changed reference (it needs a reviewed new hash here). The private originals with their serials
+# stay refused by the serial check and the private paths.
+CALIB_REFERENCE = {
+    "rust/pimax-device/devices/dream-air/reference/headset-calibration.xml": "ca2ec373e4dbdcb0210bb6bddd92092cca63d4bbb00c95e56137106e8ff7aa86",
+    "rust/pimax-device/devices/dream-air/reference/controllers/left.json": "e3042bfebd2023406e4a5bb15aece981feb0dae456d4a008c126aa1e22852690",
+    "rust/pimax-device/devices/dream-air/reference/controllers/right.json": "0f5754de452b1c80c220f991732bc9c468743cb5e97165a0bc6aa3ad95a55c67",
+    "rust/pimax-device/devices/dream-air/reference/lens.conf": "d5a89a40f3f0bf207e81ffb28e62a4bec1975f60cfebd496065f30627c139bc0",
+}
+CALIB_XML = re.compile(rb'<DeviceConfiguration\b[^>]*\bdeviceUID="([^"]*)"')
+CALIB_JSON = re.compile(rb'"ModelPoints"\s*:')
+CALIB_LENS = re.compile(rb"pimax-lens fit-pvr")
 
 
 def git(*a, text=False):
@@ -52,6 +71,17 @@ WINUSER = re.compile(r"(?i)C:[\\/]+Users[\\/]+(?!Public|Default|<|%|\$|USER|you|
 
 def fake_serial(g):
     return b"X0X" in g or (g.startswith(b"H") and g[6:7] == b"X" and g[7:].strip(b"0") in (b"1", b"2", b""))
+
+
+def calib_like(p, x):
+    """per-device calibration content: a factory XML (a synthetic fixture with a fake deviceUID is fine), Pimax's
+    controller LED models, a lens profile fitted from Pimax's distortion"""
+    m = CALIB_XML.search(x)
+    if m and not fake_serial(m.group(1)):
+        return True
+    if p.endswith(".json") and CALIB_JSON.search(x) and b'"ImuToDevice"' in x:
+        return True
+    return p.endswith(".conf") and bool(CALIB_LENS.search(x))
 
 
 def entropy(s):
@@ -102,6 +132,7 @@ class Scan:
         self.priv = private_values()
         self.eye = eye_bytes()
         self.eye_ok = set()  # paths whose content hash matches the eye allowance
+        self.calib_ok = set()  # paths whose content hash matches the reference calibration allowance
 
     def hit(self, kind, path):
         self.hits[kind].add(path)
@@ -134,6 +165,8 @@ class Scan:
                 low = re.sub(rb"[^0-9a-f]", b"", x.lower()) if len(x) < 4_000_000 else b""
                 if any(e.encode() in low for e in self.eye):
                     self.hit("eye-chip cold-start bytes", p)
+            if p not in self.calib_ok and calib_like(p, x):
+                self.hit("per-device calibration data", p)
 
     def text(self, p, t):
         self.blob(p, t.encode())
@@ -191,6 +224,8 @@ def scan_change(s, names_cmd, diff_cmd, show):
         b = show(p)
         if p == EYE_BASE_PATH and mode != "120000" and hashlib.sha256(b).hexdigest() == EYE_BASE_SHA256:
             s.eye_ok.add(p)
+        if mode != "120000" and CALIB_REFERENCE.get(p) == hashlib.sha256(b).hexdigest():
+            s.calib_ok.add(p)
         s.path(p, mode, b if mode == "120000" else b"")
         if mode == "120000":
             continue

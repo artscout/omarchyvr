@@ -65,6 +65,7 @@ pub mod orphans;
 pub mod paths;
 pub mod play;
 pub mod preflight;
+pub mod previous;
 pub mod probe;
 pub mod procs;
 pub mod record;

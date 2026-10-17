@@ -28,10 +28,16 @@ fn looks_valid(p: &Path) -> bool {
     std::fs::read(p).is_ok_and(|b| b.len() > 200 && std::str::from_utf8(&b[..b.len().min(64)]).is_ok_and(|s| s.contains('<')))
 }
 
-/// True when the lookup falls back to the shipped REFERENCE calibration (the user's own file is missing). The
-/// reference files and the fallback step are added by the parity change; it makes this return true in that case.
-pub fn reference_in_use(_home: &Path) -> bool {
-    false
+/// True when the lookup falls back to the shipped REFERENCE calibration: the user's own file is missing and the
+/// reference is allowed (`PIMAX_NO_REFERENCE` unset; it is compiled into every reader, `pimax_cam::calib::REFERENCE_XML`).
+/// Work and Play then start with the reference and the Room setup tile says so.
+pub fn reference_in_use(home: &Path) -> bool {
+    reference_in_use_with(home, &|k| std::env::var(k).ok())
+}
+
+/// [`reference_in_use`] with an injectable environment.
+pub fn reference_in_use_with(home: &Path, env: &dyn Fn(&str) -> Option<String>) -> bool {
+    !present(home) && omarchyvr_config::devicedata::reference_allowed(env)
 }
 
 /// Copy the calibration from an older place when the current file is missing (mode 600). Returns the source used.

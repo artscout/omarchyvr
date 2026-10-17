@@ -29,9 +29,10 @@ IPD, controllers, eye calibration and the room map are optional ("Next, in the h
 
 The headset's factory calibration (`~/.config/omarchyvr/headset-calibration.xml`, private, mode 600) comes with every
 reinstall: the uninstaller keeps it, and `install.sh` copies it once from an older place (`~/.config/pimax/`, the lab
-`analysis/` folder) when the new place has none. If none exists, Work and Play say "Headset calibration missing: press
-Room setup", and the **Room setup** button (third tile, under Play and Work) reads it from the headset, then maps your
-room (docs/ROOM-SETUP.md).
+`analysis/` folder) when the new place has none. If none exists, Work and Play start with the shipped Pimax Dream Air
+reference calibration and the Room setup tile says "Using the reference calibration"; the **Room setup** button (third
+tile, under Play and Work) reads your headset's own, then maps your room (docs/ROOM-SETUP.md). The same rule holds for
+every piece of device data: see [What a clean install keeps and imports](#what-a-clean-install-keeps-and-imports).
 
 Later Plays never ask for a password. The realtime permission (`cap_sys_nice`) sits on the installed
 `monado-service` at a fixed path (`~/.local/lib/omarchyvr/monado/...`). Builds in other directories never relink
@@ -69,6 +70,44 @@ Cancel (docs/WORK-FIRST-RUN.md). Play never needs them. Models already on disk a
 | `~/.config/systemd/user/omarchyvr-*.service`, `omarchyvrd.service` | user units: keepalive and omarchyvrd enabled; autod (replaced by omarchyvrd) and the AI server (started by the app's AI switch) installed only | removed |
 | `~/.config/autostart/omarchyvr-app.desktop`, `~/.local/share/applications/omarchyvr.desktop`, icon | app at login, launcher | removed |
 | OpenXR/OpenVR registration | SteamVR is the OpenXR runtime; Monado's SteamVR driver is registered in `openvrpaths.vrpath`; the Steam entry gets the OpenXR import variable | undone |
+| `~/.local/share/omarchyvr/data/rust/pimax-device/devices/` | the device descriptors with the shipped Pimax Dream Air reference data (`dream-air/reference/`; also compiled into the binaries) | removed |
+| `~/.local/lib/omarchyvr/wayvr/libopenvr_api.so` | the OpenVR library WayVR links (built by its `ovr_overlay` crate) | removed |
+
+## What a clean install keeps and imports
+
+Per-device data is not a setting. After the clean uninstall and reinstall of 2026-10-17 Work failed three times in a
+row: the factory calibration, the gyro bias and the controller models were gone (docs/PARITY-2026-10-17.html). Every
+piece now follows one rule: **your own data always wins; the uninstaller keeps it, the import brings it back from older
+places on this PC, or the headset gives it; without it the shipped Pimax Dream Air reference stands in, and the app
+says so.**
+
+| Data | Your own (current place) | Uninstall | Brought back from (import) | Without your own |
+|---|---|---|---|---|
+| Factory calibration (cameras, IMU) | `~/.config/omarchyvr/headset-calibration.xml` (mode 600) | kept | `~/.config/pimax/`, the lab `analysis/`, Pimax's Windows data (`ProgramData-Pimax/slam/device_calibration_*.xml` in the lab tree, a clone or a mounted shared drive), a backup | the shipped reference; the Room setup tile says "Using the reference calibration"; Room setup reads your headset's own |
+| Controller LED models | `~/.config/omarchyvr/controllers/` | kept | `~/.config/pimax/controllers/`, Pimax's Windows data (`ProgramData-Pimax/slam/H1/<serial>/controller_params.json`), a backup | the shipped reference (Pimax's default models; the per-serial files on the project PC were the same numbers) |
+| Lens profile | `~/.config/omarchyvr/lens.conf` | kept | `~/.config/pimax/lens.conf`, a backup | the shipped Dream Air profile (the project headset's tuned lens numbers) |
+| Gyro bias | `~/.cache/omarchyvr/gyro-bias` | kept | `~/.cache/pimax/gyro-bias`, a backup | the Dream Air default, measured and saved the first time the headset rests for 2 s. No start waits for a still headset (`PIMAX_BIAS_TIMEOUT_MS=200`) |
+| IPD | `~/.config/omarchyvr/ipd.env` | kept | `~/.config/pimax/ipd.env`, a backup | 63 mm (Tools > IPD sets yours) |
+| Eye calibration | `~/.config/omarchyvr/eye-calibration.toml`, `eye-correction.toml` | kept | `~/.config/pimax/`, a backup | the built-in test calibration of the base start list |
+| Controller fits, IMU noise | `ctrl-cam-extrinsics.json`, `ctrl-imu.json`, `slam-imu.json` in `~/.config/omarchyvr/` | kept | `~/.config/pimax/`, a backup | factory extrinsics, the built-in gyro fit, Pimax's noise values |
+| Room map | `~/.local/share/omarchyvr/roommap/` | kept | `~/.local/share/pimax/roommap/`, a backup | no anchor until Room setup maps the room |
+| Settings (background, game mode, games, recording, brightness, sound, eye and WayVR settings, `paths.toml`, the Work first-run answers) | `~/.config/omarchyvr/*` | reset (into the backup tar) | `~/.config/pimax/`, the newest backup that has them | the defaults |
+| Cloud AI keys | `~/.config/omarchyvr/ai.toml` | kept in place, never put into the tar | never by the import (its own handling) | none |
+| Basalt's base VIO config (6DoF) | `~/src/basalt/data/euroc/euroc_config.json` of a source tree, else the installed Basalt's | n/a | n/a | built into `omarchyvr-slam` (the same file of the pinned Basalt) |
+
+The import (`omarchyvr import-previous`) is run by `./install.sh` once the binaries are in place, and by the app by
+itself when its checks find more to bring back while nothing else runs (no job, no VR session, no setup in progress).
+It copies only what is missing, never overwrites, writes mode 600 and lists what it did in plain words; the Checks page
+shows "Your previous install", "Controller models" and "Headset data" with a Fix button for a manual run
+(`--status` and `--dry-run` say the same without copying). The backups it reads are the uninstaller's own
+`~/omarchyvr-settings-backup-*.tar.gz` and `~/omarchyvr-home-backup-*.tar.gz`, newest first; each is read once.
+`./uninstall.sh --reset-calibration` also removes the device data (it still goes into the backup tar).
+
+Every Work and Play start prints where the headset data comes from ("headset data: calibration = your own, controller
+models = the shipped Dream Air reference, ..."). Work starts without an optional part that cannot start (optical
+controller tracking, the room view, voice, the wrist readout, the screens watcher) and says so in plain words (also in
+`<session dir>/degraded.txt`); only WayVR is required, and a start that cannot complete stops everything it began
+(Monado included, by its pid).
 
 ### The one root job (the app runs it by itself with one password; Show details has this list as text)
 

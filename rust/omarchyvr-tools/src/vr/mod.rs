@@ -447,6 +447,8 @@ pub fn run(mut a: Args) -> CliResult {
                 }
             }
             auto_connector(&mut opts);
+            // where the headset data comes from: the user's own or the shipped reference (the job log says it)
+            vout!("omarchyvr vr: {}", crate::import_cmd::start_line(&home, &real_env));
             if !opts.dry_run {
                 // Play keeps the graphics card for the game: a crashed Work's leftovers and the local AI go first, by
                 // pid (nothing of a running session is touched; docs/PLAY-WORK-AUDIT.md)

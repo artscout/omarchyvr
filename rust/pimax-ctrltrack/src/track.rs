@@ -38,25 +38,43 @@ pub struct Rig {
 }
 
 impl Rig {
-    /// `--calib XML --left JSON --right JSON --extrinsics JSON|--factory`
+    /// [`Rig::try_load`], or a plain message and exit code 2 (never a panic: a missing input is a reason, not a crash;
+    /// the launcher then runs the session without optical controller tracking).
     pub fn load(a: &[String]) -> Rig {
-        let (calib, cpath) =
-            DeviceCalib::load_default(arg(a, "--calib").map(Path::new)).expect("calibration");
-        let [dl, dr] = LedModel::default_paths();
-        let models = [
-            LedModel::load(&arg(a, "--left").map(PathBuf::from).unwrap_or(dl)).expect("left model"),
-            LedModel::load(&arg(a, "--right").map(PathBuf::from).unwrap_or(dr))
-                .expect("right model"),
-        ];
-        let mut cams: Vec<Cam> = (0..TILE_COUNT)
-            .map(|i| Cam {
+        match Rig::try_load(a) {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("pimax-ctrltrack: {e}");
+                eprintln!("pimax-ctrltrack: optical controller tracking is off; the controllers still work (buttons, gyro).");
+                std::process::exit(2);
+            }
+        }
+    }
+
+    /// `--calib XML --left JSON --right JSON --extrinsics JSON|--factory`. The calibration and the LED models fall
+    /// back to the shipped Dream Air reference when the user has none of their own (the log line says which is used).
+    pub fn try_load(a: &[String]) -> Result<Rig, String> {
+        let (calib, cpath) = DeviceCalib::load_default(arg(a, "--calib").map(Path::new))
+            .map_err(|e| format!("headset calibration: {e}"))?;
+        if calib.cameras.len() < TILE_COUNT {
+            return Err(format!("headset calibration {}: {} cameras, the tracker needs {TILE_COUNT}", cpath.display(), calib.cameras.len()));
+        }
+        let env = |k: &str| std::env::var(k).ok();
+        let (models, source) = LedModel::resolve(
+            arg(a, "--left").map(Path::new),
+            arg(a, "--right").map(Path::new),
+            &env,
+        )?;
+        let mut cams: Vec<Cam> = Vec::with_capacity(TILE_COUNT);
+        for i in 0..TILE_COUNT {
+            let body_from_cam = calib
+                .body_from_cam(i, RigConvention::CamFromCam0)
+                .ok_or_else(|| format!("headset calibration {}: no camera/IMU extrinsic (ombc/tbc)", cpath.display()))?;
+            cams.push(Cam {
                 intr: calib.cameras[i].intr.clone(),
-                cam_from_body: calib
-                    .body_from_cam(i, RigConvention::CamFromCam0)
-                    .expect("imu extrinsic")
-                    .inverse(),
-            })
-            .collect();
+                cam_from_body: body_from_cam.inverse(),
+            });
+        }
         let mut ext_note = "factory extrinsics".to_string();
         if !a.iter().any(|s| s == "--factory") {
             let p = arg(a, "--extrinsics")
@@ -90,8 +108,9 @@ impl Rig {
             .map(|m| m.neighbour_triples(0.045, 110.0))
             .collect();
         eprintln!(
-            "calibration {} ({ext_note}) | models {} ({} LEDs) / {} ({} LEDs) | LED triples {} / {}",
+            "calibration {}{} ({ext_note}) | models {} ({} LEDs) / {} ({} LEDs) | LED triples {} / {}",
             cpath.display(),
+            if calib.is_reference() { " (the shipped Dream Air reference)" } else { "" },
             models[0].hand,
             models[0].leds.len(),
             models[1].hand,
@@ -99,13 +118,14 @@ impl Rig {
             triples[0].len(),
             triples[1].len()
         );
-        Rig {
+        eprintln!("controller models: {}", source.describe());
+        Ok(Rig {
             calib,
             cams,
             models,
             triples,
             prm: Params::default(),
-        }
+        })
     }
 }
 

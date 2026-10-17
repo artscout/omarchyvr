@@ -1,6 +1,7 @@
 $ omarchyvr vr start --dry-run --wait --debug --connector DP-1 --mode 3
 exit Some(0)
 --- stdout
+omarchyvr vr: headset data: calibration = the shipped Dream Air reference, controller models = the shipped Dream Air reference, lens = the shipped Dream Air profile, gyro = the Dream Air default until the headset rests once
 omarchyvr vr: preflight
   [warn] headset   34a4:0044 on USB but only 0/4 hidraw interfaces (udev rule linux/70-pimax.rules installed?)
   [ok  ] camera    34a4:0014 on USB, video node present
@@ -23,6 +24,7 @@ would start: $ROOT/build/src/xrt/targets/service/monado-service
   PIMAX_LOG=info
   XR_RUNTIME_JSON=$ROOT/build/openxr_monado-dev.json
   PIMAX_CTRL_INHAND=always
+  PIMAX_BIAS_TIMEOUT_MS=200
   PIMAX_DEBUG_PTRACE=1
   IPC_IGNORE_VERSION=1
   XRT_NO_STDIN=1

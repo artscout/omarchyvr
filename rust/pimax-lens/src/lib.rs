@@ -64,6 +64,8 @@ pub struct Loaded {
     pub path: PathBuf,
     /// The config file existed and was read.
     pub file_found: bool,
+    /// No user file: the shipped Dream Air profile ([`REFERENCE_LENS_CONF`]) is in use.
+    pub reference: bool,
     pub messages: Vec<Message>,
 }
 
@@ -138,11 +140,36 @@ pub fn eye_log_lines(cfg: &LensConfig, e: usize) -> Vec<String> {
     v
 }
 
+/// The Pimax Dream Air lens profile shipped with omarchyvr (user decision 2026-10-17): the lens numbers the project's
+/// headset was tuned to (`pimax-lens fit-pvr` of Pimax's own PVR distortion). Used when the user has no
+/// `lens.conf` of their own; theirs always wins.
+pub const REFERENCE_LENS_CONF: &str = include_str!("../../pimax-device/devices/dream-air/reference/lens.conf");
+
 /// Load the configuration like the driver does: defaults, then the file from `PIMAX_LENS_CONF` /
-/// `$XDG_CONFIG_HOME/omarchyvr/lens.conf` / `~/.config/omarchyvr/lens.conf`, then `PIMAX_LENS_OFF`.
+/// `$XDG_CONFIG_HOME/omarchyvr/lens.conf` / `~/.config/omarchyvr/lens.conf`, then `PIMAX_LENS_OFF`. Without
+/// `PIMAX_LENS_CONF` and without the user's file, the shipped Dream Air profile ([`REFERENCE_LENS_CONF`]) is used
+/// instead of the bare code defaults (`PIMAX_NO_REFERENCE=1` keeps the code defaults).
 pub fn load(aspect: f32, env: &dyn Fn(&str) -> Option<String>) -> Loaded {
     let path = config::config_path(env);
+    let explicit = env("PIMAX_LENS_CONF").is_some_and(|p| !p.is_empty());
+    if !explicit && config::reference_allowed(env) && std::fs::metadata(&path).is_err() {
+        return load_reference(aspect, env, path);
+    }
     load_file(aspect, env, path)
+}
+
+/// [`load`] when the user has no lens.conf: the shipped profile, parsed like a file (`path` is where the user's own
+/// file would be; it is named in the log line).
+pub fn load_reference(aspect: f32, env: &dyn Fn(&str) -> Option<String>, path: PathBuf) -> Loaded {
+    let mut cfg = LensConfig::defaults(aspect);
+    let mut messages = vec![info(format!(
+        "pimax lens: no config at {}, using the shipped Pimax Dream Air lens profile (reference; the app's lens tools write your own)",
+        path.display()
+    ))];
+    for w in config::parse_into(&mut cfg, REFERENCE_LENS_CONF, "reference lens.conf") {
+        messages.push(warn(format!("pimax lens: {}", w.message)));
+    }
+    finish(cfg, messages, env, path, false, true, None)
 }
 
 /// Load the LUT files named by the config (`lut = FILE`). On success the eye's FOV becomes the LUT's FOV port plus
@@ -219,6 +246,21 @@ pub fn load_file(aspect: f32, env: &dyn Fn(&str) -> Option<String>, path: PathBu
             )));
         }
     }
+    let dir = path.parent().map(|d| d.to_path_buf());
+    finish(cfg, messages, env, path, file_found, false, dir.as_deref())
+}
+
+/// The common end of [`load_file`] and [`load_reference`]: the environment overrides, the LUTs (relative to
+/// `lut_dir`), the per-eye log lines.
+fn finish(
+    mut cfg: LensConfig,
+    mut messages: Vec<Message>,
+    env: &dyn Fn(&str) -> Option<String>,
+    path: PathBuf,
+    file_found: bool,
+    reference: bool,
+    lut_dir: Option<&std::path::Path>,
+) -> Loaded {
     if config::forced_off(env) {
         cfg.enabled = false;
     }
@@ -231,7 +273,7 @@ pub fn load_file(aspect: f32, env: &dyn Fn(&str) -> Option<String>, path: PathBu
         None => {}
     }
     let luts = if cfg.enabled {
-        attach_luts(&mut cfg, path.parent(), &mut messages)
+        attach_luts(&mut cfg, lut_dir, &mut messages)
     } else {
         [None, None]
     };
@@ -250,6 +292,7 @@ pub fn load_file(aspect: f32, env: &dyn Fn(&str) -> Option<String>, path: PathBu
         lens: Lens::new(cfg).with_luts(luts),
         path,
         file_found,
+        reference,
         messages,
     }
 }
@@ -535,5 +578,45 @@ mod tests {
         // unwritable location -> a warning, no panic
         let bad = write_debug_grid(&lens, std::path::Path::new("/proc/definitely/not/here"), 16);
         assert_eq!(bad[0].level, Level::Warn);
+    }
+
+    #[test]
+    fn without_a_lens_conf_the_shipped_dream_air_profile_is_used_and_the_users_own_wins() {
+        let home = std::env::temp_dir().join(format!("pimax-lens-ref-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(&home).unwrap();
+        let h = home.display().to_string();
+        let env = |k: &str| (k == "HOME").then(|| h.clone());
+        let (want, w) = config::parse(REFERENCE_LENS_CONF, ASPECT);
+        assert!(w.is_empty(), "the reference profile parses cleanly: {w:?}");
+        assert_ne!(want, LensConfig::defaults(ASPECT), "the profile differs from the bare code defaults");
+        assert!(!REFERENCE_LENS_CONF.contains("lut"), "no external LUT file needed");
+        let l = load(ASPECT, &env);
+        assert!(l.reference && !l.file_found);
+        assert_eq!(l.lens.config(), &want);
+        assert!(l.messages[0].text.contains("shipped Pimax Dream Air lens profile"), "{:?}", l.messages[0]);
+        // PIMAX_NO_REFERENCE=1: the bare code defaults, as before
+        let env_off = |k: &str| match k {
+            "HOME" => Some(h.clone()),
+            "PIMAX_NO_REFERENCE" => Some("1".to_string()),
+            _ => None,
+        };
+        let l = load(ASPECT, &env_off);
+        assert!(!l.reference && !l.file_found);
+        assert_eq!(l.lens.config(), &LensConfig::defaults(ASPECT));
+        // an explicit PIMAX_LENS_CONF that does not exist keeps the code defaults (the old driver behaviour)
+        let env_explicit = |k: &str| match k {
+            "HOME" => Some(h.clone()),
+            "PIMAX_LENS_CONF" => Some("/nonexistent/lens.conf".to_string()),
+            _ => None,
+        };
+        assert!(!load(ASPECT, &env_explicit).reference);
+        // the user's own file wins over the reference
+        std::fs::create_dir_all(home.join(".config/omarchyvr")).unwrap();
+        std::fs::write(home.join(".config/omarchyvr/lens.conf"), "fov = 40 41 42 43\n").unwrap();
+        let l = load(ASPECT, &env);
+        assert!(l.file_found && !l.reference);
+        assert_eq!(l.lens.config().eye[0].fov, [40.0, 41.0, 42.0, 43.0]);
+        let _ = std::fs::remove_dir_all(&home);
     }
 }

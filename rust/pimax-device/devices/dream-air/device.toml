@@ -45,6 +45,12 @@ min_mm = 58.0                         # pimax-eye/src/ipd.rs:16-17
 max_mm = 72.0
 readback = "IF2 report 53 31, u16 LE at bytes 45..46, /100 mm"   # pimax-eye/src/ipd.rs:61-66
 
+# Reference data (user decision 2026-10-17, "approve shipping calibrations"): reference/ holds the project headset's
+# own Pimax Windows calibration with every serial scrubbed, the default for every Dream Air until the headset's own
+# data is read or imported (it always wins): headset-calibration.xml (factory cameras + IMU; pimax-cam REFERENCE_XML),
+# controllers/left.json, right.json (Pimax LED models; pimax-ctrltrack), lens.conf (fitted lens profile; pimax-lens),
+# gyro-bias (typical gyro bias, deg/s; omarchyvr-config devicedata). Installed with the data copy; also compiled in.
+
 [cameras]
 status = "works"
 count = 4                             # OV7251 tiles on one UVC node; pimax-cam/src/frame.rs:13-28

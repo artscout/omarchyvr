@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reinstall parity</title>
+<meta name="description" content="What a clean omarchyvr install reads at Work and Play, where the old lab install had it, and what a clean install now keeps, imports, ships or defaults (2026-10-17).">
+<style>
+:root {
+  --bg: #f7f7f5; --fg: #1d1d1f; --muted: #5d5d66; --card: #ffffff; --line: #dcdce2;
+  --kept: #1f7a4d; --imported: #1d5fa8; --shipped: #7a3fb0; --default: #6b6b73; --fixed: #a35a00; --remaining: #b3261e;
+  --chip-bg: rgba(0,0,0,0.05);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141417; --fg: #ececf1; --muted: #a3a3ad; --card: #1d1d22; --line: #34343c;
+    --kept: #5fd09a; --imported: #7ab4ff; --shipped: #c99bf2; --default: #b5b5bf; --fixed: #ffb45c; --remaining: #ff8a80;
+    --chip-bg: rgba(255,255,255,0.08);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141417; --fg: #ececf1; --muted: #a3a3ad; --card: #1d1d22; --line: #34343c;
+  --kept: #5fd09a; --imported: #7ab4ff; --shipped: #c99bf2; --default: #b5b5bf; --fixed: #ffb45c; --remaining: #ff8a80;
+  --chip-bg: rgba(255,255,255,0.08);
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 48px; }
+h1 { font-size: 1.6rem; margin: 0 0 4px; }
+h2 { font-size: 1.15rem; margin: 32px 0 8px; }
+p, li { color: var(--fg); }
+.sub { color: var(--muted); margin: 0 0 16px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin: 12px 0; }
+ol, ul { padding-left: 1.3rem; }
+li { margin: 4px 0; }
+code { font: 0.86em ui-monospace, "SFMono-Regular", Menlo, monospace; background: var(--chip-bg); padding: 1px 4px; border-radius: 4px; overflow-wrap: anywhere; }
+.wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+th, td { text-align: left; vertical-align: top; padding: 7px 8px; border-bottom: 1px solid var(--line); }
+th { color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--card); }
+tr.area td { font-weight: 700; padding-top: 14px; border-bottom: none; }
+.chip { display: inline-block; font-size: 0.78rem; font-weight: 700; padding: 1px 7px; border-radius: 999px; margin: 1px 3px 1px 0; background: var(--chip-bg); white-space: nowrap; }
+.kept { color: var(--kept); } .imported { color: var(--imported); } .shipped { color: var(--shipped); }
+.default { color: var(--default); } .fixed { color: var(--fixed); } .remaining { color: var(--remaining); }
+.legend .chip { margin-right: 8px; }
+@media (max-width: 700px) {
+  table, thead, tbody, tr, th, td { display: block; }
+  thead { display: none; }
+  tr { border-bottom: 1px solid var(--line); padding: 6px 0; }
+  td { border: none; padding: 2px 0; }
+  td[data-k]::before { content: attr(data-k) ": "; color: var(--muted); font-weight: 600; }
+  tr.area td { padding-top: 16px; }
+}
+</style>
+</head>
+<body>
+<main>
+<h1>Reinstall parity, 2026-10-17</h1>
+<p class="sub">The old lab install (<code>~/pimax-re</code>) worked end to end on 2026-10-16. After a clean uninstall and a reinstall from omarchyvr, Work failed three times in a row. This page lists every input a Work or Play start reads, where the lab had it, where omarchyvr reads it, and what a clean install does with it now.</p>
+
+<div class="card">
+<strong>Rule since this change.</strong> Your own data always wins: the uninstaller keeps it, the import brings it back from older places on the PC, or the headset gives it. Without it, the shipped Pimax Dream Air reference stands in (the project headset's own Windows calibration, serials scrubbed; user decision "approve shipping calibrations"), and every start and the app say which is in use. No start waits for a still headset. In Work only WayVR is required.
+</div>
+
+<h2>What failed, and why (blockers first)</h2>
+<ol>
+<li><strong>"omarchyvr-slam export: no calibration file found"</strong> (13:16, 13:18). The factory calibration was reset with the settings, and the lab had kept it in its own tree. Kept and read from the headset by the Room setup change; now also the shipped reference when none of your own exists, and imported from Pimax's Windows data.</li>
+<li><strong>"timed out waiting for the gyro calibration (service left running)"</strong> (13:27). The real cause was IMU data that stopped flowing (camera frames all "older than last by 0 ns": a frozen IMU clock), not the reset gyro cache: the driver falls back to the cache, or zero, after 3 s of samples. The missing cache did make the next start (13:29) track with a zero bias. Now: no start waits for a still headset, the cache always holds a bias, and a start without motion data stops Monado again.</li>
+<li><strong>pimax-ctrltrack panicked</strong> at <code>track.rs:47</code> (13:29): the controller models existed only in the lab's copy of Pimax's Windows data. The whole Work start failed and left Monado running. Now: imported, a shipped reference, an error instead of a panic, and Work starts without optical controller tracking if the tracker still cannot start.</li>
+<li><strong>Two hidden blockers the audit found</strong>, which hit any PC without the lab's <code>~/src</code> (or this PC after <code>--remove-lab-builds</code>): Basalt's base VIO config (every 6DoF start), and <code>libopenvr_api.so</code> for WayVR (every Work start). Both fixed.</li>
+</ol>
+
+<h2>Parity table</h2>
+<p class="legend"><span class="chip kept">kept</span> by the uninstaller <span class="chip imported">imported</span> by <code>omarchyvr import-previous</code> <span class="chip shipped">shipped</span> in the build <span class="chip default">default</span> built in <span class="chip fixed">fixed</span> today <span class="chip remaining">remaining</span> gap</p>
+<div class="card wrap">
+<table>
+<thead><tr><th>Component</th><th>Input</th><th>Lab (it worked)</th><th>omarchyvr place</th><th>Clean install now</th></tr></thead>
+<tbody>
+<tr class="area"><td colspan="5">6DoF, head tracking</td></tr>
+<tr><td data-k="Component">SLAM export, Monado, passthrough, controllers</td><td data-k="Input">factory calibration XML</td><td data-k="Lab"><code>~/pimax-re/analysis/headset-calibration.xml</code></td><td data-k="Now at"><code>~/.config/omarchyvr/headset-calibration.xml</code></td><td data-k="Now"><span class="chip kept">kept</span><span class="chip imported">imported</span><span class="chip shipped">shipped</span> reference when none of your own; Room setup reads your own</td></tr>
+<tr><td data-k="Component">Monado driver, SLAM export</td><td data-k="Input">gyro bias</td><td data-k="Lab"><code>~/.cache/pimax/gyro-bias</code></td><td data-k="Now at"><code>~/.cache/omarchyvr/gyro-bias</code></td><td data-k="Now"><span class="chip kept">kept</span><span class="chip imported">imported</span><span class="chip default">default</span> Dream Air value written at the first start; <span class="chip fixed">fixed</span> no wait (<code>PIMAX_BIAS_TIMEOUT_MS=200</code>), refined and saved when the headset rests</td></tr>
+<tr><td data-k="Component">SLAM export</td><td data-k="Input">Basalt base VIO config</td><td data-k="Lab"><code>~/src/basalt/data/euroc/euroc_config.json</code></td><td data-k="Now at">source tree, installed Basalt, else built into <code>omarchyvr-slam</code></td><td data-k="Now"><span class="chip shipped">shipped</span><span class="chip fixed">fixed</span> (the installer installs only <code>msdmo_config.json</code>)</td></tr>
+<tr><td data-k="Component">Monado SLAM</td><td data-k="Input">Basalt library</td><td data-k="Lab"><code>~/.local/lib/libbasalt.so</code> (hand build)</td><td data-k="Now at"><code>~/.local/lib/omarchyvr/basalt/</code></td><td data-k="Now">built and installed by <code>install.sh</code></td></tr>
+<tr><td data-k="Component">SLAM export, Monado</td><td data-k="Input">IMU noise <code>slam-imu.json</code></td><td data-k="Lab"><code>~/.config/pimax/</code> (not present)</td><td data-k="Now at"><code>~/.config/omarchyvr/</code></td><td data-k="Now"><span class="chip kept">kept</span><span class="chip imported">imported</span><span class="chip default">default</span> Pimax's noise values</td></tr>
+<tr><td data-k="Component">Monado</td><td data-k="Input">one build with every marker, realtime permission</td><td data-k="Lab"><code>~/src/monado-eye/build</code></td><td data-k="Now at"><code>~/.local/lib/omarchyvr/monado</code></td><td data-k="Now">installed; the permission across relinks is the other change of today</td></tr>
+
+<tr class="area"><td colspan="5">Controllers</td></tr>
+<tr><td data-k="Component">pimax-ctrltrack</td><td data-k="Input">LED models <code>controller_params.json</code></td><td data-k="Lab"><code>~/pimax-re/pimax-data/ProgramData-Pimax/slam/H1/&lt;serial&gt;/</code></td><td data-k="Now at"><code>~/.config/omarchyvr/controllers/</code></td><td data-k="Now"><span class="chip kept">kept</span><span class="chip imported">imported</span><span class="chip shipped">shipped</span> reference left/right (Pimax's default models); <span class="chip fixed">fixed</span> no panic, Work goes on</td></tr>
+<tr><td data-k="Component">pimax-ctrltrack</td><td data-k="Input"><code>ctrl-cam-extrinsics.json</code></td><td data-k="Lab"><code>~/.config/pimax/</code></td><td data-k="Now at"><code>~/.config/omarchyvr/</code></td><td data-k="Now"><span class="chip kept">kept</span><span class="chip imported">imported</span><span class="chip default">default</span> factory extrinsics</td></tr>
+<tr><td data-k="Component">Monado controller fuser</td><td data-k="Input"><code>ctrl-imu.json</code></td><td data-k="Lab"><code>~/.config/pimax/</code></td><td data-k="Now at"><code>~/.config/omarchyvr/</code></td><td data-k="Now"><span class="chip kept">kept</span><span class="chip imported">imported</span><span class="chip default">default</span> built-in gyro fit</td></tr>
+
+<tr class="area"><td colspan="5">Lenses and display</td></tr>
+<tr><td data-k="Component">Monado lens model</td><td data-k="Input"><code>lens.conf</code></td><td data-k="Lab"><code>~/.config/pimax/lens.conf</code> (your tuned profile)</td><td data-k="Now at"><code>~/.config/omarchyvr/lens.conf</code></td><td data-k="Now"><span class="chip kept">kept</span><span class="chip imported">imported</span><span class="chip shipped">shipped</span> your tuned numbers are the Dream Air default now (serial removed from the header)</td></tr>
+<tr><td data-k="Component">lens tools</td><td data-k="Input"><code>lens-ipd/</code> variants</td><td data-k="Lab"><code>~/.config/pimax/lens-ipd/</code></td><td data-k="Now at"><code>~/.config/omarchyvr/lens-ipd/</code></td><td data-k="Now"><span class="chip kept">kept</span><span class="chip imported">imported</span> (not read at start)</td></tr>
+<tr><td data-k="Component">launcher, SteamVR driver</td><td data-k="Input">IPD <code>ipd.env</code></td><td data-k="Lab"><code>~/.config/pimax/ipd.env</code></td><td data-k="Now at"><code>~/.config/omarchyvr/ipd.env</code></td><td data-k="Now"><span class="chip kept">kept</span><span class="chip imported">imported</span><span class="chip remaining">remaining</span> it reaches SteamVR and the apps the app starts, not Steam games on Monado (as in the lab)</td></tr>
+<tr><td data-k="Component">launcher</td><td data-k="Input">brightness <code>display.toml</code>, sound <code>audio.toml</code></td><td data-k="Lab"><code>~/.config/pimax/</code></td><td data-k="Now at"><code>~/.config/omarchyvr/</code></td><td data-k="Now"><span class="chip imported">imported</span> when a backup has them, else <span class="chip default">default</span></td></tr>
+
+<tr class="area"><td colspan="5">Eye tracking</td></tr>
+<tr><td data-k="Component">pimax-eye in Monado</td><td data-k="Input"><code>eye-calibration.toml</code></td><td data-k="Lab"><code>~/.config/pimax/</code></td><td data-k="Now at"><code>~/.config/omarchyvr/</code></td><td data-k="Now"><span class="chip kept">kept</span><span class="chip imported">imported</span><span class="chip default">default</span> the built-in test calibration of the base start list</td></tr>
+<tr><td data-k="Component">pimax-eye</td><td data-k="Input">cold-start list</td><td data-k="Lab">private <code>replay-frames.txt</code></td><td data-k="Now at">public base list (built in), the private one when linked at build</td><td data-k="Now"><span class="chip shipped">shipped</span> (earlier user decision)</td></tr>
+<tr><td data-k="Component">pimax-eye</td><td data-k="Input"><code>eye-correction.toml</code>, <code>eye.conf</code></td><td data-k="Lab">none</td><td data-k="Now at"><code>~/.config/omarchyvr/</code></td><td data-k="Now"><span class="chip kept">kept</span> / <span class="chip imported">imported</span>, else <span class="chip default">default</span></td></tr>
+
+<tr class="area"><td colspan="5">Work: WayVR, voice, room</td></tr>
+<tr><td data-k="Component">WayVR</td><td data-k="Input"><code>libopenvr_api.so</code></td><td data-k="Lab"><code>~/src/openvr/lib/linux64</code></td><td data-k="Now at"><code>~/.local/lib/omarchyvr/wayvr/</code></td><td data-k="Now"><span class="chip fixed">fixed</span> installed next to <code>wayvr</code> by <code>install.sh</code></td></tr>
+<tr><td data-k="Component">WayVR</td><td data-k="Input">its home and config</td><td data-k="Lab"><code>~/src/desk-out/wayvr-home-am</code></td><td data-k="Now at"><code>~/.local/share/omarchyvr/wayvr-home</code></td><td data-k="Now">written at every start</td></tr>
+<tr><td data-k="Component">voice</td><td data-k="Input">speech models, VAD, sherpa-onnx</td><td data-k="Lab"><code>~/models</code>, a venv in <code>~/src</code></td><td data-k="Now at"><code>~/models</code>, <code>~/.local/lib/omarchyvr/sherpa-onnx</code></td><td data-k="Now"><span class="chip kept">kept</span> downloads; installed by <code>install.sh</code></td></tr>
+<tr><td data-k="Component">voice, AI</td><td data-k="Input"><code>ai.toml</code> (keys)</td><td data-k="Lab"><code>~/.config/pimax/ai.toml</code></td><td data-k="Now at"><code>~/.config/omarchyvr/ai.toml</code></td><td data-k="Now"><span class="chip kept">kept</span> in place; <span class="chip fixed">fixed</span> never put into the settings tar; never touched by the import</td></tr>
+<tr><td data-k="Component">local AI</td><td data-k="Input">runtime and models</td><td data-k="Lab"><code>~/.local/share/pimax/ai</code></td><td data-k="Now at"><code>~/.local/share/omarchyvr/ai</code></td><td data-k="Now"><span class="chip kept">kept</span> downloads (moved by the uninstaller)</td></tr>
+<tr><td data-k="Component">GPU speech</td><td data-k="Input">whisper-server</td><td data-k="Lab"><code>~/src/whisper.cpp/build-vk</code></td><td data-k="Now at"><code>~/.local/lib/omarchyvr/whisper.cpp</code></td><td data-k="Now">only with <code>./install.sh --gpu-speech</code>; else Parakeet on the CPU (the default)</td></tr>
+<tr><td data-k="Component">room anchor, roommap auto</td><td data-k="Input">room map</td><td data-k="Lab"><code>~/.local/share/pimax/roommap/</code></td><td data-k="Now at"><code>~/.local/share/omarchyvr/roommap/</code></td><td data-k="Now"><span class="chip kept">kept</span><span class="chip imported">imported</span></td></tr>
+<tr><td data-k="Component">room</td><td data-k="Input"><code>room.toml</code>, <code>room-setup.toml</code>, <code>anchor.toml</code></td><td data-k="Lab"><code>~/.config/pimax/</code> (not present)</td><td data-k="Now at"><code>~/.config/omarchyvr/</code></td><td data-k="Now"><span class="chip imported">imported</span> when present, else Room setup writes them</td></tr>
+<tr><td data-k="Component">SteamVR Play</td><td data-k="Input"><code>chaperone_info.vrchap</code>, <code>steamvr.vrsettings</code></td><td data-k="Lab">Steam's config</td><td data-k="Now at">Steam's config</td><td data-k="Now">Steam's files stay; our keys are written again at every Play</td></tr>
+
+<tr class="area"><td colspan="5">App and system</td></tr>
+<tr><td data-k="Component">every tool</td><td data-k="Input"><code>paths.toml</code> (shared drive)</td><td data-k="Lab"><code>~/.config/pimax/</code></td><td data-k="Now at"><code>~/.config/omarchyvr/</code></td><td data-k="Now"><span class="chip imported">imported</span></td></tr>
+<tr><td data-k="Component">app, launcher</td><td data-k="Input"><code>gamemode.toml</code>, <code>record.toml</code>, <code>background.toml</code>, <code>games.toml</code>, Work first-run answers</td><td data-k="Lab"><code>~/.config/pimax/</code></td><td data-k="Now at"><code>~/.config/omarchyvr/</code></td><td data-k="Now"><span class="chip imported">imported</span> when missing (the installer writes <code>games.toml</code> itself)</td></tr>
+<tr><td data-k="Component">keepalive</td><td data-k="Input">user unit</td><td data-k="Lab">a symlink into <code>~/pimax-re/linux</code></td><td data-k="Now at">a copy in <code>~/.config/systemd/user/</code></td><td data-k="Now">installed by <code>install.sh</code></td></tr>
+<tr><td data-k="Component">app at login</td><td data-k="Input">autostart entry</td><td data-k="Lab"><code>pimax-setup.desktop</code></td><td data-k="Now at"><code>omarchyvr-app.desktop</code></td><td data-k="Now">installed by <code>install.sh</code></td></tr>
+<tr><td data-k="Component">desktop menu</td><td data-k="Input"><code>omarchyvr-vr.desktop</code></td><td data-k="Lab">not installed either</td><td data-k="Now at">template only</td><td data-k="Now">not a gap: Play in the app is the one entry</td></tr>
+<tr><td data-k="Component">uninstall</td><td data-k="Input">stock NVIDIA source without <code>*.pimax-orig</code></td><td data-k="Lab">by hand</td><td data-k="Now at">root job</td><td data-k="Now">reverse-patch path (LESSONS 37) and today's root-job change</td></tr>
+
+<tr class="area"><td colspan="5">Start behaviour</td></tr>
+<tr><td data-k="Component">every start</td><td data-k="Input">gyro still window</td><td data-k="Lab">waits up to 3 s for a still headset</td><td data-k="Now at">launcher env</td><td data-k="Now"><span class="chip fixed">fixed</span> starts after 0.2 s with the saved bias, refined in the background</td></tr>
+<tr><td data-k="Component">Work</td><td data-k="Input">optional parts (controller tracking, room view, voice, wrist readout, screens watcher)</td><td data-k="Lab">any one failing failed Work</td><td data-k="Now at"><code>desk start</code></td><td data-k="Now"><span class="chip fixed">fixed</span> left out with a plain note and <code>degraded.txt</code>; only WayVR is required</td></tr>
+<tr><td data-k="Component">Work, Play</td><td data-k="Input">a failed start</td><td data-k="Lab">left Monado running</td><td data-k="Now at">launcher</td><td data-k="Now"><span class="chip fixed">fixed</span> stops what it began, Monado by its pid</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2>What changed</h2>
+<ul>
+<li><strong>Shipped reference</strong> in <code>rust/pimax-device/devices/dream-air/reference/</code>: factory XML (<code>deviceUID="reference"</code>), controller models left/right, the tuned lens profile, a typical gyro bias. Compiled into <code>pimax-cam</code>, <code>pimax-ctrltrack</code>, <code>pimax-lens</code>, <code>omarchyvr-config</code>; installed with the data copy. <code>PIMAX_NO_REFERENCE=1</code> turns it off. The leak scanner allows exactly these files by path and hash and refuses calibration content anywhere else.</li>
+<li><strong>Import from the previous install</strong>: <code>omarchyvr import-previous</code> (<code>--status</code>, <code>--dry-run</code>), run by <code>install.sh</code> and by the app by itself when its checks find more (nothing running). It reads the old places, the lab tree and its Windows data, a mounted shared drive, and the uninstaller's backups (a small streaming tar reader; never <code>ai.toml</code>), never overwrites, writes mode 600, and records what it looked at.</li>
+<li><strong>Uninstaller</strong>: keeps the device data (also from the older places), <code>--reset-calibration</code> to drop it, and no <code>ai.toml</code> in the settings tar.</li>
+<li><strong>Gyro</strong>: <code>PIMAX_BIAS_TIMEOUT_MS=200</code> in the one env builder (Monado and the SteamVR driver), the cache seeded with the saved or default bias, the SLAM export seeded with the same value; plain start lines.</li>
+<li><strong>Work</strong>: optional parts degrade, a failed start stops what it began; <code>pimax-ctrltrack</code> returns errors; every start prints "headset data: calibration = ..., controller models = ..., lens = ..., gyro = ...".</li>
+<li><strong>App</strong>: Checks items "Your previous install" (with Fix), "Controller models" (found / reference / import) and "Headset data"; the Room setup tile and the start gate use the reference; a help entry.</li>
+<li><strong>Installer</strong>: <code>libopenvr_api.so</code> next to WayVR, the device descriptors in the data copy, the import step.</li>
+</ul>
+
+<h2>Remaining</h2>
+<ul>
+<li><span class="chip remaining">IPD</span> <code>OXR_DEBUG_IPD_MM</code> is read by each OpenXR client, not by <code>monado-service</code>: Steam games on Monado render at 63 mm (as in the lab). A driver-side IPD in the Monado fork would close it.</li>
+<li><span class="chip remaining">headset's own calibration</span> the setup does not read it by itself yet; the reference stands in until Room setup reads it (on this PC your own file is in place).</li>
+<li><span class="chip remaining">XDG</span> some readers follow <code>XDG_CONFIG_HOME</code>, others only <code>$HOME/.config</code> (the same on a normal desktop).</li>
+<li><span class="chip remaining">omarchyvrd</span> in executing mode runs the room, sound and local-AI start steps twice (found by the audit, not changed).</li>
+<li><span class="chip remaining">games</span> every install writes "Games run with: SteamVR" again (the installer's choice, not changed).</li>
+<li><span class="chip remaining">install</span> nothing here is installed yet: the main thread installs a clean build of the merged commit between sessions.</li>
+</ul>
+<p class="sub">Tests: <code>devicedata</code>, <code>import</code>, <code>previous</code>, reference tests in <code>pimax-cam</code>, <code>pimax-lens</code>, <code>pimax-ctrltrack</code>; <code>omarchyvr-slam/tests/clean_home.rs</code>; vr_cli end-to-end <code>a_clean_home_imports_the_previous_install_and_every_start_input_resolves</code>; <code>installer/test_uninstall_device_data.sh</code>; <code>tools/leak-scan-test.sh</code>. LESSONS 53 and 54; docs/INSTALL.md "What a clean install keeps and imports".</p>
+</main>
+</body>
+</html>

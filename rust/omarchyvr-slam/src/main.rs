@@ -189,7 +189,20 @@ fn gyro_bias_seed(arg: Option<&str>, from: Option<&str>) -> R<([f64; 3], String)
                 slam::gyro_bias_cache_path().unwrap_or_default().display()
             ),
         )),
-        None => Ok(([0.0; 3], "none (no driver cache yet)".into())),
+        // nothing in the new cache: the cache of the names before the rename (the driver reads it too), else the value
+        // the driver starts with on a clean install (the launcher writes it right after this export; LESSONS 13: a
+        // zero seed lets the tracker drift)
+        None => {
+            let env = |k: &str| std::env::var(k).ok();
+            let legacy = omarchyvr_config::devicedata::legacy_gyro_bias_path(&home(), &env);
+            if let Some(b) = std::fs::read_to_string(&legacy).ok().and_then(|t| slam::parse_gyro_bias_cache(&t)) {
+                return Ok((b, format!("driver cache {}", legacy.display())));
+            }
+            match slam::parse_gyro_bias_cache(omarchyvr_config::devicedata::REFERENCE_GYRO_BIAS) {
+                Some(b) => Ok((b, "the Dream Air default (no measured bias on this PC yet)".into())),
+                None => Ok(([0.0; 3], "none (no driver cache yet)".into())),
+            }
+        }
     }
 }
 

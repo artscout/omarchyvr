@@ -508,21 +508,84 @@ fn a_service_that_dies_during_startup_is_reported_with_its_last_words() {
     assert!(f.notify_log().contains("Pimax VR failed to start"));
 }
 
+/// Work with a part that dies at its start (2026-10-17: the controller tracker panicked on a missing model and the whole
+/// Work start failed with Monado left running). An optional part: Work starts without it and says so in plain words.
+/// WayVR (required): everything this start began is stopped again, Monado included.
 #[test]
-fn a_service_that_never_calibrates_times_out_but_keeps_running() {
+fn desk_start_goes_on_without_a_dying_optional_part_and_stops_everything_when_wayvr_dies() {
+    let f = Fixture::new(POLITE);
+    let order = f.root.join("order.log");
+    let looping = |name: &str| {
+        let p = f.root.join("bin").join(format!("{}-{name}", f.comm));
+        script(
+            &p,
+            &format!(
+                "#!/bin/bash\necho \"start {name}\" >> '{o}'\ntrap 'echo \"int {name}\" >> \"{o}\"; exit 0' INT TERM\nwhile true; do sleep 0.05; done\n",
+                o = order.display()
+            ),
+        );
+        p
+    };
+    let dying = |name: &str, words: &str| {
+        let p = f.root.join("bin").join(format!("{}-{name}", f.comm));
+        script(&p, &format!("#!/bin/bash\necho \"start {name}\" >> '{o}'\necho '{words}' >&2\nexit 2\n", o = order.display()));
+        p
+    };
+    let desk = |sub: &str, pt: &Path, wv: &Path, sc: &Path| {
+        let mut c = Command::new(env!("CARGO_BIN_EXE_omarchyvr"));
+        c.args(["desk", sub, "--service-bin"])
+            .arg(f.service())
+            .arg("--passthrough-bin")
+            .arg(pt)
+            .arg("--wayvr-bin")
+            .arg(wv)
+            .arg("--wayvr-home")
+            .arg(f.root.join("wv-home"))
+            .args(["--settle", "0.5", "--no-perf", "--screens", "1", "--no-watchdog"])
+            .arg("--pimax-bin")
+            .arg(sc);
+        f.apply_env(&mut c);
+        c.output().unwrap()
+    };
+    // 1. the room view dies at its start: Work starts without it
+    let (pt, wv, sc) = (dying("pt", "passthrough: camera 34a4:0014 not found"), looping("wv"), looping("sc"));
+    let o = desk("start", &pt, &wv, &sc);
+    let t = text(&o);
+    assert!(o.status.success(), "an optional part must not fail Work: {t}");
+    assert!(t.contains("The room view (passthrough) is off this session"), "{t}");
+    assert!(t.contains("camera 34a4:0014 not found"), "the part's own last words are the reason: {t}");
+    let degraded = fs::read_to_string(f.session().join("degraded.txt")).unwrap();
+    assert!(degraded.contains("room view"), "{degraded}");
+    assert!(f.pid().is_some_and(alive), "Monado runs: {t}");
+    let o = desk("stop", &pt, &wv, &sc);
+    assert!(o.status.success(), "{}", text(&o));
+    assert!(f.pid().is_none());
+    // 2. WayVR dies at its start: nothing of the start is left running
+    let wv_dead = dying("wv2", "wayvr: cannot open the display");
+    let pt_ok = looping("pt2");
+    let o = desk("start", &pt_ok, &wv_dead, &sc);
+    let t = text(&o);
+    assert_eq!(o.status.code(), Some(1), "{t}");
+    assert!(t.contains("everything that was started is stopped again"), "{t}");
+    assert!(t.contains("cannot open the display"), "{t}");
+    wait_until("monado gone", 10, || f.pid().is_none_or(|p| !alive(p)));
+    let all = fs::read_to_string(&order).unwrap();
+    assert!(all.contains("int pt2"), "the room view that did start is stopped again: {all}");
+}
+
+/// 2026-10-17: a start that never got a gyro line left monado-service running, half started, until a manual stop.
+/// A failed start now leaves nothing running: the service is stopped again by its pid.
+#[test]
+fn a_service_that_never_calibrates_times_out_and_is_stopped_again() {
     let f = Fixture::new(NEVER_READY);
     let o = f.run(&["start", "--timeout", "1"]);
     let t = text(&o);
     assert_eq!(o.status.code(), Some(1), "{t}");
-    assert!(
-        t.contains("timed out waiting for the gyro calibration"),
-        "{t}"
-    );
-    let pid = f.pid().unwrap();
-    assert!(alive(pid), "left running so that the user can look at it");
-    let o = f.run(&["stop"]);
-    assert!(o.status.success(), "{}", text(&o));
-    wait_until("service exit", 5, || !alive(pid));
+    assert!(t.contains("timed out waiting for the gyro calibration"), "{t}");
+    assert!(t.contains("monado-service was stopped again"), "{t}");
+    assert!(f.pid().is_none(), "no pid file left behind: {t}");
+    let left = std::process::Command::new("pgrep").args(["-x", &f.comm]).output().unwrap();
+    assert!(String::from_utf8_lossy(&left.stdout).trim().is_empty(), "nothing of the start is left running");
 }
 
 #[test]
@@ -912,21 +975,40 @@ fn desk_start_dry_run_lists_monado_passthrough_wayvr_in_order() {
 }
 
 #[test]
-fn desk_start_refuses_before_starting_monado_when_a_binary_is_missing() {
+fn desk_start_refuses_before_starting_monado_when_wayvr_is_missing() {
     let f = Fixture::new(POLITE);
     let mut c = Command::new(env!("CARGO_BIN_EXE_omarchyvr"));
     c.args(["desk", "start", "--service-bin"])
         .arg(f.service())
-        .args(["--passthrough-bin", "/nonexistent/omarchyvr-passthrough"]);
+        .args(["--wayvr-bin", "/nonexistent/wayvr"]);
     f.apply_env(&mut c);
     let o = c.output().unwrap();
     assert_eq!(o.status.code(), Some(1));
-    assert!(
-        text(&o).contains("/nonexistent/omarchyvr-passthrough does not exist"),
-        "{}",
-        text(&o)
-    );
+    assert!(text(&o).contains("/nonexistent/wayvr does not exist"), "{}", text(&o));
     assert!(f.pid().is_none(), "Monado must not have been started");
+}
+
+/// 2026-10-17: a missing optional part (here the passthrough binary) made the whole Work start fail. Now only WayVR is
+/// required: the part is left out with a plain note and the rest of the plan stays.
+#[test]
+fn desk_start_leaves_out_a_missing_optional_part_with_a_plain_note() {
+    let f = Fixture::new(POLITE);
+    let wv = f.root.join("bin/fake-wayvr");
+    script(&wv, "#!/bin/bash\nexit 0\n");
+    let mut c = Command::new(env!("CARGO_BIN_EXE_omarchyvr"));
+    c.args(["desk", "start", "--dry-run", "--no-perf", "--screens", "1", "--service-bin"])
+        .arg(f.service())
+        .args(["--passthrough-bin", "/nonexistent/omarchyvr-passthrough"])
+        .args(["--wayvr-bin"])
+        .arg(&wv);
+    f.apply_env(&mut c);
+    let o = c.output().unwrap();
+    let t = text(&o);
+    assert!(o.status.success(), "{t}");
+    assert!(t.contains("The room view (passthrough) is off this session"), "{t}");
+    assert!(t.contains("/nonexistent/omarchyvr-passthrough is not installed"), "{t}");
+    assert!(t.contains(&format!("2. {}", wv.display())), "WayVR moves up in the plan: {t}");
+    assert!(f.pid().is_none(), "a dry run starts nothing");
 }
 
 #[test]
@@ -1169,4 +1251,134 @@ fn no_watchdog_flag_starts_none() {
     assert!(o.status.success(), "{}", text(&o));
     assert!(!f.session().join("watchdog.pid").exists());
     let _ = f.run(&["stop"]);
+}
+
+/// The fake service with the 6DoF code marker the `--6dof` check looks for (`PIMAX_SLAM\0`, after the loop: never run).
+fn polite_with_slam() -> String {
+    format!("{POLITE}\n# PIMAX_SLAM\0\n")
+}
+
+/// A scratch HOME laid out like a clean install: the tools the 6DoF/controller plan names, Basalt, a fake WayVR.
+fn clean_install_home(f: &Fixture) -> (PathBuf, PathBuf) {
+    let home = f.root.join("home");
+    let bin = home.join(".local/bin");
+    fs::create_dir_all(&bin).unwrap();
+    for b in ["pimax-cam", "omarchyvr-slam", "pimax-ctrltrack", "omarchyvr-passthrough", "omarchyvr"] {
+        script(&bin.join(b), "#!/bin/bash\nexit 0\n");
+    }
+    let basalt = home.join(".local/lib/omarchyvr/basalt/lib/libbasalt.so");
+    fs::create_dir_all(basalt.parent().unwrap()).unwrap();
+    fs::write(&basalt, "").unwrap();
+    let wv = f.root.join("bin/fake-wayvr");
+    script(&wv, "#!/bin/bash\nexit 0\n");
+    (home, wv)
+}
+
+/// The fixture isolates the XDG dirs in another directory: point them into `home`, as on a real desktop.
+fn with_home_xdg(c: &mut Command, home: &Path) {
+    c.env("HOME", home)
+        .env("XDG_CONFIG_HOME", home.join(".config"))
+        .env("XDG_CACHE_HOME", home.join(".cache"))
+        .env("XDG_DATA_HOME", home.join(".local/share"))
+        .env("XDG_STATE_HOME", home.join(".local/state"));
+}
+
+/// End to end, 2026-10-17 parity: a clean HOME with the previous install's data still on this PC (the lab tree with
+/// Pimax's Windows data, an uninstaller backup) -> `omarchyvr import-previous` -> `desk start --dry-run` and
+/// `vr start --dry-run` with 6DoF and controller tracking resolve every input to the user's own data; the same start in
+/// a HOME with nothing resolves to the shipped Dream Air reference. Nothing says missing.
+#[test]
+fn a_clean_home_imports_the_previous_install_and_every_start_input_resolves() {
+    let f = Fixture::new(&polite_with_slam());
+    let (home, wv) = clean_install_home(&f);
+    let put = |p: PathBuf, s: &str| {
+        fs::create_dir_all(p.parent().unwrap()).unwrap();
+        fs::write(p, s).unwrap();
+    };
+    // the previous install's data: the lab tree and an uninstaller backup of ~/.config/pimax and ~/.cache/pimax
+    put(home.join("pimax-re/analysis/headset-calibration.xml"), &format!("<?xml version=\"1.0\"?>\n<DeviceConfiguration deviceUID=\"x\">{}</DeviceConfiguration>\n", " ".repeat(300)));
+    let h1 = home.join("pimax-re/pimax-data/ProgramData-Pimax/slam/H1");
+    put(h1.join("A1/controller_params.json"), "{\"Hand\":\"Left\"}");
+    put(h1.join("B2/controller_params.json"), "{\"Hand\":\"Right\"}");
+    put(home.join(".config/pimax/ipd.env"), "OXR_DEBUG_IPD_MM=64.0\n");
+    put(home.join(".config/pimax/lens.conf"), "fov = 40 41 42 43\n");
+    put(home.join(".cache/pimax/gyro-bias"), "0.2492 0.7927 0.3365\n");
+    let tar = Command::new("tar")
+        .arg("-czf")
+        .arg(home.join("omarchyvr-settings-backup-20261017-083404.tar.gz"))
+        .arg("-C")
+        .arg(&home)
+        .args([".config/pimax", ".cache/pimax"])
+        .status()
+        .unwrap();
+    assert!(tar.success());
+    // the uninstaller removed the old places; only the backup and the lab tree are left
+    fs::remove_dir_all(home.join(".config/pimax")).unwrap();
+    fs::remove_dir_all(home.join(".cache/pimax")).unwrap();
+
+    let mut c = Command::new(env!("CARGO_BIN_EXE_omarchyvr"));
+    c.arg("import-previous");
+    f.apply_env(&mut c);
+    with_home_xdg(&mut c, &home);
+    let o = c.output().unwrap();
+    let t = text(&o);
+    assert!(o.status.success(), "{t}");
+    for want in [
+        "headset calibration: brought back from ~/pimax-re/analysis/headset-calibration.xml",
+        "controller models: brought back from ~/pimax-re/pimax-data/ProgramData-Pimax/slam/H1 (2 controllers",
+        "gyro bias: brought back from ~/omarchyvr-settings-backup-20261017-083404.tar.gz",
+        "IPD: brought back from ~/omarchyvr-settings-backup-20261017-083404.tar.gz",
+        "lens profile: brought back from",
+    ] {
+        assert!(t.contains(want), "{want:?} missing in:\n{t}");
+    }
+
+    let desk = |home: &Path| {
+        let mut c = Command::new(env!("CARGO_BIN_EXE_omarchyvr"));
+        c.args(["desk", "start", "--dry-run", "--6dof", "--ctrl-track", "--no-perf", "--screens", "1", "--service-bin"])
+            .arg(f.service())
+            .arg("--wayvr-bin")
+            .arg(&wv);
+        f.apply_env(&mut c);
+        with_home_xdg(&mut c, home);
+        c.output().unwrap()
+    };
+    // the launcher's own lines (not the fixture's preflight, which knows no OpenXR runtime link yet) name no missing input
+    let no_gap = |t: &str| {
+        for l in t.lines().filter(|l| l.starts_with("omarchyvr desk:") || l.starts_with("omarchyvr vr:")) {
+            for bad in ["not installed", "does not exist", "missing", "is off this session", "no calibration"] {
+                assert!(!l.contains(bad), "{bad:?} in {l:?} of:\n{t}");
+            }
+        }
+    };
+    let o = desk(&home);
+    let t = text(&o);
+    assert!(o.status.success(), "{t}");
+    assert!(t.contains("headset data: calibration = your own, controller models = your own, lens = your own, gyro = measured on this PC"), "{t}");
+    assert!(t.contains("export --out") && t.contains("broker") && t.contains("pimax-ctrltrack"), "the 6DoF and controller plan: {t}");
+    no_gap(&t);
+    let mut c = Command::new(env!("CARGO_BIN_EXE_omarchyvr"));
+    c.args(["vr", "start", "--dry-run", "--6dof", "--ctrl-track", "--runtime", "monado", "--service-bin"]).arg(f.service());
+    f.apply_env(&mut c);
+    with_home_xdg(&mut c, &home);
+    let o = c.output().unwrap();
+    let t = text(&o);
+    assert!(o.status.success(), "{t}");
+    assert!(t.contains("headset data: calibration = your own, controller models = your own"), "{t}");
+    assert!(t.contains("PIMAX_BIAS_TIMEOUT_MS=200"), "no start waits for a still headset: {t}");
+
+    // a HOME with nothing of a previous install: the shipped reference stands in for every piece
+    let bare = f.root.join("bare-home");
+    fs::create_dir_all(bare.join(".local")).unwrap();
+    for d in [".local/bin", ".local/lib"] {
+        assert!(Command::new("cp").arg("-a").arg(home.join(d)).arg(bare.join(".local")).status().unwrap().success());
+    }
+    let o = desk(&bare);
+    let t = text(&o);
+    assert!(o.status.success(), "{t}");
+    assert!(
+        t.contains("headset data: calibration = the shipped Dream Air reference, controller models = the shipped Dream Air reference, lens = the shipped Dream Air profile, gyro = the Dream Air default until the headset rests once"),
+        "{t}"
+    );
+    no_gap(&t);
 }

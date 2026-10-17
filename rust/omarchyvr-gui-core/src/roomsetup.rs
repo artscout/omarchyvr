@@ -334,6 +334,11 @@ impl AppCore {
         if self.calibration_ok() {
             return false;
         }
+        // the shipped reference stands in (user decision 2026-10-17): the start goes on, the Room setup tile says
+        // "Using the reference calibration" until the headset's own is read
+        if self.demo_reference || (!self.demo && crate::calibration::reference_in_use(&self.paths.home)) {
+            return false;
+        }
         self.message = crate::calibration::MISSING.into();
         self.open_room_flow();
         true
@@ -402,6 +407,30 @@ mod tests {
         a.facts.headset = true;
         a.demo_calibration = Some(true);
         assert!(!a.calibration_blocks_start());
+    }
+
+    #[test]
+    fn the_shipped_reference_lets_work_and_play_start_and_the_tile_says_so() {
+        let mut a = core("reference");
+        a.facts.headset = true;
+        a.demo_calibration = Some(false);
+        a.demo_reference = true;
+        assert!(!a.calibration_blocks_start(), "the reference stands in for the missing own calibration");
+        assert!(a.message.is_empty());
+        assert_eq!(a.room_tile(), (false, "Using the reference calibration".to_string()));
+    }
+
+    #[test]
+    fn reference_in_use_means_no_own_file_and_the_reference_allowed() {
+        let d = std::env::temp_dir().join(format!("omarchyvr-calref-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        assert!(crate::calibration::reference_in_use_with(&d, &|_| None));
+        assert!(!crate::calibration::reference_in_use_with(&d, &|k| (k == "PIMAX_NO_REFERENCE").then(|| "1".to_string())));
+        std::fs::create_dir_all(d.join(".config/omarchyvr")).unwrap();
+        std::fs::write(d.join(".config/omarchyvr/headset-calibration.xml"), format!("<?xml version=\"1.0\"?><DeviceConfiguration>{}</DeviceConfiguration>", " ".repeat(300))).unwrap();
+        assert!(!crate::calibration::reference_in_use_with(&d, &|_| None), "the headset's own file wins");
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]

@@ -204,6 +204,17 @@ pub fn whisper_server_with(home: &Path, exists: &dyn Fn(&Path) -> bool) -> PathB
     fixed(home, "whisper_server", "whisper.cpp/bin/whisper-server", exists)
 }
 
+/// The directory with `libopenvr_api.so` that WayVR links (its OpenVR overlay code; no RUNPATH, not a system library):
+/// next to the installed `wayvr` (./install.sh puts it there), else a developer clone `<src_dir>/openvr/lib/linux64`.
+/// None when neither has it (WayVR built without OpenVR does not need it).
+pub fn openvr_lib_dir(home: &Path) -> Option<PathBuf> {
+    let installed = wayvr_bin(home).parent().map(Path::to_path_buf);
+    installed
+        .into_iter()
+        .chain(std::iter::once(src_dir(home).join("openvr/lib/linux64")))
+        .find(|d| d.join("libopenvr_api.so").is_file())
+}
+
 /// WayVR's `$HOME` for the desk (`wayvr_home`): `<data_dir>/wayvr-home`. No fallback.
 pub fn wayvr_home(home: &Path) -> PathBuf {
     key_path(home, "wayvr_home").unwrap_or_else(|| data_dir(home).join("wayvr-home"))

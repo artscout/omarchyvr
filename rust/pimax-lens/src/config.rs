@@ -499,6 +499,12 @@ pub fn cant_override(env: &dyn Fn(&str) -> Option<String>) -> Option<Result<f32,
     )
 }
 
+/// The shipped reference profile is used when the user has no lens.conf, unless `PIMAX_NO_REFERENCE` is set to
+/// something other than `0` (the same switch as the reference calibration in `pimax-cam`).
+pub fn reference_allowed(env: &dyn Fn(&str) -> Option<String>) -> bool {
+    !env("PIMAX_NO_REFERENCE").is_some_and(|v| !v.is_empty() && v != "0")
+}
+
 /// `PIMAX_LENS_OFF=1` (anything non-empty not starting with '0') forces the identity mesh.
 pub fn forced_off(env: &dyn Fn(&str) -> Option<String>) -> bool {
     env("PIMAX_LENS_OFF").is_some_and(|v| !v.is_empty() && !v.starts_with('0'))

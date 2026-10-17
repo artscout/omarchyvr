@@ -136,9 +136,9 @@ pub fn vr_start_clients(p: &PerfOptions, o: &StartOptions, d: &Deps, sp: &dyn Sp
         verr!("omarchyvr vr: --perf: cannot prepare {}: {e}", p.wayvr_home.display());
         return;
     }
-    let openvr = PathBuf::from(std::env::var("HOME").unwrap_or_default()).join("src/openvr/lib/linux64");
+    let openvr = omarchyvr_config::paths::openvr_lib_dir(&PathBuf::from(std::env::var("HOME").unwrap_or_default()));
     let specs = [
-        vr_wayvr_spec(p, o, openvr.join("libopenvr_api.so").exists().then_some(openvr.as_path())),
+        vr_wayvr_spec(p, o, openvr.as_deref()),
         perf_spec(p, &o.session_dir),
     ];
     for s in &specs {

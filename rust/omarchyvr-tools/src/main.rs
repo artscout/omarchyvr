@@ -1,6 +1,6 @@
 use omarchyvr_tools::args::Args;
 use omarchyvr_tools::{
-    calib_cmd, controllers, imu, info, keepalived, logger, logtail, mount_shared, probe, video_on,
+    calib_cmd, controllers, import_cmd, imu, info, keepalived, logger, logtail, mount_shared, probe, video_on,
     CliError, CliResult,
 };
 
@@ -28,7 +28,8 @@ usage: omarchyvr <subcommand> [options]
   record start|stop|status [--eyes left|both] [--fps 30|60|72] [--quality low|medium|high]
                                            record what the headset shows to ~/Videos/pimax (omarchyvr record help)
   record tracking start|stop|status [--scenario S] [--seconds N]   cameras + logs into one folder per take
-  mount-shared                             print the mount command of the shared NTFS drive, say if it is mounted";
+  mount-shared                             print the mount command of the shared NTFS drive, say if it is mounted
+  import-previous [--dry-run|--status]     bring back your own data of a previous install on this PC (never overwrites)";
 
 fn run() -> CliResult {
     let mut argv: Vec<String> = std::env::args().skip(1).collect();
@@ -55,6 +56,7 @@ fn run() -> CliResult {
         "vr" => omarchyvr_tools::vr::run(a),
         "desk" => omarchyvr_tools::vr::desk::run(a),
         "mount-shared" => mount_shared::run(a),
+        "import-previous" => import_cmd::run(a),
         "auto" => auto(a),
         "record" => match omarchyvr_record::cli::main(&a.0) {
             0 => Ok(()),

@@ -17,6 +17,33 @@ use crate::kb4::Kb4;
 use crate::xml::{self, Element};
 use std::path::{Path, PathBuf};
 
+/// The REFERENCE factory calibration of the Pimax Dream Air, shipped for everyone (user decision 2026-10-17,
+/// "approve shipping calibrations"): the project's own headset's Windows calibration with the serial scrubbed
+/// (`deviceUID="reference"`). It is used only when no calibration of the user's own headset is found (read from the
+/// headset in Room setup, or kept by the uninstaller); the app then says "Using the reference calibration".
+pub const REFERENCE_XML: &str = include_str!("../../pimax-device/devices/dream-air/reference/headset-calibration.xml");
+
+/// `deviceUID` of [`REFERENCE_XML`].
+pub const REFERENCE_UID: &str = "reference";
+
+/// Where the reference is installed with the data copy, relative to `$HOME` (`./install.sh` copies the device
+/// descriptors there).
+pub const REFERENCE_INSTALLED: &str = ".local/share/omarchyvr/data/rust/pimax-device/devices/dream-air/reference/headset-calibration.xml";
+
+/// The reference fallback is on unless `PIMAX_NO_REFERENCE` is set to something other than `0` (tests, and anyone
+/// who wants a start to fail without the headset's own calibration).
+pub fn reference_allowed(env: &dyn Fn(&str) -> Option<String>) -> bool {
+    !env("PIMAX_NO_REFERENCE").is_some_and(|v| !v.is_empty() && v != "0")
+}
+
+/// The path reported for the reference: the installed copy when it exists, else a name that says it is built in.
+pub fn reference_path(home: Option<&Path>) -> PathBuf {
+    match home.map(|h| h.join(REFERENCE_INSTALLED)) {
+        Some(p) if p.is_file() => p,
+        _ => PathBuf::from("(built-in reference) dream-air/reference/headset-calibration.xml"),
+    }
+}
+
 /// Calibration of one camera.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CameraCalib {
@@ -244,6 +271,7 @@ impl DeviceCalib {
     /// Default search order: `$PIMAX_CAM_CALIB`, `$PIMAX_CALIB`, `~/.config/omarchyvr/headset-calibration.xml`,
     /// `<repo>/analysis/headset-calibration.xml`
     /// (the installed data copy `~/.local/share/omarchyvr/data`, else `~/omarchyvr`; `$PIMAX_REPO` overrides).
+    /// When none exists, [`DeviceCalib::load_default`] falls back to the shipped [`REFERENCE_XML`].
     pub fn default_candidates() -> Vec<PathBuf> {
         let mut c = Vec::new();
         for var in ["PIMAX_CAM_CALIB", "PIMAX_CALIB"] {
@@ -268,16 +296,30 @@ impl DeviceCalib {
         c
     }
 
-    /// Load from `path`, or from the first existing default candidate.
+    /// Load from `path`, or from the first existing default candidate, else the shipped reference ([`REFERENCE_XML`],
+    /// `uid` "reference"; `$PIMAX_NO_REFERENCE=1` turns that fallback off). The headset's own file always wins.
     pub fn load_default(path: Option<&Path>) -> Result<(DeviceCalib, PathBuf), CalibError> {
         if let Some(p) = path {
             return DeviceCalib::load(p).map(|c| (c, p.to_path_buf()));
         }
         let cands = DeviceCalib::default_candidates();
+        let home = std::env::var_os("HOME").map(PathBuf::from);
+        DeviceCalib::load_first(&cands, reference_allowed(&|k| std::env::var(k).ok()), home.as_deref())
+    }
+
+    /// [`DeviceCalib::load_default`] with explicit candidates: the first existing file, else (when `reference`)
+    /// the shipped reference, reported under [`reference_path`].
+    pub fn load_first(cands: &[PathBuf], reference: bool, home: Option<&Path>) -> Result<(DeviceCalib, PathBuf), CalibError> {
         match cands.iter().find(|p| p.is_file()) {
             Some(p) => DeviceCalib::load(p).map(|c| (c, p.clone())),
-            None => Err(CalibError::NotFound(cands)),
+            None if reference => DeviceCalib::parse(REFERENCE_XML).map(|c| (c, reference_path(home))),
+            None => Err(CalibError::NotFound(cands.to_vec())),
         }
+    }
+
+    /// True for the shipped reference (its `deviceUID` is [`REFERENCE_UID`]).
+    pub fn is_reference(&self) -> bool {
+        self.uid == REFERENCE_UID
     }
 
     /// `cam_i_from_cam0` under a rig convention.
@@ -517,5 +559,50 @@ mod tests {
             DeviceCalib::load(Path::new("/nonexistent/x.xml")),
             Err(CalibError::Io(..))
         ));
+    }
+
+    #[test]
+    fn the_shipped_reference_parses_and_carries_no_serial() {
+        let c = DeviceCalib::parse(REFERENCE_XML).unwrap();
+        assert!(c.is_reference());
+        assert_eq!(c.cameras.len(), 4);
+        assert!(c.imu.is_some(), "the 6DoF export needs ombc/tbc");
+        assert!(c.body_from_cam(0, RigConvention::CamFromCam0).is_some());
+        assert!(!REFERENCE_XML.contains("deviceUID=\"P"));
+    }
+
+    #[test]
+    fn the_headsets_own_file_wins_and_the_reference_is_the_fallback() {
+        let d = std::env::temp_dir().join(format!("pimax-cam-ref-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        let (own, missing) = (d.join("own.xml"), d.join("missing.xml"));
+        // nothing on disk: the reference, reported as built in (no installed copy under this home)
+        let (c, p) = DeviceCalib::load_first(std::slice::from_ref(&missing), true, Some(&d)).unwrap();
+        assert!(c.is_reference());
+        assert!(p.to_string_lossy().contains("built-in reference"), "{}", p.display());
+        // the installed copy is reported by its path
+        let inst = d.join(REFERENCE_INSTALLED);
+        std::fs::create_dir_all(inst.parent().unwrap()).unwrap();
+        std::fs::write(&inst, REFERENCE_XML).unwrap();
+        assert_eq!(DeviceCalib::load_first(std::slice::from_ref(&missing), true, Some(&d)).unwrap().1, inst);
+        // fallback off: not found, and the error names the places tried
+        match DeviceCalib::load_first(std::slice::from_ref(&missing), false, Some(&d)) {
+            Err(CalibError::NotFound(v)) => assert_eq!(v, vec![missing.clone()]),
+            other => panic!("{other:?}"),
+        }
+        // the user's own file wins over the reference
+        std::fs::write(&own, REFERENCE_XML.replace("deviceUID=\"reference\"", "deviceUID=\"mine\"")).unwrap();
+        let (c, p) = DeviceCalib::load_first(&[missing, own.clone()], true, Some(&d)).unwrap();
+        assert_eq!((c.uid.as_str(), p), ("mine", own));
+        assert!(!c.is_reference());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn the_reference_fallback_can_be_switched_off() {
+        assert!(reference_allowed(&|_| None));
+        assert!(reference_allowed(&|k| (k == "PIMAX_NO_REFERENCE").then(|| "0".to_string())));
+        assert!(!reference_allowed(&|k| (k == "PIMAX_NO_REFERENCE").then(|| "1".to_string())));
     }
 }

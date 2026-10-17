@@ -724,6 +724,8 @@ impl AppCore {
         if self.session_tool.as_ref().is_some_and(|s| s.opened) && self.live.service.is_none() && self.job.is_none() {
             self.session_tool = None;
         }
+        // the import from the previous install, by itself when it would bring something back (crate::previous)
+        self.previous_install_after_facts();
         self.setup_facts();
     }
 

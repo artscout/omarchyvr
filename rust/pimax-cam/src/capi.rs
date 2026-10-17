@@ -456,7 +456,8 @@ pub(crate) fn from_c(c: &CCalib) -> DeviceCalib {
 }
 
 /// Load the factory calibration XML (`path` NULL = default search: `$PIMAX_CAM_CALIB`, `$PIMAX_CALIB`,
-/// `~/.config/omarchyvr/headset-calibration.xml`, `<repo>/analysis/headset-calibration.xml`).
+/// `~/.config/omarchyvr/headset-calibration.xml`, `<repo>/analysis/headset-calibration.xml`, else the shipped Dream
+/// Air reference, `deviceUID` "reference"; `PIMAX_NO_REFERENCE=1` turns the reference off).
 /// `used_path` (optional) receives the file used. Returns 0 or -1.
 ///
 /// # Safety

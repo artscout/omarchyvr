@@ -9,12 +9,14 @@
 # initramfs entries, file capabilities. Says when a reboot is needed. Steam and SteamVR are never removed.
 #
 #   ./uninstall.sh [--dry-run] [--remove-downloads] [--keep-settings] [--remove-keys] [--remove-lab-builds]
-#                  [--no-root] [--prefix DIR] [--yes]
+#                  [--reset-calibration] [--no-root] [--prefix DIR] [--yes]
 #
 #   --dry-run            list exactly what would be removed, restored or kept; change nothing (no password)
 #   --remove-downloads   also delete the downloads (AI models, voice models, backgrounds, hand models); default: kept
 #   --keep-settings      keep settings and calibration; default: saved into one tar in your home, then removed
-#                        (the headset's factory calibration, headset-calibration.xml, and ai.toml are always kept)
+#                        (your device data stays: factory calibration, controller models, lens, IPD, eye calibration,
+#                        controller fits, gyro bias, room map; and ai.toml)
+#   --reset-calibration  also remove that device data (it still goes into the tar); default: kept
 #   --remove-keys        also delete ai.toml (your cloud AI keys); default: kept
 #   --remove-lab-builds  also delete the lab source trees and build dirs in ~/src (~150 GB); default: only listed
 #   --no-root            skip the root job (system files stay)
@@ -32,7 +34,7 @@ trap 'rm -rf "$OVR_UNINSTALL_COPY"' EXIT
 # shellcheck source=lib.sh
 . "$REPO/installer/lib.sh"
 
-DRY=0 RM_DL=0 KEEP_SET=0 RM_KEYS=0 RM_LAB=0 NO_ROOT=0 YES=0 PREFIX="$HOME/.local"
+DRY=0 RM_DL=0 KEEP_SET=0 RM_KEYS=0 RM_LAB=0 NO_ROOT=0 YES=0 RESET_CAL=0 PREFIX="$HOME/.local"
 while [[ $# -gt 0 ]]; do
 	case $1 in
 	--dry-run) DRY=1 ;;
@@ -40,10 +42,11 @@ while [[ $# -gt 0 ]]; do
 	--keep-settings) KEEP_SET=1 ;;
 	--remove-keys) RM_KEYS=1 ;;
 	--remove-lab-builds) RM_LAB=1 ;;
+	--reset-calibration) RESET_CAL=1 ;;
 	--no-root) NO_ROOT=1 ;;
 	--prefix) PREFIX=$(realpath -m "${2:?}"); shift ;;
 	--yes) YES=1 ;;
-	-h | --help) sed -n '3,23p' "$0"; exit 0 ;;
+	-h | --help) sed -n '3,25p' "$0"; exit 0 ;;
 	*) die "unknown option $1" ;;
 	esac
 	shift
@@ -72,6 +75,52 @@ do_restore() { # do_restore CLASS PATH BACKUP
 	[[ $DRY == 1 ]] && return 0
 	rm -rf -- "$2"
 	cp -a -- "$3" "$2"
+}
+# The user's own per-device data is not a setting: kept like ai.toml (2026-10-17: after a clean reinstall the controller
+# models, the gyro bias and the lens settings were gone and Work failed). The same list as `omarchyvr import-previous
+# --device-paths`, plus the factory calibration kept below; each entry is the current place, then an older place it
+# may still be in (it comes back in the current place). --reset-calibration removes it too (it is in the tar).
+DEVICE_DATA=(
+	"$CONF/omarchyvr/controllers|$HOME/.config/pimax/controllers"
+	"$CONF/omarchyvr/lens.conf|$HOME/.config/pimax/lens.conf"
+	"$CONF/omarchyvr/lens-ipd|$HOME/.config/pimax/lens-ipd"
+	"$CONF/omarchyvr/ipd.env|$HOME/.config/pimax/ipd.env"
+	"$CONF/omarchyvr/eye-calibration.toml|$HOME/.config/pimax/eye-calibration.toml"
+	"$CONF/omarchyvr/eye-correction.toml|$HOME/.config/pimax/eye-correction.toml"
+	"$CONF/omarchyvr/ctrl-cam-extrinsics.json|$HOME/.config/pimax/ctrl-cam-extrinsics.json"
+	"$CONF/omarchyvr/ctrl-imu.json|$HOME/.config/pimax/ctrl-imu.json"
+	"$CONF/omarchyvr/slam-imu.json|$HOME/.config/pimax/slam-imu.json"
+	"$HOME/.cache/omarchyvr/gyro-bias|$HOME/.cache/pimax/gyro-bias"
+	"$SHARE/roommap|$HOME/.local/share/pimax/roommap"
+)
+DEVTMP="" DEVKEPT=()
+device_data_save() { # copy the device data aside before the settings go (a dry run only lists it)
+	[[ $RESET_CAL == 1 ]] && return 0
+	local i=0 e cur old src
+	for e in "${DEVICE_DATA[@]}"; do
+		cur=${e%%|*} old=${e#*|} src=""
+		if [[ -e $cur ]]; then src=$cur; elif [[ -e $old ]]; then src=$old; fi
+		[[ -n $src ]] || continue
+		line RESET keep "$src (your device data) -> $cur"
+		n_keep=$((n_keep + 1))
+		if [[ $DRY == 0 ]]; then
+			[[ -n $DEVTMP ]] || DEVTMP=$(mktemp -d)
+			cp -a -- "$src" "$DEVTMP/$i" && DEVKEPT+=("$i|$cur")
+		fi
+		i=$((i + 1))
+	done
+	return 0
+}
+device_data_restore() { # put it back in the current places (modes kept, parents created)
+	local e i cur
+	for e in "${DEVKEPT[@]}"; do
+		i=${e%%|*} cur=${e#*|}
+		mkdir -p "$(dirname "$cur")"
+		rm -rf -- "$cur"
+		cp -a -- "$DEVTMP/$i" "$cur"
+	done
+	[[ -z $DEVTMP ]] || rm -rf -- "$DEVTMP"
+	return 0
 }
 
 say "omarchyvr uninstall$([[ $DRY == 1 ]] && echo ' (dry run: nothing changes)')"
@@ -230,7 +279,8 @@ if [[ ${#SETTINGS[@]} -gt 0 && $KEEP_SET == 0 ]]; then
 	for k in "$HOME/.config/pimax/ai.toml" "$CONF/omarchyvr/ai.toml"; do [[ -f $k ]] && KEYS+=("$k"); done
 	line RESET backup "${#SETTINGS[@]} settings/calibration paths -> $SETTINGS_TAR (mode 600)"
 	if [[ $DRY == 0 ]]; then
-		(umask 077; tar -czf "$SETTINGS_TAR" --absolute-names "${SETTINGS[@]}" 2>/dev/null) || warn "settings backup incomplete"
+		# ai.toml (the cloud keys) never goes into the tar: it stays in place, or --remove-keys removes it for good
+		(umask 077; tar -czf "$SETTINGS_TAR" --absolute-names --exclude='ai.toml*' "${SETTINGS[@]}" 2>/dev/null) || warn "settings backup incomplete"
 	fi
 	if [[ ${#KEYS[@]} -gt 0 && $RM_KEYS == 0 ]]; then line RESET keep "ai.toml (your keys) -> $CONF/omarchyvr/ai.toml"; fi
 	if [[ ${#CALS[@]} -gt 0 ]]; then line RESET keep "headset-calibration.xml (your headset's factory calibration) -> $CONF/omarchyvr/headset-calibration.xml"; n_keep=$((n_keep + 1)); fi
@@ -238,10 +288,12 @@ if [[ ${#SETTINGS[@]} -gt 0 && $KEEP_SET == 0 ]]; then
 	if [[ $DRY == 0 && ${#CALS[@]} -gt 0 ]]; then CALTMP=$(mktemp); cp -p "${CALS[0]}" "$CALTMP"; fi
 	KEYTMP=""
 	if [[ $DRY == 0 && ${#KEYS[@]} -gt 0 && $RM_KEYS == 0 ]]; then KEYTMP=$(mktemp); cp -p "${KEYS[0]}" "$KEYTMP"; fi
+	device_data_save
 	for p in "${SETTINGS[@]}"; do
 		n_rm=$((n_rm + 1))
 		[[ $DRY == 0 ]] && rm -rf -- "$p"
 	done
+	device_data_restore
 	if [[ -n $CALTMP ]]; then mkdir -p "$CONF/omarchyvr"; mv -f "$CALTMP" "$CONF/omarchyvr/headset-calibration.xml"; chmod 600 "$CONF/omarchyvr/headset-calibration.xml"; fi
 	if [[ -n $KEYTMP ]]; then mkdir -p "$CONF/omarchyvr"; mv -f "$KEYTMP" "$CONF/omarchyvr/ai.toml"; chmod 600 "$CONF/omarchyvr/ai.toml"; fi
 fi

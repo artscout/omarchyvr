@@ -274,6 +274,20 @@ pub fn build_env(o: &StartOptions, base: &dyn Fn(&str) -> Option<String>) -> Vec
             put("OXR_DEBUG_IPD_MM", mm);
         }
     }
+    // The gyro bias (user decision 2026-10-17: "gyro calibration should be default"): no start waits for the headset to
+    // lie still. Tracking starts after 0.2 s with the saved bias (else the Dream Air default written now), and the
+    // driver keeps its still window running and saves a refined bias the first time the headset rests (pimax_hmd.c
+    // bias_timeout). The caller's own PIMAX_BIAS_TIMEOUT_MS wins (3000 = the old wait).
+    if get("PIMAX_BIAS_TIMEOUT_MS").is_none() && !o.extra_env.iter().any(|(k, _)| k == "PIMAX_BIAS_TIMEOUT_MS") {
+        put("PIMAX_BIAS_TIMEOUT_MS", omarchyvr_config::devicedata::BIAS_TIMEOUT_MS.into());
+    }
+    if !o.dry_run {
+        // the one env builder runs before every Monado start (vr start, desk start, SteamVR's driver): the cache the
+        // driver reads at that timeout must exist (a clean install has none; a failure only means a zero bias)
+        if let Some(h) = get("HOME") {
+            let _ = omarchyvr_config::devicedata::ensure_gyro_bias(Path::new(&h), base);
+        }
+    }
     // lets `vr stop` attach eu-stack/gdb to a service that has to be SIGKILLed (yama ptrace_scope=1)
     put("PIMAX_DEBUG_PTRACE", "1".into());
     put("IPC_IGNORE_VERSION", "1".into());
@@ -473,6 +487,7 @@ pub(crate) mod tests {
                 "XR_RUNTIME_JSON",
                 "/home/u/src/monado/build/openxr_monado-dev.json",
             ),
+            ("PIMAX_BIAS_TIMEOUT_MS", "200"),
             ("PIMAX_DEBUG_PTRACE", "1"),
             ("IPC_IGNORE_VERSION", "1"),
             ("XRT_NO_STDIN", "1"),
@@ -482,13 +497,45 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn no_start_waits_for_a_still_headset_and_the_bias_is_seeded() {
+        let home = std::env::temp_dir().join(format!("omarchyvr-config-gyro-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(&home).unwrap();
+        let h = home.display().to_string();
+        // a clean HOME: the env says "do not wait" and the Dream Air default bias is written for the driver
+        let base = |k: &str| (k == "HOME").then(|| h.clone());
+        let e = build_env(&opts(), &base);
+        assert_eq!(lookup(&e, "PIMAX_BIAS_TIMEOUT_MS"), Some(omarchyvr_config::devicedata::BIAS_TIMEOUT_MS));
+        let cache = home.join(".cache/omarchyvr/gyro-bias");
+        assert_eq!(std::fs::read_to_string(&cache).unwrap(), omarchyvr_config::devicedata::REFERENCE_GYRO_BIAS);
+        // a measured bias is kept as it is
+        std::fs::write(&cache, "0.1 0.6 0.3\n").unwrap();
+        build_env(&opts(), &base);
+        assert_eq!(std::fs::read_to_string(&cache).unwrap(), "0.1 0.6 0.3\n");
+        // a dry run writes nothing
+        std::fs::remove_file(&cache).unwrap();
+        let mut dry = opts();
+        dry.dry_run = true;
+        build_env(&dry, &base);
+        assert!(!cache.exists());
+        // the caller's own timeout wins (3000 = the old wait for a still headset)
+        let caller = |k: &str| match k {
+            "HOME" => Some(h.clone()),
+            "PIMAX_BIAS_TIMEOUT_MS" => Some("3000".to_string()),
+            _ => None,
+        };
+        assert_eq!(lookup(&build_env(&dry, &caller), "PIMAX_BIAS_TIMEOUT_MS"), None, "inherited from the caller, not forced");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
     fn env_90_changes_mode_and_rate_only() {
         let mut o = opts();
         o.fps = Fps::Hz90;
         let e = build_env(&o, &no_env);
         assert_eq!(lookup(&e, "XRT_COMPOSITOR_DESIRED_MODE"), Some("3"));
         assert_eq!(lookup(&e, "PIMAX_FPS"), Some("90"));
-        assert_eq!(e.len(), 12);
+        assert_eq!(e.len(), 13);
     }
 
     #[test]

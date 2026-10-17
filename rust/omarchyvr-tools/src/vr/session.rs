@@ -504,7 +504,7 @@ pub fn start(opts: &StartOptions, d: &Deps) -> Result<(), CliError> {
     d.notifier.notify(
         false,
         &format!("Pimax VR starting ({} Hz)", opts.fps.hz()),
-        "Keep the headset still for 3 seconds (gyro calibration)",
+        "Head tracking starts right away (the gyro uses its saved bias and refines it when the headset rests)",
     );
     let mut child = match spawn_service(opts, &env) {
         Ok(c) => c,
@@ -515,7 +515,7 @@ pub fn start(opts: &StartOptions, d: &Deps) -> Result<(), CliError> {
     };
     let pid = child.id();
     write_session_files(opts, pid);
-    vout!("omarchyvr vr: keep the headset still for 3 s (gyro calibration), pid {pid}");
+    vout!("omarchyvr vr: monado-service started, pid {pid} (no need to keep the headset still: the gyro starts with its saved bias)");
 
     let mut tail = LogTail::new(&opts.log_path());
     let outcome = wait_ready(
@@ -610,21 +610,37 @@ pub fn start(opts: &StartOptions, d: &Deps) -> Result<(), CliError> {
             )))
         }
         ReadyOutcome::TimedOut { tail } => {
+            // Since 2026-10-17 tracking starts after 0.2 s with the saved gyro bias (config.rs PIMAX_BIAS_TIMEOUT_MS):
+            // no gyro line at all means the headset sent no motion data. A failed start leaves nothing running: the
+            // service is stopped again by its pid (it used to stay up, half started, until a manual stop).
             verr!(
-                "omarchyvr vr: no 'gyro bias done' after {:.0} s, but monado-service (pid {pid}) is still running. \
+                "omarchyvr vr: no gyro line after {:.0} s (the headset sent no motion data); stopping monado-service (pid {pid}). \
                  Last log lines:",
                 opts.ready_timeout.as_secs_f64()
             );
             for l in &tail {
                 verr!("  {l}");
             }
+            let out = stop_pid_with(
+                pid,
+                d.procs,
+                d.clock,
+                Duration::from_secs_f64(DEFAULT_STOP_GRACE_SECS),
+                !super::supervise::in_watchdog(),
+                &mut |m| vout!("omarchyvr vr: {m}"),
+                &mut |m| verr!("omarchyvr vr: WARNING: {m}"),
+            );
+            let _ = child.try_wait(); // reap
+            if !matches!(out, StopOutcome::Stuck | StopOutcome::Hung) {
+                let _ = std::fs::remove_file(opts.pid_path());
+            }
             d.notifier.notify(
                 true,
                 "Pimax VR not ready",
-                "Gyro calibration did not finish (headset moving or no IMU data?). omarchyvr vr stop, then try again",
+                "The headset sent no motion data in time (asleep or not connected?). VR was stopped again; try again",
             );
             Err(CliError::new(
-                "timed out waiting for the gyro calibration (service left running; stop it with: omarchyvr vr stop)",
+                "timed out waiting for the gyro calibration: the headset sent no motion data; monado-service was stopped again",
             ))
         }
     }
