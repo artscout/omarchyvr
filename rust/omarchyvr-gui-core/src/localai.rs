@@ -295,7 +295,7 @@ impl AppCore {
             let bin = cands.into_iter().find(|p| p.is_file());
             let st = match &bin {
                 Some(b) => run_status(b),
-                None => Err("omarchyvr-ai is not built yet".into()),
+                None => Err("omarchyvr-ai is missing from this install".into()),
             };
             Box::new(move |c: &mut AppCore| {
                 c.localai.bin = bin;
@@ -306,7 +306,7 @@ impl AppCore {
 
     fn localai_spawn(&mut self, args: &[&str], label: &str, own_scope: bool, kind: &str) {
         let Some(bin) = self.localai.bin.clone() else {
-            self.message = "omarchyvr-ai is not built yet (cargo build --release -p omarchyvr-ai)".into();
+            self.message = "omarchyvr-ai is missing from this install: press Fix.".into();
             return;
         };
         let mut c = Cmd::new(bin.display().to_string(), args);
@@ -324,6 +324,10 @@ impl AppCore {
 
     /// Build `omarchyvr-ai` in the workspace (a job; the status finds it afterwards).
     pub fn localai_build(&mut self) {
+        if !self.paths.rust.join("Cargo.toml").is_file() {
+            self.message = "omarchyvr-ai is missing from this install: press Fix.".into();
+            return;
+        }
         let c = Cmd::new("cargo", &["build", "--release", "-p", "omarchyvr-ai"]).cwd(&self.paths.rust);
         if self.spawn(JobSpec { kind: JobKind::Other(KIND.into()), label: "Build omarchyvr-ai".into(), steps: vec![Step::Run(c)] }) {
             self.localai.at = None;

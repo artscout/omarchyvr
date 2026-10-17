@@ -699,7 +699,7 @@ mod tests {
                 "sudo dkms build nvidia/610.57.04 --force && sudo dkms install nvidia/610.57.04 --force",
                 "sudo mkinitcpio -P   # or limine-mkinitcpio on Omarchy",
             ],
-            &["sudo env L=/home/u/pimax-re/linux bash -c 'install -Dm755 $L/nvidia-patch-reapply.sh /usr/local/lib/omarchyvr/nvidia-patch-reapply.sh && for p in nvidia-2h1or-viewport nvidia-2h1or-flip-fix; do install -Dm644 $L/$p.patch /usr/local/lib/omarchyvr/$p.patch; done && install -Dm644 $L/nvidia-pimax-patch.hook /etc/pacman.d/hooks/65-nvidia-pimax-patch.hook'"],
+            &["sudo env L=/home/u/.local/share/omarchyvr/data/linux bash -c 'install -Dm755 $L/nvidia-patch-reapply.sh /usr/local/lib/omarchyvr/nvidia-patch-reapply.sh && for p in nvidia-2h1or-viewport nvidia-2h1or-flip-fix; do install -Dm644 $L/$p.patch /usr/local/lib/omarchyvr/$p.patch; done && install -Dm644 $L/nvidia-pimax-patch.hook /etc/pacman.d/hooks/65-nvidia-pimax-patch.hook'"],
             &["sudo mkdir -p /mnt/shared && sudo mount -t ntfs3 -o uid=1000,gid=1000,acl,iocharset=utf8,prealloc UUID=0123456789ABCDEF /mnt/shared"],
         ];
         for lines in ok {

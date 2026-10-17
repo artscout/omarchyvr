@@ -131,7 +131,7 @@ impl AppCore {
     }
 
     /// The checked pkexec command for `service` (needs a polkit agent: the password prompt is graphical).
-    fn setcap_cmd(&self, service: &Path) -> Result<Cmd, String> {
+    pub(crate) fn setcap_cmd(&self, service: &Path) -> Result<Cmd, String> {
         if !self.facts.polkit_agent {
             return Err("no polkit authentication agent runs, so pkexec cannot show a password window".into());
         }
