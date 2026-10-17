@@ -45,6 +45,7 @@ pub mod guistate;
 pub mod handmodels;
 pub mod handtest;
 pub mod headset_choice;
+pub mod wake;
 pub mod headsets;
 pub mod install;
 pub mod instance;

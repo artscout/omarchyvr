@@ -47,6 +47,12 @@ pub struct OnboardingView {
     pub setup_wait_facts: Option<u64>,
     /// The job the setup started (a user fix or the root job).
     pub setup_job: Option<crate::autosetup::SetupJob>,
+    /// The live guidance for a Dream Air whose HID chip is off ([`crate::wake`]).
+    pub wake: crate::wake::WakeGuide,
+    /// When the guide last asked for fresh USB facts (seconds, wall clock).
+    pub wake_asked: f64,
+    /// Screenshots and the demo: show this guidance step with the animation at this time.
+    pub wake_demo: Option<(crate::wake::Wake, f64)>,
     /// The latest progress to write (the writer task takes it).
     slot: Arc<Mutex<Option<Progress>>>,
 }

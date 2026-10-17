@@ -725,6 +725,7 @@ impl AppCore {
             }
         }
         self.setup_poll();
+        self.wake_poll();
         self.want_plan(self.effective_toggles());
         self.want_plan(self.effective_toggles().without_eye());
         self.want_plan(self.vr_toggles());

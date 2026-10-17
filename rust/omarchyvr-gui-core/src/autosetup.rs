@@ -226,6 +226,8 @@ pub struct AutoSetup {
     pub found: Option<String>,
     /// Cancel was pressed: nothing new starts.
     pub cancel: bool,
+    /// The root job ended with only the EDID step skipped (the headset's display was not visible then).
+    pub edid_skipped: bool,
     queue: Vec<String>,
     from_problems: bool,
     root_job: bool,
@@ -441,7 +443,15 @@ impl AutoSetup {
                 self.phase = Phase::PasswordStopped(Stop::WrongPassword);
                 Action::None
             }
-            RootOutcome::NoHeadsetDisplay => self.root_failed("The headset's display did not show up. Turn the headset on and plug in its DisplayPort cable.".into()),
+            RootOutcome::NoHeadsetDisplay => {
+                // only the EDID step was skipped (it goes last; everything before it was done): never offer the
+                // whole job again, the display-mode check carries its own one-step Fix
+                finish_steps(&mut self.root_steps, true);
+                self.stages[2] = StepState::Done;
+                self.root_job = false;
+                self.edid_skipped = true;
+                self.verify_again()
+            }
             RootOutcome::Failed(why) => self.root_failed(why),
         }
     }
@@ -470,6 +480,11 @@ impl AutoSetup {
         if let Some(why) = &self.root_error {
             // the job failed: its own line first, with a retry
             problems.insert(0, Check { id: "root-job".into(), title: "System setup".into(), state: CheckState::Fail, reason: why.clone(), detail: why.clone(), fix: CheckFix::Root { reboot: false } });
+        }
+        if self.edid_skipped {
+            for p in problems.iter_mut().filter(|p| p.id == "connector") {
+                p.reason = format!("The headset's display did not show up while the system setup ran, so only this step is left. {}", p.reason);
+            }
         }
         self.problems = problems;
         if !self.problems.is_empty() {
@@ -903,7 +918,62 @@ impl AppCore {
         self.write_state();
         if self.onboarding.setup.phase != Phase::GetReady {
             self.setup_start(kind);
+        } else {
+            self.onboarding.wake.reset();
+            self.onboarding.wake_asked = 0.0;
         }
+    }
+
+    /// What the wake guidance shows now, and the animation time (the demo can fix both).
+    pub fn wake_view(&self, ui_time: f64) -> (crate::wake::Wake, f64) {
+        match self.onboarding.wake_demo {
+            Some((w, t)) => (w, t),
+            None => (self.onboarding.wake.view(Self::wake_now()), ui_time),
+        }
+    }
+
+    /// Wall-clock seconds for the wake guide's timers.
+    pub fn wake_now() -> f64 {
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0.0, |d| d.as_secs_f64())
+    }
+
+    /// Feed the wake guide from the latest USB facts while the "Get ready" card is open for the Dream Air; ask for
+    /// fresh USB facts every 3 s until the HID chip is seen.
+    pub(crate) fn wake_poll(&mut self) {
+        // the result screen waits for the headset's display (EDID step skipped, nothing seen yet): look again every
+        // 5 s so the one Fix appears the moment the display does, with no click
+        if self.onboarding.setup.phase == Phase::Problems
+            && !self.demo
+            && self.onboarding.setup_wait_facts.is_none()
+            && self.onboarding.setup.problems.iter().any(|p| p.id == "connector" && p.fix == CheckFix::None)
+            && Self::wake_now() - self.onboarding.wake_asked >= 5.0
+        {
+            self.onboarding.wake_asked = Self::wake_now();
+            let a = self.onboarding.setup.check_again();
+            self.setup_exec(a);
+            return;
+        }
+        if self.onboarding.setup.phase != Phase::GetReady || self.onboarding.setup.selected.module().is_none_or(|m| m.id() != "dream-air") {
+            return;
+        }
+        let now = Self::wake_now();
+        let usb = headset_choice::headset_state_from_usb(&self.facts.usb);
+        let session = self.live.service.is_some() || self.live.steamvr.is_some();
+        self.onboarding.wake.tick(now, usb, session);
+        if !self.onboarding.wake.is_awake() && now - self.onboarding.wake_asked >= 3.0 && !self.demo {
+            self.onboarding.wake_asked = now;
+            self.refresh(false);
+        }
+    }
+
+    /// "I unplugged it" (step B).
+    pub fn wake_unplugged_pressed(&mut self) {
+        self.onboarding.wake.unplugged_pressed(Self::wake_now());
+    }
+
+    /// "Try again" after the wake warning.
+    pub fn wake_retry(&mut self) {
+        self.onboarding.wake.retry(Self::wake_now());
     }
 
     /// "Start setup" on the "Get ready" card (enabled even when a tick is missing).

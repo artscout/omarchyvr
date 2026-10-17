@@ -138,6 +138,10 @@ fn get_ready(ui: &mut Ui, app: &mut PimaxApp, s: &AutoSetup) {
                 };
             });
         }
+        if s.selected.module().is_some_and(|m| m.id() == "dream-air") {
+            ui.add_space(8.0);
+            wake_guide(ui, app);
+        }
         let missing = steps.iter().any(|x| x.seen == Some(false));
         ui.add_space(8.0);
         if missing {
@@ -153,6 +157,67 @@ fn get_ready(ui: &mut Ui, app: &mut PimaxApp, s: &AutoSetup) {
             }
         });
     });
+}
+
+/// The live state of the headset's HID chip and, when it is off, the two guided steps with their animations.
+fn wake_guide(ui: &mut Ui, app: &mut PimaxApp) {
+    use omarchyvr_gui_core::wake::Wake;
+    let (view, t) = app.core.wake_view(ui.input(|i| i.time));
+    let p = pal(ui);
+    let faint = theme::pal(ui).faint;
+    let text = theme::pal(ui).text;
+    let line = |ui: &mut Ui, mark: &str, color: egui::Color32, head: &str| {
+        ui.horizontal(|ui| {
+            ui.label(RichText::new(mark).color(color));
+            ui.label(RichText::new(head).strong().color(text));
+        });
+    };
+    match view {
+        Wake::Idle => {}
+        Wake::NotConnected => {
+            line(ui, icon::CIRCLE, faint, "Headset not connected");
+            note(ui, "Nothing of the headset is on USB. Plug in its USB cable and its power cable.");
+        }
+        Wake::Awake => line(ui, icon::CHECK_CIRCLE, p.ok, "Headset is awake"),
+        Wake::PressPower { left } => {
+            line(ui, icon::CIRCLE, p.warn, "Headset is asleep or off: step A, press the power button");
+            note(ui, "Press the power button once on the headset. This page notices by itself when it wakes up.");
+            crate::wake_art::show(ui, crate::wake_art::Anim::Press, t);
+            ui.label(RichText::new(format!("Waiting {} s, then the next step is shown", left.ceil() as u32)).small().color(faint));
+        }
+        Wake::UnplugCable | Wake::WaitUnplugged { .. } | Wake::PlugBack | Wake::WaitWake { .. } | Wake::BlockedBySession => {
+            line(ui, icon::CIRCLE, p.warn, "Still asleep: step B, the last resort: unplug the headset's power cable");
+            note(ui, "Unplug the headset's POWER cable, wait 10 seconds, plug it back in. Leave the DisplayPort cable in.");
+            crate::wake_art::show(ui, crate::wake_art::Anim::Cable, t);
+            match view {
+                Wake::UnplugCable => {
+                    ui.label(RichText::new("Unplug the power cable now. This page sees it when the headset leaves USB.").small().color(faint));
+                    if widgets::tbutton(ui, "I unplugged it", true).clicked() {
+                        app.core.wake_unplugged_pressed();
+                    }
+                }
+                Wake::WaitUnplugged { left } => {
+                    ui.label(RichText::new(format!("Wait {} more seconds with the cable out.", left.ceil() as u32)).color(text));
+                }
+                Wake::PlugBack => {
+                    ui.label(RichText::new("Plug the power cable back in now.").strong().color(p.accent));
+                }
+                Wake::WaitWake { left } => {
+                    ui.label(RichText::new(format!("Cable is back. Waiting for the headset to wake up ({} s)...", left.ceil() as u32)).small().color(faint));
+                }
+                _ => {
+                    ui.label(RichText::new("A VR session is running, so nothing is asked of you. Stop it first.").small().color(p.warn));
+                }
+            }
+        }
+        Wake::GaveUp => {
+            line(ui, icon::X_CIRCLE, p.warn, "The headset did not wake up");
+            note(ui, "You can still start the setup: it installs the permission rule and the keep-alive, which can wake it. If the display is not found afterwards, the result screen tells you and offers the Fix.");
+            if widgets::tbutton(ui, "Try the steps again", true).clicked() {
+                app.core.wake_retry();
+            }
+        }
+    }
 }
 
 /// The NVIDIA patch card only when it matters: the driver is not a tested version (the switch "Allow the patch on

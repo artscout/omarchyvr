@@ -220,7 +220,23 @@ fn the_edid_override_missing_after_the_restart_is_one_fix_and_needs_another_rest
     assert_eq!(s.root_finished(RootOutcome::NoHeadsetDisplay), Action::RunChecks);
     s.checks_done(vec![bad("connector", CheckFix::Root { reboot: true })]);
     assert_eq!(s.phase, Phase::Problems);
+    assert_eq!(s.problems[0].id, "connector", "the display-mode check carries the Fix, not the whole job");
     assert!(s.problems[0].reason.contains("display did not show up"), "{}", s.problems[0].reason);
+    assert_eq!(s.fix_one("connector"), Action::RunRoot(RootPlan::Fixes(vec!["connector".into()])), "only the EDID step again");
+    // the full job whose EDID step was skipped: no root-job problem, and the EDID Fix once the display shows up
+    let mut s = AutoSetup::default();
+    s.set_plan("OVR_X=1\n");
+    s.start(RunKind::Fresh, true);
+    s.checks_done(vec![ok("headset")]);
+    assert!(matches!(s.phase, Phase::Password));
+    assert_eq!(s.root_finished(RootOutcome::NoHeadsetDisplay), Action::RunChecks);
+    s.checks_done(vec![ok("headset"), bad("connector", CheckFix::None)]);
+    assert_eq!(s.phase, Phase::Problems);
+    assert!(s.problems.iter().all(|p| p.id != "root-job"));
+    assert_eq!(s.fix_one("connector"), Action::None, "the display is not there yet: Check again");
+    assert_eq!(s.check_again(), Action::RunChecks);
+    s.checks_done(vec![ok("headset"), bad("connector", CheckFix::Root { reboot: true })]);
+    assert_eq!(s.fix_all(), Action::RunRoot(RootPlan::Fixes(vec!["connector".into()])), "offered at once, not the whole setup");
 }
 
 #[test]
