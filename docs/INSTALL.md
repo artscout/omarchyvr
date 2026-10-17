@@ -2,17 +2,38 @@
 
 Unofficial. Supports the Pimax Dream Air. Not affiliated with Pimax or Omarchy.
 
+> **Before you install.** The setup changes your system, not only your home folder:
+> it patches the NVIDIA open kernel module (DKMS) and installs pacman hooks that re-apply the patch after driver updates,
+> adds an EDID override and rebuilds the initramfs, installs a udev rule for the headset, and sets `cap_sys_nice` on the Monado service.
+> **Take a snapper snapshot first.** The setup takes one too when snapper has a `root` config, but your own is a good habit.
+> The only tested NVIDIA driver is **610.57.04**; read [NVIDIA-UNTESTED.md](NVIDIA-UNTESTED.md) for other versions,
+> [UNINSTALL.md](UNINSTALL.md) for the way back and [SECURITY-STATUS.md](SECURITY-STATUS.md) for known open issues.
+
+## What the one password changes
+
+The install itself runs as your user. The app then runs one root job after one password prompt. In plain words it:
+
+- takes a snapper snapshot of `/` (only if snapper has a `root` config);
+- installs missing runtime packages with pacman (only if missing; they stay on uninstall);
+- writes a udev rule, `/etc/udev/rules.d/70-pimax.rules`, so your user can reach the headset and the eye tracker;
+- on a tested NVIDIA driver (or an untested one you allowed): patches the driver source in `/usr/src`, rebuilds the module with DKMS, and installs two pacman hooks (`65-nvidia-pimax-patch.hook`, `75-nvidia-pimax-verify.hook`) that re-apply or verify the patch after driver updates. If the patched build fails, the stock module is built;
+- writes an EDID override (`/etc/pimax/`, `/etc/modprobe.d/nvidia-pimax.conf`, `/etc/mkinitcpio.conf.d/pimax.conf`) and rebuilds the initramfs;
+- sets `cap_sys_nice` on the installed `monado-service` and on SteamVR's `vrcompositor-launcher`;
+- keeps its own files in `/usr/local/lib/omarchyvr`, `/etc/omarchyvr` and `/var/lib/omarchyvr` (manifest and saved originals).
+
+A reboot is needed when the NVIDIA module or the boot image changed. The table "The one root job" below lists each change with its undo.
+
 ## From clone to SteamVR
 
     git clone --recursive https://github.com/laughtt/omarchyvr.git
     cd omarchyvr && ./install.sh
 
-That is the only command. Claude Code can run it for you. Everything after it happens in the app, by itself.
+That is the only command. Everything after it happens in the app, by itself.
 The terminal ends with "The app finishes the setup (one password)": it never asks for a password.
 
 | # | Where | What happens | You press | Password |
 |---|---|---|---|---|
-| 1 | terminal (or Claude) | `./install.sh`: it checks this PC and builds everything (about 15-30 min the first time on a fast PC, at the lowest priority, so you can keep working). It installs the set and opens the app. | nothing after the command | no |
+| 1 | terminal | `./install.sh`: it checks this PC and builds everything (about 15-30 min the first time on a fast PC, at the lowest priority, so you can keep working). It installs the set and opens the app. | nothing after the command | no |
 | 2 | app, "Setting up your PC" | first **"Which headset do you have?"** (USB detection only pre-selects, e.g. "Found on USB: Pimax Dream Air (asleep)"; you press **Continue**), then **"Get the headset ready"** (cables, power; live ticks where the PC can tell; **Start setup** works even if a tick is missing). Then it runs by itself: looks at this PC, fixes what needs no password, runs the system part (live list of steps), checks again | Continue, Start setup | **one** (pkexec window of your desktop) |
 | 3 | app | all green and the job said "reboot" (NVIDIA module, boot image): **Restart now**. The app opens again at login and finishes the checks by itself (patched module loaded, EDID override, headset display mode, realtime permission) | **Restart now** (only when a restart is needed) | no |
 | 4 | app, Ready | **Play**: SteamVR starts with the headset | **Play** | no |
@@ -55,6 +76,8 @@ them and stops.
 The local AI models (llama.cpp runtime, Lara, Qwen3.5-4B: about 5.3 GB) are no longer downloaded by the installer:
 the first **Work** asks which voice assistant and speech engine you want and downloads only that, with progress and
 Cancel (docs/WORK-FIRST-RUN.md). Play never needs them. Models already on disk are kept and found.
+
+If you use an AI coding agent, it can run `./install.sh` for you. The password step stays yours: it opens in the app.
 
 ## What gets installed
 

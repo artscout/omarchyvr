@@ -1,8 +1,22 @@
-# Architecture for the open-source release
+# Architecture
 
-Status 2026-10-14: a design, plus the scaffold crate `rust/pimax-device`, which is built and tested. Nothing else is
-wired to it yet (see [Migration](#8-migration-plan)). The audit of what must leave the repo before it goes public is in
-[../analysis/oss-readiness.md](../analysis/oss-readiness.md).
+This page describes how omarchyvr is put together and where the design is ahead of the code. It mixes a design
+(written 2026-10-14) with notes on what is built at HEAD (checked 2026-10-17). Where the two differ, the text says so.
+The plan for opening the repo is in [OPEN-SOURCE-PLAN.md](OPEN-SOURCE-PLAN.md). Known safety gaps are listed in
+[SECURITY-STATUS.md](SECURITY-STATUS.md).
+
+## Built vs planned
+
+| Part | State | What exists at HEAD |
+|---|---|---|
+| Device modules and descriptors | Built | `rust/pimax-device/devices/` has five descriptors (`dream-air`, plus the mocks `dream-air-se`, `crystal-light`, `crystal-super`, `8kx`). `module::all()` and `module::detect()` (`rust/pimax-device/src/module.rs:71,102`) are used by the app's model list (`rust/omarchyvr-gui-core/src/headsets.rs:10,28`). |
+| HID allowlist (the library) | Built and tested | `Allowlist`, `Gate` and the `[[hid]]` parser in `rust/pimax-device/src/hid.rs`, tests in `rust/pimax-device/tests/allowlist.rs`. |
+| HID allowlist (enforcement on write paths) | Not yet | Nothing outside the tests calls `Gate::send`. See [2.3](#23-the-hid-allowlist). Planned in [Step 5](plans/WEEK1-SAFETY.md). |
+| System checks | Partly | `Check`, `Finding` and the fix catalogue exist (`rust/pimax-device/src/check.rs`). Four native checks run (`rust/pimax-device/src/checks/mod.rs:12`), plus `DoctorBridge`, which wraps the older `omarchyvr-doctor` checks. The other areas in 3.2 are planned. |
+| Onboarding | Built | Progress file in `rust/pimax-device/src/onboarding.rs`; the app page is `rust/omarchyvr-app/src/pages/onboarding.rs`. |
+| Autofix page | Built | Reply parser `rust/pimax-device/src/autofix.rs` (`MAX_FIXES = 5`), bundle and redaction in `rust/omarchyvr-gui-core/src/{bundle,redact,autofix}.rs`, page `rust/omarchyvr-app/src/pages/autofix.rs`. |
+| "Test your setup" report | Partly | The app's Autofix page writes a redacted report and a local contribution branch (`report_toml`, `rust/omarchyvr-gui-core/src/autofix.rs:187`). The `pimax-device report` command from the design does not exist. |
+| CI | Planned | There is no `.github/` directory and no CI config in the repo. See [6.3](#63-ci-planned-offline-only-no-device-no-gpu). |
 
 Goals, from the user:
 - Modular per headset: onboarding, controller pairing, drivers, GPU, CPU and audio.
@@ -34,6 +48,40 @@ omarchyvr-doctor ────── Host trait (real / fake), today's checks (br
 - Fixes are rendered as text for the user to run.
 
 Its only dependency is `omarchyvr-doctor`.
+
+### 1.1 Crate groups in `rust/`
+`rust/Cargo.toml` builds everything with globs: `members = ["pimax", "pimax-*", "omarchyvr-*"]`. A new crate with one
+of those name prefixes joins the workspace on its own. The crates fall into four groups.
+
+- **Hardware crates (`pimax*`).** Talk to the headset and its parts.
+  - `pimax-proto`: wire framing and decoders, `no_std`, no I/O.
+  - `pimax`: hidraw I/O, the session thread, command and reply matching.
+  - `pimax-eye` and `pimax-eyecal`: the eye-tracker chip, and eye calibration.
+  - `pimax-cam`: the tracking cameras, including auto exposure.
+  - `pimax-lens`: the lens model.
+  - `pimax-hands` and `pimax-ctrltrack`: controller and hand tracking.
+  - `pimax-ipd`, `pimax-selfcal`: the guided IPD test and camera self-calibration.
+  - `pimax-device`: headset modules, the HID allowlist, checks, fixes, onboarding, the Autofix reply contract.
+  - `pimax-capi`: the C ABI of libpimax.
+- **Product crates (`omarchyvr-*`).** The app and the services around it.
+  - `omarchyvr-app` (GUI) and `omarchyvr-gui-core` (everything the GUI does, without UI).
+  - `omarchyvr-tools` (the `omarchyvr` command line), `omarchyvr-autod` (auto mode, pairing), `omarchyvr-doctor` (read-only health checks), `omarchyvr-components` (the component model of the daemon), `omarchyvr-config`.
+  - Voice and AI: `omarchyvr-voice`, `omarchyvr-voicehud`, `omarchyvr-ai`.
+  - Room and view: `omarchyvr-slam`, `omarchyvr-room`, `omarchyvr-roommap`, `omarchyvr-anchor`, `omarchyvr-passthrough`, `omarchyvr-record`, `omarchyvr-hud`, `omarchyvr-backgrounds`.
+- **Development and test tools.** Not part of normal use. Their `Cargo.toml` descriptions say what they are:
+  - `omarchyvr-xrtest`: OpenXR test clients;
+  - `omarchyvr-desktest`: offline analysis of the VR-desktop tests;
+  - `omarchyvr-perf`: the performance readout on a wrist panel;
+  - `omarchyvr-voicebench`: a CPU latency harness for voice;
+  - `pimax-lenstest`: lens test patterns and the eye accuracy test;
+  - `pimax-difftest` and `pimax-lens-difftest`: differential tests against the original C code (`publish = false`).
+- **C ABI static libraries that Monado links.** These crates build a `staticlib` so the C driver can call Rust:
+  - `pimax-capi` (`crate-type = ["cdylib", "staticlib", "rlib"]`; it also exports the hands and eye functions);
+  - `pimax-hands` (`["rlib", "staticlib"]`);
+  - `pimax-lens` (`["staticlib", "rlib"]`);
+  - `pimax-cam` (`["rlib", "staticlib"]`).
+
+  The boundary rules are in [2.6](#26-c-abi-boundary).
 
 ## 2. Device modules
 
@@ -79,7 +127,10 @@ load time, and the tests load every descriptor:
 - `pairing = "start_pair"` requires a `start_pair` command.
 - Onboarding steps must be known.
 
-### 2.3 The HID allowlist (enforced at the send layer)
+### 2.3 The HID allowlist
+This section first describes the design and the library. The state of enforcement at HEAD is under
+[Current state](#current-state-as-of-2026-10-17) below. Short version: the library works, but the production write
+paths do not use it yet.
 
 Each `[[hid]]` entry has:
 - `id`;
@@ -98,41 +149,82 @@ A report passes only if all of these hold:
 - all remaining bytes are zero;
 - it doesn't hit a denied prefix.
 
-`Gate::send` (`src/hid.rs`) runs this check before its single `write`, so a refused report writes nothing. It also
-enforces `min_interval`. `Allowlist::build(id, params)` runs the same check, so a report is checked once when it is
-built and again when it is sent.
+`Gate::send` (`rust/pimax-device/src/hid.rs:392`) runs this check before its single `write`, so a refused report writes
+nothing. It also enforces `min_interval`. `Allowlist::build(id, params)` (`hid.rs:343`) runs the same check, so a
+report is checked once when it is built and again when it is sent.
 
-Dream Air commands (all on IF0, 64 bytes, zero padded). Sources:
+Dream Air commands (all on IF0, 64 bytes, zero padded). The descriptor is
+`rust/pimax-device/devices/dream-air/device.toml`. Sources:
 
 | id | bytes | constraint | built today in |
 |---|---|---|---|
-| wake | `58 06 1a 05 01 00 00` | | pimax-proto/src/frame.rs:46 |
-| keepalive | `58 04 39 00 RR 00` | RR ∈ {0, 0x48, 0x5a} | frame.rs:53; omarchyvr-tools/src/vr/reset.rs:26-30 |
-| app_unlock | `58 05 5b 05 02 02` | | frame.rs:66 |
-| panel_on | `58 04 29 00 01` | | frame.rs:67 |
-| announce_refresh | `58 0d 1a 05 02 FPS` | 72, 90 | frame.rs:69 |
-| announce_gpu | `58 0d 1a 05 05` | | frame.rs:70 |
-| stop | `58 04 1a 05 04` | | reset.rs:27-28 |
-| read_serial / read_info / read_version | `58 04 16 SS 1e`, `58 03 50 SS`, `58 03 03 SS` | SS ∈ {0, 2, 3} | frame.rs:77-80; pimax/src/session.rs:479,485 |
-| read_doc_controller | `58 07 0a SS 00 00 00 10` | SS ∈ {2, 3} | frame.rs:79 |
-| read_calib_block | `58 07 0a 00 01 <addr u16le> 10` | any addr | pimax-proto/src/calib.rs:38 |
-| eye_power_on | `58 05 3c 05 00 01` | once per enumeration, 5 s | pimax-eye/src/power.rs:17-22 |
-| ipd_motor | `58 06 5c 05 01 <mm×100 u16le>` | 5800..7200 | pimax-eye/src/ipd.rs:39-45 |
-| start_pair | `58 04 04 00 SS` | SS ∈ {2, 3}, once per request, 30 s | omarchyvr-autod/src/pairing.rs:87-92 |
-| camera_ae | `58 19 51 00 01 32` + 10 × u16le | exposure 100..4108, gain 13..215 | pimax-cam/src/ae.rs:30-36,118-129,386-389 |
+| wake | `58 06 1a 05 01 00 00` | | rust/pimax-proto/src/frame.rs:46 |
+| keepalive | `58 04 39 00 RR 00` | RR ∈ {0, 0x48, 0x5a} | frame.rs:64; rust/omarchyvr-tools/src/vr/reset.rs:53-60 |
+| app_unlock | `58 05 5b 05 02 02` | | frame.rs:71-80 (`video_prepare_commands`) |
+| panel_on | `58 04 29 00 01` | | frame.rs:71-80 |
+| announce_refresh | `58 0d 1a 05 02 FPS` | 72, 90 | frame.rs:71-80 |
+| announce_gpu | `58 0d 1a 05 05` | | frame.rs:71-80 |
+| stop | `58 04 1a 05 04` | | reset.rs:53-60 |
+| read_serial / read_info / read_version | `58 04 16 SS 1e`, `58 03 50 SS`, `58 03 03 SS` | SS ∈ {0, 2, 3} | frame.rs:86-93 (`attach_commands`); rust/pimax/src/session.rs:481,487 |
+| read_doc_controller | `58 07 0a SS 00 00 00 10` | SS ∈ {2, 3} | frame.rs:86-93 |
+| read_calib_block | `58 07 0a 00 01 <addr u16le> 10` | any addr | rust/pimax-proto/src/calib.rs:38 |
+| eye_power_on | `58 05 3c 05 00 01` | once per enumeration, 5 s | rust/pimax-eye/src/power.rs:17-22 |
+| ipd_motor | `58 06 5c 05 01 <mm×100 u16le>` | 5800..7200 | rust/pimax-eye/src/ipd.rs:40-45 |
+| start_pair | `58 04 04 00 SS` | SS ∈ {2, 3}, once per request, 30 s | rust/omarchyvr-autod/src/pairing.rs:88-93 |
+| haptic | `58 09 07 SS AMP DUR(u16le) 00 00 00` | SS ∈ {2, 3}, AMP 1..100, DUR 1..65535; session policy | frame.rs:101-104; rust/omarchyvr-tools/src/buzz.rs:63-66 |
+| unpair | `58 03 05 SS` | SS ∈ {2, 3}, once per request, 1 s | rust/omarchyvr-autod/src/unpair.rs:12-18; frame.rs:57 |
+| sys_reset | `58 04 28 00 00` | once per request, 30 s | frame.rs:52; reset.rs:48 |
+| camera_ae | `58 19 51 00 01 32` + 10 × u16le | exposure 100..4108, gain 13..215 | rust/pimax-cam/src/ae.rs:118-129 (limits in `AeParams::default`, ae.rs:560-575) |
 
 Denied with a reason:
 - `58 ?? 19` DeviceCheckResult;
 - `58 ?? 3c 05 00 00` eye-module disable (never captured);
 - `58 ?? 55` and `58 ?? 56` activation blobs.
 
-Never listed, so refused:
-- the visor probe `58 04 2c 00 00` (omarchyvr-autod/src/visor.rs:14; it needs the user's approval before it can be added);
+Not listed, so the gate would refuse them:
+- the visor probe `58 04 2c 00 00` (built in `rust/omarchyvr-autod/src/visor.rs:14`). It is not in `device.toml`
+  and needs the user's approval before it can be added. Today the live probe in `visor.rs` still sends it with a raw
+  write (see the current state below);
 - any other 0x5b blob;
 - anything unknown.
 
 The eye-chip calibration ops (0x3f2/0x407/0x42e/0x3fc/0x44c/0x456) go over the Tobii bulk endpoint, not this HID
 interface. pimax-eye keeps refusing them. A later `[[usb_bulk]]` allowlist could cover them the same way.
+
+#### Current state (as of 2026-10-17)
+The allowlist is a tested library. It is not yet on the production write paths. Checked at HEAD:
+
+- **`Gate::send` is only called from tests.** `Gate::new` appears in `rust/pimax-device/tests/allowlist.rs:19,170,216`
+  and nowhere else in `rust/`. The module report builders (`ipd_report`, `pair_report`, `ae_report`) are also not
+  called from outside `pimax-device`.
+- **The session writes without the gate.** `Shared::write_ctl` (`rust/pimax/src/session.rs:278`) calls
+  `hid::write_report` directly. Keepalive, wake, the attach burst and `send`/`request` all go through it.
+- **Raw writers open the hidraw node and write bytes they built themselves:**
+  - `send_motor`, the IPD motor (`rust/pimax-eye/src/ipd.rs:48`);
+  - `send_enable`, the eye power-on (`rust/pimax-eye/src/power.rs:105`);
+  - `write_start_pair` (`rust/omarchyvr-autod/src/pairing.rs:220`);
+  - `write_unpair` (`rust/omarchyvr-autod/src/unpair.rs:21`);
+  - the visor probe loop (`rust/omarchyvr-autod/src/visor.rs:30`, via `pimax::hid::write_report`);
+  - `write_direct`, the controller buzz (`rust/omarchyvr-tools/src/buzz.rs:63`).
+  - The headset restart in `rust/omarchyvr-tools/src/vr/reset.rs` also writes with `pimax::hid::write_report` (line 820).
+- **The C ABI accepts any command.** `pimax_send` and `pimax_request` (`rust/pimax-capi/src/lib.rs:358,372`) pass the
+  caller's `cmd`, `opt` and data to the session unchanged. Monado links this library, so the C driver can send any
+  command.
+- **The IPD range is only checked by callers.** `motor_report` (`rust/pimax-eye/src/ipd.rs:40`) does not clamp to
+  58..72 mm. `raw_from_mm` (`ipd.rs:28`) clamps to the `u16` range only, and a NaN input becomes 0 (a Rust float to
+  integer cast turns NaN into 0), which encodes as 0 mm.
+- **Backlight packets are not in `device.toml`.** `backlight_packets` (`rust/omarchyvr-tools/src/vr/display.rs:94`)
+  builds commands 0x26, 0x2a and 0x27. No `[[hid]]` entry covers them.
+- **Camera exposure limits can be exceeded.** The normal limits in `AeParams::default` (`rust/pimax-cam/src/ae.rs:560-575`)
+  stay inside the `camera_ae` ranges (exposure up to 4108, gain 13..215). The dim-room extended stage does not: it is
+  on by default (`LightParams::default`, `ae.rs:747-765`) and raises the caps to the power-on values 10410 / 449
+  (`ae.rs:947-962`; the test at `ae.rs:1442-1447` expects exposures above 4108). The environment overrides
+  `PIMAX_CAM_AE_EXP_MAX` / `PIMAX_CAM_AE_GAIN_MAX` also allow up to 10410 / 449 (`ae.rs:622-629`). All of these are
+  above the ranges in `device.toml`. Sending is off unless `PIMAX_CAM_AE=1`.
+
+The fix is planned as [Step 5 of the week 1 safety plan](plans/WEEK1-SAFETY.md): send through the gate on the
+write paths, and add the missing commands to the descriptor with their captures. The wider list of gaps is in
+[SECURITY-STATUS.md](SECURITY-STATUS.md).
 
 ### 2.4 Mocks
 The Dream Air SE, Crystal Light, Crystal Super and 8KX have descriptors with:
@@ -148,6 +240,36 @@ The mock ids match `omarchyvr-gui-core/src/headsets.rs`.
 3. Commands: only bytes you captured from the vendor's own software, with the capture name and frame numbers in `source`. A maintainer approves each state-changing command (`approved = "..."`). Read-only queries come first.
 4. Switch `status` to `real` only when detection, display and tracking have been shown working in a test report.
 
+### 2.6 C ABI boundary
+Monado is written in C. It calls into Rust through `extern "C"` functions that come from four static libraries. A bug
+on this boundary runs inside Monado's process, so it can take the compositor down.
+
+| Crate | Source of the exports | Header |
+|---|---|---|
+| `pimax-capi` | `rust/pimax-capi/src/lib.rs` (session, send, request, haptic, decoders) | `libpimax/include/pimax.h` |
+| `pimax-capi` | `rust/pimax-capi/src/eye.rs` (eye tracker) | `rust/pimax-eye/include/pimax_eye.h` |
+| `pimax-hands` | `src/ffi.rs`, `src/fuse_ffi.rs`, `src/inhand_ffi.rs` | `rust/pimax-hands/include/pimax_hands.h`, `pimax_ctrlfuse.h`, `pimax_inhand.h` |
+| `pimax-lens` | `rust/pimax-lens/src/capi.rs` | `rust/pimax-lens/include/pimax_lens_rs.h` |
+| `pimax-cam` | `rust/pimax-cam/src/capi.rs` | `rust/pimax-cam/include/pimax_cam.h` |
+
+What holds at HEAD:
+- **Only `pimax-cam` guards its calls.** Its `guard` helper wraps each call in `catch_unwind`
+  (`rust/pimax-cam/src/capi.rs:21-33`) and turns a panic into an error string. No other crate on this list uses
+  `catch_unwind`.
+- **A panic elsewhere ends the host.** Rust aborts the process when a panic would unwind out of an `extern "C"`
+  function. For Monado that means the whole compositor exits.
+- **Float input is not checked in the hands code.** The functions in `pimax-hands/src/fuse_ffi.rs` (for example
+  `pimax_ctrlfuse_optical`, line 120) convert the caller's poses and pass them on. The fuser calls
+  `partial_cmp(..).unwrap()` in `pimax-hands/src/fuse.rs:234,313,424`, which panics if a value is NaN.
+- **ABI version functions.** Present: `pimax_eye_abi_version` (`pimax_eye.h:63`), `pimax_hands_abi_version`
+  (`pimax_hands.h:69`) and `pimax_lens_rs_abi_version` (`pimax_lens_rs.h:27`). Missing: `pimax.h`, `pimax_cam.h`,
+  `pimax_ctrlfuse.h` and `pimax_inhand.h` have none, so a C caller cannot check that it was built against the same
+  layout.
+- **`pimax_send` and `pimax_request` take any command** (see [2.3](#23-the-hid-allowlist)).
+
+Planned in [Step 3 of the week 1 safety plan](plans/WEEK1-SAFETY.md): a panic guard on every exported function, NaN
+and range checks at the boundary, and version functions for the headers that lack them.
+
 ## 3. System checks
 
 ### 3.1 Contract (`src/check.rs`)
@@ -162,9 +284,13 @@ The mock ids match `omarchyvr-gui-core/src/headsets.rs`.
   - undo templates;
   - argument names.
 - `FixRef::plan()` renders the commands. It refuses unknown ids, extra or missing arguments, and any argument that is not a plain path or word (`safe_arg`: no spaces, quotes, `$`, `;`, `|`, backticks or `..`).
-- Root fixes are only ever shown: the GUI offers Copy and "Run with pkexec…", and the user runs them (LESSONS row 21).
+- Root fixes are shown first. The GUI offers Copy and "Run with pkexec…", and nothing runs as root until the user confirms the password prompt (LESSONS row 21). How that prompt is built is in [3.3](#33-privilege-boundary).
 
 ### 3.2 Check modules (one file each under `src/checks/`)
+
+Only part of this table is built. The files in `rust/pimax-device/src/checks/` are `cpu.rs`, `gpu.rs`, `runtime.rs`
+and `doctor.rs`. The native checks that run today are `gpu.merged_head_sync`, `cpu.cap_sys_nice`, `cpu.governor` and
+`runtime.steam_vr_games`. The rest of the table is the plan. Those areas are covered by `DoctorBridge` or not at all.
 
 | Area | Checks | Source today |
 |---|---|---|
@@ -176,10 +302,36 @@ The mock ids match `omarchyvr-gui-core/src/headsets.rs`.
 | runtime | active OpenXR runtime (`~/.config/openxr/1/active_runtime.json` → Monado), `openvrpaths.vrpath` → xrizer and read-only, stale monado-service | doctor `lease`, `stale-service`; LESSONS 20 |
 | device | the module's own checks: calibration files present, lens.conf serial, firmware versions against `firmware_seen` | doctor `lens-conf`, `tobii` |
 
-`checks::doctor::DoctorBridge` runs all 13 omarchyvr-doctor checks now and maps each one to a `Finding`. The doctor's
+`checks::doctor::DoctorBridge` runs all of the omarchyvr-doctor checks (`run_checks`, `rust/omarchyvr-doctor/src/checks.rs:204`) and maps each one to a `Finding`. The doctor's
 free-text fixes become catalogue `FixRef`s where an entry exists: setcap, udev, keepalive, patches, kernel-log,
 stale-service. Other fixes stay as text in `detail`. This lets the GUI move to `Finding` before the checks themselves
 move.
+
+### 3.3 Privilege boundary
+Some fixes and the system setup need root. The app asks for it through polkit's `pkexec`. This is how it works at
+HEAD, and where it is meant to go.
+
+**Today**
+- **App fixes.** `pkexec_cmd` (`rust/omarchyvr-gui-core/src/cmd.rs:163`) builds `/usr/bin/pkexec /bin/sh -c <script>`
+  from the lines the app showed to the user. The script text is checked by a text checker, `check_root_script`
+  (`rust/omarchyvr-gui-core/src/safety.rs:343`). That checker runs inside the unprivileged app. Its own header calls it
+  a guard against mistakes in the app's command builders, not a sandbox (`safety.rs:18-19`).
+- **setcap.** The one-click fix runs `/usr/bin/pkexec /usr/bin/setcap cap_sys_nice+ep <service>`
+  (`rust/omarchyvr-gui-core/src/caps.rs:38-43`). The service path is resolved and checked first.
+- **System setup.** The root job is `omarchyvr-root.sh apply <plan>` through one pkexec prompt. The app runs the copy in
+  the user's data directory (`root_script`, `rust/omarchyvr-gui-core/src/install.rs:45`). The root-owned copy in
+  `/usr/local/lib/omarchyvr` (`ROOT_SCRIPT_INSTALLED`, `install.rs:14`) is used only for the uninstall.
+- **The plan file.** `installer/omarchyvr-root.sh` reads the plan file (`PLAN`, lines 78-90) as root. The user can write
+  that file. The script accepts only known keys, and each value must match a character set
+  (`^[][A-Za-z0-9_./:@+\ -]*$`, line 86). It does not check what the values mean.
+- **Policy.** The repo has no polkit policy file, so pkexec shows its generic prompt for `/bin/sh`.
+
+**Target**
+- A root-owned helper installed once, with a short list of fixed verbs instead of a shell script.
+- Checks of what a request means, done by the helper as root, not by the app.
+- A polkit action for the helper, so the prompt names it and the policy can be audited.
+
+This is [Step 7 of the week 1 safety plan](plans/WEEK1-SAFETY.md). See also [SECURITY-STATUS.md](SECURITY-STATUS.md).
 
 ## 4. Onboarding flow
 
@@ -254,7 +406,7 @@ AGENTS.md, CONTRIBUTING.md                   rules (6.4)
 version = 1
 date = "2026-10-14"
 module = "dream-air"
-pimax_re = "<git sha>"
+omarchyvr = "<git sha>"
 monado = "<git sha>"
 [host]
 distro = "Arch"
@@ -273,12 +425,14 @@ note = "600/605 poses, desk start --6dof"
 No serials, user names or paths. The redactor runs on it, and CI rejects any report that matches a serial pattern
 (`P5[0-9]{2}[A-Z0-9]{8,}`, `H30[0-9]{3}P[0-9]{9,}`).
 
-### 6.3 CI (offline only; no device, no GPU)
+### 6.3 CI (planned; offline only, no device, no GPU)
+There is no CI yet. The repo has no `.github/` directory and no other CI configuration. Tests run by hand on a
+developer machine. This is what CI should run once it exists:
 - `cargo test --workspace` and `cargo clippy -D warnings`.
-- Descriptor lint: every `devices/*/device.toml` loads and validates, every `[[hid]]` has a `source`, and every state-changing command has `approved`.
-- Replay fixtures: the `*.rec.gz` HID captures are run through `omarchyvr` decoders. A new `allowlist_replay` test checks that every host→device report in the fixtures passes the module's allowlist, so the allowlist and reality can't drift apart.
+- Descriptor lint: every `devices/*/device.toml` loads and validates, every `[[hid]]` has a `source`, and every state-changing command has `approved`. Loading every descriptor is already exercised by a test (`registry_has_one_real_module_and_four_mocks`, `rust/pimax-device/tests/allowlist.rs:29`); CI would run it.
+- Replay fixtures: the `*.rec.gz` HID captures are run through the decoders. A new `allowlist_replay` test (not written yet) checks that every host→device report in the fixtures passes the module's allowlist, so the allowlist and reality can't drift apart.
 - Doctor `FakeHost` scenarios for every check.
-- A secret and serial scan over the diff (the patterns above, plus `sk-ant-`, `ghp_` and `/home/<user>`).
+- A secret and serial scan over the diff (the patterns above, plus `sk-ant-`, `ghp_` and `/home/<user>`). The repo already has local git hooks for this (`tools/git-hooks/`); CI would run the same scanners.
 
 ### 6.4 AGENTS.md / CONTRIBUTING (rules for humans and LLM agents)
 - Only send bytes seen in vendor captures. Every `[[hid]]` cites its capture, and state-changing commands need a maintainer's approval line.
@@ -295,15 +449,17 @@ No serials, user names or paths. The redactor runs on it, and CI rejects any rep
 - **Protocol facts reverse engineered for interoperability:**
   - This is generally defensible (EU Software Directive art. 6; US DMCA §1201(f) interoperability).
   - Publish findings and our own code only, never Pimax code, decompiled sources or binaries.
-  - The eye-tracker challenge/response analysis (`analysis/eye-auth-feasibility.md`) touches an authentication mechanism. Keep it private or reduce it to "not needed"; that is the highest legal risk.
+  - The eye-tracker challenge/response analysis touches an authentication mechanism. Keep it private or reduce it to "not needed"; that is the highest legal risk.
 - **Vendor material:**
   - Pimax Play DLLs, `pi_server` crash dumps, SteamVR driver resources, firmware updater logs and raw captures all stay out of the repo (they are in `pimax-data/` and `captures*/`, which are git-ignored).
-  - The tracked `calib/` factory files, and any capture-derived file with serials, must be removed or scrubbed (see the audit).
+  - Factory calibration files and any capture-derived file with serials stay out of the repo, or are scrubbed first. There is no `calib/` directory at HEAD.
   - Rewriting history is necessary, because removed files stay in history. The simplest route is a **fresh public repo** made from a scrubbed tree; the private repo keeps its history.
 - **Trademarks:** "Pimax", "Dream Air" and "Crystal" are used only nominatively ("for Pimax headsets"), with no logos and a "not affiliated" line in the README.
 - **Safety:** a user's headset can be bricked by bad commands. The allowlist and the "no flashing" rule are the mitigation; add a disclaimer and no-warranty notice.
 
-## 7. GUI integration (for the GUI agent; omarchyvr-app and omarchyvr-gui-core are not edited here)
+## 7. GUI integration
+
+Status at HEAD: items 1 to 4 are built (the model list in `rust/omarchyvr-gui-core/src/headsets.rs`, the onboarding, checks and Autofix pages in `rust/omarchyvr-app/src/pages/`). The text below is the original design.
 
 1. **Model list:** `omarchyvr-gui-core/src/headsets.rs` replaces `MODELS` with `pimax_device::all()`.
    - Capability labels come from `Support::label()`.
@@ -331,6 +487,8 @@ No serials, user names or paths. The redactor runs on it, and CI rejects any rep
 
 ## 8. Migration plan
 
+Status at HEAD: steps 1 and 2 are done. Steps 3 and 4 are partly done (four checks ported, `Host` still lives in `omarchyvr-doctor`). Steps 5 to 9, which move the write paths onto the gate, are not started. They are the same work as [Step 5 of the week 1 safety plan](plans/WEEK1-SAFETY.md).
+
 | Step | Change | Risk |
 |---|---|---|
 | 1 | GUI uses `pimax_device::all()` / `detect` for the model list (headsets.rs) | none, read only |
@@ -345,6 +503,8 @@ No serials, user names or paths. The redactor runs on it, and CI rejects any rep
 
 ## 9. Hard-coded Dream Air specifics found (to move into the descriptor over time)
 
+The file and line numbers in this table come from 2026-10-14 and may have drifted. Search for the constant before relying on a line.
+
 | What | Where |
 |---|---|
 | USB IDs 34a4:0044 (and 0043 bridge, 0014 cameras) | pimax-proto/src/lib.rs:35-41; omarchyvr-doctor lib.rs consts; pimax-eye/src/ipd.rs:81 (`HID_ID=0003:000034A4:00000044`); pimax-cam/src/v4l2.rs:37-39; omarchyvr-tools/src/vr/reset.rs:67; pimax/src/discovery.rs:54,93,112 |
@@ -356,4 +516,4 @@ No serials, user names or paths. The redactor runs on it, and CI rejects any rep
 | IPD 58-72 mm | pimax-eye/src/ipd.rs:16-17, ipd_watch.rs:194 |
 | Lens defaults, `lens.conf` | pimax-lens/src/config.rs:481-485, bin/pimax-lens.rs:10 |
 | Controller slots 2/3 | pimax-proto/src/lib.rs:49-51 |
-| Calibration and user paths | ~/.config/omarchyvr/{lens.conf, ipd.env, eye-calibration.toml, auto.toml}, ~/.cache/omarchyvr/gyro-bias, ~/.local/share/omarchyvr/{roommap, eye-calibration, slam-recordings}; pimax-ctrltrack/src/model.rs:77-80 hard-codes a path with controller serials under pimax-data/ (must change before release) |
+| Calibration and user paths | ~/.config/omarchyvr/{lens.conf, ipd.env, eye-calibration.toml, auto.toml}, ~/.cache/omarchyvr/gyro-bias, ~/.local/share/omarchyvr/{roommap, eye-calibration, slam-recordings}; pimax-ctrltrack/src/model.rs:103,120 falls back to a Windows dump under `<repo>/pimax-data/` (git-ignored, never shipped) |

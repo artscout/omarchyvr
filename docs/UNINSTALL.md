@@ -1,5 +1,40 @@
 # Uninstall omarchyvr
 
+Unofficial. Supports the Pimax Dream Air. Not affiliated with Pimax or Omarchy.
+
+## Look first: `--dry-run`
+
+    ./uninstall.sh --dry-run
+
+It lists everything that would be removed, restored or kept. It changes nothing and asks for no password.
+
+## What the uninstaller does to the system
+
+The root part is one job with one password prompt. It first takes a snapper snapshot of `/` (when snapper has a `root` config). Then it:
+
+- removes the udev rule `/etc/udev/rules.d/70-pimax.rules`;
+- removes the two pacman hooks and `/etc/omarchyvr/nvidia.conf`, and restores the NVIDIA driver source in `/usr/src` to stock (from the `*.pimax-orig` backups, or by reversing the patches), then rebuilds the stock module with DKMS;
+- removes the EDID override files (`/etc/pimax/`, `/etc/modprobe.d/nvidia-pimax.conf`, `/etc/mkinitcpio.conf.d/pimax.conf`) and rebuilds the initramfs;
+- removes `cap_sys_nice` from the installed `monado-service` and SteamVR's `vrcompositor-launcher`;
+- puts back system files that omarchyvr replaced and that were not its own (saved under `/var/lib/omarchyvr/backup`), then removes `/usr/local/lib/omarchyvr` and `/var/lib/omarchyvr`.
+
+It says when a reboot is needed (changed NVIDIA module or boot image). If patch code is still found in the NVIDIA source after the restore, it says so loudly instead of hiding it.
+
+## Kept and removed
+
+Kept by default: your device data (factory calibration, controller models, lens, IPD, eye calibration, gyro bias, room map), `ai.toml` (cloud AI keys), downloads (AI models, voice models, backgrounds, hand models), your recordings, Steam and SteamVR, and packages the installer added with pacman. Settings are saved into `~/omarchyvr-settings-backup-<date>.tar.gz` and then reset. Options below remove more.
+
+## No display after a driver update?
+
+If the desktop or the headset picture is wrong after a driver update, try these in order.
+
+1. The pacman hooks build the stock module when the patched build fails, so the desktop should still come up. Open [NVIDIA-UNTESTED.md](NVIDIA-UNTESTED.md) for what the hooks do on a new driver version.
+2. If you have no picture at all, switch to a text console with Ctrl+Alt+F3 and log in.
+3. In the clone, run `./uninstall.sh --yes`. It restores the stock NVIDIA source and module, removes the EDID override and rebuilds the initramfs. Reboot afterwards. (Not verified: the password prompt on a bare text console. The root job needs a polkit agent for `pkexec`.)
+4. Or boot the snapper snapshot from the boot menu. The install and the uninstall each take one before they change anything, if snapper has a `root` config.
+
+## Steps in detail
+
 In the app: **Ready > Uninstall omarchyvr** (it runs the same script). Without the app, run `./uninstall.sh` in the clone.
 
 | Step | What happens | Password |

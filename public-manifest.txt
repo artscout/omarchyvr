@@ -17,6 +17,13 @@
 + .gitignore
 + .gitattributes
 + CLAUDE.md
++ SECURITY.md
++ CONTRIBUTING.md
+# installer: install.sh and uninstall.sh at the top level, the engine and its tests in installer/ (checked: no home paths, serials or keys)
++ install.sh
++ uninstall.sh
++ installer/**
+# forks/ and .gitmodules are left out until the forks (laughtt/monado, laughtt/wayvr) are public
 # lab diaries and personal notes (serials, dates, the lab PC): private
 - HISTORY.md
 - STATUS.md
@@ -77,6 +84,9 @@
 
 # ---- docs ------------------------------------------------------------------------------------------------------
 + docs/**
+# security status and the safety plans
++ docs/SECURITY-STATUS.md
++ docs/plans/**
 # a screenshot of Pimax Play (their UI)
 - docs/gui/inspiration/**
 # lab test diary with install dates and status of the user's own headset session

@@ -1,14 +1,48 @@
 # omarchyvr: Pimax Dream Air VR on Linux (Omarchy / Arch)
 
-Unofficial. Supports Pimax Dream Air. Not affiliated with Pimax or Omarchy.
+[Support the project on Ko-fi](https://ko-fi.com/josemauriciocarpioherrera) · [Follow on X](https://x.com/carpio_her8717)
 
-**omarchyvr is an unofficial community project. It is not affiliated with, made by, or endorsed by Pimax or Omarchy.** "Pimax" and "Dream Air" are trademarks of Pimax and are used only to say which hardware this works with. No warranty: the tools talk to the headset over USB and change system settings; use at your own risk. Licence: code MIT OR Apache-2.0, docs and data CC-BY-4.0 (see NOTICE, THIRD-PARTY.md).
+**Unofficial community project.** It is not made, endorsed or supported by Pimax or Omarchy. "Pimax" and "Dream Air" are trademarks of Pimax, used only to say which hardware this works with. There is no warranty: the tools talk to the headset over USB and change system settings, so use them at your own risk. Code is MIT OR Apache-2.0, docs and data are CC-BY-4.0 (see [NOTICE](NOTICE) and [THIRD-PARTY.md](THIRD-PARTY.md)).
+
+This project makes the **Pimax Dream Air** work on Linux (Arch / Omarchy, Hyprland) the way Pimax Play does on Windows: one app, one click. The protocol was reverse-engineered from Windows USB captures of our own headset.
+
+**Status: alpha, one tested setup.** Everything here was built and tested on one PC with one headset (see [Tested on](#tested-on)). Expect rough edges on anything else.
+
+> **Before you install.** The setup changes your system, not only your home folder:
+> it patches the NVIDIA open kernel module (DKMS) and installs pacman hooks that re-apply the patch after driver updates,
+> adds an EDID override and rebuilds the initramfs, installs a udev rule for the headset, and sets `cap_sys_nice` on the Monado service.
+> **Take a snapper snapshot first** (the setup also takes one when snapper has a `root` config).
+> Read [docs/NVIDIA-UNTESTED.md](docs/NVIDIA-UNTESTED.md) (what happens on other driver versions),
+> [docs/UNINSTALL.md](docs/UNINSTALL.md) (how to undo it) and [docs/SECURITY-STATUS.md](docs/SECURITY-STATUS.md) (known open issues).
 
 Names: the app is `omarchyvr-app`, the command line tool `omarchyvr`, the daemon `omarchyvrd`, user data lives in `~/.config/omarchyvr` (and `~/.local/share|state|cache/omarchyvr`). Crates that name Pimax hardware keep their `pimax-` names. The full table is [docs/NAMES.md](docs/NAMES.md).
 
-Unofficial. This project makes the **Pimax Dream Air** work on Linux (Arch / Omarchy, Hyprland) the way Pimax Play does on Windows: **one app, one click, everything part of one whole.** It is not made or endorsed by Pimax. The protocol was reverse-engineered from Windows USB captures of our own headset.
+Everything is reachable from the omarchyvr app (`omarchyvr-app`, starts at login). Play starts VR games, Work starts the VR desktop.
 
-The user never needs a terminal: everything is reachable from the omarchyvr app (`omarchyvr-app`, starts at login). Play starts VR games, Work starts the VR desktop.
+## Requirements
+
+- A Pimax Dream Air headset (USB id `34a4:0044`). Other Pimax models are not supported.
+- Arch Linux or Omarchy with Hyprland. Other Arch-based setups are untested.
+- An NVIDIA RTX GPU with `nvidia-open-dkms`. The only tested driver version is **610.57.04**
+  (`patches/nvidia/tested-versions.txt`). On any other version the patch is not applied unless you turn on the
+  "Allow the patch on untested NVIDIA drivers" switch, and without the patch the headset picture is wrong.
+- Steam with SteamVR, installed by you.
+- Disk: the installer wants about 40 GB free for the build. The AI and voice downloads come on top and are fetched on first use.
+
+The full table (tested, experimental, unsupported) is in [docs/INSTALL.md](docs/INSTALL.md#requirements).
+
+## Install
+
+    git clone --recursive https://github.com/laughtt/omarchyvr.git
+    cd omarchyvr && ./install.sh
+
+The script builds everything and opens the app. The app asks for one password to do the system part. Steps, options and
+what the password changes: [docs/INSTALL.md](docs/INSTALL.md).
+
+## Uninstall
+
+The app has **Ready > Uninstall omarchyvr**, or run `./uninstall.sh` in the clone. `./uninstall.sh --dry-run` lists
+what would change. Details, what is kept, and how to recover when the display breaks: [docs/UNINSTALL.md](docs/UNINSTALL.md).
 
 ![Architecture](docs/img/architecture.png)
 
@@ -74,25 +108,21 @@ What that means: a Steam or SteamVR update, a new NVIDIA release or a Hyprland c
 - **Eye tracking:** works as a stream but accuracy is not final, and Pimax licensing and tooling make it development-only for now.
 - **Foveated rendering:** not built.
 - **Controller tracking quality:** optical tracking loses controllers when they leave the cameras' view.
-- **Packaging:** no installer for other people yet (an Arch PKGBUILD and an AppImage script exist as drafts).
+- **Packaging:** `./install.sh` builds from source. An Arch PKGBUILD and an AppImage script exist only as drafts.
+- **Security status:** known open issues are listed in [docs/SECURITY-STATUS.md](docs/SECURITY-STATUS.md).
 - **NVIDIA patch:** the display needs a patched driver module; no upstream fix.
 - **Hand models:** the Mercury models have no licence; they cannot be shipped, only fetched by the user for personal use.
-- **No LICENSE file yet** in this repo; see the open-source plan.
 
 ## Roadmap
 
 See [docs/ROADMAP-OMARCHY.md](docs/ROADMAP-OMARCHY.md) (shipping with Omarchy) and [docs/OPEN-SOURCE-PLAN.md](docs/OPEN-SOURCE-PLAN.md) (opening the project).
-
-## For AI agents
-
-Start with [AGENTS.md](AGENTS.md) and [docs/AI-KNOWLEDGE.md](docs/AI-KNOWLEDGE.md). The binding rules are in [ai/CLAUDE.md](ai/CLAUDE.md).
 
 ## Docs index
 
 | File | What |
 |---|---|
 | [docs/AI.md](docs/AI.md) | The "Max" voice AI agent and its tools |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Design for the open-source release |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the stack is built: device modules, HID allowlist, checks, privilege boundary |
 | [docs/AUDIO.md](docs/AUDIO.md) | Sound in the headset: findings and what is missing |
 | [docs/AUTO-MODE.md](docs/AUTO-MODE.md) | Start when the headset is put on, stop when left |
 | [docs/EYE.md](docs/EYE.md) | Eye tracking in desk mode |
@@ -100,10 +130,15 @@ Start with [AGENTS.md](AGENTS.md) and [docs/AI-KNOWLEDGE.md](docs/AI-KNOWLEDGE.m
 | [docs/GUI.md](docs/GUI.md) | The Pimax app, page by page |
 | [docs/HANDS.md](docs/HANDS.md) | Camera hand tracking |
 | [docs/HEADSET-COMMANDS.md](docs/HEADSET-COMMANDS.md) | Headset commands taken from Windows captures |
+| [docs/INSTALL.md](docs/INSTALL.md) | Install steps, what the password changes, NVIDIA policy |
+| [docs/UNINSTALL.md](docs/UNINSTALL.md) | Uninstall, what is kept, recovery |
+| [docs/SECURITY-STATUS.md](docs/SECURITY-STATUS.md) | Known open security issues |
+| [docs/plans/](docs/plans/) | Work plans, starting with [WEEK1-SAFETY.md](docs/plans/WEEK1-SAFETY.md) |
+| [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md) | How to contribute, how to report a vulnerability |
 | [docs/INVENTORY.md](docs/INVENTORY.md) | Inventory of tools and parts |
 | [docs/LESSONS.md](docs/LESSONS.md) | Mistakes and pitfalls |
 | [docs/MANUAL-STEPS.md](docs/MANUAL-STEPS.md) | Every manual step the app took over |
-| [docs/PIMAXD.md](docs/PIMAXD.md) | The daemon that owns the stack |
+| [docs/OMARCHYVRD.md](docs/OMARCHYVRD.md) | The daemon that owns the stack |
 | [docs/PLAY.md](docs/PLAY.md) | One click to VR: Play and Work |
 | [docs/RECORD.md](docs/RECORD.md) | Recording |
 | [docs/RENDER-QUALITY.md](docs/RENDER-QUALITY.md) | Quality presets and frame health |
@@ -116,15 +151,27 @@ Start with [AGENTS.md](AGENTS.md) and [docs/AI-KNOWLEDGE.md](docs/AI-KNOWLEDGE.m
 | [docs/VOICE.md](docs/VOICE.md), [docs/VOICE-DECISIONS.md](docs/VOICE-DECISIONS.md) | Voice control and its decisions |
 | [docs/WAYVR-CONTROLS.md](docs/WAYVR-CONTROLS.md) | Controls in the VR desk |
 | [docs/WINDOWS-CAPTURE-PLAN.md](docs/WINDOWS-CAPTURE-PLAN.md) | What to capture on Windows next |
-| [STATUS.md](STATUS.md), [HISTORY.md](HISTORY.md), [NEXT-STEPS.md](NEXT-STEPS.md) | Older status, chronology (early notes, partly out of date), next steps |
 | [analysis/](analysis/) | Findings, decoders, research, Windows capture analysis |
 
 ## Safety
 
-- HID bytes are sent only if they were captured from Pimax Play on Windows (allowlist in code).
+- The HID allowlist exists and is tested: only bytes captured from Pimax Play on Windows are meant to be sent
+  (`rust/pimax-device/devices/<id>/device.toml`). It is not yet applied on every write path; see [docs/SECURITY-STATUS.md](docs/SECURITY-STATUS.md).
 - No firmware flashing. No forced display hotplug.
 - Never kill a live VR session; installs happen between sessions.
-- Capture data, serials and calibration of a headset are personal: keep this repo private if they are in it.
+- Personal capture data, serials and calibration of a headset stay out of the public repo. The public export is
+  allow-list based (`public-manifest.txt`).
+
+## Report a bug
+
+Open a GitHub issue. Attach the problem report from the app: **Report a problem** writes
+`~/.local/state/omarchyvr/reports/omarchyvr-report-<time>.tar.gz` (summary, doctor report, setup checklist, logs; text
+goes through a redactor). The file stays on your PC until you share it, so read it before you attach it.
+For a security problem, do not open a public issue: see [SECURITY.md](SECURITY.md).
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Vulnerabilities: [SECURITY.md](SECURITY.md).
 
 ## Credits and licences
 
@@ -134,7 +181,7 @@ Start with [AGENTS.md](AGENTS.md) and [docs/AI-KNOWLEDGE.md](docs/AI-KNOWLEDGE.m
 - [Basalt](https://gitlab.freedesktop.org/mateosss/basalt) visual-inertial SLAM, via Monado.
 - Mercury hand tracking (Monado): models have no licence, personal use only, not redistributed.
 - Whisper and the local language model keep their own licences and are downloaded on first use.
-- Our own Rust code is declared `MIT OR Apache-2.0` in `Cargo.toml`; LICENSE files are still to be added.
+- Our code is `MIT OR Apache-2.0` ([LICENSE-MIT](LICENSE-MIT), [LICENSE-APACHE](LICENSE-APACHE)). Docs and data are CC-BY-4.0 ([LICENSE-CC-BY-4.0](LICENSE-CC-BY-4.0)). Third-party parts: [THIRD-PARTY.md](THIRD-PARTY.md).
 
 ## For developers
 
@@ -144,4 +191,8 @@ Clone with the forks (Monado and WayVR are git submodules under `forks/`, branch
     # an existing clone: git submodule update --init --recursive
 
 Enable the leak guard once per clone: `git config core.hooksPath tools/git-hooks` (pre-commit and pre-push run
-`tools/leak-scan.py` and refuse private data). The Rust workspace is in `rust/` (`cargo test` in that folder). Build from a clean checkout of committed HEAD. The Monado fork must keep its markers (`PIMAX_SLAM`, `PIMAX_ANCHOR`, `PIMAX_EYE`, `PIMAX_CTRL_TRACK`). Details and rules: [ai/CLAUDE.md](ai/CLAUDE.md), [docs/INVENTORY.md](docs/INVENTORY.md).
+`tools/leak-scan.py` and refuse private data). The Rust workspace is in `rust/` (`cargo test` in that folder). Build from a clean checkout of committed HEAD. The Monado build must keep its feature markers (`PIMAX_SLAM`, `PIMAX_ANCHOR`, `PIMAX_EYE`, `PIMAX_CTRL_TRACK` and more; the full list is in [ai/CLAUDE.md](ai/CLAUDE.md)). Details: [docs/INVENTORY.md](docs/INVENTORY.md).
+
+## For AI agents
+
+Start with [AGENTS.md](AGENTS.md); the binding rules are in [ai/CLAUDE.md](ai/CLAUDE.md).

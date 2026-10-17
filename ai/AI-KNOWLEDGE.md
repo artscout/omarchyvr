@@ -11,7 +11,8 @@ docs and records what went wrong before. The rules in `ai/CLAUDE.md` override an
 Read in this order. Each line says why.
 
 1. `ai/CLAUDE.md`: the project rules (GUI first, definition of done, one whole build, safety). Binding.
-2. `docs/LESSONS.md`: 52 numbered pitfalls with the rule each one became (42-50: the reinstall day 2026-10-17, docs/RETRO-2026-10-17.html; 51-52: gaze and screen layout). Read all of it before touching the stack.
+2. `docs/LESSONS.md`: 68 numbered pitfalls with the rule each one became (42-50: the reinstall day 2026-10-17, docs/RETRO-2026-10-17.html; 51-52: gaze and screen layout; 67: safety claims need tests). Read all of it before touching the stack.
+2b. `docs/SECURITY-STATUS.md` and `docs/plans/WEEK1-SAFETY.md`: what is and is not enforced today, and the planned safety changes. Read before you claim anything about safety.
 3. `docs/INVENTORY.md`: every component, command, device path and past problem with its commit.
 4. `docs/ARCHITECTURE.md`: the layers (app, core, device modules, doctor) and the open-source design. Scope is the Pimax family.
 5. `docs/HEADSET-COMMANDS.md`: the HID bytes the Windows captures verified (IPD, restart, controller touch byte).

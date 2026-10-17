@@ -8,6 +8,7 @@ catalogue. The model can run on this machine (`omarchyvr-ai`, llama.cpp) or be C
   agent).
 - Settings: `~/.config/omarchyvr/ai.toml`, written by the Pimax app's **AI tab** (`omarchyvr_config::ai`).
 - Log: `~/.local/state/omarchyvr/logs/ai.log`.
+- What is stored on disk and what leaves the machine: [section 22](#22-what-is-stored-and-where).
 
 ## 1. The local model
 
@@ -1081,3 +1082,62 @@ with file:line evidence), docs/GAME-MODE.md (Play), docs/WAYVR-CONTROLS.md (Exit
   --query-compute-apps=pid,process_name,used_memory --format=csv,noheader,nounits` and `--query-gpu=memory.free,memory.total`
   (`rust/omarchyvr-gui-core/src/vram.rs`; on the app's read-only command allowlist): "Graphics card: nothing of Work or
   the AI uses it: 17.0 of 24.0 GB free", or the leftover by name and pid.
+
+## 22. What is stored and where
+
+This section says plainly what voice control and the AI keep on disk and what it can send out. Checked against the
+code at HEAD (`rust/omarchyvr-voice/src/agent.rs`, `desk.rs`, `rust/omarchyvr-config/src/ai.rs`).
+
+Planned changes: docs/plans/WEEK1-SAFETY.md step 6. Known issues: docs/SECURITY-STATUS.md.
+
+### ai.log
+
+- Path: `~/.local/state/omarchyvr/logs/ai.log` (under `$XDG_STATE_HOME` when that is set to an absolute path).
+- Content: one JSON line per AI request (the words you said, the context the agent saw, the answer, the tool calls and
+  their results) and one trace line per wake-word request. Window and tab titles are part of the context unless
+  `strip_titles` is on.
+- Rotation: at 1 MiB the file moves to `ai.log.1`; older files shift to `.2` and `.3`. At most four files, about 4 MiB.
+- File mode: the log is created with the process default (no explicit mode), so usually readable by other accounts
+  on the machine. The directory is created with defaults too.
+- `redact` masks only these: words that start with `sk-` or `sk_`, and any word of 32 or more letters, digits, `-` or
+  `_` that has at least one digit and one letter (and does not start with `0x`). It does not mask passwords you
+  say aloud, short secrets, names, window titles or typed text. It is a guard against a leaked key, not a privacy
+  filter.
+- Turn it off: AI page, "Log AI requests", or `voice_ai_log = false` in `ai.toml`. Default is on.
+
+### typed.log
+
+- Path: `~/.local/state/omarchyvr/logs/typed.log`.
+- Content: every string the voice commands typed into a window, in full, with a time stamp and the window class.
+  It is also printed to stderr. Nothing is redacted.
+- Not rotated: it grows until you delete it. Created with the default file mode.
+- Only live runs write it. Dry runs, the audit and tests do not.
+- No switch turns it off today. Delete the file to clear it. Do not dictate passwords or secrets.
+
+### What a cloud model receives
+
+- Only after "Max ..." and only when you set up an online provider or Claude. With no provider, or the local model,
+  nothing leaves the machine. Section 6 lists the fields for each route.
+- Window and tab titles are sent to cloud models unless `strip_titles` is on. Default: off (titles are sent).
+  Turn it on with the AI page switch "No window titles" or `strip_titles = true`. Then only the class and the
+  workspace are sent.
+- The words you said are always sent to the cloud model you chose.
+
+### Confirmation
+
+- `voice_confirm` defaults to `none` (user decision 2026-10-15). Every command runs at once. Commands marked careful
+  do not ask, and typing or Enter into a terminal runs at once. Only commands that always ask (stop the session) and
+  closing a workspace with two or more apps still wait for a spoken "yes".
+- Change it on the AI page ("Confirm": Never ask, Ask for dangerous commands, Ask for every command) or with
+  `voice_confirm = "dangerous"` or `"always"` in `ai.toml`. `dangerous` asks for lock, close window, and typing or
+  Enter into a terminal.
+
+### Turn things off
+
+| What | How |
+|---|---|
+| ai.log | AI page "Log AI requests", or `voice_ai_log = false` |
+| Titles to cloud models | AI page "No window titles", or `strip_titles = true` |
+| Any cloud model | remove the provider on the AI page, or use the local model only |
+| Run-at-once commands | AI page "Confirm", or `voice_confirm` |
+| typed.log | delete the file (no switch yet) |
