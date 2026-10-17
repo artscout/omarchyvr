@@ -33,8 +33,9 @@ pub const OUTPUTS: [&str; 6] = ["", "PIMAX-LEFT", "PIMAX-RIGHT", "PIMAX-UP", "PI
 /// Monitor positions in the Hyprland layout (screens.rs `wanted`: left of, right of and above the main output).
 const MON_XY: [(i64, i64); 6] = [(0, 0), (-1920, 0), (1920, 0), (0, -1080), (-1920, -1080), (1920, -1080)];
 /// Where `wayvrctl desk-screens` puts each slot around the head (degrees yaw, pitch) for a 2 m wide screen at 2.5 m.
-/// APPROX: WayVR places neighbours edge to edge with a 5 cm gap; this is the angle that gives.
-const SLOT_ANGLES: [(f32, f32); 6] = [(0.0, 0.0), (45.0, 0.0), (-45.0, 0.0), (0.0, 27.0), (45.0, 27.0), (-45.0, 27.0)];
+/// The angles WayVR's default layout computes for that size (windowing/viewlayout.rs `default_layout`, docs/SCREENS.md):
+/// neighbours 1.5 deg apart as seen from the head, the upper row as a band above the lower one.
+const SLOT_ANGLES: [(f32, f32); 6] = [(0.0, 0.0), (45.1, 0.0), (-45.1, 0.0), (0.0, 27.9), (56.3, 27.9), (-56.3, 27.9)];
 
 /// The number of a slot name (1..6).
 pub fn slot_number(slot: &str) -> Option<u8> {
@@ -1043,6 +1044,56 @@ impl Sim {
         Ok(String::new())
     }
 
+    /// `wayvrctl screen-place NAME left|right|up|down|front|swap [--of OTHER]` (WayVR viewlayout.rs `place`).
+    /// APPROX: beside the reference (or one place over) at the neighbour angle of a 2 m screen at 2.5 m (45 deg yaw,
+    /// 27 deg pitch); front = straight ahead; swap = the two change angles. WayVR's minimal shift of the other screens
+    /// is not modelled (no two screens share an angle here unless the test makes them).
+    fn place(&mut self, argv: &[String]) -> Result<String, String> {
+        let mut of: Option<String> = None;
+        let mut rest: Vec<&String> = Vec::new();
+        let mut i = 2;
+        while i < argv.len() {
+            if argv[i] == "--of" {
+                of = argv.get(i + 1).cloned();
+                i += 2;
+            } else {
+                rest.push(&argv[i]);
+                i += 1;
+            }
+        }
+        let (Some(name), Some(rel)) = (rest.first(), rest.get(1)) else { return Err("screen-place NAME REL".into()) };
+        let Some(n) = self.world.screen_by_output(name) else { return Ok(String::new()) };
+        let r = of.as_deref().and_then(|o| self.world.screen_by_output(o));
+        let (ry, rp) = match r.and_then(|r| self.world.screen_mut(r).map(|s| (s.yaw, s.pitch))) {
+            Some(x) => x,
+            None => match self.world.screen_mut(n) {
+                Some(s) => (s.yaw, s.pitch),
+                None => return Ok(String::new()),
+            },
+        };
+        let (y, p) = match rel.as_str() {
+            "left" => (ry + 45.0, rp),
+            "right" => (ry - 45.0, rp),
+            "up" | "above" => (ry, rp + 27.0),
+            "down" | "below" => (ry, rp - 27.0),
+            "front" | "here" => (0.0, 0.0),
+            "swap" => {
+                let Some(r) = r else { return Err("swap needs --of".into()) };
+                let mine = self.world.screen_mut(n).map(|s| (s.yaw, s.pitch)).unwrap_or((0.0, 0.0));
+                if let Some(o) = self.world.screen_mut(r) {
+                    (o.yaw, o.pitch) = mine;
+                }
+                (ry, rp)
+            }
+            other => return Err(format!("bad place {other}")),
+        };
+        if let Some(s) = self.world.screen_mut(n).filter(|s| s.shown) {
+            s.yaw = y;
+            s.pitch = p;
+        }
+        Ok(String::new())
+    }
+
     fn pimax(&mut self, argv: &[String]) -> Result<String, String> {
         let a: Vec<&str> = argv.iter().map(String::as_str).collect();
         match a.get(1..).unwrap_or(&[]) {
@@ -1075,6 +1126,7 @@ impl Sim {
         match argv.get(1).map(String::as_str) {
             Some("gaze") => w.gaze_json(self.now_ms).ok_or_else(|| "no gaze".to_string()),
             Some("screen-nudge") => self.nudge(argv),
+            Some("screen-place") => self.place(argv),
             Some("reset-screens") => {
                 // APPROX: every screen back to its place around the head at its distance (size kept)
                 for s in w.screens.iter_mut() {

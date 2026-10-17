@@ -35,7 +35,7 @@ use serde_json::Value;
 /// Actions of the `@win` built-in (`run = ["@win", "<action>", args...]`).
 pub const ACTIONS: &[&str] = &[
     "focus", "focus_gaze", "ws", "ws_next", "ws_prev", "ws_new", "ws_close", "move_here", "merge_here", "tab_next", "tab_prev",
-    "tab", "tab_new", "tab_close", "close", "list", "ai", "screen", "move_screen", "organize", "together", "nudge",
+    "tab", "tab_new", "tab_close", "close", "list", "ai", "screen", "move_screen", "organize", "together", "nudge", "place",
     "open_screen", "gather", "put", "put_from", "swap", "list_screen", "open_on", "layout_save", "layout_restore",
     "hide_screens", "scale", "close_named", "open_app",
 ];
@@ -1310,8 +1310,65 @@ fn capital(s: &str) -> String {
     c.next().map(|f| f.to_uppercase().collect::<String>() + c.as_str()).unwrap_or_default()
 }
 
-/// "Move this left" / "zoom in": the VR screen itself moves or changes size in space (`wayvrctl screen-nudge`):
-/// the screen looked at, else the focused one, else the main one.
+/// Run one screen move in WayVR. left/right/up/down/front are PLACEMENTS (user decision 2026-10-17): "move this left"
+/// puts the screen to the left of its neighbour on the left (one place over), as seen from where the head is now,
+/// and the other screens make room so none overlaps another from there (`wayvrctl screen-place`; WayVR
+/// `windowing/viewlayout.rs`). An older WayVR without `screen-place` gets the old turn (`screen-nudge`).
+/// closer/farther/bigger/smaller stay `screen-nudge` (WayVR then makes room the same way).
+fn screen_move_cmd(name: &str, d: &str, of: Option<&str>, r: &mut dyn Runner, wayvrctl: &str) -> Result<String, String> {
+    if matches!(d, "left" | "right" | "up" | "down" | "front") {
+        let mut a = vec![wayvrctl.to_string(), "screen-place".into(), name.to_string(), d.to_string()];
+        if let Some(o) = of {
+            a.extend(["--of".to_string(), o.to_string()]);
+        }
+        match r.run(&a, true) {
+            Ok(x) => return Ok(x),
+            Err(e) if d == "front" || of.is_some() => return Err(e),
+            Err(_) => {}
+        }
+    }
+    r.run(&[wayvrctl.to_string(), "screen-nudge".into(), name.to_string(), d.to_string()], true)
+}
+
+/// "Put screen 2 left of screen 3", "move screen 5 next to screen 1": screen `which` goes beside screen `of` on
+/// `side` (left, right, up/above, down/below; "next" = right), placed once from the current head position.
+fn screen_place(which: &str, side: &str, of: &str, r: &mut dyn Runner, wayvrctl: &str) {
+    let side = match side.trim().to_lowercase().as_str() {
+        "next" | "beside" | "next to" => "right".to_string(),
+        "above" | "over" | "on top" => "up".to_string(),
+        "below" | "under" | "beneath" => "down".to_string(),
+        s => match slot_word(s) {
+            Some(x @ ("left" | "right" | "up" | "down")) => x.to_string(),
+            _ => return r.toast(&format!("Put the screen left, right, above or below another one, not \"{side}\"")),
+        },
+    };
+    let (a, b) = match (find_screen(which, r, wayvrctl), find_screen(of, r, wayvrctl)) {
+        (Ok(a), Ok(b)) => (a, b),
+        (Err(e), _) | (_, Err(e)) => return r.toast(&e),
+    };
+    if !monitor_ok(&a.output) || !monitor_ok(&b.output) {
+        return r.toast("Bad screen name");
+    }
+    if a.output == b.output {
+        return r.toast("That is the same screen");
+    }
+    let word = match side.as_str() {
+        "up" => "above",
+        "down" => "below",
+        "left" => "left of",
+        _ => "right of",
+    };
+    match screen_move_cmd(&a.output, &side, Some(&b.output), r, wayvrctl) {
+        Ok(_) => {
+            badges(r, wayvrctl, screen_number(a.slot));
+            r.toast(&format!("{} {word} {}", capital(&screen_label(a.slot)), screen_label(b.slot)))
+        }
+        Err(e) => r.toast(&format!("Move screen: {e} (needs the new WayVR build)")),
+    }
+}
+
+/// "Move this left" / "zoom in" / "bring it here": the VR screen itself moves or changes size in space: the screen
+/// looked at (only with Eyes as a mouse on), else the focused one, else the main one. See [`screen_move_cmd`].
 fn screen_nudge(dir: &str, which: Option<&str>, r: &mut dyn Runner, wayvrctl: &str) {
     // the first direction word counts: "up a bit", "a little more to the left", "further away"
     let pick = |x: &str| -> Option<String> {
@@ -1320,6 +1377,7 @@ fn screen_nudge(dir: &str, which: Option<&str>, r: &mut dyn Runner, wayvrctl: &s
             "farther" | "further" | "away" => Some("farther".into()),
             "bigger" | "larger" => Some("bigger".into()),
             "smaller" => Some("smaller".into()),
+            "here" | "front" => Some("front".into()),
             x => match slot_word(x) {
                 Some(s @ ("left" | "right" | "up" | "down")) => Some(s.to_string()),
                 _ => None,
@@ -1339,8 +1397,8 @@ fn screen_nudge(dir: &str, which: Option<&str>, r: &mut dyn Runner, wayvrctl: &s
         if !monitor_ok(&s.output) {
             return r.toast("Bad screen name");
         }
-        return match r.run(&[wayvrctl.to_string(), "screen-nudge".into(), s.output.clone(), d.clone()], true) {
-            Ok(_) => r.toast(&format!("{}: {d}", capital(&screen_label(s.slot)))),
+        return match screen_move_cmd(&s.output, &d, None, r, wayvrctl) {
+            Ok(_) => r.toast(&format!("{}: {}", capital(&screen_label(s.slot)), if d == "front" { "in front of you" } else { d.as_str() })),
             Err(e) => r.toast(&format!("Move screen: {e} (needs the new WayVR build)")),
         };
     }
@@ -1350,8 +1408,9 @@ fn screen_nudge(dir: &str, which: Option<&str>, r: &mut dyn Runner, wayvrctl: &s
         .filter(|g| scr.is_empty() || scr.iter().any(|s| &s.output == g))
         .or_else(|| scr.iter().find(|s| s.focused).or(scr.first()).map(|s| s.output.clone()));
     let Some(name) = name.filter(|n| monitor_ok(n)) else { return r.toast("No VR screen to move") };
-    match r.run(&[wayvrctl.to_string(), "screen-nudge".into(), name.clone(), d.clone()], true) {
+    match screen_move_cmd(&name, &d, None, r, wayvrctl) {
         Ok(_) => r.toast(&match d.as_str() {
+            "front" => "Screen in front of you".to_string(),
             "bigger" => "Screen bigger".to_string(),
             "smaller" => "Screen smaller".to_string(),
             "closer" => "Screen closer".to_string(),
@@ -1962,6 +2021,7 @@ pub fn execute(args: &[String], transcript: &str, ai: &mut Option<Box<dyn LlmCli
         "move_screen" => screen_move(arg(1), r, wayvrctl),
         "organize" => organize(r),
         "nudge" => screen_nudge(arg(1), args.get(2).map(String::as_str), r, wayvrctl),
+        "place" => screen_place(arg(1), arg(2), arg(3), r, wayvrctl),
         "together" => together(r),
         "open_screen" => open_screen(&args[1..].join(" "), r),
         "gather" => gather(&args[1..].join(" "), r),
@@ -2310,7 +2370,7 @@ mod tests {
 
     #[test]
     fn move_this_left_moves_the_looked_at_screen_in_space() {
-        // gaze on PIMAX-LEFT: that screen moves; the mock records wayvrctl calls through `gaze`
+        // gaze on PIMAX-LEFT (as with Eyes as a mouse on): that screen moves; the mock records wayvrctl calls
         let mut m = vr_mock(desktop(), focused("0x1", "foot", 2));
         m.gaze = Some(gaze_json("PIMAX-LEFT", [0.5, 0.5]));
         let mut calls = Vec::new();
@@ -2318,7 +2378,7 @@ mod tests {
             struct Spy<'a>(&'a mut Mock, &'a mut Vec<Vec<String>>);
             impl Runner for Spy<'_> {
                 fn run(&mut self, argv: &[String], c: bool) -> Result<String, String> {
-                    if argv.get(1).is_some_and(|a| a == "screen-nudge") {
+                    if argv.get(1).is_some_and(|a| a == "screen-nudge" || a == "screen-place") {
                         self.1.push(argv.to_vec());
                         return Ok(String::new());
                     }
@@ -2338,13 +2398,64 @@ mod tests {
                 }
             }
             let mut spy = Spy(&mut m, &mut calls);
-            for d in ["left", "bigger", "sideways"] {
+            for d in ["left", "bigger", "sideways", "here"] {
                 execute(&["nudge".into(), d.into()], "", &mut None, "wayvrctl", &mut spy);
             }
+            // "put screen 2 above screen 1", "screen 3 next to screen 2"
+            execute(&["place".into(), "2".into(), "above".into(), "1".into()], "", &mut None, "wayvrctl", &mut spy);
+            execute(&["place".into(), "3".into(), "next".into(), "2".into()], "", &mut None, "wayvrctl", &mut spy);
         }
-        assert_eq!(calls, [["wayvrctl", "screen-nudge", "PIMAX-LEFT", "left"], ["wayvrctl", "screen-nudge", "PIMAX-LEFT", "bigger"]]);
-        assert_eq!(m.toasts, ["Screen moved left", "Screen bigger", "Move the screen left, right, up or down, not \"sideways\""]);
+        // left/right/up/down/front are placements from the current head pose (screen-place); size stays a nudge
+        assert_eq!(
+            calls,
+            [
+                vec!["wayvrctl", "screen-place", "PIMAX-LEFT", "left"],
+                vec!["wayvrctl", "screen-nudge", "PIMAX-LEFT", "bigger"],
+                vec!["wayvrctl", "screen-place", "PIMAX-LEFT", "front"],
+                vec!["wayvrctl", "screen-place", "PIMAX-LEFT", "up", "--of", "SUNSHINE"],
+                vec!["wayvrctl", "screen-place", "PIMAX-RIGHT", "right", "--of", "PIMAX-LEFT"],
+            ]
+        );
+        assert_eq!(m.toasts[..4], ["Screen moved left", "Screen bigger", "Move the screen left, right, up or down, not \"sideways\"", "Screen in front of you"]);
+        assert_eq!(m.toasts[4..], ["Screen 2 (left) above screen 1 (main)", "Screen 3 (right) right of screen 2 (left)"]);
         assert!(m.dispatched.is_empty(), "no app moves");
+    }
+
+    #[test]
+    fn an_older_wayvr_without_screen_place_gets_the_old_turn() {
+        let mut m = vr_mock(desktop(), focused("0x1", "foot", 2));
+        let mut calls = Vec::new();
+        {
+            struct Old<'a>(&'a mut Mock, &'a mut Vec<Vec<String>>);
+            impl Runner for Old<'_> {
+                fn run(&mut self, argv: &[String], c: bool) -> Result<String, String> {
+                    match argv.get(1).map(String::as_str) {
+                        Some("screen-place") => Err("unrecognized subcommand 'screen-place'".into()),
+                        Some("screen-nudge") => {
+                            self.1.push(argv.to_vec());
+                            Ok(String::new())
+                        }
+                        _ => self.0.run(argv, c),
+                    }
+                }
+                fn passthrough(&mut self, l: &str) -> Result<String, String> {
+                    self.0.passthrough(l)
+                }
+                fn toast(&mut self, t: &str) {
+                    self.0.toast(t)
+                }
+                fn captions(&mut self, on: bool) -> Result<(), String> {
+                    self.0.captions(on)
+                }
+                fn skyboxes(&mut self) -> Vec<String> {
+                    vec![]
+                }
+            }
+            let mut old = Old(&mut m, &mut calls);
+            execute(&["nudge".into(), "right".into()], "", &mut None, "wayvrctl", &mut old);
+        }
+        assert_eq!(calls, [["wayvrctl", "screen-nudge", "SUNSHINE", "right"]]);
+        assert_eq!(m.toasts, ["Screen moved right"]);
     }
 
     #[test]

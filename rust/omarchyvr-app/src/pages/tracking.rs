@@ -165,11 +165,16 @@ fn eyes(ui: &mut Ui, app: &mut PimaxApp) {
     let (status, status_ok) = app.core.eye_status();
     section(ui, "Eyes", None, |ui| {
         let p = theme::pal(ui);
-        switch_row(ui, &mut app.core.toggles.eye, "Eye tracking", Some("Visual only: a small dot where you look in Work. Your eyes never click, point, scroll or pick a window. It starts with every session (with the built-in test calibration until you calibrate your own); if it cannot start, VR keeps running without it."), ed && (caps.eye || caps.no_eye || t.eye));
+        switch_row(ui, &mut app.core.toggles.eye, "Eye tracking", Some("A small dot where you look in Work. By default your eyes never click, point, move the mouse or pick a window. It starts with every session (with the built-in test calibration until you calibrate your own); if it cannot start, VR keeps running without it."), ed && (caps.eye || caps.no_eye || t.eye));
         widgets::status(ui, &status, if status_ok { p.ok } else { p.warn });
         let mut dot = app.core.eye_settings.dot;
         if switch_row(ui, &mut dot, "Gaze dot", Some("The dot where you look, in Work."), app.core.toggles.eye).changed() {
             app.core.set_eye_dot(dot);
+        }
+        // the ONE gaze input switch (user decision 2026-10-17): off = the gaze is only a visual point
+        let mut mouse = app.core.eye_settings.mouse;
+        if switch_row(ui, &mut mouse, "Eyes as a mouse", Some("Your eyes move the pointer and can click. Off (default): your eyes only show a dot. Takes effect at the next Work start."), app.core.toggles.eye).changed() {
+            app.core.set_eye_mouse(mouse);
         }
         // which start list and which calibration: in plain words, with the switch between the built-in test calibration and yours
         let own = app.core.facts.eye_calibration;
@@ -188,10 +193,6 @@ fn eyes(ui: &mut Ui, app: &mut PimaxApp) {
         widgets::status(ui, &app.core.eye_sources_text(), if builtin { p.warn } else { p.dim });
         if !dev {
             return;
-        }
-        let mut targeting = app.core.eye_settings.targeting;
-        if switch_row(ui, &mut targeting, "Gaze targets windows", Some("Developer: voice commands may use the window you look at (next desk start)."), true).changed() {
-            app.core.set_eye_targeting(targeting);
         }
         // the laser that shows where you look, in the running session
         let wayvr = app.core.live.alive("wayvr") || (app.core.demo && app.core.live.service.is_some());

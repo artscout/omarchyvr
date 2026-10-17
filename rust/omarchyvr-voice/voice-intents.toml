@@ -725,6 +725,25 @@ run = ["@win", "nudge", "{side}"]
 safety = "safe"
 source = "user request 2026-10-15"
 
+# user decision 2026-10-17: a screen is PLACED beside another, as seen from where the head is now; the others make
+# room so no two overlap from there (WayVR viewlayout, `wayvrctl screen-place NAME left|right|up|down|front [--of O]`)
+[[intent]]
+id = "win.screen.place"
+phrases = ["put screen {screen} {side} of screen {b}", "move screen {screen} {side} of screen {b}", "put screen {screen} to the {side} of screen {b}", "move screen {screen} to the {side} of screen {b}", "put screen {screen} {side} screen {b}", "put the {screen} screen {side} the {b} screen", "put screen {screen} {side} to screen {b}", "move screen {screen} {side} to screen {b}"]
+slots = { screen = "screen", side = "word", b = "screen" }
+gloss = "place screen N left of / right of / above / below / next to screen M (the VR screen itself)"
+run = ["@win", "place", "{screen}", "{side}", "{b}"]
+safety = "safe"
+source = "user request 2026-10-17"
+
+[[intent]]
+id = "win.screen.here"
+phrases = ["bring this screen here", "bring the screen here", "put this screen here", "trae la pantalla aqui"]
+gloss = "the VR screen looked at / focused straight in front of you; the others make room"
+run = ["@win", "nudge", "here"]
+safety = "safe"
+source = "user request 2026-10-17"
+
 [[intent]]
 id = "win.screen.closer"
 phrases = ["bring it closer", "move it closer", "bring the screen closer", "bring this closer", "closer", "acerca la pantalla"]

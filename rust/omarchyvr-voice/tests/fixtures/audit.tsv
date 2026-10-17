@@ -248,6 +248,10 @@ win.list	list the screens and their apps
 win.screen.move	send this to the right screen	side=right
 win.screen.nudge	move this screen down a bit	side=down
 win.screen.nudge	move the window to the left	side=left
+win.screen.place	put screen 2 above screen 1	screen=2,side=above,b=1
+win.screen.place	move screen 5 to the left of screen 4	screen=5,side=left,b=4
+win.screen.here	bring the screen here
+win.screen.here	bring this screen here
 win.screen.closer	bring the screen a bit closer
 win.screen.farther	push the screen further away
 win.screen.bigger	zoom in please

@@ -45,43 +45,83 @@ else's eyes. Run the app's eye calibration step to make your own; after that it 
 identified by path **and** SHA-256 (`EYE_BASE_*` in the script). A changed list needs a reviewed new hash. The private
 full list and the USB transcripts stay refused. `tools/leak-scan-test.sh` checks both.
 
-## Eye tracking: always on, visual only (user decision 2026-10-16)
+## Eye tracking: on, and only a visual point (user decisions 2026-10-16 and 2026-10-17)
 
-Eye tracking is on in every session when the eye build and `~/.config/omarchyvr/eye-calibration.toml` exist. If it is not
-calibrated it simply does not run (the app says "Not calibrated"); if it cannot start, VR keeps running without it.
+Eye tracking is on in every session when the eye build and a calibration exist. If it is not calibrated it simply
+does not run (the app says "Not calibrated"); if it cannot start, VR keeps running without it.
 
-**It is only a visual effect.** You see a small, dim dot where your eyes land on the WayVR screens (Work). The gaze is
-never a pointer: it does not hover, click, select, scroll, move the mouse or target a window for voice. Nothing is drawn
-in Play/SteamVR (no overlay there); Monado just runs the tracker (`PIMAX_EYE=1`) when the eye build is the one in use.
+**By default the gaze is only a visual point.** You see a small, dim dot where your eyes land on the WayVR screens
+(Work). The gaze is never a mouse: it does not hover, click, focus a window, move the cursor, scroll, select, or pick
+the window for voice ("this"). Nothing is drawn in Play/SteamVR (no overlay there); Monado just runs the tracker
+(`PIMAX_EYE=1`) when the eye build is the one in use.
 
-App: the Pimax app Home, row "Eye tracking (visual only)": the switch (saved, `--no-eye` in the start arguments when
-off), a plain status line (Off / Running / Not calibrated / Not available / Not running) and "Show the gaze dot in Work"
-(`dot=` in `~/.config/omarchyvr/eye.conf`, default on). Developer mode adds "gaze may target windows for voice"
-(`targeting=on`, default off: then `gaze_target: true` is written and `wayvrctl gaze` / `omarchyvr-voice gaze` work as below)
-and the old gaze pointer toggle (only with `omarchyvr desk start --eye`).
-In WayVR, `wayvrctl gaze` answers `tracking: false` unless `gaze_target` or `gaze_pointer` is on, so the dot alone never
-feeds voice targeting.
+User, 2026-10-17: "Our eyes should not trigger the click. Only eyes POINT by default, not eyes = mouse in Work."
+Then: "Mouse is not gaze, never make it a mouse, it's just a point", and finally: the user may turn gaze-as-mouse on
+with ONE explicit option, default off.
 
-The text below describes the developer path (targeting on).
+**The one switch.** App: Tracking page, Eyes card, **"Eyes as a mouse"** (off by default; help text "Your eyes move
+the pointer and can click."). Saved as `gaze_mouse=on|off` in `~/.config/omarchyvr/eye.conf`; it applies at the next
+Work start. With it on, the eyes move WayVR's pointer, a controller click that is not aimed at a screen clicks where
+you look, and voice "this" may use the window you look at. There is no dwell click (`gaze_dwell_ms: 0` always).
+Every other gaze-input switch is gone: the WayVR page's developer "Gaze pointer" and the Tracking page's developer
+"Gaze targets windows".
+
+App, Home and Tracking: "Eye tracking" (saved, `--no-eye` in the start arguments when off), a plain status line
+(Off / Running / Not calibrated / Not available / Not running) and "Gaze dot" (`dot=` in `eye.conf`, default on).
+
+### Why the gaze clicked before (2026-10-17)
+- `rust/omarchyvr-tools/src/vr/wayvr_conf.rs:109`: the app's WayVR settings had **`gaze_pointer: true` as the code
+  default** (since the first public snapshot `f375aca`, the same in the lab). The WayVR page showed it as a switch that
+  was ON ("Gaze pointer", developer mode), and every `wayvr-desk.conf` the app saved carried `gaze_pointer = true`,
+  which `desk start` wrote to `conf.d/50-pimax-app.yaml`.
+- The 2026-10-16 "visual only" fix did not change that default. It only **overrode** it: `conf.d/55-eye.yaml` (sorts
+  after 50) wrote `gaze_pointer: false`, and only in the silent eye mode. With `--eye` (the old pointer mode, still
+  passed by the app for an older launcher and by the Play eye switch) or with no 55 file, the 50 file's
+  `gaze_pointer: true` (and a hand-made `20-gaze.yaml` in the old lab WayVR home: `gaze_pointer: true`,
+  `gaze_over_controllers: true`) reached WayVR, and the eyes became the mouse: the gaze hovered, and a controller
+  trigger clicked where you looked.
+- WayVR itself also offers eye pointers of its own: the handsfree modes "Eye tracking" / "Eye only" (dashboard
+  setting, keyboard bar, `wayvrctl handsfree`), saved by its dashboard after our conf.d files.
+
+The clean reinstall did not cause it (it resets `wayvr-desk.conf`, so the next save wrote the bad default again).
+
+### How it is closed now
+- **One gate in WayVR** (`forks/wayvr`, `wayvr/src/backend/gaze.rs`, `mod gate`): every gaze input path asks
+  `gaze_pointer`: hover/click through a free controller slot (`may_point`), gaze over the controllers
+  (`over_controllers`), the dwell click (`dwell_ms` = 0 while off), the targets `wayvrctl gaze` reports for voice
+  (`reporting`), and WayVR's own eye handsfree modes (fall back to the head pointer of the same kind). Test
+  `switch_off_no_gaze_path_can_point_click_or_focus`.
+- **One writer in omarchyvr**: `conf.d/55-eye.yaml` is written at EVERY Work start (also with eye tracking off) and is
+  the only file that sets `gaze_pointer`, `gaze_target`, `gaze_over_controllers` and `gaze_dwell_ms`; it sorts after
+  `20-gaze.yaml` and `50-pimax-app.yaml`. All of them are false/0 unless eye tracking runs AND `gaze_mouse=on`.
+  `50-pimax-app.yaml` no longer has a `gaze_pointer` key.
+- **Migration** (how a saved setting is decided): a saved `gaze_pointer = true` in `wayvr-desk.conf` and the old
+  `targeting=on` in `eye.conf` are **ignored** (read without a warning, never written again). The old app wrote
+  `gaze_pointer = true` into every saved file because it was the code default, so a saved value cannot be told apart
+  from "the user wanted it"; and the user said it was meant to be off already. Only the new key `gaze_mouse`, written
+  by the new switch, turns the gaze mouse on. Tests: `old_targeting_key_migrates_to_off`,
+  `a_saved_gaze_pointer_is_migrated_away`, `conf_files_have_unique_keys_and_no_gaze_input_by_default`.
+
+The text below describes the developer details.
 
 ### Modes (`omarchyvr desk start`; `omarchyvr vr start` also takes `--no-eye` and sets `PIMAX_EYE=1` the same way)
 
-| flags | when | Monado | WayVR (`conf.d/55-eye.yaml`) |
+| flags | when | Monado | WayVR (`conf.d/55-eye.yaml`, always written) |
 |---|---|---|---|
-| none | the eye build (`~/.local/lib/omarchyvr/monado`, the default Monado build when it is built) **and** the calibration file exist | `PIMAX_EYE=1` | `gaze_pointer: false`, `gaze_target: false` (true with `targeting=on`), `gaze_laser: true` (false with `dot=off`; dot, alpha 0.35) |
-| none | otherwise | – | file removed; the start output says why |
-| `--eye` | always (the old meaning) | `PIMAX_EYE=1`, eye build unless `--monado-build`/`PIMAX_MONADO_BUILD` | `gaze_target: true` only; the pointer stays as `20-gaze.yaml` / the app set it |
-| `--no-eye` | always | – | file removed |
+| none | the eye build (`~/.local/lib/omarchyvr/monado`) **and** a calibration exist | `PIMAX_EYE=1` | `gaze_laser: true` (false with `dot=off`); gaze input keys = `gaze_mouse` |
+| none | otherwise | – | every gaze key false; the start output says why |
+| `--eye` | always (forces eye tracking on) | `PIMAX_EYE=1`, eye build unless `--monado-build`/`PIMAX_MONADO_BUILD` | the same as the first row (before 2026-10-17 it meant "gaze pointer") |
+| `--no-eye` | always | – | every gaze key false |
 
-`55-eye.yaml` sorts after the app's `50-pimax-app.yaml`, so in silent mode it wins over the app's `gaze_pointer`.
 WayVR ignores keys it does not know: an older WayVR binary just has no laser and no gaze API.
-Nothing is sent to the headset. The device-side calibration (`PIMAX_EYE_CAL`) is never set.
-Code: `rust/omarchyvr-tools/src/vr/eye_desk.rs`.
+Nothing is sent to the headset. Code: `rust/omarchyvr-tools/src/vr/eye_desk.rs`.
 
 ### WayVR settings
 
 | key | default | meaning |
 |---|---|---|
+| `gaze_pointer` | false | **the one gate for gaze input** (`backend::gaze::gate`): the eyes move the pointer and a controller click that is not aimed at a screen clicks where you look. While false no gaze path hovers, clicks, focuses, moves the cursor or reports a target, `gaze_over_controllers` and `gaze_dwell_ms` do nothing, and WayVR's handsfree eye modes fall back to the head pointer. omarchyvr writes it from `gaze_mouse` |
+| `gaze_over_controllers`, `gaze_dwell_ms` | false, 0 | only with `gaze_pointer`; omarchyvr writes `gaze_over_controllers = gaze_mouse` and never a dwell click |
 | `gaze_target` | false | silent tracking: the filtered gaze ray is cast against the overlays every frame, with no hover, click or mouse events |
 | `gaze_laser` | false | a marker where the eyes land (turns tracking on). Shown only on a fresh, valid sample that hits an overlay, so it is hidden during blinks and invalid frames |
 | `gaze_laser_style` | `dot` | `dot`: a square of about 0.6° (1–4 cm) facing you, 5 mm in front of the hit. `ray`: the last 25 cm of a 1.5 mm line from below the chin to the hit |
@@ -173,16 +213,20 @@ Done by the user, from a stopped desk session:
    `cp $WAYVR_TARGET/release/wayvr{,ctl} ~/.local/lib/omarchyvr/wayvr/`.
 3. `cd ~/omarchyvr/rust && cargo build --release -p omarchyvr-tools -p omarchyvr-voice`, then install as usual.
 4. `omarchyvr desk start` (with your usual flags, without `--eye`). The output says
-   `eye tracking silently on: a dim gaze dot ...`.
+   `eye tracking on, visual only: a dim gaze dot ...`.
 
 ### Live test checklist
 
-1. The start output has the "silently on" line. `conf.d/55-eye.yaml` exists, and the WayVR log shows
+0. **Default:** "Eyes as a mouse" is off in the app (Tracking > Eyes). `conf.d/55-eye.yaml` has `gaze_pointer: false`,
+   `gaze_target: false`, `gaze_over_controllers: false`, `gaze_dwell_ms: 0`; `50-pimax-app.yaml` has no gaze key.
+1. The start output has the "visual only" line. `conf.d/55-eye.yaml` exists, and the WayVR log shows
    `gaze: N frames, located(orientation valid) N, accepted N ...` with non-zero counts.
 2. **No cursor:** look around the screen. The mouse pointer does not move and nothing gets hover highlights.
 3. **The dot:** a small, dim dot follows your eyes on the screens and panels. It disappears when you close your eyes
    and when you look into empty space.
 4. `wayvrctl gaze-laser off`: the dot disappears. Then run `wayvrctl gaze-laser on`.
+Steps 5-8 need "Eyes as a mouse" on (otherwise `wayvrctl gaze` answers `tracking: false` on purpose).
+
 5. Look at a window for 1 s and run `~/.local/lib/omarchyvr/wayvr/wayvrctl gaze --pretty`. `current.overlay` is
    `SUNSHINE`, `px` is inside that window, and `confidence` is 0.7 or more.
 6. Look at a window, then look away, and within 2 s run `omarchyvr-voice gaze`. The target is the first window
@@ -191,6 +235,6 @@ Done by the user, from a stopped desk session:
    is small.
 8. Look at the tab strip of a browser: `tab` is `browser`, with an index guess. Look at the groupbar of a Hyprland
    group: `tab` is `group`, with the exact member.
-9. Run `omarchyvr desk start --no-eye`: no dot and `55-eye.yaml` is gone. `wayvrctl gaze` gives `"valid":false` and no
-   `current`; `tracking` stays true only if a `gaze_pointer: true` from `20-gaze.yaml` is still in conf.d.
-10. Run `omarchyvr desk start --eye`: the old gaze pointer behaviour comes back, and `wayvrctl gaze` still works.
+9. Run `omarchyvr desk start --no-eye`: no dot; `55-eye.yaml` sets every gaze key false (even with an old
+   `20-gaze.yaml` in conf.d). `wayvrctl gaze` gives `"tracking":false`.
+10. Run `omarchyvr desk start --eye`: eye tracking on, still only the dot (no pointer) unless "Eyes as a mouse" is on.

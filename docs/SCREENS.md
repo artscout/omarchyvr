@@ -28,7 +28,7 @@ Every VR screen has a fixed number. It is the same everywhere: the number badge 
   2 and 3 are hidden.
 - The numbers are not Hyprland workspace numbers (the left screen may show workspace 11). "Workspace N" in voice stays
   the Hyprland workspace.
-- "Here" means the screen you are looking at, else the focused one.
+- "Here" means the focused screen (the screen you are looking at only with "Eyes as a mouse" on, docs/EYE.md).
 - The badges: `wayvrctl screen-numbers show|hide|flash [N]|off|ondemand|always` (WayVR 29c5a2c). Voice flashes them
   on "Max" alone and on screen commands, and flashes the target screen N after a move (`windows::badges`); voice also
   has "show / hide / always show screen numbers". A missing command (older WayVR) is ignored.
@@ -72,9 +72,9 @@ Under the selector, a readiness line shows the state of the screens:
    - Any failure is written to `<session dir>/screens.txt` and shown in the app; the session goes on with the
      screens that exist.
 3. **Layout in VR.** WayVR names each screen after its output.
-   - `wayvrctl desk-screens` (WayVR, eye-gaze branch) places the screens: the main one in front of the head, the others
-     edge to edge left, right and above it, all facing the head. Up-left and up-right sit edge to edge above the left and
-     right screens, the same way up sits above main (`grabmath::desk_neighbour`, slots `up-left` / `up-right`).
+   - `wayvrctl desk-screens` (WayVR, eye-gaze branch) places the screens in the **default layout** (next section):
+     two rows of three around the head, none overlapping from the head. A screen already shown and not re-placed
+     stays where you put it; a newly shown one takes its slot and moves aside just enough if that slot is taken.
    - The same command also shows or hides each screen.
    - Presets call it with `--place --hide-others`. In that case WayVR app panels are not used.
 4. **Screens on demand.** `omarchyvr desk screens watch` is a small process of the session (omarchyvrd leaf component
@@ -102,6 +102,82 @@ Under the selector, a readiness line shows the state of the screens:
    - What happened in the report: "put everything in its own window" had put Chrome on the left screen and the
      Pimax app on the right one; "put everything in cinema mode" then hid both screens (cinema shows one), with no
      word about it, so the apps looked closed. Hyprland still had all three apps.
+
+## The default layout and screen placement (user decisions 2026-10-17)
+
+"Set a default position for the screens, 6 in total, that NEVER overlap each other from one perspective." And: a
+command like "move this left" means "put THIS screen to the LEFT of the other one", seen from where the head is NOW;
+no continuous checking, the placement is computed once per command.
+
+![The default layout: top-down and first person](img/screens-default-layout.png)
+
+**The default layout** (Work start, presets, Reset screens; WayVR `windowing/viewlayout.rs`, `default_layout`):
+```
+ 5 up-left   4 up   6 up-right      <- the upper row: a band of elevation above the lower one
+ 2 left     1 main  3 right
+```
+Nothing in it is a fixed angle: everything comes from each screen's size and distance.
+- **Lower row:** main straight ahead of the head (level) at the distance (`-d`, 2.5 m), `-w` wide (2 m), facing you.
+  Left and right are turned about the head (the world's up axis) by the smallest angle that leaves **1.5 deg**
+  between their edges and main's, as seen from the head (`MARGIN`; more if `--gap` metres at that distance is more).
+- **Upper row:** each screen is turned up by the smallest angle that puts its LOWEST point 1.5 deg above the
+  HIGHEST point of the lower row. Rows are then bands of elevation, so no turn along a row can make the rows overlap.
+  Up is above main; up-left and up-right start at the azimuth of left and right and are pushed further out only as
+  far as needed, because the top row sits higher, where the same width covers more azimuth.
+- Every screen faces the head and keeps the distance.
+
+The numbers for six 2 m wide 16:9 screens 2.5 m away (from the test `default_layout_diagram`, which also writes the
+picture above):
+
+| screen | yaw (+ = left) | pitch | size |
+|---|---|---|---|
+| 1 main | 0 | 0 | 2.00 x 1.125 m |
+| 2 left | +45.1 deg | 0 | same |
+| 3 right | -45.1 deg | 0 | same |
+| 4 up | 0 | +27.9 deg | same |
+| 5 up-left | +56.3 deg | +27.9 deg | same |
+| 6 up-right | -56.3 deg | +27.9 deg | same |
+
+(45.1 = 2 x atan(1 / 2.5) + 1.5: half widths of both screens plus the margin.)
+
+**Do two screens overlap from here?** (`viewlayout::overlap`) Both flat screens are projected through the eye onto
+the plane facing the mean of their two directions (a central projection keeps straight edges straight, so each one is
+a convex quadrilateral), and they overlap unless an edge normal separates them by more than the margin (separating axis
+test). This is exact for flat screens; the 1.5 deg margin covers curved ones and the eye moving a few cm in the head.
+
+**Placing a screen** (`viewlayout::place`), once per command, from the head pose at that moment:
+- **left / right / up / down**: the screen takes the pose of its reference screen and is turned about the head by the
+  smallest angle that leaves the margin between them. The reference is the one named ("put screen 2 above screen 1",
+  `--of`), else its nearest neighbour on that side in the same row (or column): "move this left" moves it one place
+  to the left. With no neighbour on that side it turns one own width (height) that way. Above/below stop at 75 deg
+  elevation; with no room left there, the reference makes room instead.
+- **front** ("bring this screen here"): straight ahead of where you look now, at its own distance.
+- **swap** (`wayvrctl screen-place A swap --of B`): the two change places.
+- **closer / farther / bigger / smaller** (`screen-nudge`) change the screen as before.
+- Then **the others make room** (`viewlayout::resolve`): the moved screen (and its reference) stay fixed; every screen
+  that now overlaps another is turned along the arc around the head, away from the screen it hit, by the smallest
+  angle that frees it from the screens already settled. Sideways first: an up/down push counts 2.5 times its angle, so
+  rows stay rows. A screen that was clear of another only has to stay half the margin away from it, so pushing a
+  screen along its row never counts as hitting the row above. The result is world-locked and saved, like a grab.
+- **Reset screens** (double-click B, `wayvrctl reset-screens`, the app's Reset screens) puts every shown screen in the
+  default layout from where your head is now (slots by their number badge or `PIMAX-*` name; any other screen beside
+  them).
+- Never continuous: nothing is checked per frame, and a screen you hold or move by hand is never pushed.
+
+Voice (omarchyvr-voice `windows.rs`, `wayvrctl screen-place NAME left|right|up|down|front|swap [--of OTHER]`):
+
+| say | does |
+|---|---|
+| move this left / right / up / down | the screen goes to the left of its left neighbour (one place over), and so on |
+| put screen 2 above screen 1, move screen 5 to the left of screen 4, put screen 3 next to screen 2 | beside that screen ("next to" = right of it) |
+| bring this screen here | in front of you |
+| move it in front of me | all screens: Reset screens |
+
+An older WayVR without `screen-place` gets the old turn by a quarter of the width (`screen-nudge`).
+Tests (WayVR, `windowing/viewlayout.rs`): overlap from a viewpoint, the default layout for eight sizes and distances
+(1 m to 6 m wide, 1 m to 8 m away), "move left" with the neighbours making room, up/down/next to/front/swap, six
+screens stacked on top of each other, the user walking 1.5 m, and 600 random commands with the head turning and moving
+between them (never an overlap, nothing creeps when a command is repeated).
 
 ## Showing more screens during the session (voice)
 WayVR learns the screens (Hyprland outputs) **when it starts**; it does not pick up an output created later (checked in
@@ -182,7 +258,8 @@ The words follow the user's decisions of 2026-10-15 (docs/VOICE-DECISIONS.md):
 | say | does |
 |---|---|
 | new window / open a new window | focuses the **next free screen**, in the order left, right, up, up-left, up-right (the first whose workspace has no app), and shows it. If every screen has apps, you get an empty workspace on this screen. |
-| move this left / right / up / down, move the screen left | moves the **VR screen itself** in space: the screen you look at, else the focused one. It turns around your head by a quarter of its width or height and keeps facing you (`wayvrctl screen-nudge`). |
+| move this left / right / up / down, move the screen left | places the **VR screen itself** (the focused one; the one you look at only with "Eyes as a mouse" on) beside its neighbour on that side, as seen from your head now; the others make room so none overlaps (`wayvrctl screen-place`, see "The default layout and screen placement") |
+| put screen 2 above screen 1, move screen 5 to the left of screen 4, bring this screen here | the same placement beside the named screen, or in front of you |
 | bring it closer / push it away | the screen a quarter of its distance closer or farther (0.4 to 8 m) |
 | zoom in / zoom out, make the screen bigger / smaller | the screen 25 % bigger or smaller, in place |
 | send this to the left screen, move this app to the right screen, send this to the main screen | sends the **focused app** to the screen on that side of its own screen. From the left screen, "right" is the main one. From the up screen, "down" is the main one. |
@@ -228,6 +305,8 @@ omarchyvr desk screens create|remove [--screens N] [--dry-run]   # refused while
 omarchyvr desk screens show N | more K | add SLOT   # voice: one plain line, exit 0 / 1 (see above)
 omarchyvr desk screens watch                   # the session's watcher (started by desk start)
 wayvrctl desk-screens [--place] [--hide-others] [-w 2] [-d 2.5] [-c 0] [--gap 0.05] main=SUNSHINE left=PIMAX-LEFT right=PIMAX-RIGHT:hide up=PIMAX-UP:hide up-left=PIMAX-UPLEFT up-right=PIMAX-UPRIGHT
+wayvrctl screen-place PIMAX-UP left [--of SUNSHINE]   # left|right|up|down|front|swap: placed once from the head now; the others make room
+wayvrctl reset-screens                        # every shown screen back in the default layout
 ```
 Tests never reach the real compositor:
 - `PIMAX_HYPRCTL` points the launcher at a fake `hyprctl`;
@@ -242,4 +321,5 @@ Tests never reach the real compositor:
   - `rust/omarchyvr-tools/src/vr/screens.rs` (outputs, state, watcher);
   - `rust/omarchyvr-voice/src/windows.rs` (voice);
   - `rust/omarchyvr-gui-core/src/screens.rs` and `rust/omarchyvr-app/src/pages/screens.rs` (app);
-  - WayVR `desk_screens` in `wayvr/src/ipc/events.rs` and `grabmath::desk_neighbour`.
+  - WayVR `desk_screens`, `screen_place`, `screen_nudge` in `wayvr/src/ipc/events.rs`, the layout maths in
+    `wayvr/src/windowing/viewlayout.rs`, Reset screens in `windowing/manager.rs` (`reset_screens`).

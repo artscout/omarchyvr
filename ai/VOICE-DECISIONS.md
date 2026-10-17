@@ -34,3 +34,13 @@ Source: the session's requests (voiceact.log, ai.log, voice.log) and the user's 
     sentence cut off mid-way ("can you write uh something in the") waits for its rest instead of running.
 19. An app slot is never the user's name or a word that was not heard: "can I focus you 2" asks "Did you mean
     "youtube"?" (the closest open app or site to the words) instead of focusing a terminal by its title.
+
+## 2026-10-17 (while testing Work)
+
+20. **The eyes are a point, not a mouse.** By default the gaze only shows a dot: it never clicks, focuses, moves the
+    cursor or picks the window for voice "this" ("this" = the focused app or screen). ONE switch, default off, turns
+    gaze-as-mouse on: app Tracking > Eyes > "Eyes as a mouse" ("Your eyes move the pointer and can click"). docs/EYE.md.
+21. **Screens never overlap from where you are.** Up to 6 screens in a default layout of two rows of three, computed
+    from their sizes so none hides another from the head. "Move this left" = put this screen to the LEFT of its
+    neighbour (one place over), "put screen 2 above screen 1", "bring this screen here": each is placed ONCE from the
+    head pose at that moment, and the other screens move aside just enough. No continuous checking. docs/SCREENS.md.

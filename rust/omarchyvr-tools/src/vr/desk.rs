@@ -34,11 +34,11 @@ pub const USAGE: &str = "usage: omarchyvr desk <command> [options]
         [--voice-bin P] [--voice-hud-bin P] [--wayvrctl-bin P] [--perf-bin P] [--pimax-bin P]
         [+ the options of `omarchyvr vr start`: --fps, --monado-build, --connector, --dry-run, --force, --no-notify, ...]
       monado-service (like `omarchyvr vr start`), then omarchyvr-passthrough run (the main OpenXR app), then WayVR as an
-      overlay (CPU screencopy config). --no-passthrough: Monado + WayVR only. Eye tracking (visual only: a dim dot, never input; ~/.config/omarchyvr/eye.conf) is on when the
+      overlay (CPU screencopy config). --no-passthrough: Monado + WayVR only. Eye tracking (a dim dot; never input unless gaze_mouse=on in ~/.config/omarchyvr/eye.conf) is on when the
       eye build (~/.local/lib/omarchyvr/monado) and ~/.config/omarchyvr/eye-calibration.toml exist: PIMAX_EYE=1 and
-      conf.d/55-eye.yaml (no gaze pointer, a dim gaze dot, no voice targeting; docs/EYE.md); --no-eye turns
-      it off. --eye: PIMAX_EYE=1 and the build in ~/.local/lib/omarchyvr/monado (unless --monado-build or
-      PIMAX_MONADO_BUILD says otherwise) with the gaze pointer as configured. --6dof: live 6DoF head
+      conf.d/55-eye.yaml (written every start, the only file with WayVR's gaze input keys; docs/EYE.md); --no-eye
+      turns it off. --eye: PIMAX_EYE=1 and the build in ~/.local/lib/omarchyvr/monado (unless --monado-build or
+      PIMAX_MONADO_BUILD says otherwise), still only the dot. --6dof: live 6DoF head
       tracking: starts `pimax-cam broker` first (stopped last by `desk stop`), PIMAX_SLAM=1 PIMAX_CAM_AE=1
       PIMAX_CAM_SOURCE=broker + the Basalt config for Monado, passthrough reads the broker; needs the merged Monado
       build (eye + slam, branch desk of the Monado fork) and refuses a build without the 6DoF code.

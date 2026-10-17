@@ -422,7 +422,7 @@ pub struct AppCore {
     pub demo_subtitles: bool,
     /// The eye laser as last switched from the app (WayVR has no query for it).
     pub eye_laser: Option<bool>,
-    /// `~/.config/omarchyvr/eye.conf`: the gaze dot (visual effect) and the developer targeting switch.
+    /// `~/.config/omarchyvr/eye.conf`: the gaze dot (visual effect) and "Eyes as a mouse" (default off).
     pub eye_settings: omarchyvr_config::eye::EyeSettings,
     /// The last headset restart's result.
     pub headset_reset: Option<crate::reset::ResetResult>,
@@ -2191,9 +2191,9 @@ impl AppCore {
         }
     }
 
-    /// Developer: gaze may target windows for voice (off by default; takes effect at the next desk start).
-    pub fn set_eye_targeting(&mut self, on: bool) {
-        self.eye_settings.targeting = on;
+    /// "Eyes as a mouse" (`gaze_mouse` in eye.conf, the one gaze input switch, default off; next desk start).
+    pub fn set_eye_mouse(&mut self, on: bool) {
+        self.eye_settings.mouse = on;
         self.save_eye_settings();
     }
 
