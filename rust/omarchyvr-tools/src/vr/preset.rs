@@ -20,14 +20,13 @@
 //! | preset | screens | curvature | size | passthrough |
 //! |---|---|---|---|---|
 //! | cinema (default) | 1, 3.2 m wide at 3.5 m | 0.35 | big | dimmed (gain 0.35) |
-//! | cinema-huge (`imax`, `huge-cinema`, `theater`) | 1, 6 m wide at 4.36 m (68 deg; 11 m at 8 m when WayVR allows) | 0.2 | huge | off (black), backdrop off |
+//! | cinema-huge (`imax`, `huge-cinema`, `theater`) | 1, 11 m wide at 8 m (68 deg) | 0.2 | huge | off (black), backdrop off |
 //! | work-3 (`work`) | 3: desktop + 2 app panels, 1.6 m at 2 m | flat | | normal |
 //! | work-1 | 1, 2 m at 2.2 m | flat | | normal |
 //! | assistant | all, 2 m at 2.5 m | 0.15 | | normal, + voice captions at start |
 //!
-//! cinema-huge: the wish is a mid-theatre seat (11 m wide at 8 m, 68 degrees, [`huge_size`]), but WayVR clamps IPC
-//! width to 0.3..6 m (and `grab_size_max` 6 m resets bigger screens), so today the same angle is 6 m at 4.36 m.
-//! Raising WayVR's caps and [`WAYVR_MAX_WIDTH`] gives the full size. docs/CINEMA.md.
+//! cinema-huge: a mid-theatre seat, 11 m wide at 8 m, 68 degrees ([`huge_size`]). It needs the WayVR fork with the
+//! 20 m caps (branch `no-auto-reset`); with an older WayVR set [`WAYVR_MAX_WIDTH`] to 6.0. docs/CINEMA.md.
 //!
 //! `default_curvature` in the YAML applies to screens without a saved curvature; the live layout sets it on every
 //! shown screen. `screen_max_height` (capture size) only changes at the next start.
@@ -58,12 +57,13 @@ pub const HUGE_TARGET_WIDTH: f32 = 11.0;
 pub const HUGE_TARGET_DISTANCE: f32 = 8.0;
 /// cinema-huge: gentle curve so the edges stay readable.
 pub const HUGE_CURVATURE: f32 = 0.2;
-/// What our WayVR accepts today: `desk-layout` / `desk-screens` clamp width to 0.3..6 m and distance to 0.4..8 m, and
-/// `grab_size_max` (6 m, x1.1) auto-resets a larger screen. Raise this (and WayVR's caps) to get the full 11 m at 8 m.
-pub const WAYVR_MAX_WIDTH: f32 = 6.0;
+/// What our WayVR accepts: `desk-layout` / `desk-screens` clamp width and distance to 20 m (WayVR branch
+/// `no-auto-reset`, `DESK_MAX_WIDTH` / `DESK_MAX_DISTANCE`; `grab_size_max` / `grab_dist_max` 20 m). An older WayVR
+/// clamped to 6 m wide / 8 m away: then set this back to 6.0 and the preset keeps the angle at 6 m / 4.36 m.
+pub const WAYVR_MAX_WIDTH: f32 = 12.0;
 
 /// The huge cinema's (width, distance) in metres: the target, scaled down together (same angle on the eye) when WayVR's
-/// width cap is lower: 6 m at 4.36 m today, 11 m at 8 m once the cap allows it.
+/// width cap is lower (6 m at 4.36 m with a 6 m cap); 11 m at 8 m with today's 12 m.
 pub fn huge_size() -> (f32, f32) {
     let k = (WAYVR_MAX_WIDTH / HUGE_TARGET_WIDTH).min(1.0);
     let r = |x: f32| (x * 100.0).round() / 100.0;
@@ -450,7 +450,7 @@ mod tests {
         assert!(Preset::ALL.contains(&Preset::CinemaHuge));
         // inside the WayVR caps (ipc/events.rs clamps width 0.3..6 and distance 0.4..8)
         let l = Preset::CinemaHuge.layout();
-        assert_eq!((l.screens, l.width, l.distance, l.curvature), (1, 6.0, 4.36, 0.2));
+        assert_eq!((l.screens, l.width, l.distance, l.curvature), (1, 11.0, 8.0, 0.2));
         assert!(l.width <= WAYVR_MAX_WIDTH && l.distance <= 8.0 && l.distance >= 0.4);
         // the same angle as the wish (11 m at 8 m = 68 degrees), 65..75 degrees
         let fov = Preset::fov_deg(l.width, l.distance);
@@ -468,7 +468,7 @@ mod tests {
         assert_eq!(s[1], Step::Wayvrctl(vec!["skybox".into(), "off".into()]));
         assert_eq!(
             s[2],
-            Step::Wayvrctl(["desk-layout", "1", "--curvature", "0.2", "--width", "6", "--distance", "4.36"].map(String::from).to_vec())
+            Step::Wayvrctl(["desk-layout", "1", "--curvature", "0.2", "--width", "11", "--distance", "8"].map(String::from).to_vec())
         );
         // with VR screens: placed (--place) with the huge numbers, the others hidden
         use crate::vr::screens::Slot;
@@ -476,7 +476,7 @@ mod tests {
         let s = live_steps(Preset::CinemaHuge, &[], Some(&vis), false);
         let Step::Wayvrctl(a) = &s[2] else { panic!("{s:?}") };
         let line = a.join(" ");
-        assert!(line.starts_with("desk-screens --place --width 6 --distance 4.36 --curvature 0.2 --hide-others"), "{line}");
+        assert!(line.starts_with("desk-screens --place --width 11 --distance 8 --curvature 0.2 --hide-others"), "{line}");
         // other presets keep skybox alone and place only on request
         assert!(!live_steps(Preset::Cinema, &[], Some(&vis), false).iter().any(|s| matches!(s, Step::Wayvrctl(a) if a[0] == "skybox" || a.contains(&"--place".to_string()))));
         // the conf round-trips

@@ -15,18 +15,17 @@ start-argv.txt, so a restart keeps it.
 - One source of truth for the numbers: `huge_size()` in `rust/omarchyvr-tools/src/vr/preset.rs`.
 
 ## Numbers
-| | wish (mid-theatre seat) | sent to WayVR today |
-|---|---|---|
-| width | 11 m | 6 m |
-| distance | 8 m | 4.36 m |
-| horizontal view | 68 degrees | 68 degrees (same angle) |
-| curvature | 0.2 | 0.2 |
+| | value |
+|---|---|
+| width | 11 m |
+| distance | 8 m |
+| horizontal view | 68 degrees |
+| curvature | 0.2 |
 
-The wish is "a little bit far away but big". WayVR (our fork) clamps `desk-layout` / `desk-screens` width to 0.3..6 m
-and distance to 0.4..8 m (`ipc/events.rs`), and `grab_size_max` 6 m (x1.1) makes `window.rs` auto-reset a bigger
-screen. So today the screen keeps the angle but comes closer: 6 m at 4.36 m. Same view size, less "far away" depth.
-Follow-up: raise those caps in WayVR (width to 12 m, distance to 10 m, `grab_size_max`/`grab_dist_max`), then set
-`WAYVR_MAX_WIDTH` to 12.0 in preset.rs and the preset sends 11 m at 8 m by itself.
+A mid-theatre seat: "a little bit far away but big". It needs our WayVR fork with the raised caps (branch
+`no-auto-reset`: desk screens up to 20 m wide and 20 m away, `grab_size_max` / `grab_dist_max` 20 m, so a big screen
+is not reset as "invalid"). With an older WayVR (6 m / 8 m caps), set `WAYVR_MAX_WIDTH` back to 6.0 in preset.rs and
+the preset keeps the same angle at 6 m wide, 4.36 m away.
 
 ## Leaving it
 "Max, exit cinema" / "exit huge cinema" / "exit imax" / "normal screens": the mode from before comes back with its

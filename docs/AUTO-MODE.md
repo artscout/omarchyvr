@@ -78,7 +78,7 @@ live with `omarchyvr desk preset NAME` or by voice ([VOICE.md](VOICE.md)).
 | preset | screens (live layout) | conf.d | launcher |
 |---|---|---|---|
 | cinema (default) | 1 big curved | `default_curvature: 0.35` | passthrough dimmed: `--gain 0.35` |
-| cinema-huge (`imax`, `huge-cinema`, `theater`) | 1 huge curved (6 m at 4.36 m, 68 degrees; docs/CINEMA.md) | `default_curvature: 0.2` | passthrough off (`--off`), backdrop off |
+| cinema-huge (`imax`, `huge-cinema`, `theater`) | 1 huge curved (11 m at 8 m, 68 degrees; docs/CINEMA.md) | `default_curvature: 0.2` | passthrough off (`--off`), backdrop off |
 | work-3 (alias work) | desktop + 2 WayVR app panels, flat | `default_curvature: 0.0`, `screen_max_height: 2160` | - |
 | work-1 | 1 flat | same as work-3 | - |
 | assistant | all, slightly curved | `default_curvature: 0.15` | `--voice` (captions + commands) |
