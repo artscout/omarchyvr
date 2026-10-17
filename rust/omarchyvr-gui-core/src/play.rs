@@ -172,7 +172,10 @@ impl AppCore {
 
     /// The start job Play runs now (without the cap step).
     fn play_start_job(&self) -> Result<JobSpec, String> {
-        if self.state.last_vr {
+        if self.state.last_vr && self.home_lands() && self.start_game().is_none() {
+            // Start in VR home (default on): Play lands in the home panel (docs/VR-HOME.md); Play for a chosen game starts its session
+            self.home_start_job(self.consent_force)
+        } else if self.state.last_vr {
             self.vr_start_job(self.consent_force)
         } else {
             self.desk_start_job(self.consent_force)
@@ -234,7 +237,10 @@ impl AppCore {
             Gate::NeedsConsent(_) => true,
             Gate::Ready => false,
         };
-        let start = if to_vr {
+        // Start in VR home: Play lands in the home, unless the switch is for a given game (the SteamVR switch)
+        let start = if to_vr && game.is_none() && self.home_lands() {
+            self.own_scope(self.home_start_cmd(force), "vr")
+        } else if to_vr {
             let mut c = Cmd::with_args(self.launcher_bin().display().to_string(), crate::launcher::vr_game_args(&t, force, self.light_game(), game.as_deref()));
             for (k, v) in self.launcher_env() {
                 c = c.env(&k, v);
@@ -269,7 +275,8 @@ impl AppCore {
 
     /// Play with SteamVR (Games run with: SteamVR) needs a Steam that did not come from inside SteamVR.
     pub fn steam_decision(&self, vr: bool) -> SteamDecision {
-        steam_decision(vr, self.facts.games_steamvr, self.live.steam_tainted.as_ref())
+        // the VR home is always Monado: SteamVR (and Steam's state) only matters when the home starts it
+        steam_decision(vr && !self.home_lands(), self.facts.games_steamvr, self.live.steam_tainted.as_ref())
     }
 
     /// The dialog text for a tainted Steam: (title, body, busy warning).
@@ -328,7 +335,7 @@ impl AppCore {
             }
         };
         // SteamVR (Games run with: SteamVR) does not run monado-service: no cap to restore
-        if let Some(svc) = self.cap_missing().filter(|_| !(vr && self.facts.games_steamvr)) {
+        if let Some(svc) = self.cap_missing().filter(|_| !(vr && self.facts.games_steamvr && !self.home_lands())) {
             match self.setcap_cmd(&svc) {
                 Ok(c) => {
                     job.steps.insert(0, Step::Note(format!("{} lacks cap_sys_nice: restoring it (password prompt)", svc.display())));
@@ -345,6 +352,8 @@ impl AppCore {
             job.label = format!("Restart Steam, then {}", job.label);
         }
         self.save_state();
+        // the headset's VR home starts Work and games with exactly these switches (home-launch.json)
+        self.save_home_launch();
         if self.spawn(job) && vr {
             self.tell_auto_game();
         }
@@ -612,8 +621,12 @@ mod tests {
         assert!(a.message.starts_with("demo mode: would run Start desk mode"), "{}", a.message);
         assert!(!a.play_is_vr());
         a.play();
-        assert!(a.message.starts_with("demo mode: would run Start VR"), "{}", a.message);
+        assert!(a.message.starts_with("demo mode: would run Start the VR home"), "Play lands in the VR home by default: {}", a.message);
         assert!(a.play_is_vr(), "start at login repeats the last side");
+        // Start in VR home off: Play starts the game session directly, as before
+        a.facts.home.start_in_home = false;
+        a.play();
+        assert!(a.message.starts_with("demo mode: would run Start VR"), "{}", a.message);
         let mut r = AppCore::demo(true, store("play-run"));
         assert_eq!(r.running_side(), Some(false), "the demo session is the desk");
         r.work();
@@ -686,6 +699,11 @@ mod tests {
         a.consent_force = true;
         a.facts.games_steamvr = true;
         a.live.steam_tainted = Some(tainted());
+        // the VR home is Monado: Play into the home never asks (SteamVR is asked for from the headset later)
+        a.play();
+        assert!(a.pending.is_none() && a.message.starts_with("demo mode: would run Start the VR home"), "{}", a.message);
+        a.log.clear();
+        a.facts.home.start_in_home = false;
         a.play();
         assert!(matches!(a.pending, Some(crate::app::Pending::RestartSteam { vr: true, .. })), "the dialog, nothing started: {:?}", a.pending);
         assert!(!a.log.iter().any(|l| l.contains("steam-restart")), "nothing is closed without the yes: {:?}", a.log);
@@ -703,6 +721,7 @@ mod tests {
         let mut b = AppCore::demo(false, store("steam-clean"));
         b.consent_force = true;
         b.facts.games_steamvr = true;
+        b.facts.home.start_in_home = false;
         b.play();
         assert!(b.pending.is_none() && b.message.starts_with("demo mode: would run Start VR"), "{}", b.message);
         let (t, body, busy) = AppCore::restart_steam_text(&tainted());

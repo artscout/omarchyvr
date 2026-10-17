@@ -43,6 +43,7 @@ pub mod gate;
 pub mod hand_models;
 pub mod hands;
 pub mod hang;
+pub mod home;
 pub mod host;
 pub mod logs;
 pub mod openvr_link;
@@ -76,7 +77,7 @@ use std::time::Duration;
 /// Usage text of the `vr` subcommands.
 pub const USAGE: &str = "usage: omarchyvr vr <command> [options]
   hand-models status|download --yes   fetch the Mercury hand models from Monado's public server (no licence, personal use; docs/HANDS.md)
-  start [--fps 72|90] [--6dof [--ctrl-track] [--hands [--hands-roles]]] [--controllers always|when-held|off] [--eye|--no-eye] [--perf] [--anchor] [--light|--no-light] [--game APPID] [--dump DIR [--dump-frames 100,300]] [--wait] [--dry-run] [--force] [--debug] [--no-set-runtime]
+  start [--fps 72|90] [--6dof [--ctrl-track] [--hands [--hands-roles]]] [--controllers always|when-held|off] [--eye|--no-eye] [--perf] [--anchor] [--light|--no-light] [--game APPID] [--home] [--dump DIR [--dump-frames 100,300]] [--wait] [--dry-run] [--force] [--debug] [--no-set-runtime]
         [--no-notify] [--monado-build DIR] [--connector NAME] [--mode N] [--timeout SECS]
       the connector is found by the headset's EDID (PVR 0xD242 / product 0x1019) unless --connector is given; the
       preflight also warns when monado-service lacks cap_sys_nice and prints the setcap line for its path.
@@ -93,6 +94,11 @@ pub const USAGE: &str = "usage: omarchyvr vr <command> [options]
       tracker in this game session. The launcher records both choices in start-argv. docs/GAME-MODE.md.
       --game APPID: the Steam game this session is for; a game that crashes with xrizer (Half-Life: Alyx and the games the
       app found crashing, `omarchyvr vr game-runtime list`) starts the session with SteamVR for this start only.
+      --home: this session is the VR home (docs/VR-HOME.md, `omarchyvr home help`): a minimal WayVR (no screens) shows
+      the home panel (Work, Games with SteamVR, the installed VR games, Room setup Quick/Full, Exit VR) in front of you,
+      over the passthrough (or WayVR's sky: ~/.config/omarchyvr/home.toml); the room anchor and room search run, no wrist
+      readout. Without --home the same panel is opened by the controllers' menu button in every Monado game session
+      (pi_menu = true, the default; hidden until pressed).
       --anchor: PIMAX_ANCHOR=1 for Monado: its head-pose ring and the world offset file that `omarchyvr-anchor apply`
       (AprilTag) and `omarchyvr-roommap relocalize --apply` (room map) write; needs the `desk` Monado build with the hook.
       --ctrl-track (with --6dof): optical 6DoF controllers, same as `desk start --ctrl-track`: `pimax-ctrltrack live
@@ -310,7 +316,7 @@ pub(crate) fn reject_leftovers(a: &Args) -> CliResult {
     }
 }
 
-fn with_deps<T>(
+pub(crate) fn with_deps<T>(
     opts: &StartOptions,
     stop_requested: &dyn Fn() -> bool,
     f: impl FnOnce(&Deps) -> T,
@@ -376,9 +382,12 @@ pub fn run(mut a: Args) -> CliResult {
             // light game mode: --light / --no-light, else the saved switch (default on); the resolved choice is recorded in
             // start-argv so every restart keeps it
             let gm = gamemode::load(&home);
+            // --home: this session is the VR home (docs/VR-HOME.md): the home panel shows at start, the room anchor and
+            // the room search run (room setup from the panel), no wrist readout; recorded in start-argv like any flag
+            let home_flag = a.flag(home::HOME_FLAG);
             let (light_flag, no_light_flag) = (a.flag("--light"), a.flag("--no-light"));
-            let light = gamemode::resolve_light(light_flag, no_light_flag, &gm).map_err(CliError::usage)?;
-            if !light_flag && !no_light_flag {
+            let light = gamemode::resolve_light(light_flag, no_light_flag, &gm).map_err(CliError::usage)? && !home_flag;
+            if !home_flag && !light_flag && !no_light_flag {
                 argv0.push(if light { "--light" } else { "--no-light" }.into());
             }
             // eye tracking in games: --eye / --no-eye, else the saved switch (default off); recorded like light
@@ -414,7 +423,7 @@ pub fn run(mut a: Args) -> CliResult {
             // --hands: camera hands (Mercury); may move the Monado build to the hands build (docs/HANDS.md)
             let hands_opt = hands::parse(&mut a, &real_env, &mut opts, &home, build_given, sixdof.is_some())?;
             // --perf: wrist readout (minimal WayVR overlay without screens + omarchyvr-perf); Monado gets PIMAX_PERF_FILE
-            let perf_wanted = a.flag("--perf");
+            let perf_wanted = a.flag("--perf") && !home_flag;
             let perf_opts = if perf_wanted && !light {
                 let wayvr = a.opt("--wayvr-bin")?.map(PathBuf::from).unwrap_or_else(|| omarchyvr_config::paths::wayvr_bin(&home));
                 let ctl = a.opt("--wayvrctl-bin")?.map(PathBuf::from).unwrap_or_else(|| wayvr.with_file_name("wayvrctl"));
@@ -514,10 +523,35 @@ pub fn run(mut a: Args) -> CliResult {
                     Some(s) => sixdof::vr_start(&opts, s, ctrl_track.as_deref(), d, &desk::RealSpawner),
                     None => session::start(&opts, d),
                 };
-                match &perf_opts {
-                    Some(p) => perf::vr_start(&opts, p, d, &desk::RealSpawner, go),
-                    None => go(),
+                // the home overlay (the VR home panel; the menu button opens it over games too) and the wrist readout
+                // share one minimal WayVR (docs/VR-HOME.md, docs/WAYVR-CONTROLS.md)
+                let overlay = home::overlay_options(&home, home_flag, perf_opts.as_ref(), &opts);
+                if opts.dry_run {
+                    if let Some(p) = &perf_opts {
+                        vout!("omarchyvr vr: --perf would also run, after the service: {} (minimal WayVR, no screens), {}", p.wayvr_bin.display(), p.perf_bin.display());
+                        vout!("       PIMAX_PERF_FILE={} for monado-service", p.stats.display());
+                    }
+                    if let Some((_, open)) = overlay.as_ref().and_then(|ov| ov.panel.as_ref()).filter(|_| !opts.wait) {
+                        vout!(
+                            "omarchyvr vr: the VR home panel ({}) on {} (minimal WayVR, no screens){}",
+                            if *open { "shown at start" } else { "the menu button opens it" },
+                            overlay.as_ref().map(|ov| ov.wayvr_bin.display().to_string()).unwrap_or_default(),
+                            if overlay.as_ref().is_some_and(|ov| ov.passthrough.is_some()) { ", the home's passthrough before it" } else { "" }
+                        );
+                    }
+                    return go();
                 }
+                let r = go();
+                if r.is_ok() {
+                    if opts.wait {
+                        if overlay.is_some() {
+                            verr!("omarchyvr vr: the VR home and --perf are ignored with --wait (the launcher stays in the foreground)");
+                        }
+                    } else if let Some(ov) = &overlay {
+                        perf::overlay_start(perf_opts.as_ref(), ov, &opts, d, &desk::RealSpawner);
+                    }
+                }
+                r
             });
             if started.is_ok() && !opts.dry_run && !opts.wait && !no_watchdog && dmn != daemon::Daemon::Executing {
                 supervise::spawn_watchdog("vr", &opts.session_dir, sixdof.is_some(), opts.notify);
@@ -592,6 +626,8 @@ pub fn run(mut a: Args) -> CliResult {
                 if let Ok(p) = perf::parse(&mut Args(Vec::new()), &real_env, &mut opts.clone(), &home, &wayvr, &wayvr) {
                     hung = perf::vr_stop_clients(&p, &opts.session_dir, d.procs, d.clock);
                 }
+                // the VR home's passthrough (only if `vr start --home` started it), after the overlay, before the service
+                home::stop_home_passthrough(&opts.session_dir, &home, d);
                 // the controller tracker (only if `vr start --ctrl-track` started it) goes before the service
                 sixdof::stop_ctrltrack(&opts.session_dir, &sixdof::default_ctrltrack_bin(&home), d.procs, d.clock);
                 // SteamVR started by `vr start` (Games run with: SteamVR), by pid, before the camera broker

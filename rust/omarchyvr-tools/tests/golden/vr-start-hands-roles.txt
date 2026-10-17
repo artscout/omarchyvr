@@ -3,6 +3,7 @@ exit Some(0)
 --- stdout
 omarchyvr vr: camera hands on (Mercury, hands take the controller roles): Monado from $ROOT/home/.local/lib/omarchyvr/monado
 omarchyvr vr: headset data: calibration = the shipped Dream Air reference, controller models = the shipped Dream Air reference, lens = the shipped Dream Air profile, gyro = the Dream Air default until the headset rests once
+omarchyvr vr: the VR home panel (the menu button opens it) on $ROOT/home/.local/lib/omarchyvr/wayvr/wayvr (minimal WayVR, no screens)
 omarchyvr vr: --6dof would first run: $ROOT/home/.local/bin/omarchyvr-slam export --out $ROOT/session/basalt, then $ROOT/home/.local/bin/pimax-cam broker (socket $ROOT/run/omarchyvr-cam-broker.sock)
 omarchyvr vr: preflight
   [warn] headset   34a4:0044 on USB but only 0/4 hidraw interfaces (udev rule linux/70-pimax.rules installed?)

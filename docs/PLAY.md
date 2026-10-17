@@ -19,8 +19,9 @@ omarchyvrd; their own switches, shared by both sides), **Play** and **Work**. Ho
   `set-mode game --runtime monado|steamvr`. It never starts WayVR or the desk AI, and before it starts anything it
   stops (by pid) what a crashed Work left and every local AI process, so the game has the whole graphics card; Home
   then shows what it stopped and, while Play runs, what uses the graphics card (docs/GAME-MODE.md,
-  docs/PLAY-WORK-AUDIT.md). Eye tracking in Play only with the switch "Eye tracking in games" (off by default). The VR
-  home/launcher it will also start is still to be decided.
+  docs/PLAY-WORK-AUDIT.md). Eye tracking in Play only with the switch "Eye tracking in games" (off by default). With
+  "Start in VR home" (on by default) Play starts the VR home: a panel in the headset with Work, Games with SteamVR,
+  the installed VR games, Room setup Quick/Full and Exit VR (docs/VR-HOME.md).
 - **Work**: the WayVR desk on top of the base: `omarchyvr desk start` with the base + desk switches (screens,
   passthrough, voice, AI, captions, presets, eye tracking). The first Work press asks the Work questions first (voice
   assistant, Lara, speech; docs/WORK-FIRST-RUN.md) and starts Work once they are answered; later presses start at once.

@@ -1049,7 +1049,7 @@ mod tests {
         a.consent_force = true; // the demo kernel log has WayVR Xid 31 faults
         a.work_setup.record.done = false;
         a.play();
-        assert!(a.message.starts_with("demo mode: would run Start VR"), "Play never shows the Work questions: {}", a.message);
+        assert!(a.message.starts_with("demo mode: would run Start VR") || a.message.starts_with("demo mode: would run Start the VR home"), "Play never shows the Work questions: {}", a.message);
         assert_eq!(a.page, Page::Desk);
         a.work();
         assert_eq!(a.page, Page::WorkSetup, "the first Work: the questions first");

@@ -185,7 +185,9 @@ pub fn toggles_from_argv(text: &str, base: DeskToggles) -> Option<(DeskToggles, 
         t.hands = t.sixdof && has("--hands");
         t.hands_roles = t.hands && has("--hands-roles");
     }
-    t.anchor = has("--anchor");
+    if !(vr && has("--home")) {
+        t.anchor = has("--anchor");
+    }
     // an absent --controllers is the launcher's default for that side (Work: when picked up, Play: always)
     let ctrl = value("--controllers").and_then(CtrlMode::parse);
     if vr {
@@ -197,7 +199,9 @@ pub fn toggles_from_argv(text: &str, base: DeskToggles) -> Option<(DeskToggles, 
         // an absent flag is the launcher's default; `omarchyvr desk screens show|add` raises it in the record
         t.screens = crate::screens::clamp(value("--screens").and_then(|v| v.parse().ok()).unwrap_or(crate::screens::DEFAULT_SCREENS));
     }
-    if vr {
+    if vr && has("--home") {
+        // the VR home (docs/VR-HOME.md) decides its own readout and room anchor: Play's switches stay as they are
+    } else if vr {
         t.perf = has("--perf");
         // a game session's eye flag is Play's own switch ("Eye tracking in games", gamemode.toml): Work's stays
     } else {

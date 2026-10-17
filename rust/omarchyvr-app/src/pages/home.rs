@@ -38,6 +38,86 @@ pub fn show(ui: &mut Ui, app: &mut PimaxApp) {
         });
         widgets::card(ui, |ui| sound_card(ui, app));
     }
+    widgets::card(ui, |ui| vr_home_card(ui, app));
+}
+
+/// The VR home (docs/VR-HOME.md): its switches and a preview of the panel the headset shows, in WayVR's own blue.
+fn vr_home_card(ui: &mut Ui, app: &mut PimaxApp) {
+    use omarchyvr_gui_core::vrhome::{Background, Settings};
+    let p = theme::pal(ui);
+    widgets::title_row(ui, "VR home", Some(HELP_VR_HOME), |_| {});
+    ui.add_space(4.0);
+    let mut s: Settings = app.core.facts.home;
+    let busy = app.core.busy();
+    let mut changed = switch_row(ui, &mut s.start_in_home, "Start in VR home", Some("On (default): Play opens the VR home in the headset; pick Work, SteamVR, a game or the room setup there. Off: Play starts the game session directly, as before."), !busy).changed();
+    changed |= switch_row(ui, &mut s.pi_menu, "Menu button opens the VR home in games", Some("On (default): in a Monado game session the menu button of either controller (left menu, right Pi / system button) shows the VR home over the game. Under SteamVR the button is SteamVR's (its dashboard)."), !busy).changed();
+    let sel = if s.background == Background::Sky { 1 } else { 0 };
+    if let Some(i) = widgets::seg_row(ui, "Behind the VR home", Some("Passthrough (default) shows your room; Sky is WayVR's own sky."), &["Passthrough", "Sky"], sel, !busy) {
+        s.background = if i == 1 { Background::Sky } else { Background::Passthrough };
+        changed = true;
+    }
+    if changed {
+        app.core.set_home(s);
+    }
+    ui.add_space(6.0);
+    ui.label(RichText::new("In the headset (either controller's menu button opens and closes it):").size(11.5).color(p.dim));
+    ui.add_space(4.0);
+    home_preview(ui, &omarchyvr_gui_core::vrhome::preview(&app.core.facts.home_games));
+}
+
+const HELP_VR_HOME: &str = "Play lands in a small panel in the headset, in WayVR's own look: Work, Games with SteamVR, \
+your installed Steam VR games (each with the runtime it uses: xrizer on Monado, or SteamVR for games on the SteamVR list), \
+Room setup Quick or Full, Recenter, Fix floor and Exit VR. Switching between Work, SteamVR and the games goes through \
+the same full stop and start as the buttons here, one at a time, with the progress written in the headset. docs/VR-HOME.md.";
+
+/// The panel as WayVR draws it (navy card, blue buttons, red Exit): a picture, not buttons.
+fn home_preview(ui: &mut Ui, entries: &[(String, String)]) {
+    let bg = egui::Color32::from_rgb(0x14, 0x1d, 0x33);
+    let edge = egui::Color32::from_rgb(0x3a, 0x4f, 0x7a);
+    let btn = egui::Color32::from_rgb(0x2b, 0x5c, 0xc8);
+    let danger = egui::Color32::from_rgb(0xc8, 0x3a, 0x3a);
+    let text = egui::Color32::from_rgb(0xf2, 0xf5, 0xff);
+    let dim = egui::Color32::from_rgb(0xa8, 0xb4, 0xd0);
+    let width = ui.available_width();
+    egui::Frame::new().fill(bg).stroke(egui::Stroke::new(1.5, edge)).corner_radius(10).inner_margin(12).show(ui, |ui| {
+        ui.set_max_width(width - 24.0);
+        ui.label(RichText::new("VR home").size(18.0).strong().color(text));
+        ui.add_space(4.0);
+        // rows of "buttons" that fit the card (each one line, never wider than the card)
+        let max = width - 24.0;
+        let measure = |ui: &Ui, s: &str| ui.fonts_mut(|f| f.layout_no_wrap(s.to_string(), egui::FontId::proportional(12.5), text).size().x) + 20.0;
+        let mut rows: Vec<Vec<&(String, String)>> = vec![Vec::new()];
+        let mut used = 0.0;
+        for e in entries {
+            let w = measure(ui, &e.0) + 8.0;
+            if used + w > max && !rows.last().unwrap().is_empty() {
+                rows.push(Vec::new());
+                used = 0.0;
+            }
+            used += w;
+            rows.last_mut().unwrap().push(e);
+        }
+        for row in rows {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing = egui::vec2(8.0, 8.0);
+                for (name, what) in row {
+                    let fill = if name.starts_with("Exit") { danger } else { btn };
+                    egui::Frame::new()
+                        .fill(fill)
+                        .corner_radius(8)
+                        .inner_margin(egui::Margin::symmetric(10, 6))
+                        .show(ui, |ui| {
+                            ui.add(egui::Label::new(RichText::new(name).size(12.5).strong().color(text)).extend());
+                        })
+                        .response
+                        .on_hover_text(what.as_str());
+                }
+            });
+            ui.add_space(2.0);
+        }
+        ui.add_space(4.0);
+        ui.label(RichText::new("The menu button on either controller opens and closes this panel.").size(11.0).color(dim));
+    });
 }
 
 /// The headset: name and state, the line art, a few facts, the model picker, then the session (Play / Work / Stop).
@@ -206,6 +286,11 @@ fn session(ui: &mut Ui, app: &mut PimaxApp) {
     let w = ui.available_width();
     let half = ((w - 10.0) / 2.0).floor();
     // Games run with: SteamVR: Steam restarted or closed, a Steam that SteamVR started, SteamVR quit (docs/STEAMVR.md)
+    // what the VR home panel in the headset is doing or did last (docs/VR-HOME.md)
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    if let Some((ok, l)) = app.core.home_transition_line(now) {
+        widgets::status(ui, &l, if ok { p.dim } else { p.warn });
+    }
     if let Some(n) = &app.core.live.steam_note {
         widgets::status(ui, n, p.warn);
     }
@@ -277,7 +362,8 @@ fn session(ui: &mut Ui, app: &mut PimaxApp) {
             // the two main choices, side by side: Play (games) and Work (the desk)
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 10.0;
-                if big_choice(ui, icon::GAME_CONTROLLER, "Play", "Games: SteamVR and OpenXR", can(&vpf, consent), half)
+                let play_sub = if app.core.home_lands() { "VR home: games, SteamVR, Work, room" } else { "Games: SteamVR and OpenXR" };
+                if big_choice(ui, icon::GAME_CONTROLLER, "Play", play_sub, can(&vpf, consent), half)
                     .on_hover_text(format!("Games: the Pimax services (Monado, 6DoF, the controllers and their tracking) for Steam and OpenXR games, and the whole graphics card for the game: no desk, no voice, no local AI.{first}"))
                     .clicked()
                 {
@@ -321,7 +407,14 @@ fn running_lines(ui: &mut Ui, app: &mut PimaxApp, vr: bool) {
     let age = app.core.live.service.as_ref().and_then(|s| s.age).map(fmt_age).unwrap_or_default();
     ui.horizontal_wrapped(|ui| {
         widgets::dot(ui, p.ok, 3.0);
-        ui.label(caps(&format!("{} {age}", if vr { "Play running" } else { "Work running" }), 10.5, p.ok));
+        let side = if !vr {
+            "Work running"
+        } else if app.core.home_running() {
+            "VR home running"
+        } else {
+            "Play running"
+        };
+        ui.label(caps(&format!("{side} {age}"), 10.5, p.ok));
         if let Some(sp) = app.core.live.scale_pct {
             ui.label(RichText::new(omarchyvr_gui_core::quality::describe(sp)).size(11.5).color(p.dim));
         }

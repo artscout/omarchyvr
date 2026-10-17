@@ -374,6 +374,12 @@ pub struct Facts {
     pub hands_models: bool,
     /// `<session dir>/start-argv.txt` of the last start from any path, with its mtime.
     pub start_argv: Option<(String, u64)>,
+    /// The VR home's switches (`~/.config/omarchyvr/home.toml`, shared with `omarchyvr home set`; docs/VR-HOME.md).
+    pub home: omarchyvr_tools::vr::home::Settings,
+    /// The games the VR home panel lists (Steam's VR apps that are installed, with the runtime each starts with).
+    pub home_games: Vec<omarchyvr_tools::vr::home::Game>,
+    /// The last transition started from the VR home panel (`<session dir>/home-transition.txt`).
+    pub home_status: Option<omarchyvr_tools::vr::home::Status>,
     /// `<session dir>/screens.txt` (what the last Work start made of the VR screens), read here so the UI thread never does.
     pub screens_report: Option<String>,
     /// Eye chip 2104:0561 enumerated.
@@ -626,6 +632,16 @@ pub fn collect_facts(
     f.light_game = gm.light;
     f.eye_games = gm.eye_games;
     let grs = m.read_str(&omarchyvr_tools::vr::gameruntime::store_path(&p.home)).map(|t| omarchyvr_tools::vr::gameruntime::Store::parse(&t)).unwrap_or_default();
+    {
+        // the VR home's games, read through the machine (demo and tests see their own Steam files)
+        use omarchyvr_tools::vr::home as vh;
+        let steam = p.home.join(".local/share/Steam");
+        let vr = m.read_str(&steam.join("config/steamapps.vrmanifest")).map(|t| vh::parse_vrmanifest(&t)).unwrap_or_default();
+        let libs = vh::library_dirs(m.read_str(&steam.join("steamapps/libraryfolders.vdf")).as_deref(), &steam);
+        let installed = |id: &str| libs.iter().any(|l| m.exists(&l.join("steamapps").join(format!("appmanifest_{id}.acf"))));
+        let global = if f.games_steamvr { omarchyvr_tools::vr::steamvr::Games::SteamVr } else { omarchyvr_tools::vr::steamvr::Games::Monado };
+        f.home_games = vh::games_from(&vr, &grs, global, &installed, vh::MAX_GAMES);
+    }
     f.game_runtimes = grs.saved.into_values().collect();
     f.next_game = grs.next;
     let ds = m.read_str(&omarchyvr_tools::vr::display::settings_path(&p.home)).map(|t| omarchyvr_tools::vr::display::parse_settings(&t)).unwrap_or_default();
@@ -646,6 +662,8 @@ pub fn collect_facts(
     let argv = p.session_dir.join(omarchyvr_tools::vr::supervise::ARGV_FILE);
     f.screens_report = m.read_str(&p.session_dir.join(omarchyvr_tools::vr::screens::REPORT_FILE));
     f.start_argv = m.read_str(&argv).and_then(|t| m.meta(&argv).map(|x| (t, x.mtime)));
+    f.home = m.read_str(&omarchyvr_tools::vr::home::settings_path(&p.home)).map(|t| omarchyvr_tools::vr::home::parse_settings(&t)).unwrap_or_default();
+    f.home_status = m.read_str(&p.session_dir.join(omarchyvr_tools::vr::home::STATUS_FILE)).and_then(|t| omarchyvr_tools::vr::home::parse_status(&t));
     let mut check: Vec<PathBuf> = RELEASE_BINS.iter().chain(OPTIONAL_BINS.iter()).map(|(b, _)| p.bin(b)).collect();
     // the installed set (~/.local/bin) is what an installed launcher runs
     check.extend(RELEASE_BINS.iter().chain(OPTIONAL_BINS.iter()).map(|(b, _)| p.installed_bin(b)));

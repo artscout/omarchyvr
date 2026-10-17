@@ -9,7 +9,8 @@ Config: `omarchyvr desk start` rewrites `~/src/desk-out/wayvr-home-am/config/way
 Install (desk stopped, `pgrep -x wayvr` empty): `cp $WAYVR_TARGET/release/wayvr ~/.local/lib/omarchyvr/wayvr/wayvr`, and the launcher: `cd ~/omarchyvr/rust && cargo build --release -p omarchyvr-tools && install -m755 target/release/omarchyvr ~/.local/bin/omarchyvr`.
 
 ## The Work menu and Exit Work (2026-10-17)
-**Menu button:** the left controller's menu button (Touch: left menu; Index: left system; Vive: left menu; Index and
+**Menu button:** either controller's menu button (the right one since the VR home, docs/VR-HOME.md: Touch right system
+click; the Work menu now also has the VR home's entries) or the left controller's menu button (Touch: left menu; Index: left system; Vive: left menu; Index and
 Vive untested) opens the **Work menu** in front of you (0.6 m ahead, a little below your line of sight, never where it
 was last); the same button closes it. Buttons: **Exit Work**, **Close menu**, **Recenter** (the screens in front of
 you again), **WayVR settings** (its dashboard). The panel is the custom panel `work_menu` that `omarchyvr desk start` writes into WayVR's config home every start
