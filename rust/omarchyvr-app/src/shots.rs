@@ -227,6 +227,7 @@ fn shots() -> Vec<Shot> {
         },
         Shot { name: "room", running: true, page: Page::Room, height: 900.0, dark: true, setup: |_| {} },
         Shot { name: "desktop", running: true, page: Page::Desktop, height: 820.0, dark: true, setup: |_| {} },
+        Shot { name: "desktop-tall", running: true, page: Page::Desktop, height: 2600.0, dark: true, setup: |_| {} },
         Shot { name: "developer", running: true, page: Page::Developer, height: 1300.0, dark: true, setup: |_| {} },
         Shot {
             name: "setup",

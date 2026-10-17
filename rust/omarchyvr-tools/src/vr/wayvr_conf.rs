@@ -88,6 +88,12 @@ pub struct WayvrSettings {
     /// Number badges (1-6) at the top centre of each VR screen: off, on demand (default) or always
     /// (`screen_numbers`; `wayvrctl screen-numbers ...` changes it in a running session).
     pub screen_numbers: ScreenNumbers,
+    /// Pointing at a screen moves the real desktop cursor (default false: the cursor moves only when you click,
+    /// press the trigger or grab; WayVR `focus_follows_mouse_mode` = the inverse).
+    pub pointing_moves_cursor: bool,
+    /// Auto-arrange apps (default false): the screens watcher sends an app that opens or moves to its own screen
+    /// (`sort` of the screens state). Off: apps hop screens only on an explicit command.
+    pub auto_arrange: bool,
     /// The screen the voice captions sit under (`PIMAX_CAPTIONS_SCREEN` for WayVR; None = the first screen).
     pub captions_screen: Option<String>,
 }
@@ -109,6 +115,8 @@ impl Default for WayvrSettings {
             controller_models: true,
             controller_axes: false,
             screen_numbers: ScreenNumbers::OnDemand,
+            pointing_moves_cursor: false,
+            auto_arrange: false,
             captions_screen: None,
         }
     }
@@ -182,6 +190,8 @@ impl WayvrSettings {
                     Some(m) => s.screen_numbers = m,
                     None => warn.push(format!("line {}: screen_numbers wants off, ondemand or always, not {v:?}", n + 1)),
                 },
+                "pointing_moves_cursor" => s.pointing_moves_cursor = b(&mut warn).unwrap_or(s.pointing_moves_cursor),
+                "auto_arrange" => s.auto_arrange = b(&mut warn).unwrap_or(s.auto_arrange),
                 "captions_screen" => s.captions_screen = Some(v.to_string()).filter(|x| !x.is_empty()),
                 _ => warn.push(format!("line {}: unknown key {k}", n + 1)),
             }
@@ -206,6 +216,8 @@ impl WayvrSettings {
         o += &format!("controller_models = {}\n", self.controller_models);
         o += &format!("controller_axes = {}\n", self.controller_axes);
         o += &format!("screen_numbers = {}\n", self.screen_numbers.key());
+        o += &format!("pointing_moves_cursor = {}\n", self.pointing_moves_cursor);
+        o += &format!("auto_arrange = {}\n", self.auto_arrange);
         if let Some(s) = &self.captions_screen {
             o += &format!("captions_screen = {s}\n");
         }
@@ -251,7 +263,7 @@ impl WayvrSettings {
              world_lock_grab: {}\nworld_lock_pin: {}\ngrab_keep_apparent_size: {}\ngrab_dist_rate: {:.3}\n\
              grab_size_min: {:.3}\ngrab_size_max: {:.3}\ngrab_dist_min: {:.3}\ngrab_dist_max: {:.3}\n\
              enable_keyboard: {}\nhide_grab_help: {}\ncontrollers_in_work: {}\n\
-             show_controller_models: {}\ncontroller_axes: {}\nscreen_numbers: {}\n",
+             show_controller_models: {}\ncontroller_axes: {}\nscreen_numbers: {}\nfocus_follows_mouse_mode: {}\n",
             self.world_lock_grab,
             self.world_lock_pin,
             self.grab_keep_apparent_size,
@@ -265,7 +277,9 @@ impl WayvrSettings {
             self.controllers_in_work,
             self.controller_models,
             self.controller_axes,
-            self.screen_numbers.yaml_key()
+            self.screen_numbers.yaml_key(),
+            // WayVR moves the desktop cursor on every hover unless this is true (then only on click / move_mouse)
+            !self.pointing_moves_cursor
         )
     }
 }
@@ -337,6 +351,20 @@ mod tests {
         let (_, w) = WayvrSettings::parse("bogus = 1\nenable_keyboard = maybe\ngrab_dist_max = nan\nnoequals\n");
         assert_eq!(w.len(), 4, "{w:?}");
         assert_eq!(settings_path(&|k| (k == "HOME").then(|| "/home/u".to_string())), PathBuf::from("/home/u/.config/omarchyvr/wayvr-desk.conf"));
+    }
+
+    #[test]
+    fn hovering_does_not_move_the_cursor_and_apps_do_not_auto_arrange_by_default() {
+        let d = WayvrSettings::default();
+        assert!(!d.pointing_moves_cursor && !d.auto_arrange);
+        assert!(d.yaml().contains("focus_follows_mouse_mode: true\n"), "hover leaves the cursor alone: {}", d.yaml());
+        let (on, w) = WayvrSettings::parse("pointing_moves_cursor = on\nauto_arrange = true\n");
+        assert!(w.is_empty() && on.pointing_moves_cursor && on.auto_arrange);
+        assert!(on.yaml().contains("focus_follows_mouse_mode: false\n"));
+        assert_eq!(WayvrSettings::parse(&on.render()).0, on);
+        // an old file without the keys gets the safe defaults
+        let (old, _) = WayvrSettings::parse("enable_keyboard = false\n");
+        assert!(!old.pointing_moves_cursor && !old.auto_arrange);
     }
 
     #[test]

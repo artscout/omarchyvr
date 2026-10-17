@@ -12,7 +12,8 @@
 //!   run are not started again; work-1 and cinema hide them (they keep running).
 //!
 //! * with VR screens (Hyprland outputs `PIMAX-*`, `desk start --screens N`, see `screens`) there are no app panels:
-//!   `wayvrctl desk-screens --place --hide-others` puts the main screen in front of the head and the others left,
+//!   `wayvrctl desk-screens --place --hide-others` (at start, or with `desk preset NAME --replace`; a plain live switch
+//!   leaves screens that are already placed where they are and only shows/hides) puts the main screen in front of the head and the others left,
 //!   right and above it, and the preset's show state (`$XDG_RUNTIME_DIR/omarchyvr-screens.state`) says which are shown:
 //!   cinema and work-1 the main screen only, work-3 main + left + right, assistant every screen with an app.
 //!
@@ -214,11 +215,11 @@ pub enum Step {
 
 /// What `omarchyvr desk preset P` does, in order. `screens`: the VR screens' visibility under this preset (Some when
 /// the session has `PIMAX-*` outputs): then `desk-screens` replaces the arc and the app panels.
-pub fn live_steps(p: Preset, panels: &[Panel], screens: Option<&[(super::screens::Slot, String, bool)]>) -> Vec<Step> {
+pub fn live_steps(p: Preset, panels: &[Panel], screens: Option<&[(super::screens::Slot, String, bool)]>, place: bool) -> Vec<Step> {
     let mut v = vec![Step::Passthrough(p.passthrough_ctl())];
     let l = p.layout();
     if let Some(vis) = screens.filter(|s| s.len() > 1) {
-        v.push(Step::Wayvrctl(super::screens::desk_screens_args(vis, Some((l.width, l.distance, l.curvature)), true)));
+        v.push(Step::Wayvrctl(super::screens::desk_screens_args(vis, place.then_some((l.width, l.distance, l.curvature)), true)));
         return v;
     }
     if l.screens >= 3 {
@@ -286,12 +287,13 @@ pub fn apply_live(
     pt_sock: &Path,
     panels: &[Panel],
     screens: Option<&[(super::screens::Slot, String, bool)]>,
+    place: bool,
     dry_run: bool,
     out: &mut dyn FnMut(&str),
 ) -> Result<(), String> {
     use std::process::{Command, Stdio};
     let mut failures = Vec::new();
-    let steps = live_steps(p, panels, screens);
+    let steps = live_steps(p, panels, screens, place);
     let mut launched = false;
     for s in &steps {
         match s {
@@ -425,7 +427,7 @@ mod tests {
     #[test]
     fn live_steps_per_preset() {
         let panels = parse_panels(None);
-        let s = live_steps(Preset::Work3, &panels, None);
+        let s = live_steps(Preset::Work3, &panels, None, true);
         assert_eq!(s[0], Step::Passthrough("normal"));
         assert!(matches!(&s[1], Step::Panel(p) if p.name == "work-left"));
         assert!(matches!(&s[2], Step::Panel(p) if p.name == "work-right"));
@@ -433,12 +435,12 @@ mod tests {
             s[3],
             Step::Wayvrctl(["desk-layout", "3", "--curvature", "0", "--width", "1.6", "--distance", "2"].map(String::from).to_vec())
         );
-        let s = live_steps(Preset::Cinema, &panels, None);
+        let s = live_steps(Preset::Cinema, &panels, None, true);
         assert_eq!(s.len(), 2);
         assert_eq!(s[0], Step::Passthrough("dim"));
         assert!(matches!(&s[1], Step::Wayvrctl(a) if a[1] == "1" && a[3] == "0.35"));
-        assert!(!live_steps(Preset::Work1, &panels, None).iter().any(|s| matches!(s, Step::Panel(_))));
-        assert!(matches!(live_steps(Preset::Assistant, &panels, None).last(), Some(Step::Wayvrctl(a)) if a[1] == "0"));
+        assert!(!live_steps(Preset::Work1, &panels, None, true).iter().any(|s| matches!(s, Step::Panel(_))));
+        assert!(matches!(live_steps(Preset::Assistant, &panels, None, true).last(), Some(Step::Wayvrctl(a)) if a[1] == "0"));
     }
 
     #[test]
@@ -450,7 +452,7 @@ mod tests {
             (Slot::Right, "PIMAX-RIGHT".to_string(), true),
             (Slot::Up, "PIMAX-UP".to_string(), false),
         ];
-        let s = live_steps(Preset::Work3, &parse_panels(None), Some(&vis));
+        let s = live_steps(Preset::Work3, &parse_panels(None), Some(&vis), true);
         assert_eq!(s.len(), 2);
         assert!(!s.iter().any(|x| matches!(x, Step::Panel(_))));
         let Step::Wayvrctl(a) = &s[1] else { panic!() };
@@ -458,7 +460,7 @@ mod tests {
         assert!(a.contains(&"--place".to_string()) && a.contains(&"--hide-others".to_string()) && a.contains(&"up=PIMAX-UP:hide".to_string()));
         // only the main output: the old arc
         let one = vec![(Slot::Main, "SUNSHINE".to_string(), true)];
-        assert!(matches!(live_steps(Preset::Work1, &[], Some(&one)).last(), Some(Step::Wayvrctl(a)) if a[0] == "desk-layout"));
+        assert!(matches!(live_steps(Preset::Work1, &[], Some(&one), true).last(), Some(Step::Wayvrctl(a)) if a[0] == "desk-layout"));
     }
 
     #[test]
@@ -470,6 +472,7 @@ mod tests {
             Path::new("/nonexistent/pt.sock"),
             &parse_panels(None),
             None,
+            true,
             true,
             &mut |l| lines.push(l.to_string()),
         )

@@ -113,6 +113,8 @@ pub fn body(ui: &mut Ui, app: &mut PimaxApp) {
         switch_row(ui, &mut s.grab_keep_apparent_size, "Keep apparent size", Some("A screen keeps its apparent size when you push it away."), true);
         switch_row(ui, &mut s.enable_keyboard, "Keyboard", Some("The WayVR keyboard."), true);
         // gaze input lives in ONE place: Tracking > Eyes > "Eyes as a mouse" (eye.conf gaze_mouse, default off)
+        switch_row(ui, &mut s.pointing_moves_cursor, "Pointing moves the cursor", Some("Off (default): pointing at a screen leaves your real desktop cursor alone; it moves when you click, press the trigger or grab."), true);
+        switch_row(ui, &mut s.auto_arrange, "Auto-arrange apps", Some("Off (default): apps stay on the screen where you opened them and move only when you ask (\"move left\"). On: a new app of another kind is sent to its own screen."), true);
         switch_row(ui, &mut s.hide_grab_help, "Hide grab hint", None, true);
         switch_row(ui, &mut s.controllers_in_work, "Controllers in Work", Some("Off = hands only."), true);
         switch_row(ui, &mut s.controller_models, "Controller models", Some("A 3D controller in each hand in Work, like SteamVR shows; the pointer ray leaves its front tip."), true);
