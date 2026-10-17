@@ -412,6 +412,8 @@ pub struct AppCore {
     pub system: crate::system::SystemView,
     /// The Record card (omarchyvr-record).
     pub record: crate::record::RecordView,
+    /// Desktop page: web pages and VR (webvr.rs).
+    pub web: crate::webvr::WebView,
     /// `fixes.log`.
     pub fixes: FixesView,
     /// A catalogue fix whose job runs (job label, the fix): logged when the job ends.
@@ -552,6 +554,7 @@ impl AppCore {
             hand_models: Default::default(),
             system: crate::system::SystemView::default(),
             record: crate::record::RecordView::default(),
+            web: crate::webvr::WebView::default(),
             fixes: FixesView::default(),
             fix_logging: None,
             room_requested: false,
@@ -2574,6 +2577,57 @@ impl AppCore {
     }
 
     /// Open a folder in the file manager (`xdg-open`, in the background).
+    /// Desktop page: read what the default browser can do (WebGPU, WebXR) in the background; demo: this PC's report.
+    pub fn web_check(&mut self) {
+        if self.demo {
+            self.web.report = Some(crate::webvr::demo_report());
+            return;
+        }
+        let home = self.paths.home.clone();
+        self.task(Some("webvr"), move || {
+            let r = crate::webvr::report(&crate::webvr::probe_machine(&home), std::time::SystemTime::now());
+            Box::new(move |c: &mut AppCore| c.web.report = Some(r))
+        });
+    }
+
+    /// Desktop page, "Open in VR": the typed page in the user's browser on the Work desk (only while Work runs).
+    pub fn web_open(&mut self) {
+        let argv = match crate::webvr::open_plan(self.running_side(), &self.web.url) {
+            Ok(a) => a,
+            Err(e) => {
+                self.message = e;
+                return;
+            }
+        };
+        if self.demo {
+            self.message = format!("demo: would run {}", argv.join(" "));
+            return;
+        }
+        let url = argv[1].clone();
+        self.task(None, move || {
+            let r = crate::cmd::allow_start(&argv[0]).and_then(|()| {
+                std::process::Command::new(&argv[0])
+                    .args(&argv[1..])
+                    .stdin(std::process::Stdio::null())
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .spawn()
+                    .map_err(|e| format!("{}: {e}", argv[0]))
+                    .map(|mut ch| {
+                        std::thread::spawn(move || {
+                            let _ = ch.wait();
+                        });
+                    })
+            });
+            Box::new(move |c: &mut AppCore| {
+                c.message = match r {
+                    Ok(()) => format!("Opened {url} in the browser on the VR desk"),
+                    Err(e) => e,
+                }
+            })
+        });
+    }
+
     pub fn open_folder(&mut self, dir: &Path) {
         if self.demo {
             self.message = format!("demo: would open {}", dir.display());

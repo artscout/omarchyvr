@@ -2,9 +2,9 @@
 //! number of screens, the live WayVR controls, the settings of the next desk start and the voice tools.
 use crate::app::PimaxApp;
 use crate::pages::{editable, home, screens, tool_button, wayvr};
-use crate::theme::icon;
+use crate::theme::{self, icon};
 use crate::widgets::{self, section, seg_row, switch_row};
-use eframe::egui::Ui;
+use eframe::egui::{self, Ui};
 use omarchyvr_gui_core::app::Page;
 use omarchyvr_gui_core::launcher::Preset;
 use omarchyvr_gui_core::tools::ToolId;
@@ -33,6 +33,7 @@ pub fn show(ui: &mut Ui, app: &mut PimaxApp) {
         wayvr::screen_numbers(ui, app);
         home::subtitles_row(ui, app);
     });
+    web_pages(ui, app);
     if !dev {
         return;
     }
@@ -52,4 +53,65 @@ pub fn show(ui: &mut Ui, app: &mut PimaxApp) {
             }
         });
     });
+}
+
+/// "Web pages in VR": a page on a VR screen of the desk, and what the browser can do (docs/research/webxr.md).
+fn web_pages(ui: &mut Ui, app: &mut PimaxApp) {
+    use omarchyvr_gui_core::webvr::Verdict;
+    if app.core.web.report.is_none() && !app.core.task_busy("webvr") {
+        app.core.web_check();
+    }
+    section(
+        ui,
+        "Web pages in VR",
+        Some("During Work the browser is a screen in the headset: open a page here and use it with the controller pointer. A page cannot take over the headset (WebXR): no Linux browser has OpenXR yet (docs/research/webxr.md)."),
+        |ui| {
+            let side = app.core.running_side();
+            ui.horizontal_wrapped(|ui| {
+                ui.add(egui::TextEdit::singleline(&mut app.core.web.url).desired_width(300.0).hint_text("oceano-piratas.vercel.app"));
+                let ok = side == Some(false) && !app.core.web.url.trim().is_empty();
+                let r = widgets::ibutton(ui, icon::ARROW_SQUARE_OUT, "Open in VR", ok);
+                let why = match side {
+                    Some(false) => "Opens the page in your browser on the VR desk (a new tab when the browser is open).",
+                    Some(true) => "Play is for games: switch to Work to see web pages in the headset.",
+                    None => "Press Work first: web pages show on the VR screens of the desk.",
+                };
+                if r.on_hover_text(why).on_disabled_hover_text(why).clicked() {
+                    app.core.web_open();
+                }
+            });
+            if side != Some(false) {
+                widgets::note(ui, if side == Some(true) { "Play runs: web pages are part of Work." } else { "Start Work to open a page in the headset." });
+            }
+            let pal = theme::pal(ui);
+            match app.core.web.report.clone() {
+                None => {
+                    ui.horizontal(|ui| {
+                        widgets::spinner(ui);
+                        widgets::note(ui, "Checking the browser...");
+                    });
+                }
+                Some(r) => {
+                    let colour = |v: &Verdict| match v {
+                        Verdict::Yes(_) => pal.ok,
+                        Verdict::Maybe(_) => pal.warn_text,
+                        Verdict::No(_) => pal.dim,
+                    };
+                    egui::Grid::new("webvr").num_columns(2).spacing([12.0, 4.0]).show(ui, |ui| {
+                        widgets::kv(ui, "Browser", r.browser.as_str());
+                        let gpu = match &r.webgpu_used {
+                            Some(u) => format!("{}; {u}", r.webgpu.text()),
+                            None => r.webgpu.text().to_string(),
+                        };
+                        widgets::kv(ui, "WebGPU", egui::RichText::new(gpu).color(colour(&r.webgpu)));
+                        widgets::kv(ui, "Page takes over the headset (WebXR)", egui::RichText::new(format!("not possible: {}", r.webxr.text())).color(colour(&r.webxr)));
+                        widgets::kv(ui, "OpenXR for other apps", r.runtime.as_str());
+                    });
+                    if widgets::tbutton(ui, "Check again", !app.core.task_busy("webvr")).clicked() {
+                        app.core.web_check();
+                    }
+                }
+            }
+        },
+    );
 }

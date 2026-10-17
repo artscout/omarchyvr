@@ -78,6 +78,7 @@ pub mod roomflow;
 pub mod roomsetup;
 pub mod safety;
 pub mod screens;
+pub mod webvr;
 pub mod subtitles;
 pub mod system;
 pub mod term;
