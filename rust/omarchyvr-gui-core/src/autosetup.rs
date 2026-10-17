@@ -173,6 +173,16 @@ pub enum RunKind {
     Again,
     /// The app started after the restart: only the post-restart checks.
     AfterReboot,
+    /// The app started after an update by `./install.sh` (its `post-install-check` file): only the checks, once; a
+    /// problem (for example the realtime permission of a changed Monado) shows at once with its one-password Fix.
+    AfterUpdate,
+}
+
+impl RunKind {
+    /// Only the checks run (the system setup ran before): after the restart, after an update.
+    pub fn check_only(self) -> bool {
+        matches!(self, RunKind::AfterReboot | RunKind::AfterUpdate)
+    }
 }
 
 /// What the glue must do next.
@@ -234,8 +244,25 @@ pub struct AutoSetup {
     plan_steps: Vec<RootStep>,
 }
 
-/// The checklist ids the setup cares about (the rest of the checklist is the Setup page's business).
-pub const SETUP_IDS: [&str; 11] = ["headset", "udev", "udev-rule", "keepalive", "pacman-hooks", "modinfo", "merged-head-sync", "connector", "setcap-desk", "gpu", "lease"];
+/// The checklist ids the setup cares about (the rest of the checklist is the Setup page's business). The headset's parts
+/// (`headset`: its control chip, `headset-camera`, `eye-chip`) are part of it since 2026-10-17: the setup is not
+/// "ready" while one is missing (each shows with its one step and, when the headset needs waking or a power cycle, the
+/// "Get the headset ready" guide).
+pub const SETUP_IDS: [&str; 13] = [
+    "headset", "headset-camera", "eye-chip", "udev", "udev-rule", "keepalive", "pacman-hooks", "modinfo", "merged-head-sync", "connector", "setcap-desk", "gpu", "lease",
+];
+
+/// The problems that the "Get the headset ready" guide helps with: `Some(false)` the control chip is missing (wake the
+/// headset), `Some(true)` the cameras are missing (a power cycle), `None` nothing for the guide.
+pub fn guide_for(problems: &[Check]) -> Option<bool> {
+    if problems.iter().any(|p| p.id == "headset") {
+        Some(false)
+    } else if problems.iter().any(|p| p.id == "headset-camera") {
+        Some(true)
+    } else {
+        None
+    }
+}
 
 impl AutoSetup {
     /// A run that is over (Ready) or waiting for the restart.
@@ -275,8 +302,8 @@ impl AutoSetup {
         *self = AutoSetup { kind, root_job, plan_steps: plan.clone(), root_steps: plan, raw: raw_plan, ..AutoSetup::default() };
         self.phase = Phase::Looking;
         self.stages[0] = StepState::Running;
-        if kind == RunKind::AfterReboot {
-            // only the post-restart checks: the first three stages were done before the restart
+        if kind.check_only() {
+            // only the checks: the first three stages were done before the restart (or before this update)
             self.stages = [StepState::Done, StepState::Done, StepState::Done, StepState::Running];
             self.phase = Phase::Verifying;
         }
@@ -492,7 +519,7 @@ impl AutoSetup {
             self.phase = Phase::Problems;
             return Action::None;
         }
-        self.phase = if self.kind != RunKind::AfterReboot && (self.reboot || waits) || (self.kind == RunKind::AfterReboot && waits) {
+        self.phase = if !self.kind.check_only() && (self.reboot || waits) || (self.kind.check_only() && waits) {
             self.reboot = true;
             Phase::NeedsRestart
         } else {
@@ -554,7 +581,7 @@ impl AutoSetup {
 
     /// "Try again" after the password step stopped: the whole run again.
     pub fn retry(&mut self) -> Action {
-        let kind = if self.kind == RunKind::AfterReboot { RunKind::AfterReboot } else { RunKind::Again };
+        let kind = if self.kind.check_only() { self.kind } else { RunKind::Again };
         let root_job = !self.plan_steps.is_empty() && kind == RunKind::Again;
         self.start(kind, root_job)
     }
@@ -574,6 +601,7 @@ impl AutoSetup {
             Phase::FixingUser => "Fixing what needs no password...".into(),
             Phase::Password => "Setting up the system. Type your password when asked, once.".into(),
             Phase::Verifying if self.kind == RunKind::AfterReboot => "Checking after the restart...".into(),
+            Phase::Verifying if self.kind == RunKind::AfterUpdate => "Checking after the update...".into(),
             Phase::Verifying => "Checking everything again...".into(),
             Phase::NeedsRestart => "Everything is set up. One restart is left.".into(),
             Phase::Problems => format!("{} thing{} to fix", self.problems.len(), if self.problems.len() == 1 { "" } else { "s" }),
@@ -723,13 +751,15 @@ pub const EDID_FILES: [&str; 2] = ["/etc/pimax/dp-edid.bin", "/etc/modprobe.d/nv
 fn plain(id: &str) -> (&'static str, &'static str) {
     match id {
         "headset" => ("Headset found on USB", "The headset is not seen on USB. Plug it in (USB-C and DisplayPort) and turn it on."),
+        "headset-camera" => ("Headset cameras", "The headset is on, but its cameras are not on USB. The setup restarts the headset once; if they stay off, the headset needs a power cycle: follow the steps shown here (the power button first)."),
+        "eye-chip" => ("Eye tracker", "The eye tracker is switched off (normal after the headset restarted). Fix switches it on."),
         "udev" | "udev-rule" => ("Permission to use the headset", "Your user may not open the headset yet."),
         "keepalive" => ("Headset keep-alive", "The service that keeps the headset display awake is not running."),
         "pacman-hooks" => ("Driver updates keep the patch", "A driver update could drop the NVIDIA patch."),
         "modinfo" => ("NVIDIA driver is patched", "The installed NVIDIA driver is not patched for the headset."),
         "merged-head-sync" => ("Patched NVIDIA driver is loaded", "The patched NVIDIA driver is not the one running."),
         "connector" => ("Headset display mode", "The headset's display mode is not set up yet."),
-        "setcap-desk" => ("Realtime priority for VR", "VR does not have realtime priority yet."),
+        "setcap-desk" => ("Realtime priority for VR", "VR does not have realtime priority yet (a changed Monado loses it: the kernel drops it when the file is replaced). One password sets it again."),
         "gpu" => ("Graphics card", "The graphics card is not supported or not detected."),
         "lease" => ("Desktop can hand the display to VR", "This desktop cannot hand a display to VR (wp_drm_lease_device_v1)."),
         _ => ("Check", "Something is not right."),
@@ -747,7 +777,7 @@ pub fn checks_from_items(items: &[Item], edid_fix: bool, present: &dyn Fn(&Path)
     for id in SETUP_IDS {
         let Some(it) = get(id) else { continue };
         let (title, reason) = plain(id);
-        let strict = matches!(id, "udev-rule" | "pacman-hooks" | "modinfo" | "setcap-desk" | "udev");
+        let strict = matches!(id, "udev-rule" | "pacman-hooks" | "modinfo" | "setcap-desk" | "udev" | "eye-chip");
         let bad = if strict { it.level >= Level::Warn } else { it.level >= Level::Fail };
         // what the fix would be
         let mut fix = match &it.fix {
@@ -792,9 +822,44 @@ pub fn checks_from_items(items: &[Item], edid_fix: bool, present: &dyn Fn(&Path)
     out
 }
 
+/// The headset check in words that fit what USB shows: a sleeping Dream Air (its control chip `34a4:0044` off, its
+/// bridge with the cameras or the eye tracker on USB) is not "not plugged in" (real setup 2026-10-17 11:51-13:00: the
+/// chip stayed off for an hour; only a power cycle of the headset brought it back).
+/// While the control chip is off, the headset's display cannot show, so its display-mode step (the EDID-only root job)
+/// would only end in "headset display not seen" (exit 3): its Fix waits for the headset instead of asking for a password
+/// (real setup 2026-10-17 12:40-12:52: three EDID-only prompts while the chip was off; none could succeed).
+pub fn explain_headset(checks: &mut [Check], usb: &[(u16, u16)]) {
+    let state = headset_choice::headset_state_from_usb(usb);
+    if state == headset_choice::HeadsetUsb::Awake {
+        return;
+    }
+    for c in checks.iter_mut().filter(|c| c.id == "connector" && c.state == CheckState::Fail && matches!(c.fix, CheckFix::Root { .. })) {
+        c.fix = CheckFix::None;
+        c.reason = "The headset's display mode is set up once the headset is awake (see above): its display shows only then. The Fix appears here by itself.".into();
+    }
+    if state != headset_choice::HeadsetUsb::Asleep {
+        return;
+    }
+    for c in checks.iter_mut().filter(|c| c.id == "headset" && c.state == CheckState::Fail) {
+        c.title = "Headset is awake".into();
+        c.reason = "The headset is asleep or off: its control chip (34a4:0044) is not on USB, only its other parts are. Follow the steps shown here: press the headset's power button; if it stays asleep, the power cable is the last step.".into();
+        c.fix = CheckFix::None;
+    }
+}
+
+/// The checks that depend on the headset being on and awake (its parts and its display).
+pub const HEADSET_DEPENDENT: [&str; 4] = ["headset", "headset-camera", "eye-chip", "connector"];
+
+/// The check after an update looks at what an update can change on this PC (the realtime permission of a changed
+/// Monado, the access rule, the driver patch), not at the headset: a headset that sleeps while the person updates is
+/// normal and must not pull the setup screen up. Its parts are checked by the start and by the setup itself.
+pub fn update_checks(checks: &mut Vec<Check>) {
+    checks.retain(|c| !HEADSET_DEPENDENT.contains(&c.id.as_str()));
+}
+
 /// A run in a fixed state, for the screenshots (`omarchyvr-app --screenshots`) and the demo: it is driven through the
 /// real state machine with fake checks and a made-up root job output, nothing runs. `which`: `running`, `restart`,
-/// `problem`, `ready-after-reboot`, `stopped`.
+/// `problem`, `parts-asleep`, `parts-cameras`, `after-update`, `ready-after-reboot`, `stopped`.
 pub fn demo_run(which: &str, plan: &str) -> AutoSetup {
     let chk = |id: &str, state: CheckState, fix: CheckFix| {
         let (title, reason) = plain(id);
@@ -826,6 +891,43 @@ pub fn demo_run(which: &str, plan: &str) -> AutoSetup {
             for x in &mut c {
                 if x.id == "connector" {
                     *x = chk("connector", CheckState::Fail, CheckFix::Root { reboot: true });
+                }
+            }
+            s.checks_done(c);
+        }
+        // 2026-10-17 12:40: the system part ran (a restart is due) while the headset slept: its control chip and the
+        // display mode are the problems, the guide shows, Restart now stays
+        "parts-asleep" => {
+            s.start(RunKind::Fresh, true);
+            let mut c = green(&[]);
+            for x in &mut c {
+                if x.id == "headset" {
+                    *x = chk("headset", CheckState::Fail, CheckFix::None);
+                }
+                if x.id == "connector" {
+                    *x = chk("connector", CheckState::Fail, CheckFix::Root { reboot: true });
+                }
+            }
+            s.checks_done(c.clone());
+            s.root_output(&format!("{output} 5. Headset display mode at boot: EDID override (connector found after the headset wakes, up to 60 s)\n      headset display not seen: put the headset on / turn it on, then press Fix in the app (EDID override skipped, nothing else is affected)\nREBOOT=yes\n"));
+            s.root_finished(RootOutcome::Ok { reboot: true });
+            explain_headset(&mut c, &[(0x34a4, 0x43), (0x34a4, 0x14), (0x2104, 0x561)]);
+            s.checks_done(c);
+        }
+        // after the restart the cameras are still off (the setup's one headset restart did not bring them back)
+        "parts-cameras" => {
+            s.start(RunKind::AfterReboot, false);
+            let mut c = green(&[]);
+            c.push(chk("headset-camera", CheckState::Fail, CheckFix::User));
+            s.checks_done(c);
+        }
+        // the check after an update: a changed Monado lost its realtime permission
+        "after-update" => {
+            s.start(RunKind::AfterUpdate, false);
+            let mut c = green(&[]);
+            for x in &mut c {
+                if x.id == "setcap-desk" {
+                    *x = chk("setcap-desk", CheckState::Fail, CheckFix::Root { reboot: false });
                 }
             }
             s.checks_done(c);
@@ -937,15 +1039,78 @@ impl AppCore {
         std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0.0, |d| d.as_secs_f64())
     }
 
+    /// After an update by `./install.sh` (its `post-install-check` file): the setup's checks run once by themselves.
+    /// All green: nothing is shown and the file goes. A problem (for example the realtime permission of a changed
+    /// Monado): the setup screen opens with it and its one-password Fix, before anyone presses Play (real update
+    /// 2026-10-17 13:22: the password was asked by the start of Work instead).
+    pub(crate) fn post_install_poll(&mut self) {
+        if self.demo || self.state.setup != SetupStage::Done || self.onboarding.post_install_started || self.facts.at == 0 {
+            return;
+        }
+        if !self.onboarding.install.loaded {
+            self.refresh_install();
+            return;
+        }
+        if !self.onboarding.install.post_install || self.onboarding.setup.phase != Phase::Idle || self.job.is_some() {
+            return;
+        }
+        self.onboarding.post_install_started = true;
+        self.setup_start(RunKind::AfterUpdate);
+    }
+
+    /// Which "Get the headset ready" guide is on screen: `Some(need_camera)`, or None.
+    pub fn wake_target(&self) -> Option<bool> {
+        if let Some(w) = &self.onboarding.wake_only {
+            return Some(w.need_camera);
+        }
+        let s = &self.onboarding.setup;
+        match s.phase {
+            Phase::GetReady if s.selected.module().is_some_and(|m| m.id() == "dream-air") => Some(false),
+            Phase::Problems => guide_for(&s.problems),
+            _ => None,
+        }
+    }
+
+    /// Open the guide on its own (a Work/Play start or a headset restart found the headset asleep or its cameras gone).
+    /// `reason` says why in plain words; Back returns to the page it came from.
+    pub fn open_wake_guide(&mut self, reason: &str, need_camera: bool) {
+        let back = if self.page == crate::app::Page::Onboarding { crate::app::Page::Desk } else { self.page };
+        self.onboarding.wake_only = Some(crate::onboarding::WakeOnly { back, reason: reason.to_string(), need_camera });
+        self.page = crate::app::Page::Onboarding;
+    }
+
+    /// Back from the guide opened on its own.
+    pub fn close_wake_guide(&mut self) {
+        if let Some(w) = self.onboarding.wake_only.take() {
+            self.page = w.back;
+        }
+    }
+
+    /// A failed job that the guide answers: the start's camera recovery or a headset restart ended with the power-cycle
+    /// hint, or the headset's control chip was not on USB at all.
+    pub fn wake_after_failure(&mut self, text: &str) {
+        if text.contains(omarchyvr_tools::vr::reset::POWER_CYCLE_HINT) || text.contains("camera recovery failed") {
+            self.open_wake_guide(
+                "The headset's cameras did not come back after one restart, so VR with head tracking cannot start. The headset needs a power cycle: follow the steps below. When the tick turns green, go back and start again.",
+                true,
+            );
+        } else if text.contains("IF0 hidraw node of 34a4:0044 not found") {
+            self.open_wake_guide("The headset is asleep or off: its control chip is not on USB, so it cannot be restarted from here. Follow the steps below.", false);
+        }
+    }
+
     /// Feed the wake guide from the latest USB facts while the "Get ready" card is open for the Dream Air; ask for
     /// fresh USB facts every 3 s until the HID chip is seen.
     pub(crate) fn wake_poll(&mut self) {
         // the result screen waits for the headset's display (EDID step skipped, nothing seen yet): look again every
-        // 5 s so the one Fix appears the moment the display does, with no click
+        // 5 s so the one Fix appears the moment the display does, with no click. While the headset itself sleeps the
+        // guide below watches USB instead and checks again once the parts are back (a full check every 5 s would also
+        // restart the guide's timers).
         if self.onboarding.setup.phase == Phase::Problems
             && !self.demo
             && self.onboarding.setup_wait_facts.is_none()
             && self.onboarding.setup.problems.iter().any(|p| p.id == "connector" && p.fix == CheckFix::None)
+            && guide_for(&self.onboarding.setup.problems).is_none()
             && Self::wake_now() - self.onboarding.wake_asked >= 5.0
         {
             self.onboarding.wake_asked = Self::wake_now();
@@ -953,16 +1118,33 @@ impl AppCore {
             self.setup_exec(a);
             return;
         }
-        if self.onboarding.setup.phase != Phase::GetReady || self.onboarding.setup.selected.module().is_none_or(|m| m.id() != "dream-air") {
+        let Some(need_camera) = self.wake_target() else {
+            // a check that runs now keeps the guide where it is (it shows again with the same timers); a finished run
+            // forgets it
+            if !self.onboarding.setup.running() {
+                self.onboarding.wake_for = None;
+            }
             return;
+        };
+        if self.onboarding.wake_for != Some(need_camera) {
+            // another guide (the control chip, or the cameras too): start it over, the tick of the other one latched
+            self.onboarding.wake.reset();
+            self.onboarding.wake_for = Some(need_camera);
+            self.onboarding.wake_rechecked = false;
         }
         let now = Self::wake_now();
-        let usb = headset_choice::headset_state_from_usb(&self.facts.usb);
+        let usb = headset_choice::guide_state(&self.facts.usb, need_camera);
         let session = self.live.service.is_some() || self.live.steamvr.is_some();
         self.onboarding.wake.tick(now, usb, session);
         if !self.onboarding.wake.is_awake() && now - self.onboarding.wake_asked >= 3.0 && !self.demo {
             self.onboarding.wake_asked = now;
             self.refresh(false);
+        }
+        // the setup's problem list: the parts are back, so the checks run again by themselves (once per wake)
+        if self.onboarding.setup.phase == Phase::Problems && self.onboarding.wake.is_awake() && !self.onboarding.wake_rechecked && !self.demo {
+            self.onboarding.wake_rechecked = true;
+            let a = self.onboarding.setup.check_again();
+            self.setup_exec(a);
         }
     }
 
@@ -991,7 +1173,7 @@ impl AppCore {
     }
 
     fn setup_start(&mut self, kind: RunKind) {
-        let root_job = self.onboarding.install.plan_text.is_some() && kind != RunKind::AfterReboot && (kind == RunKind::Again || !self.onboarding.install.root_done);
+        let root_job = self.onboarding.install.plan_text.is_some() && !kind.check_only() && (kind == RunKind::Again || !self.onboarding.install.root_done);
         if root_job && !self.demo {
             // the plan is made again from the person's headset choice right before the password step (the plan from
             // ./install.sh can be stale: a sleeping headset hid 34a4:0044 then), with the NVIDIA switch
@@ -1063,7 +1245,12 @@ impl AppCore {
     fn setup_collect(&self) -> Vec<Check> {
         let i = self.install();
         let edid_fix = i.plan_env().is_file() && i.root_script().is_file();
-        checks_from_items(&self.items, edid_fix, &|p| self.facts.has(p))
+        let mut checks = checks_from_items(&self.items, edid_fix, &|p| self.facts.has(p));
+        explain_headset(&mut checks, &self.facts.usb);
+        if self.onboarding.setup.kind == RunKind::AfterUpdate {
+            update_checks(&mut checks);
+        }
+        checks
     }
 
     /// New facts arrived: the stage that waits for checks goes on.
@@ -1081,6 +1268,21 @@ impl AppCore {
 
     /// Keep the saved stage and the onboarded flag in line with the run.
     fn setup_after(&mut self) {
+        // the check after an update: a problem opens the setup screen with its Fix at once (once); all green removes
+        // install.sh's request
+        if self.onboarding.setup.kind == RunKind::AfterUpdate && self.onboarding.setup.phase == Phase::Problems && !self.onboarding.post_install_shown {
+            self.onboarding.post_install_shown = true;
+            self.page = crate::app::Page::Onboarding;
+        }
+        if self.onboarding.setup.phase == Phase::Ready && self.onboarding.install.post_install && !self.demo {
+            let f = self.install().post_install_check();
+            if let Err(e) = std::fs::remove_file(&f) {
+                if e.kind() != std::io::ErrorKind::NotFound {
+                    log::warn!("cannot remove {}: {e}", f.display());
+                }
+            }
+            self.onboarding.install.post_install = false;
+        }
         if let Some(st) = self.onboarding.setup.stage() {
             if self.state.setup != st || (st == SetupStage::Done && !self.state.onboarded) {
                 self.state.setup = st;

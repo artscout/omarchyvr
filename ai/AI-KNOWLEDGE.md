@@ -11,7 +11,7 @@ docs and records what went wrong before. The rules in `ai/CLAUDE.md` override an
 Read in this order. Each line says why.
 
 1. `ai/CLAUDE.md`: the project rules (GUI first, definition of done, one whole build, safety). Binding.
-2. `docs/LESSONS.md`: 33 numbered pitfalls with the rule each one became. Read all of it before touching the stack.
+2. `docs/LESSONS.md`: 49 numbered pitfalls with the rule each one became (41-49: the reinstall day 2026-10-17, docs/RETRO-2026-10-17.html). Read all of it before touching the stack.
 3. `docs/INVENTORY.md`: every component, command, device path and past problem with its commit.
 4. `docs/ARCHITECTURE.md`: the layers (app, core, device modules, doctor) and the open-source design. Scope is the Pimax family.
 5. `docs/HEADSET-COMMANDS.md`: the HID bytes the Windows captures verified (IPD, restart, controller touch byte).
@@ -154,7 +154,7 @@ Symptom, cause, fix and where it is recorded. "L n" is `docs/LESSONS.md` row n.
 | Voice wake fails on short utterances ("I") | Lead window longer than the utterance | Fixed: wake() handles short utterances | 5badc1e |
 | Typing goes to the wrong app or garbled keymap | Every new virtual keyboard switched Hyprland's keymap | One persistent virtual keyboard with one fixed keymap per process | docs/VOICE.md typing section |
 | Left controller "sleeping" 3 s after its report, gone for 25 min; pairing hangs | The left controller sleeps; no unpair was ever sent for it | Pairing and unpair refuse while a session owns the headset (button disabled with the reason). Left unpair is enabled only with the capture-verified bytes (`58 03 05 SS`); StartPair is approved once per user request | 60f426c, 46b6424, 5254712; analysis/windows-capture-20261015.md |
-| Power button on the headset: panels go off, status light stays green | It only turns the panels off; it never turns the headset off | Do not tell the user to power-cycle; use the app's Restart headset or Play | 049feaa |
+| Power button on the headset: panels go off, status light stays green | It only turns the panels off; it never turns the headset off | Do not tell the user to power-cycle in chat; use the app's Restart headset or Play. A control chip that stays off, or cameras that do not come back after one restart: the app's "Get the headset ready" guide (the power button first, the power cable only as its last step, never during a session) | 049feaa; L40, L43 |
 
 ### 4e. Windows capture tooling
 
@@ -224,7 +224,9 @@ Start with the app's Checks page (its preflight is the same code). Then the logs
 | Keepalive | `systemctl --user status omarchyvr-keepalived` | Must be running; restart it, do not stop it by hand |
 | Audio | `pactl list sinks short` | The headset sink must be DisplayPort audio; none = panel off or no DP audio (AUDIO.md) |
 | Voice | `omarchyvr-voice` logs and the debug line under the captions (VOICE.md section 12); `omarchyvr-voice audit` | `HTTP 400` = grammar bug (AI.md section 15); `no_device` = mic silent (L19) |
-| Crashes | `coredumpctl list`, the `diagnose-crash` skill | SIGSEGV or SIGABRT with a core; see analysis/crashes-2026-10-15.md |
+| Crashes | `coredumpctl list`, the `diagnose-crash` skill | SIGSEGV or SIGABRT with a core; see analysis/crashes-2026-10-15.md. Four "segfault at 0" lines 0.9 s apart named `ovr-test-crash` (before 2026-10-17: `omarchyvr-app`) with no core are the supervisor test's crash on purpose, not the app (L46) |
+| Setup and install runs | `~/.local/state/omarchyvr/jobs/*.log` (file names in UTC), `~/.local/state/omarchyvr/logs/omarchyvr-app.log`, `~/omarchyvr-install-*.log`, `journalctl --user -u omarchyvr-keepalived` | Count the pkexec prompts (`journalctl -b \| grep pkexec`) and the reboots of a run; "waiting for headset 34a4:0044" for long = the headset's control chip is off (L41, the guide); "headset gone after N s" then "headset on /dev/hidrawN" = a re-enumeration the keepalive handled |
+| Headset parts on USB | `journalctl -k -b \| grep -E 'idVendor=(34a4\|2104)\|USB disconnect'` | `34a4:0044` re-enumerating every ~5 s = no host heartbeat (no keepalive access); `2104:0561` gone after a headset restart = normal (eye module off until the session's enable, L44); `34a4:0014` with its hub `05e3:0620` gone = USB3 side off (one restart, then a power cycle, L43) |
 | Setcap | `getcap <build>/src/xrt/targets/service/monado-service` | `cap_sys_nice=ep` must be present; without it the app's Fix button (pkexec) restores it (L7) |
 | Build markers | `grep -ac PIMAX_SLAM <build>/.../monado-service` (and the other markers) | 0 = the build lost that feature; preflight refuses it (CLAUDE.md section 3) |
 | Runtime link | `cat ~/.config/openxr/1/active_runtime.json` | Must point at the build in use (L24) |

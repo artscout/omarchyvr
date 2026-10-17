@@ -262,7 +262,8 @@ before the next stage (the system step cannot be interrupted once started).
 | ![Setting up: the system step runs](gui/setup-running.png) | ![All green, restart now](gui/setup-restart.png) |
 |---|---|
 | ![A failed item with one Fix](gui/setup-problem.png) | ![Ready after the restart](gui/setup-ready.png) |
-| ![The password window was closed](gui/setup-stopped.png) | |
+| ![The password window was closed](gui/setup-stopped.png) | ![The check after an update: one Fix](gui/setup-after-update.png) |
+| ![The headset sleeps: its items, the guide, Restart now](gui/setup-problem-asleep.png) | ![The guide after a failed start](gui/wake-guide-after-start.png) |
 
 What comes out:
 
@@ -280,6 +281,23 @@ What comes out:
   display not seen, nothing changed). It replaces the old copy-only "connector" check.
 - **The password window was closed / wrong password / no password window on this desktop**: said in plain words,
   nothing was changed, one **Try again**.
+- **A part of the headset is missing** (since 2026-10-17, docs/RETRO-2026-10-17.html): the headset's control chip
+  (`34a4:0044`: the headset sleeps), its cameras (`34a4:0014`) or its eye tracker (`2104:0561`) are items of their own,
+  and the setup is not Ready while one is missing. Stage 2 restarts the headset once for missing cameras
+  (`omarchyvr vr reset-headset --once`) and switches the eye module on once (`pimax-eye power-on`, the captured
+  enable). "Get the headset ready" (the power button, then the power cable as the last step; never during a session)
+  shows under the list; when it sees the parts back, the checks run again by themselves. While the headset sleeps the
+  display-mode Fix waits (no password: it could only end in "display not seen"). When the system part asked for a
+  restart, **Restart now** stays on this screen. With two root problems or more there is only **Fix all (one
+  password)**.
+- **After an update** (`./install.sh` again leaves `~/.local/share/omarchyvr/post-install-check`): at its next start
+  the app runs the checks once by itself ("Checking after the update"): what an update can change on the PC (the
+  realtime permission, the access rule, the driver patch), not the headset (a sleeping headset is normal then). All
+  green: nothing is shown and the file goes. A problem (a changed Monado lost its realtime permission): this screen
+  opens with its one-password Fix.
+- **A Work or Play start whose cameras did not come back** after its one headset restart (or a Restart headset that
+  ended the same way, or found the headset asleep): the app opens "Get the headset ready" on its own with the reason,
+  and **Back** returns to the page it came from.
 
 **Ready** also has **Next, in the headset**: IPD, pair the controllers, eye calibration, room map. They need you
 wearing the headset, so they are optional and never block the setup; each is one button on the existing guided flows

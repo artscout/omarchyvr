@@ -56,7 +56,8 @@ pub fn verdict(lines: &[String]) -> Option<ResetResult> {
     } else if v.contains("video4linux") || v.contains("uvcvideo") {
         ResetResult { ok: false, text: "The camera is back on USB but its video device did not appear: try Restart headset once more.".into() }
     } else {
-        ResetResult { ok: false, text: "The camera did not come back: try Restart headset once more.".into() }
+        // 2026-10-17: a second restart and a PC restart did not bring the cameras back; a power cycle of the headset did
+        ResetResult { ok: false, text: "The camera did not come back: the headset needs a power cycle. Get the headset ready shows how (the power button first).".into() }
     })
 }
 
@@ -184,11 +185,17 @@ impl AppCore {
     /// A restart job ended: read its verdict.
     pub(crate) fn restart_headset_done(&mut self, ok: bool) {
         let from = self.headset_reset_from.take().unwrap_or(0).min(self.log.len());
-        self.headset_reset = Some(match (verdict(&self.log[from..]), ok) {
+        let lines = self.log[from..].to_vec();
+        let result = match (verdict(&lines), ok) {
             (Some(v), _) => v,
             (None, true) => ResetResult { ok: true, text: "Headset restarted.".into() },
             (None, false) => ResetResult { ok: false, text: "The restart did not run (see the output below).".into() },
-        });
+        };
+        if !result.ok {
+            // the cameras stayed away, or the headset was asleep (no control chip): the guide (2026-10-17 12:45)
+            self.wake_after_failure(&lines.join("\n"));
+        }
+        self.headset_reset = Some(result);
     }
 }
 
@@ -228,6 +235,8 @@ mod tests {
             let t = r.text.to_lowercase();
             assert!(!t.contains("unplug") && !t.contains("power at") && !t.contains("cut"), "{}", r.text);
         }
+        let r = v("camera 34a4:0014 still missing after 60 s: the headset needs a power cycle: open \"Get the headset ready\" in the app and follow its steps (the power button first), then start again");
+        assert!(!r.ok && r.text.contains("Get the headset ready") && r.text.contains("power button first"), "{}", r.text);
         assert_eq!(verdict(&["no verdict".to_string()]), None);
     }
 

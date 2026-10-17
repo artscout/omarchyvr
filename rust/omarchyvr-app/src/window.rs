@@ -339,6 +339,18 @@ pub fn run(o: Options) -> i32 {
     }
 }
 
+/// The name a crash on purpose gives its thread (the kernel's `comm`, at most 15 bytes). The kernel prints it in its
+/// "segfault at 0" line: 2026-10-17 the supervisor test's four deliberate crashes per run (`segv`, a null write
+/// `c7 00 01 00 00 00` at `window::test_crash`) showed in `journalctl -k` as `omarchyvr-app[pid]: segfault ...` and were
+/// taken for real crashes of the app; now they read `ovr-test-crash[pid]: segfault ...`.
+pub const TEST_CRASH_COMM: &str = "ovr-test-crash";
+
+fn name_test_crash_thread() {
+    let Ok(name) = std::ffi::CString::new(TEST_CRASH_COMM) else { return };
+    // SAFETY: prctl(PR_SET_NAME) with a valid NUL-terminated string of at most 16 bytes; it names the calling thread.
+    unsafe { libc::prctl(libc::PR_SET_NAME, name.as_ptr() as libc::c_ulong, 0, 0, 0) };
+}
+
 /// Test hook of the supervisor tests (`tests/supervisor.rs`): `PIMAX_TEST_CRASH=panic|segv|abort|hang|exit3` makes
 /// the window process fail that way right after its crash handling is set up.
 fn test_crash() {
@@ -349,6 +361,9 @@ fn test_crash() {
     // SAFETY: setrlimit(2) with a valid pointer to a local struct.
     unsafe { libc::setrlimit(libc::RLIMIT_CORE, &zero) };
     TEST_CRASH.store(true, std::sync::atomic::Ordering::SeqCst);
+    if matches!(how.as_str(), "segv" | "abort") {
+        name_test_crash_thread();
+    }
     match how.as_str() {
         "panic" => panic!("test panic (PIMAX_TEST_CRASH)"),
         // SAFETY: deliberately invalid: the test of the native crash path
@@ -378,6 +393,12 @@ pub fn stderr_log(state: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_test_crash_thread_name_fits_the_kernel_comm() {
+        // PR_SET_NAME keeps 15 bytes; a longer name would be cut and could look like the app again
+        assert!(TEST_CRASH_COMM.len() <= 15 && !TEST_CRASH_COMM.contains("omarchyvr-app"));
+    }
 
     #[test]
     fn renderer_names_and_options() {

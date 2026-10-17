@@ -89,6 +89,23 @@ pub fn headset_state_from_usb(usb: &[(u16, u16)]) -> HeadsetUsb {
     }
 }
 
+/// What the "Get the headset ready" guide waits for. `need_camera` false: the control chip `34a4:0044` (the setup's
+/// first card; same as [`headset_state_from_usb`]). True: also the cameras `34a4:0014` (a Work/Play start or the setup
+/// found them missing; real start 2026-10-17 13:07: the control chip was there, the cameras were not, and only a power
+/// cycle of the headset brought them back). The control chip there but a needed part missing counts as asleep: the
+/// guide's steps (power button, then the power cable as the last resort) apply.
+pub fn guide_state(usb: &[(u16, u16)], need_camera: bool) -> HeadsetUsb {
+    let s = headset_state_from_usb(usb);
+    if !need_camera || s != HeadsetUsb::Awake {
+        return s;
+    }
+    if usb.contains(&(0x34a4, 0x0014)) {
+        HeadsetUsb::Awake
+    } else {
+        HeadsetUsb::Asleep
+    }
+}
+
 /// The model to pre-select from USB, and the line that says why ("Found on USB: Pimax Dream Air (asleep)").
 /// Nothing detected: nothing is pre-selected.
 pub fn preselect(usb: &[(u16, u16)]) -> Option<(HeadsetPick, String)> {
@@ -210,6 +227,21 @@ mod tests {
         assert_eq!(u(&[(0x34a4, 0x43)]), HeadsetUsb::Absent);
         assert_eq!(u(&[(0x2104, 0x561)]), HeadsetUsb::Absent);
         assert_eq!(u(&[]), HeadsetUsb::Absent);
+    }
+
+    #[test]
+    fn the_guide_waits_for_the_control_chip_and_when_asked_for_the_cameras() {
+        let awake_no_cam = [(0x34a4, 0x43), (0x34a4, 0x44)];
+        let all = [(0x34a4, 0x43), (0x34a4, 0x44), (0x34a4, 0x14), (0x2104, 0x561)];
+        assert_eq!(guide_state(&awake_no_cam, false), HeadsetUsb::Awake, "the first card only needs the control chip");
+        assert_eq!(guide_state(&awake_no_cam, true), HeadsetUsb::Asleep, "cameras missing: the guide's steps apply");
+        assert_eq!(guide_state(&all, true), HeadsetUsb::Awake);
+        // the eye tracker is switched on by the session (or the setup's eye step): not a reason for a power cycle
+        assert_eq!(guide_state(&[(0x34a4, 0x43), (0x34a4, 0x44), (0x34a4, 0x14)], true), HeadsetUsb::Awake);
+        for need in [false, true] {
+            assert_eq!(guide_state(&[(0x34a4, 0x43), (0x34a4, 0x14)], need), HeadsetUsb::Asleep);
+            assert_eq!(guide_state(&[], need), HeadsetUsb::Absent);
+        }
     }
 
     #[test]

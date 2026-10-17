@@ -38,6 +38,10 @@ fn mark(ui: &mut Ui, st: StepState) {
 
 /// Draw the page.
 pub fn show(ui: &mut Ui, app: &mut PimaxApp) {
+    if let Some(w) = app.core.onboarding.wake_only.clone() {
+        wake_only(ui, app, &w);
+        return;
+    }
     app.core.want_setup();
     let s = app.core.onboarding.setup.clone();
     let done = app.core.state.setup == SetupStage::Done;
@@ -159,7 +163,26 @@ fn get_ready(ui: &mut Ui, app: &mut PimaxApp, s: &AutoSetup) {
     });
 }
 
-/// The live state of the headset's HID chip and, when it is off, the two guided steps with their animations.
+/// "Get the headset ready" on its own: a Work/Play start or a headset restart found the headset asleep or its cameras
+/// gone (2026-10-17 13:10: Work only said "camera recovery failed"). The reason, the guide, and Back.
+fn wake_only(ui: &mut Ui, app: &mut PimaxApp, w: &omarchyvr_gui_core::onboarding::WakeOnly) {
+    header(ui, "Get the headset ready", &w.reason);
+    card(ui, |ui| {
+        wake_guide(ui, app);
+        ui.add_space(8.0);
+        let awake = app.core.onboarding.wake.is_awake();
+        if awake {
+            note(ui, "The headset is ready. Go back and start again.");
+            ui.add_space(4.0);
+        }
+        if widgets::primary(ui, "Back", true).clicked() {
+            app.core.close_wake_guide();
+        }
+    });
+}
+
+/// The live state of the headset's HID chip (and, when the guide waits for them, its cameras) and, when it is not
+/// ready, the two guided steps with their animations.
 fn wake_guide(ui: &mut Ui, app: &mut PimaxApp) {
     use omarchyvr_gui_core::wake::Wake;
     let (view, t) = app.core.wake_view(ui.input(|i| i.time));
@@ -172,21 +195,23 @@ fn wake_guide(ui: &mut Ui, app: &mut PimaxApp) {
             ui.label(RichText::new(head).strong().color(text));
         });
     };
+    // the cameras too (a start or the setup found them gone), or only the control chip
+    let cameras = app.core.wake_target() == Some(true);
     match view {
         Wake::Idle => {}
         Wake::NotConnected => {
             line(ui, icon::CIRCLE, faint, "Headset not connected");
             note(ui, "Nothing of the headset is on USB. Plug in its USB cable and its power cable.");
         }
-        Wake::Awake => line(ui, icon::CHECK_CIRCLE, p.ok, "Headset is awake"),
+        Wake::Awake => line(ui, icon::CHECK_CIRCLE, p.ok, if cameras { "Headset and its cameras are on" } else { "Headset is awake" }),
         Wake::PressPower { left } => {
-            line(ui, icon::CIRCLE, p.warn, "Headset is asleep or off: step A, press the power button");
+            line(ui, icon::CIRCLE, p.warn, if cameras { "The headset's cameras are off: step A, press the power button" } else { "Headset is asleep or off: step A, press the power button" });
             note(ui, "Press the power button once on the headset. This page notices by itself when it wakes up.");
             crate::wake_art::show(ui, crate::wake_art::Anim::Press, t);
             ui.label(RichText::new(format!("Waiting {} s, then the next step is shown", left.ceil() as u32)).small().color(faint));
         }
         Wake::UnplugCable | Wake::WaitUnplugged { .. } | Wake::PlugBack | Wake::WaitWake { .. } | Wake::BlockedBySession => {
-            line(ui, icon::CIRCLE, p.warn, "Still asleep: step B, the last resort: unplug the headset's power cable");
+            line(ui, icon::CIRCLE, p.warn, if cameras { "Cameras still off: step B, the last resort: unplug the headset's power cable" } else { "Still asleep: step B, the last resort: unplug the headset's power cable" });
             note(ui, "Unplug the headset's POWER cable, wait 10 seconds, plug it back in. Leave the DisplayPort cable in.");
             crate::wake_art::show(ui, crate::wake_art::Anim::Cable, t);
             match view {
@@ -211,8 +236,12 @@ fn wake_guide(ui: &mut Ui, app: &mut PimaxApp) {
             }
         }
         Wake::GaveUp => {
-            line(ui, icon::X_CIRCLE, p.warn, "The headset did not wake up");
-            note(ui, "You can still start the setup: it installs the permission rule and the keep-alive, which can wake it. If the display is not found afterwards, the result screen tells you and offers the Fix.");
+            line(ui, icon::X_CIRCLE, p.warn, if cameras { "The cameras did not come back" } else { "The headset did not wake up" });
+            if app.core.onboarding.setup.phase == Phase::GetReady && app.core.onboarding.wake_only.is_none() {
+                note(ui, "You can still start the setup: it installs the permission rule and the keep-alive, which can wake it. If the display is not found afterwards, the result screen tells you and offers the Fix.");
+            } else {
+                note(ui, "Leave the headset a minute with both cables in, then try the steps again. If it still does not come back, send a report (Help > Report a problem).");
+            }
             if widgets::tbutton(ui, "Try the steps again", true).clicked() {
                 app.core.wake_retry();
             }
@@ -238,12 +267,16 @@ fn header(ui: &mut Ui, text: &str, sub: &str) {
 
 /// The four stages and, under the password stage, the live list of the root job.
 fn stages(ui: &mut Ui, s: &AutoSetup) {
-    let after = s.kind == RunKind::AfterReboot;
+    let after = s.kind.check_only();
     let names = [
         "Look at this PC",
         "Fix what needs no password",
         "System setup (one password)",
-        if after { "Check after the restart" } else { "Check everything again" },
+        match s.kind {
+            RunKind::AfterReboot => "Check after the restart",
+            RunKind::AfterUpdate => "Check after the update",
+            _ => "Check everything again",
+        },
     ];
     let skipped_note = ["", "nothing to fix", "nothing needs a password", ""];
     for (i, name) in names.iter().enumerate() {
@@ -298,7 +331,12 @@ fn details(ui: &mut Ui, s: &AutoSetup, extra: &[String]) {
 }
 
 fn running(ui: &mut Ui, app: &mut PimaxApp, s: &AutoSetup) {
-    header(ui, if s.kind == RunKind::AfterReboot { "Finishing the setup" } else { "Setting up your PC" }, &s.headline());
+    let title = match s.kind {
+        RunKind::AfterReboot => "Finishing the setup",
+        RunKind::AfterUpdate => "Checking after the update",
+        _ => "Setting up your PC",
+    };
+    header(ui, title, &s.headline());
     card(ui, |ui| {
         stages(ui, s);
         ui.add_space(8.0);
@@ -341,6 +379,10 @@ fn problems(ui: &mut Ui, app: &mut PimaxApp, s: &AutoSetup) {
     header(ui, "A few things need your attention", &s.headline());
     let busy = app.core.busy();
     let root = s.problems.iter().filter(|p| matches!(p.fix, CheckFix::Root { .. })).count();
+    // ONE password: with two root fixes or more only "Fix all" asks (2026-10-17 12:40: two Fix buttons, two prompts
+    // 4 s apart)
+    let together = root >= 2;
+    let guided = omarchyvr_gui_core::autosetup::guide_for(&s.problems).is_some();
     let manual = s.problems.iter().any(|p| p.fix == CheckFix::None);
     let good = s.checks.iter().filter(|c| c.state != omarchyvr_gui_core::autosetup::CheckState::Fail).count();
     card(ui, |ui| {
@@ -352,6 +394,10 @@ fn problems(ui: &mut Ui, app: &mut PimaxApp, s: &AutoSetup) {
             ui.indent(("problem", &p.id), |ui| {
                 note(ui, &p.reason);
                 match &p.fix {
+                    // the guide below covers it and the list checks again by itself when the headset is back
+                    CheckFix::None if guided && matches!(p.id.as_str(), "headset" | "connector") => {
+                        ui.label(RichText::new("Follow the steps below; this list checks again by itself.").small().color(pal(ui).muted));
+                    }
                     CheckFix::None => {
                         ui.label(RichText::new("You do this one yourself, then press Check again.").small().color(pal(ui).muted));
                     }
@@ -359,6 +405,9 @@ fn problems(ui: &mut Ui, app: &mut PimaxApp, s: &AutoSetup) {
                         if widgets::primary(ui, "Fix", !busy).clicked() {
                             app.core.setup_fix_one(&p.id);
                         }
+                    }
+                    CheckFix::Root { .. } if together => {
+                        ui.label(RichText::new("Fixed together with the others below (one password).").small().color(pal(ui).muted));
                     }
                     CheckFix::Root { .. } => {
                         ui.horizontal(|ui| {
@@ -377,7 +426,7 @@ fn problems(ui: &mut Ui, app: &mut PimaxApp, s: &AutoSetup) {
             ui.add_space(4.0);
         }
         ui.horizontal(|ui| {
-            if root >= 2 && widgets::primary(ui, "Fix all (one password)", !busy).clicked() {
+            if together && widgets::primary(ui, "Fix all (one password)", !busy).clicked() {
                 app.core.setup_fix_all();
             }
             if manual && widgets::tbutton(ui, "Check again", !busy).clicked() {
@@ -388,6 +437,25 @@ fn problems(ui: &mut Ui, app: &mut PimaxApp, s: &AutoSetup) {
         let extra: Vec<String> = s.problems.iter().map(|p| format!("{}: {}", p.id, p.detail)).collect();
         details(ui, s, &extra);
     });
+    // the headset is asleep or its cameras are off: the guide, live (it checks again by itself when they are back)
+    if guided {
+        card(ui, |ui| {
+            title(ui, "Get the headset ready");
+            wake_guide(ui, app);
+        });
+    }
+    // the system part already asked for a restart: it stays one press away, so nobody edits the setup state by hand
+    // (2026-10-17 12:46). Finishing the items first saves a second restart when one of them needs one too.
+    if s.reboot && !s.kind.check_only() {
+        card(ui, |ui| {
+            note(ui, "The system part is done and needs one restart. Restart now and finish the items above afterwards (the app opens again by itself), or finish them first: then one restart covers everything.");
+            ui.add_space(6.0);
+            let w = ui.available_width().min(420.0);
+            if widgets::action(ui, icon::POWER, "Restart now", Kind::Secondary, !busy, w).on_hover_text("Restarts this PC. The app opens again by itself and finishes the checks.").clicked() {
+                app.core.setup_restart_now();
+            }
+        });
+    }
     untested_card(ui, app);
 }
 

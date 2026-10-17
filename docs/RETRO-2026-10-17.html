@@ -1,0 +1,573 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reinstall Day Retro</title>
+<meta name="description" content="omarchyvr, 2026-10-17: the clean uninstall and reinstall of the Dream Air stack, what went right and wrong, the flow we missed, the correct flow, and the guards that now prevent each mistake.">
+<style>
+:root {
+  --bg: #f7f7f5; --panel: #ffffff; --panel2: #f0f0ec; --text: #1d1d1b; --muted: #5d5d58; --faint: #8b8b84;
+  --line: #d9d9d2; --accent: #4f46e5; --accent-soft: #e6e5fb;
+  --ok: #1f8a4c; --ok-soft: #dff2e6; --warn: #a86a00; --warn-soft: #fbeed2; --bad: #c0362c; --bad-soft: #f9e0dd;
+  --info: #1f6fb2; --info-soft: #dcebf7; --grey: #a3a39c; --code-bg: #efefea;
+  --mono: ui-monospace, "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1013; --panel: #17181d; --panel2: #1e2027; --text: #e7e7ea; --muted: #a6a7b0; --faint: #74757e;
+    --line: #2c2e36; --accent: #8b85ff; --accent-soft: #25234a;
+    --ok: #4cc786; --ok-soft: #143323; --warn: #e6a63b; --warn-soft: #3a2c10; --bad: #f0695e; --bad-soft: #3b1a17;
+    --info: #63a9e6; --info-soft: #13283b; --grey: #5b5c64; --code-bg: #121318;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1013; --panel: #17181d; --panel2: #1e2027; --text: #e7e7ea; --muted: #a6a7b0; --faint: #74757e;
+  --line: #2c2e36; --accent: #8b85ff; --accent-soft: #25234a;
+  --ok: #4cc786; --ok-soft: #143323; --warn: #e6a63b; --warn-soft: #3a2c10; --bad: #f0695e; --bad-soft: #3b1a17;
+  --info: #63a9e6; --info-soft: #13283b; --grey: #5b5c64; --code-bg: #121318;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.55 var(--sans); }
+main { max-width: 1040px; margin: 0 auto; padding: 0 16px 64px; }
+header.top { max-width: 1040px; margin: 0 auto; padding: 28px 16px 8px; }
+h1 { font-size: 1.75rem; line-height: 1.2; margin: 0 0 6px; letter-spacing: -0.01em; }
+h2 { font-size: 1.3rem; margin: 40px 0 12px; padding-top: 8px; border-top: 1px solid var(--line); }
+h3 { font-size: 1.05rem; margin: 22px 0 8px; }
+p { margin: 8px 0; }
+.sub { color: var(--muted); margin: 0; }
+a { color: var(--accent); }
+code, kbd, .mono { font-family: var(--mono); font-size: 0.86em; }
+code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+pre { background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; overflow-x: auto;
+      font: 12.5px/1.5 var(--mono); margin: 8px 0; white-space: pre; }
+nav.toc { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--bg) 92%, transparent);
+          backdrop-filter: blur(6px); border-bottom: 1px solid var(--line); }
+nav.toc .in { max-width: 1040px; margin: 0 auto; padding: 8px 16px; display: flex; gap: 6px; overflow-x: auto;
+              scrollbar-width: thin; align-items: center; }
+nav.toc a { white-space: nowrap; text-decoration: none; color: var(--muted); font-size: 0.86rem; padding: 4px 9px;
+            border-radius: 999px; border: 1px solid var(--line); background: var(--panel); }
+nav.toc a:hover { color: var(--text); border-color: var(--accent); }
+nav.toc button { margin-left: auto; white-space: nowrap; font: inherit; font-size: 0.82rem; color: var(--muted);
+                 background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; cursor: pointer; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin: 12px 0; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 16px 0; }
+.stat { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+.stat .n { font-size: 1.7rem; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.stat .l { color: var(--muted); font-size: 0.86rem; }
+.stat .g { color: var(--faint); font-size: 0.78rem; }
+.stat.bad .n { color: var(--bad); } .stat.warn .n { color: var(--warn); } .stat.ok .n { color: var(--ok); }
+.tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); margin: 12px 0; }
+table { border-collapse: collapse; width: 100%; font-size: 0.92rem; }
+th, td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+th { background: var(--panel2); font-weight: 600; font-size: 0.82rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+tr:last-child td { border-bottom: 0; }
+td.t { white-space: nowrap; font-family: var(--mono); font-size: 0.82rem; color: var(--muted); }
+.tag { display: inline-block; font-size: 0.72rem; font-weight: 600; padding: 1px 7px; border-radius: 999px; white-space: nowrap;
+       border: 1px solid transparent; vertical-align: 1px; }
+.tag.ok { color: var(--ok); background: var(--ok-soft); } .tag.bad { color: var(--bad); background: var(--bad-soft); }
+.tag.warn { color: var(--warn); background: var(--warn-soft); } .tag.info { color: var(--info); background: var(--info-soft); }
+.tag.todo { color: var(--warn); background: transparent; border-color: var(--warn); }
+.tag.new { color: var(--accent); background: var(--accent-soft); }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 12px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+.card h3 { margin-top: 0; }
+.card.bad { border-left: 4px solid var(--bad); } .card.ok { border-left: 4px solid var(--ok); } .card.warn { border-left: 4px solid var(--warn); }
+.card .rc { color: var(--muted); font-size: 0.9rem; }
+.card .fix { font-size: 0.9rem; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); }
+details { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; margin: 8px 0; }
+details > summary { cursor: pointer; padding: 9px 12px; font-weight: 600; list-style: none; }
+details > summary::-webkit-details-marker { display: none; }
+details > summary::before { content: "\25B8"; display: inline-block; width: 1.1em; color: var(--faint); transition: transform .15s; }
+details[open] > summary::before { transform: rotate(90deg); }
+details > .body { padding: 0 12px 10px; }
+.scrollx { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); padding: 8px; margin: 12px 0; }
+.scrollx svg { display: block; height: auto; }
+.scrollx svg.wide { min-width: 900px; }
+.scrollx svg.flowsvg { max-width: 640px; }
+svg text { font-family: var(--sans); fill: var(--text); }
+svg .mut { fill: var(--muted); } svg .fnt { fill: var(--faint); }
+svg .held { fill: var(--ok); } svg .flap { fill: var(--warn); } svg .off { fill: var(--bad); } svg .gap { fill: var(--grey); opacity: .35; }
+svg .cam { fill: var(--info); } svg .eye { fill: var(--accent); } svg .grid { stroke: var(--line); stroke-width: 1; }
+svg .pw { fill: var(--warn); stroke: var(--panel); stroke-width: 1.5; } svg .pwfail { fill: none; stroke: var(--bad); stroke-width: 2; }
+svg .reboot { stroke: var(--bad); stroke-width: 2; stroke-dasharray: 4 3; } svg .mark { fill: var(--text); }
+svg .box { fill: var(--panel2); stroke: var(--line); stroke-width: 1.5; }
+svg .box.pw { fill: var(--warn-soft); stroke: var(--warn); }
+svg .box.rb { fill: var(--bad-soft); stroke: var(--bad); }
+svg .box.go { fill: var(--ok-soft); stroke: var(--ok); }
+svg .box.gd { fill: var(--accent-soft); stroke: var(--accent); }
+svg .arrow { stroke: var(--muted); stroke-width: 2; fill: none; }
+svg .arrowhead { fill: var(--muted); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 0.82rem; color: var(--muted); margin: 6px 4px 2px; }
+.legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -1px; margin-right: 5px; }
+ol.flow { padding-left: 1.3em; } ol.flow li { margin: 6px 0; }
+.note { color: var(--muted); font-size: 0.9rem; }
+.callout { border-left: 4px solid var(--accent); background: var(--accent-soft); border-radius: 8px; padding: 10px 14px; margin: 12px 0; }
+.callout.warn { border-color: var(--warn); background: var(--warn-soft); }
+ul.tight { margin: 6px 0; padding-left: 1.2em; } ul.tight li { margin: 3px 0; }
+.check { list-style: none; padding: 0; margin: 0; }
+.check li { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.check li:last-child { border-bottom: 0; }
+.check .box2 { width: 18px; height: 18px; border-radius: 4px; border: 2px solid var(--faint); margin-top: 3px; }
+.check .done .box2 { background: var(--ok); border-color: var(--ok); }
+.check .todo .box2 { border-color: var(--warn); }
+.check .what { font-weight: 600; } .check .how { grid-column: 2; color: var(--muted); font-size: 0.9rem; }
+footer { color: var(--faint); font-size: 0.82rem; margin-top: 48px; border-top: 1px solid var(--line); padding-top: 12px; }
+@media (max-width: 640px) {
+  table.stack thead { display: none; }
+  table.stack, table.stack tbody, table.stack tr, table.stack td { display: block; width: 100%; }
+  table.stack tr { border-bottom: 1px solid var(--line); padding: 6px 0; }
+  table.stack tr:last-child { border-bottom: 0; }
+  table.stack td { border-bottom: 0; padding: 3px 12px; }
+  table.stack td.t { white-space: normal; }
+  table.stack td[data-l]::before { content: attr(data-l); display: block; font-weight: 600; color: var(--faint);
+    font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; margin-top: 4px; }
+}
+@media (max-width: 560px) {
+  h1 { font-size: 1.4rem; } h2 { font-size: 1.15rem; }
+  th, td { padding: 8px 9px; }
+  .stat .n { font-size: 1.45rem; }
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>The reinstall day, 2026-10-17: what happened and the flow for next time</h1>
+  <p class="sub">omarchyvr retrospective. A clean uninstall and reinstall of the Pimax Dream Air stack on the project PC,
+  reconstructed from the logs. All times are the PC's local time (UTC+8); the app's job files are named in UTC
+  (<code>20261017-043806-...</code> is 12:38:06). Lessons 41-49 in <code>ai/LESSONS.md</code> come from this page.</p>
+</header>
+<nav class="toc" aria-label="Sections"><div class="in">
+  <a href="#numbers">Numbers</a><a href="#chart">Chart</a><a href="#timeline">Timeline</a><a href="#well">Went well</a>
+  <a href="#wrong">Went wrong</a><a href="#missed">Flow we missed</a><a href="#flow">Correct flow</a>
+  <a href="#checklist">Prevention</a><a href="#process">Process</a><a href="#fixed">Fixed here</a><a href="#todo">TODO</a>
+  <button type="button" id="theme" aria-label="Switch colour theme">Theme</button>
+</div></nav>
+<main>
+
+<section id="numbers">
+<h2>The day in numbers</h2>
+<p>The goal is "one app, one click, one password". The day ended with Work still not starting (the factory calibration
+was missing, row 48) and needed:</p>
+<div class="stats">
+  <div class="stat bad"><div class="n">12</div><div class="l">password prompts</div><div class="g">goal: 1 per install, 1 per uninstall. 9 of them between 12:38 and 13:23, plus 1 mistyped</div></div>
+  <div class="stat warn"><div class="n">3</div><div class="l">reboots</div><div class="g">09:36, 12:46, 13:02. Goal: 2 (after the uninstall, after the setup)</div></div>
+  <div class="stat warn"><div class="n">6</div><div class="l">install runs</div><div class="g">and 2 uninstalls; main moved under the reinstall</div></div>
+  <div class="stat bad"><div class="n">~4 h</div><div class="l">headset without a host</div><div class="g">08:34 to 12:38; its control chip switched off at 11:51:55</div></div>
+  <div class="stat bad"><div class="n">2</div><div class="l">power-cable cycles</div><div class="g">13:00 (control chip back), 13:13 (cameras back)</div></div>
+  <div class="stat bad"><div class="n">9</div><div class="l">failed Work starts</div><div class="g">13:07 to 13:23: cameras, then the missing factory calibration</div></div>
+  <div class="stat warn"><div class="n">92</div><div class="l">"segfault" lines</div><div class="g">all from one test's deliberate crash: 23 runs, 4 each (row 46)</div></div>
+  <div class="stat warn"><div class="n">18</div><div class="l">core dumps of <code>sleep</code></div><div class="g">from another test, each a "Process crashed" notification</div></div>
+</div>
+</section>
+
+<section id="chart">
+<h2>The day on one chart</h2>
+<p class="note">Left part compressed (08:20-12:35, the long wait), right part stretched (12:35-13:30, the setup and the first
+starts). Rows from the kernel's USB log (<code>journalctl -k -b -3 ... -b 0</code>), the keepalive's journal, pkexec's journal
+lines and the app's job files. Scroll sideways on a phone.</p>
+<div class="scrollx">
+<svg class="wide" viewBox="0 0 1060 300" width="100%" role="img" aria-label="Timeline of the headset's USB parts, password prompts, installs, reboots and Work starts on 2026-10-17">
+  <!-- grid and axis: panel A x=120+1.6*m (m = minutes since 08:20), panel B x=548+9*(m-255) -->
+  <g class="grid">
+    <line x1="120" y1="30" x2="120" y2="250"/><line x1="216" y1="30" x2="216" y2="250"/><line x1="312" y1="30" x2="312" y2="250"/>
+    <line x1="408" y1="30" x2="408" y2="250"/><line x1="504" y1="30" x2="504" y2="250"/>
+    <line x1="548" y1="30" x2="548" y2="250"/><line x1="683" y1="30" x2="683" y2="250"/><line x1="818" y1="30" x2="818" y2="250"/>
+    <line x1="953" y1="30" x2="953" y2="250"/>
+  </g>
+  <g font-size="11" class="mut">
+    <text x="120" y="22" text-anchor="middle" class="mut">08:20</text><text x="216" y="22" text-anchor="middle" class="mut">09:20</text>
+    <text x="312" y="22" text-anchor="middle" class="mut">10:20</text><text x="408" y="22" text-anchor="middle" class="mut">11:20</text>
+    <text x="504" y="22" text-anchor="middle" class="mut">12:20</text>
+    <text x="548" y="22" text-anchor="middle" class="mut">12:35</text><text x="683" y="22" text-anchor="middle" class="mut">12:50</text>
+    <text x="818" y="22" text-anchor="middle" class="mut">13:05</text><text x="953" y="22" text-anchor="middle" class="mut">13:20</text>
+  </g>
+  <text x="536" y="150" font-size="18" text-anchor="middle" class="fnt">//</text>
+  <!-- row labels -->
+  <g font-size="12">
+    <text x="8" y="47">PC on</text><text x="8" y="77">Control chip</text><text x="8" y="90" font-size="10" class="mut">34a4:0044</text>
+    <text x="8" y="111">Cameras</text><text x="8" y="124" font-size="10" class="mut">34a4:0014</text>
+    <text x="8" y="145">Eye tracker</text><text x="8" y="158" font-size="10" class="mut">2104:0561</text>
+    <text x="8" y="183">Passwords</text><text x="8" y="213">Installs</text><text x="8" y="243">Work starts</text>
+  </g>
+  <!-- PC boots -->
+  <g class="gap">
+    <rect x="135.8" y="38" width="105.7" height="12" rx="3"/><rect x="247.8" y="38" width="280.2" height="12" rx="3"/>
+    <rect x="548" y="38" width="105.6" height="12" rx="3"/><rect x="676.7" y="38" width="120.6" height="12" rx="3"/>
+    <rect x="821.3" y="38" width="221.7" height="12" rx="3"/>
+  </g>
+  <!-- control chip -->
+  <rect class="held" x="135.8" y="66" width="6.8" height="16"/>
+  <rect class="flap" x="142.6" y="66" width="98.9" height="16"/><rect class="flap" x="247.8" y="66" width="211.3" height="16"/>
+  <rect class="off" x="459.1" y="66" width="68.9" height="16"/><rect class="off" x="548" y="66" width="105.6" height="16"/>
+  <rect class="off" x="676.7" y="66" width="97.2" height="16"/>
+  <rect class="held" x="776.6" y="66" width="20.7" height="16"/><rect class="held" x="821.3" y="66" width="23.4" height="16"/>
+  <rect class="flap" x="844.7" y="66" width="24.8" height="16"/><rect class="held" x="869.5" y="66" width="26.5" height="16"/>
+  <rect class="held" x="899.6" y="66" width="143.4" height="16"/>
+  <!-- cameras: present = filled -->
+  <rect class="cam" x="174.3" y="100" width="67.2" height="16"/><rect class="cam" x="247.8" y="100" width="32.9" height="16"/>
+  <rect class="cam" x="281.6" y="100" width="223.6" height="16"/><rect class="cam" x="608.8" y="100" width="44.8" height="16"/>
+  <rect class="cam" x="676.7" y="100" width="97.2" height="16"/><rect class="cam" x="899.6" y="100" width="143.4" height="16"/>
+  <!-- eye tracker: present = filled -->
+  <rect class="eye" x="247.8" y="134" width="280.2" height="16"/><rect class="eye" x="548" y="134" width="105.6" height="16"/>
+  <rect class="eye" x="676.7" y="134" width="97.2" height="16"/><rect class="eye" x="821.3" y="134" width="23.4" height="16"/>
+  <!-- password prompts -->
+  <g>
+    <circle class="pw" cx="145.8" cy="178" r="5"/><circle class="pw" cx="153.1" cy="178" r="5"/><circle class="pw" cx="487" cy="178" r="5"/>
+    <circle class="pw" cx="576.4" cy="178" r="5"/><circle class="pw" cx="595.7" cy="178" r="5"/><circle class="pw" cx="602.3" cy="178" r="5"/>
+    <circle class="pw" cx="609.5" cy="178" r="5"/><circle class="pw" cx="647.3" cy="178" r="5"/><circle class="pw" cx="703" cy="178" r="5"/>
+    <circle class="pw" cx="793.1" cy="178" r="5"/><circle class="pw" cx="944" cy="178" r="5"/><circle class="pwfail" cx="980" cy="178" r="5"/>
+    <circle class="pw" cx="989" cy="178" r="5"/>
+  </g>
+  <!-- installs (I), uninstalls (U) -->
+  <g font-size="11" font-weight="700">
+    <text x="142.6" y="213" text-anchor="middle" fill="var(--bad)">U</text><text x="474.1" y="213" text-anchor="middle" fill="var(--bad)">U</text>
+    <text x="254.4" y="213" text-anchor="middle">I</text><text x="278.4" y="213" text-anchor="middle">I</text><text x="486.4" y="213" text-anchor="middle">I</text>
+    <text x="518.4" y="213" text-anchor="middle">I</text><text x="566" y="213" text-anchor="middle">I</text><text x="962" y="213" text-anchor="middle">I</text>
+  </g>
+  <!-- reboots -->
+  <line class="reboot" x1="244.6" y1="30" x2="244.6" y2="250"/><line class="reboot" x1="665" y1="30" x2="665" y2="250"/>
+  <line class="reboot" x1="809.3" y1="30" x2="809.3" y2="250"/>
+  <!-- work starts (all failed) -->
+  <g font-size="13" font-weight="700" fill="var(--bad)">
+    <text x="844.7" y="243" text-anchor="middle">x</text><text x="924.5" y="243" text-anchor="middle">x</text><text x="930" y="243" text-anchor="middle">x</text>
+    <text x="937" y="243" text-anchor="middle">x</text><text x="942" y="243" text-anchor="middle">x</text><text x="947" y="243" text-anchor="middle">x</text>
+    <text x="952" y="243" text-anchor="middle">x</text><text x="982.3" y="243" text-anchor="middle">x</text><text x="988" y="243" text-anchor="middle">x</text>
+  </g>
+  <!-- annotations -->
+  <g font-size="10.5" class="mut">
+    <text x="160" y="62" class="mut">no host: re-enumerating every ~5.4 s (~2,200 times)</text>
+    <text x="470" y="62" class="mut">off</text>
+    <text x="777" y="62" class="mut">cable</text><text x="845" y="62" class="mut">reset</text><text x="897" y="62" class="mut">cable</text>
+    <text x="583" y="272" class="mut">12:38 root job, EDID skipped (chip off)</text>
+    <text x="1040" y="290" text-anchor="end" class="mut">13:07 auto-recovery: keepalive stopped 150 s</text>
+  </g>
+</svg>
+<div class="legend">
+  <span><i style="background:var(--ok)"></i>held by a keepalive</span><span><i style="background:var(--warn)"></i>re-enumerating (no host heartbeat)</span>
+  <span><i style="background:var(--bad)"></i>off</span><span><i style="background:var(--info)"></i>cameras on USB</span>
+  <span><i style="background:var(--accent)"></i>eye tracker on USB</span><span><i style="background:var(--warn);border-radius:50%"></i>password window (hollow: mistyped)</span>
+  <span><i style="border:2px dashed var(--bad);background:transparent"></i>reboot</span><span>I install, U uninstall, x failed Work start</span>
+</div>
+</div>
+</section>
+
+<section id="timeline">
+<h2>Timeline with evidence</h2>
+<p class="note">Corrections to the summary the main thread started from are marked <span class="tag info">corrected</span>.</p>
+<div class="tablewrap"><table class="stack">
+<thead><tr><th>Time</th><th>What happened</th><th>Evidence</th></tr></thead>
+<tbody>
+<tr><td class="t">08:30-08:34</td><td>The old lab keepalive holds the headset after boot. Uninstall #1 starts at 08:34: it stops the app and the keepalive, saves the settings tar and removes the access rule. From 08:34:06 the headset's control chip re-enumerates every ~5.4 s.</td><td data-l="Evidence"><code>08:34:05 pimax: headset gone after 231.1 s, 1085 keepalives</code>, then <code>usb 1-5.1.4.1: USB disconnect</code> every ~5.4 s</td></tr>
+<tr><td class="t">08:36:09</td><td>Uninstall root job (password 1). It left 3 NVIDIA source files patched: an older hand install had patched them without <code>*.pimax-orig</code> backups.</td><td data-l="Evidence">pkexec: <code>omarchyvr-root.sh uninstall</code>; lesson 37</td></tr>
+<tr><td class="t">08:40:43</td><td>A hand-written restore script copies the 3 files from the pristine source, rebuilds dkms and the boot image (password 2). The uninstaller learned to reverse leftover patches at 09:02 (d8f80b3).</td><td data-l="Evidence">pkexec on a terminal: <code>~/omarchyvr-nvidia-restore.sh</code></td></tr>
+<tr><td class="t">09:36</td><td>Reboot 1 (stock module).</td><td data-l="Evidence">boot list</td></tr>
+<tr><td class="t">09:44, 09:59</td><td>Install #1 (45b3f68): build fine, all 10 Monado markers; "headset display: not found ... the EDID override step is skipped". Re-run at 09:59 (8c69b54) with the fix <code>OVR_EDID=auto</code>. <b>The system part was not run</b>: work moved to the automatic setup and other features.</td><td data-l="Evidence"><code>~/omarchyvr-install-2026-10-17-0944.log</code>, <code>-0959.log</code></td></tr>
+<tr><td class="t">09:55:16</td><td>The new keepalive starts and cannot open the headset (no access rule until the system part). It retries quietly every 2 s for the next 2 h 6 min.</td><td data-l="Evidence"><code>warn: cannot open the headset: Permission denied (os error 13) (udev rule 70-pimax.rules missing?)</code></td></tr>
+<tr><td class="t">09:02-11:59</td><td>Feature agents merge into main: NVIDIA untested switch, hand models button, base eye list, test fixes, automatic setup, colours, ocean background, Play/Work split. Their test runs leave 23 groups of four "segfault" lines (92 that day) and 18 core dumps of <code>sleep</code> in the system log.</td><td data-l="Evidence"><code>git log 504f899..</code>; <code>journalctl -k | grep segfault</code>; <code>coredumpctl list</code></td></tr>
+<tr><td class="t">11:51:55</td><td><b>The control chip leaves USB for good</b>, after about 3 h 17 min without a host (about 2,200 enumerations since 08:34). From now on USB shows only the bridge 0043, the cameras and the eye tracker.</td><td data-l="Evidence">last <code>usb 1-5.1.4.1: USB disconnect, device number 107</code> of the boot</td></tr>
+<tr><td class="t">12:01-12:09</td><td>Uninstall #2. Its "settings" tar is 2.5 GB (it held the build cache) and takes three minutes; the password window appears at 12:04 and is answered at 12:09 (password 3; its root part starts with a snapshot at 12:09:22). Its own output went to /tmp and was lost at the next reboot, so the rest of what it did is not on record.</td><td data-l="Evidence"><code>~/omarchyvr-settings-backup-20261017-120119.tar.gz</code> (largest member <code>.cache/omarchyvr/build/basalt-build/libbasalt.so</code>); its output was written to /tmp and is gone</td></tr>
+<tr><td class="t">12:09</td><td>Install #2 (20fad39): the headset is "a Pimax device that is not tested: 34a4:0014, 34a4:0043" so "the NVIDIA patch is not needed"; the plan has no NVIDIA and no EDID step. Basalt is rebuilt from scratch (its cache was deleted).</td><td data-l="Evidence"><code>-1209.log</code>; lesson 39</td></tr>
+<tr><td class="t">12:29, 12:37</td><td>Install #3 (6d5d20e: "Which headset do you have?", the sleeping signature) and #4 (931ba25: Omarchy's shell counts as the password agent).</td><td data-l="Evidence"><code>-1229.log</code>, <code>-1237.log</code>: "Pimax Dream Air (asleep: it wakes after the system setup)"</td></tr>
+<tr><td class="t">12:38:06</td><td>The app's system part (password 4): NVIDIA patched, dkms, boot image, verified; access rule; realtime permission. <b>EDID skipped</b>: the headset's display never showed, because the control chip was off.</td><td data-l="Evidence">job <code>root-fix-set-up-this-pc</code>: <code>headset display not seen ... (EDID override skipped)</code>, <code>REBOOT=yes</code></td></tr>
+<tr><td class="t">12:40:15</td><td>"Fix the setup" for headset access (password 5): the job had triggered udev only for 34a4 devices and hidraw, so the eye tracker's node stayed root-only and the access check failed.</td><td data-l="Evidence">job: <code>install -m644 .../linux/70-pimax.rules</code> + <code>udevadm trigger --subsystem-match=usb</code>; root job line <code>udevadm trigger --subsystem-match=usb --attr-match=idVendor=34a4</code></td></tr>
+<tr><td class="t">12:40:20</td><td>The EDID-only Fix (password 6) ends in exit 3, 4 s after the previous prompt.</td><td data-l="Evidence"><code>failed: REBOOT=no (... exit code 3)</code></td></tr>
+<tr><td class="t">12:41:46</td><td>The whole system part runs again (password 7): everything "unchanged", EDID skipped again.</td><td data-l="Evidence">job log; the root job is idempotent</td></tr>
+<tr><td class="t">12:45:45, 12:45:55</td><td>Restart headset, twice: each stops and restarts the keepalive and fails at once.</td><td data-l="Evidence"><code>omarchyvr: IF0 hidraw node of 34a4:0044 not found</code></td></tr>
+<tr><td class="t">12:46:00</td><td>Another EDID-only Fix (password 8). <b>34 s later the PC is rebooted by hand</b> while that root job is still waiting for the display; the setup stage was written into <code>gui-state.toml</code> by hand, because the problem screen offered no restart.</td><td data-l="Evidence">job log cut after its step line; supervisor <code>got SIGTERM</code> at 12:46:34; memory note "Set gui-state setup_stage=restart and rebooted"</td></tr>
+<tr><td class="t">12:49-12:52</td><td>Reboot 2. The control chip is still off. The app window does not appear at login (a second start only logs "already runs"; the window is replaced at 12:51). A third EDID-only Fix (password 9) ends in exit 3.</td><td data-l="Evidence"><code>second start: omarchyvr-app pid 1635 already runs</code>; keepalive <code>waiting for headset 34a4:0044</code> from 12:49:37 to 13:00:24</td></tr>
+<tr><td class="t">13:00:06</td><td><b>Power-cable cycle 1</b>: the control chip comes back (13:00:24); the cameras and the eye tracker do not.</td><td data-l="Evidence">all parts <code>USB disconnect</code>; then <code>idVendor=34a4, idProduct=0044</code>; keepalive <code>headset on /dev/hidraw3</code> at 13:00:26</td></tr>
+<tr><td class="t">13:02:11</td><td>The system part a third time (password 10): EDID found <code>[0000:01:00.0].DP-0</code>, written, boot image rebuilt; the app restarts the PC (reboot 3).</td><td data-l="Evidence">job log <code>headset display found</code>; <code>restart-the-pc</code></td></tr>
+<tr><td class="t">13:05-13:07</td><td>After the boot the control chip and the eye tracker are there, the cameras (USB3 hub 05e3:0620) are not. The window again does not appear at login (replaced at 13:07:48).</td><td data-l="Evidence">kernel USB log; app log</td></tr>
+<tr><td class="t">13:07:58</td><td>Work: camera missing, auto-recovery. It stops the keepalive, sends the restart command <b>once</b> <span class="tag info">corrected</span>, and waits 150 s with the keepalive stopped: the headset leaves USB once for the restart and then 24 more times on its own, every ~6 s (not 25 resets); then a second, display-chain reset (keepalive stopped 15 s more). Fails with "reboot ... power-cycle the link box". The eye tracker left with the restart and stays off.</td><td data-l="Evidence">job <code>start-desk-mode</code>: <code>sent 58 04 28 00 00 00</code>, <code>HID 34a4:0044 gone</code>/<code>back</code> every ~6 s, <code>camera still missing: one automatic retry with the display-chain reset (--mode dp)</code></td></tr>
+<tr><td class="t">13:13:40</td><td><b>Power-cable cycle 2</b>: the cameras come back at 13:14:04. The eye tracker stays off: <b>normal</b> <span class="tag info">corrected</span>; the eye module stays off after a headset restart until the captured enable, which the session sends itself.</td><td data-l="Evidence"><code>usb 2-4: new SuperSpeed</code> ... <code>idProduct=0014</code>; <code>pimax-eye/src/power.rs</code></td></tr>
+<tr><td class="t">13:16-13:19</td><td>Work, six more times (90 Hz, 72 Hz, a service restart, then with eye tracking off, which the preflight's yellow "eye tracker not enumerated" line offers, then a double press): every 6DoF start fails because the headset's factory calibration file is missing.</td><td data-l="Evidence"><code>omarchyvr-slam export: no calibration file found (tried ~/.config/omarchyvr/headset-calibration.xml ...)</code></td></tr>
+<tr><td class="t">13:18:57</td><td>A realtime-permission Fix from the old app sets it on the old lab path (password 11): the doctor fix was committed at 13:12 (4a971f8) but not installed.</td><td data-l="Evidence">job <code>cpu.setcap_monado</code>: <code>setcap ... ~/src/monado/build/...</code></td></tr>
+<tr><td class="t">13:21-13:23</td><td>Install #5 (21e1655). Monado is relinked although nothing in it changed (the Rust static libraries were rebuilt), so the realtime permission is gone again; the next Work asks for the password (13:23:18 mistyped, 13:23:23 password 12) and fails on the calibration.</td><td data-l="Evidence"><code>-1321.log</code>: <code>would: setcap cap_sys_nice+ep</code>; <code>libpimax_capi.a</code> 13:22:00, <code>monado-service</code> 13:22:43</td></tr>
+<tr><td class="t">13:24</td><td>The factory calibration is copied back by hand from the user's own file.</td><td data-l="Evidence">coordinator message</td></tr>
+</tbody></table></div>
+</section>
+
+<section id="well">
+<h2>What went well</h2>
+<div class="cards">
+  <div class="card ok"><h3>Safety held</h3><p>No sudo by agents, every root step through pkexec, no VR session touched, snapshots before the root jobs and home backups before the uninstall. Every step was reversible.</p></div>
+  <div class="card ok"><h3>The NVIDIA part worked first time</h3><p>Patch, dkms, boot image and the <code>merged_head_sync</code> check passed at 12:38; the later runs said "already patched ... nothing to rebuild". The root job is idempotent, so re-running it was safe.</p></div>
+  <div class="card ok"><h3>Fast fixes, each with a test</h3><p>Leftover NVIDIA patches (d8f80b3), EDID inside the root job (6698c18), "Which headset" + sleeping signature (6d5d20e), quickshell as the password agent (931ba25), the doctor's Monado path (4a971f8), the wake guide and window recovery (2740472).</p></div>
+  <div class="card ok"><h3>The logs were enough</h3><p>Job files with exact commands, the keepalive's journal, the kernel's USB lines and pkexec's journal lines reconstructed every minute of the day without guessing.</p></div>
+  <div class="card ok"><h3>Decisions recorded</h3><p>The user's decisions (the power-cable last resort, the base eye list, AI set-up counts as answered) went into <code>ai/CLAUDE.md</code>, lessons 37-40 and the docs the same day.</p></div>
+  <div class="card ok"><h3>Downloads and keys survived</h3><p>AI models, backgrounds, speech models and <code>ai.toml</code> were kept by both uninstalls and reused by every install.</p></div>
+</div>
+</section>
+
+<section id="wrong">
+<h2>What went wrong, and why</h2>
+<div class="cards">
+  <div class="card bad"><h3>1. The headset sat four hours without a host</h3>
+    <p class="rc"><b>Root cause:</b> the system part (which installs the access rule) was split from <code>./install.sh</code> by hours of feature work. Without the rule the keepalive cannot open the headset; without a heartbeat the control chip restarts every ~5.4 s and after hours switched off for good. A PC restart, the power button and wearing it did not help; only the power cable did.</p>
+    <p class="note">Evidence: 2,200 enumerations 08:34-11:51; keepalive "Permission denied" from 09:55; "waiting for headset" 12:19-13:00.</p>
+    <div class="fix">Now: the setup lists the headset's parts and shows the guide (lesson 41). Rule: one sitting for a reinstall.</div></div>
+  <div class="card bad"><h3>2. The setup ran with the headset off</h3>
+    <p class="rc"><b>Root cause:</b> nothing checked that the control chip was on before the system part; the EDID step needs the awake headset. Result: EDID skipped in both full runs, three EDID-only prompts that could not succeed (two exit 3, one cut by a reboot), and a problem screen without a Restart button, so the stage was edited by hand and the PC rebooted while a root job was still waiting.</p>
+    <div class="fix">Now: the EDID Fix waits (no password) while the chip is off; Restart now stays on the problem screen; the guide re-checks by itself.</div></div>
+  <div class="card bad"><h3>3. "Ready" without the headset's parts</h3>
+    <p class="rc"><b>Root cause:</b> the setup's checks covered the PC (driver, rule, permission) but not the headset's cameras or eye tracker, so it could call the PC ready while Work could not start.</p>
+    <div class="fix">Now: <code>headset-camera</code> (one restart) and <code>eye-chip</code> (the captured enable, once) are setup items; not Ready while missing.</div></div>
+  <div class="card bad"><h3>4. The camera recovery made it worse</h3>
+    <p class="rc"><b>Root cause:</b> the recovery stopped the keepalive for its whole 150 s wait. Without a heartbeat the headset cycled every 6 s and never brought its USB3 side back; then a second reset; then advice to reboot (which does not help) and to "power-cycle the link box".</p>
+    <div class="fix">Now: one restart per start, keepalive back the moment the headset leaves USB, 60 s, then the plain hint and the guide (lesson 43).</div></div>
+  <div class="card bad"><h3>5. Every reinstall dropped the realtime permission</h3>
+    <p class="rc"><b>Root cause:</b> <code>lab-data.sh link</code> re-created its symlinks on every install; the build scripts' <code>rerun-if-changed</code> on those directories rebuilt pimax-cam and pimax-eye, ninja relinked <code>monado-service</code> and the kernel cleared its file capability. The password then came at the Work start, not at the install.</p>
+    <div class="fix">Now: idempotent links, the old inode kept for identical bytes, a post-install check with the one-password Fix (lesson 42).</div></div>
+  <div class="card bad"><h3>6. Twelve password prompts</h3>
+    <p class="rc"><b>Root causes:</b> the udev trigger missed the eye tracker (second prompt); two Fix buttons asked separately 4 s apart; EDID Fixes while the headset was off; a Fix of the old app on a stale path; the relink of item 5; one mistyped password.</p>
+    <div class="fix">Now: the trigger covers every device of the rule; only "Fix all" with two root problems; the EDID hold; the relink guard (lesson 45).</div></div>
+  <div class="card bad"><h3>7. Factory calibration lost</h3>
+    <p class="rc"><b>Root cause:</b> the uninstall treated <code>headset-calibration.xml</code> (device data read once from the headset) as a setting and removed it; nothing re-read it, and the start showed only "omarchyvr-slam export: no calibration file found".</p>
+    <div class="fix"><span class="tag todo">TODO</span> owned by a separate change: keep it like <code>ai.toml</code>, read it in the setup, say it in plain words (lesson 48).</div></div>
+  <div class="card warn"><h3>8. Tests looked like crashes</h3>
+    <p class="rc"><b>Root cause:</b> the supervisor test crashes a window process on purpose (a null write, <code>c7 00 01 00 00 00</code> at <code>window::test_crash</code>, window.rs:355): four kernel lines per run named <code>omarchyvr-app</code>. Another test aborted a <code>sleep</code> stand-in: 18 core dumps and "Process crashed" notifications.</p>
+    <div class="fix">Now: the crash thread is named <code>ovr-test-crash</code>; the stand-in ends without a core (lesson 46). Proven: the same bytes at the crash offset in the test binaries, <code>addr2line</code> gives <code>omarchyvr_app::window::test_crash</code>.</div></div>
+  <div class="card warn"><h3>9. The eye tracker taken for a fault</h3>
+    <p class="rc"><b>Root cause:</b> the preflight's yellow "not enumerated ... start without eye tracking" after a headset restart, where an off eye module is normal and the session switches it on.</p>
+    <div class="fix">Now: an info line "switched on at the start" (lesson 44).</div></div>
+  <div class="card warn"><h3>10. A 2.5 GB "settings" backup</h3>
+    <p class="rc"><b>Root cause:</b> the uninstaller put all of <code>~/.cache/omarchyvr</code> into the settings tar, including the build cache; the next install then rebuilt Basalt.</p>
+    <div class="fix">Now: the build cache is removed as a cache, never tarred (lesson 47).</div></div>
+  <div class="card warn"><h3>11. The window did not show at login</h3>
+    <p class="rc"><b>Root cause:</b> the window process ran but had no Wayland window at autostart (12:49, 13:06); a second start only said "already runs".</p>
+    <div class="fix">Fixed in 2740472 (window ack and raise watchdog, lesson 40).</div></div>
+  <div class="card warn"><h3>12. Lost logs</h3>
+    <p class="rc"><b>Root cause:</b> the output of both uninstalls was kept in /tmp (the session's scratch directory) and was gone after the reboot: this retro could not read what uninstall #2 did.</p>
+    <div class="fix">Rule: keep run logs in the home directory (as the install logs were); TODO: the scripts write their own.</div></div>
+</div>
+</section>
+
+<section id="missed">
+<h2>The flow we missed</h2>
+<ul class="tight">
+  <li><b>A headset gate before the system part.</b> The control chip must be on (green tick) before the job that needs the headset's display. The setup's "Get ready" card had no live state until 13:16; the job ran with the chip off.</li>
+  <li><b>One sitting.</b> Uninstall, reboot, install, the setup's one password, one reboot, Play. Today the reinstall was interleaved with feature work and six installs of a moving main.</li>
+  <li><b>A check after every update.</b> A changed Monado loses its permission; nobody looked until the Work start asked for a password.</li>
+  <li><b>The headset's parts as part of "ready"</b>: control chip, cameras, eye tracker, and the factory calibration.</li>
+  <li><b>Device data is not a setting.</b> The factory calibration must survive an uninstall or be read back by the setup.</li>
+  <li><b>Read before you act.</b> The eye power-on code and the reset's keepalive handling were in the repository; the analysis note <code>reset-headset-slow-reenum.md</code> had already named "keep the keepalive running" as the next suspect.</li>
+</ul>
+</section>
+
+<section id="flow">
+<h2>The correct flow for next time</h2>
+<p>From a working install to a clean reinstall and back to Play: one password per job, two reboots, no hand edits.</p>
+<div class="scrollx">
+<svg class="flowsvg" viewBox="0 0 640 1020" width="100%" role="img" aria-label="The correct reinstall flow, step by step">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" class="arrowhead"/>
+    </marker>
+  </defs>
+  <g font-size="15">
+    <!-- 0 -->
+    <rect class="box" x="40" y="10" width="420" height="70" rx="10"/>
+    <text x="58" y="36" font-weight="700">0  Before: no VR session</text>
+    <text x="58" y="58" class="mut" font-size="13">backups (private .claude, home settings, factory calibration),</text>
+    <text x="58" y="74" class="mut" font-size="13">freeze main: no merges until Play works</text>
+    <path class="arrow" d="M250 80 V102" marker-end="url(#ah)"/>
+    <!-- 1 -->
+    <rect class="box pw" x="40" y="104" width="420" height="62" rx="10"/>
+    <text x="58" y="130" font-weight="700">1  Uninstall: one password</text>
+    <text x="58" y="152" class="mut" font-size="13">keeps downloads, keys and device data; logs in ~/</text>
+    <path class="arrow" d="M250 166 V188" marker-end="url(#ah)"/>
+    <!-- reboot 1 -->
+    <rect class="box rb" x="40" y="190" width="420" height="44" rx="10"/>
+    <text x="58" y="218" font-weight="700">Reboot 1 (stock driver)</text>
+    <path class="arrow" d="M250 234 V256" marker-end="url(#ah)"/>
+    <!-- 2 -->
+    <rect class="box" x="40" y="258" width="420" height="62" rx="10"/>
+    <text x="58" y="284" font-weight="700">2  ./install.sh: no password</text>
+    <text x="58" y="306" class="mut" font-size="13">build at nice 19, markers checked, opens the app</text>
+    <path class="arrow" d="M250 320 V342" marker-end="url(#ah)"/>
+    <!-- 3 -->
+    <rect class="box" x="40" y="344" width="420" height="62" rx="10"/>
+    <text x="58" y="370" font-weight="700">3  App: Which headset? then Get ready</text>
+    <text x="58" y="392" class="mut" font-size="13">right away: the headset has no keepalive until step 4</text>
+    <path class="arrow" d="M250 406 V428" marker-end="url(#ah)"/>
+    <!-- decision -->
+    <polygon class="box" points="250,430 400,480 250,530 100,480"/>
+    <text x="250" y="476" text-anchor="middle" font-weight="700">Control chip</text>
+    <text x="250" y="496" text-anchor="middle" font-weight="700">on USB?</text>
+    <path class="arrow" d="M400 480 H468" marker-end="url(#ah)"/>
+    <text x="410" y="470" class="mut" font-size="13">no</text>
+    <rect class="box gd" x="470" y="430" width="160" height="100" rx="10"/>
+    <text x="482" y="454" font-weight="700" font-size="14">The guide</text>
+    <text x="482" y="474" class="mut" font-size="12.5">A: power button,</text>
+    <text x="482" y="491" class="mut" font-size="12.5">90 s</text>
+    <text x="482" y="508" class="mut" font-size="12.5">B (last): power cable</text>
+    <text x="482" y="524" class="mut" font-size="12.5">10 s, DP stays in</text>
+    <path class="arrow" d="M550 430 V400 H470" marker-end="url(#ah)"/>
+    <text x="260" y="550" class="mut" font-size="13">yes</text>
+    <path class="arrow" d="M250 530 V560" marker-end="url(#ah)"/>
+    <!-- 4 -->
+    <rect class="box pw" x="40" y="562" width="420" height="110" rx="10"/>
+    <text x="58" y="588" font-weight="700">4  Setup: one password for all</text>
+    <text x="58" y="610" class="mut" font-size="13">no password first: keepalive, cameras (one restart),</text>
+    <text x="58" y="627" class="mut" font-size="13">eye module on. Then ONE job: snapshot, access rule +</text>
+    <text x="58" y="644" class="mut" font-size="13">trigger (eye too), NVIDIA patch, EDID (headset awake),</text>
+    <text x="58" y="661" class="mut" font-size="13">realtime permission</text>
+    <path class="arrow" d="M250 672 V694" marker-end="url(#ah)"/>
+    <!-- 5 -->
+    <rect class="box" x="40" y="696" width="420" height="62" rx="10"/>
+    <text x="58" y="722" font-weight="700">5  Checks again: PC and headset parts</text>
+    <text x="58" y="744" class="mut" font-size="13">problem: its one Fix; parts missing: the guide (back to it)</text>
+    <path class="arrow" d="M460 727 H550 V530" marker-end="url(#ah)" stroke-dasharray="5 4"/>
+    <path class="arrow" d="M250 758 V780" marker-end="url(#ah)"/>
+    <!-- reboot 2 -->
+    <rect class="box rb" x="40" y="782" width="420" height="62" rx="10"/>
+    <text x="58" y="808" font-weight="700">Reboot 2: Restart now (in the app)</text>
+    <text x="58" y="830" class="mut" font-size="13">never while a password job runs</text>
+    <path class="arrow" d="M250 844 V866" marker-end="url(#ah)"/>
+    <!-- 6 -->
+    <rect class="box" x="40" y="868" width="420" height="62" rx="10"/>
+    <text x="58" y="894" font-weight="700">6  After the restart: checks by themselves</text>
+    <text x="58" y="916" class="mut" font-size="13">patched module, EDID, permission, parts, calibration</text>
+    <path class="arrow" d="M250 930 V952" marker-end="url(#ah)"/>
+    <!-- 7 -->
+    <rect class="box go" x="40" y="954" width="420" height="56" rx="10"/>
+    <text x="58" y="978" font-weight="700">7  Ready: Play (SteamVR) or Work</text>
+    <text x="58" y="998" class="mut" font-size="13">later updates: ./install.sh, then one check by the app</text>
+  </g>
+</svg>
+</div>
+<ol class="flow">
+  <li><b>Before</b> (no VR session): back up the private <code>.claude/</code>, the home settings and the factory calibration; freeze main (no merges) until Play works again.</li>
+  <li><b>Uninstall</b> from the app or <code>./uninstall.sh</code>: one password; downloads, keys and device data stay; its log goes to <code>~/</code>. <b>Reboot 1.</b></li>
+  <li><b><code>./install.sh</code></b> (no password). It ends by opening the app. Continue at once: from now until the setup's password the headset has no keepalive.</li>
+  <li><b>App: "Which headset do you have?", then "Get the headset ready"</b> until the control chip shows green. If it does not: the power button (90 s), then, only as the last step and never during a session, the power cable for 10 s.</li>
+  <li><b>The setup runs by itself</b>: fixes without a password (keep-alive, one headset restart for missing cameras, the eye module's enable), then ONE password for the system part, then the checks again, the headset's parts included. A problem shows its one Fix ("Fix all" for several root fixes); missing parts show the guide, which re-checks by itself.</li>
+  <li><b>Restart now</b> in the app (reboot 2), never by hand while a password job runs. The app opens at login and finishes the checks by itself.</li>
+  <li><b>Ready: Play or Work.</b> Later updates: <code>./install.sh</code>; an unchanged Monado keeps its permission; the app checks once and asks for one password only when Monado really changed.</li>
+</ol>
+</section>
+
+<section id="checklist">
+<h2>Prevention checklist</h2>
+<p class="note">Each mistake of the day and what now stops it. <span class="tag new">this branch</span> = added with this retro (commit on <code>retro-2026-10-17</code>), with its test.</p>
+<div class="panel"><ul class="check">
+  <li class="done"><span class="box2"></span><span class="what">Leftover NVIDIA patches after an uninstall</span><span class="how">Guard: <code>restore-stock</code> reverses patches without backups and fails loudly if a marker remains. Test <code>installer/test_root_nvidia.sh</code> (d8f80b3).</span></li>
+  <li class="done"><span class="box2"></span><span class="what">EDID step decided before the headset could wake</span><span class="how">Guard: <code>OVR_EDID=auto</code> inside the root job after the access rule. Test <code>installer/test_edid_auto.sh</code> (6698c18).</span></li>
+  <li class="done"><span class="box2"></span><span class="what">Hardware steps decided from "not seen on USB"</span><span class="how">Guard: "Which headset do you have?" and the sleeping signature; the plan is rewritten before the password. Tests <code>test_headset_detect.sh</code>, <code>headset_choice</code> (6d5d20e).</span></li>
+  <li class="done"><span class="box2"></span><span class="what">"No password window" on Omarchy</span><span class="how">Guard: quickshell counts as the polkit agent (931ba25).</span></li>
+  <li class="done"><span class="box2"></span><span class="what">Permission checked on the old lab build</span><span class="how">Guard: the doctor checks the installed Monado (4a971f8).</span></li>
+  <li class="done"><span class="box2"></span><span class="what">No window at login; no wake guidance</span><span class="how">Guard: window ack and raise watchdog; the wake guide with live chip state (2740472).</span></li>
+  <li class="done"><span class="box2"></span><span class="what">Realtime permission dropped by every install <span class="tag new">this branch</span></span><span class="how">Guard: idempotent <code>lab-data.sh link</code>; <code>cap_keep_begin</code>/<code>cap_keep_end</code> keep the old inode for identical bytes; no in-place Monado build during a session. Tests <code>tools/test_lab_data.sh</code>, <code>installer/test_keep_caps.sh</code>.</span></li>
+  <li class="done"><span class="box2"></span><span class="what">Lost permission found only at the Work start <span class="tag new">this branch</span></span><span class="how">Guard: <code>post-install-check</code>; the app runs the checks once after an update and opens the problem with its one-password Fix. Tests <code>autosetup::the_check_after_an_update_*</code>.</span></li>
+  <li class="done"><span class="box2"></span><span class="what">Recovery loops and a stopped keepalive <span class="tag new">this branch</span></span><span class="how">Guard: one restart per start, keepalive back when the headset leaves USB, 60 s, the plain hint, the app opens the guide. Tests <code>vr::reset::auto_recover_*</code>, <code>reset_once_*</code>, <code>autosetup::a_failed_start_or_restart_opens_the_guide_and_back_returns</code>.</span></li>
+  <li class="done"><span class="box2"></span><span class="what">"Ready" with the headset's parts missing <span class="tag new">this branch</span></span><span class="how">Guard: <code>headset</code>, <code>headset-camera</code>, <code>eye-chip</code> as setup items with one step each and the guide; the EDID Fix waits while the chip is off; Restart now on the problem screen. Tests <code>autosetup::missing_*</code>, <code>checklist::the_headset_parts_behind_the_control_chip</code>.</span></li>
+  <li class="done"><span class="box2"></span><span class="what">Second password for the eye tracker's access <span class="tag new">this branch</span></span><span class="how">Guard: <code>UDEV_TRIGGER</code> covers every device of the rule; only "Fix all" with several root problems. Test <code>installer/test_root_udev.sh</code>.</span></li>
+  <li class="done"><span class="box2"></span><span class="what">Eye tracking turned off for nothing <span class="tag new">this branch</span></span><span class="how">Guard: the preflight's info line "switched on at the start". Test <code>preflight::an_eye_module_switched_off_*</code>.</span></li>
+  <li class="done"><span class="box2"></span><span class="what">Test crashes read as app crashes <span class="tag new">this branch</span></span><span class="how">Guard: thread name <code>ovr-test-crash</code>; the leaf test's stand-in ends without a core dump. Checked live: the kernel now prints <code>ovr-test-crash[pid]: segfault at 0</code>; no coredump entry from the leaf test.</span></li>
+  <li class="done"><span class="box2"></span><span class="what">Build cache inside the settings backup <span class="tag new">this branch</span></span><span class="how">Guard: removed as a cache before the tar. Test <code>installer/test_uninstall_cache.sh</code> (dry run in a scratch home).</span></li>
+  <li class="todo"><span class="box2"></span><span class="what">Factory calibration removed by the uninstall <span class="tag todo">TODO</span></span><span class="how">Owned by a separate change: keep it like <code>ai.toml</code>, read it from the headset in the setup, a plain-words start error, a Room setup button.</span></li>
+  <li class="todo"><span class="box2"></span><span class="what">Headset left without a host between uninstall and setup <span class="tag todo">TODO</span></span><span class="how">Recommendation: the uninstaller's last line and install.sh's last line say "finish the setup now: the headset has no keep-alive until then"; the app could count the minutes since the access rule disappeared.</span></li>
+  <li class="todo"><span class="box2"></span><span class="what">A reboot started during a root job <span class="tag todo">TODO</span></span><span class="how">The app's Restart now is already disabled while a job runs; agents must use it, never <code>systemctl reboot</code> by hand. Recommendation: a lock file the root job holds, checked by a reboot helper.</span></li>
+</ul></div>
+</section>
+
+<section id="process">
+<h2>How we worked: the process side</h2>
+<div class="cards">
+  <div class="card warn"><h3>Missed verifications</h3><ul class="tight">
+    <li>"Install #1 worked" was reported while its system part had not run; the headset then waited hours without a host.</li>
+    <li>A fix committed at 13:12 was relied on at 13:18 by an app that did not have it yet.</li>
+    <li>The 13:07 recovery's output was not read for what it showed: one command, then 24 re-enumerations without a keepalive.</li></ul></div>
+  <div class="card warn"><h3>Wrong assumptions</h3><ul class="tight">
+    <li>"A reboot brings the chip back" (12:46: it did not).</li>
+    <li>"Restart headset brings the cameras back" (it made it worse with the keepalive stopped).</li>
+    <li>"The eye tracker is broken" (it is off by design after a restart).</li>
+    <li>"Monado unchanged keeps the permission" (the relink happened anyway).</li>
+    <li>"The uninstall only resets settings" (it removed the factory calibration).</li></ul></div>
+  <div class="card warn"><h3>Stale plans, hand edits</h3><ul class="tight">
+    <li>install.sh's plan was written with the headset asleep (fixed by rewriting it before the password).</li>
+    <li>The next-step note changed mid-run (automatic onboarding) while the machine stayed half installed.</li>
+    <li>Three hand edits: the NVIDIA restore script, <code>setup_stage = restart</code>, the calibration copy. Each is a missing button.</li></ul></div>
+  <div class="card warn"><h3>Too many restarts and installs</h3><ul class="tight">
+    <li>Three reboots; the one at 12:46 changed nothing (chip still off) and cut a root job.</li>
+    <li>Six installs: every merge to main was installed again during the reinstall.</li>
+    <li>Two uninstalls on one day, the second three hours after the first, with no system part in between.</li></ul></div>
+  <div class="card warn"><h3>Agents</h3><ul class="tight">
+    <li>Parallel feature agents committed and merged while the reinstall ran.</li>
+    <li>Their tests produced crash lines and core dumps on the user's machine.</li>
+    <li>A test agent repeated its reports; one report named the wrong branch (reported by the main thread).</li></ul></div>
+</div>
+<h3>Process rules</h3>
+<ol class="flow">
+  <li><b>Reinstall drills in one sitting</b>, main frozen, the headset awake before the system part. No feature work in between.</li>
+  <li><b>Count prompts and reboots</b> per run and write a short timeline while working. More than one password per job or one reboot per job is a bug to file.</li>
+  <li><b>Never edit app state by hand</b> (<code>gui-state.toml</code>, setup stage, device files). If you need to, the app is missing a button: add it.</li>
+  <li><b>"Done" means installed and seen working.</b> Reports say "committed abc1234" or "installed at 13:22", never both loosely.</li>
+  <li><b>Never reboot while a password job runs.</b> Use the app's Restart now; it waits for jobs.</li>
+  <li><b>Read the code and the logs before calling hardware broken</b>, and before repeating a recovery that just failed.</li>
+  <li><b>Crash triage starts with the test binaries</b>: same bytes at the offset (<code>od</code>), <code>addr2line</code>. Tests never leave real-looking crashes.</li>
+  <li><b>Run logs go to the home directory</b>, never only to /tmp (lost at the reboot).</li>
+  <li><b>Agent reports</b> take the branch and commit from the repository's own output, are not copied from an earlier report, and the main thread checks one claim with one command before relaying it.</li>
+</ol>
+</section>
+
+<section id="fixed">
+<h2>What this branch fixes (with tests)</h2>
+<div class="tablewrap"><table class="stack">
+<thead><tr><th>Fix</th><th>Files</th><th>Test</th></tr></thead>
+<tbody>
+<tr><td>Realtime permission kept across a relink to the same bytes; no in-place Monado build during a session; <code>post-install-check</code> for the app</td><td data-l="Files"><code>installer/lib.sh</code>, <code>installer/install.sh</code></td><td data-l="Test"><code>installer/test_keep_caps.sh</code></td></tr>
+<tr><td><code>lab-data.sh link</code> leaves correct links alone (the root cause of the spurious relink)</td><td data-l="Files"><code>tools/lab-data.sh</code></td><td data-l="Test"><code>tools/test_lab_data.sh</code> (fails on the old script)</td></tr>
+<tr><td>The app's check after an update: runs once by itself, opens the problem with its one-password Fix, removes the request when green; it looks at the PC only (a headset that sleeps during an update does not pull the setup up)</td><td data-l="Files"><code>autosetup.rs</code>, <code>install.rs</code>, <code>app.rs</code>, <code>pages/onboarding.rs</code></td><td data-l="Test"><code>autosetup</code> tests; screenshot <code>setup-after-update</code></td></tr>
+<tr><td>Start recovery: one restart, keepalive back when the headset leaves USB, 60 s, no fallback chain, plain hint; <code>reset-headset --once</code></td><td data-l="Files"><code>omarchyvr-tools/src/vr/reset.rs</code>, <code>vr/mod.rs</code>, <code>vr/desk.rs</code></td><td data-l="Test"><code>vr::reset</code> tests (31)</td></tr>
+<tr><td>The guide opens after a failed start or headset restart; Back returns</td><td data-l="Files"><code>autosetup.rs</code>, <code>reset.rs</code> (gui-core), <code>pages/onboarding.rs</code></td><td data-l="Test"><code>autosetup::a_failed_start_or_restart_*</code>; screenshot <code>wake-guide-after-start</code></td></tr>
+<tr><td>Headset parts as setup items; the EDID Fix waits while the chip is off; Restart now on the problem screen; only "Fix all" with several root fixes; a sleeping headset explained as asleep</td><td data-l="Files"><code>checklist.rs</code>, <code>autosetup.rs</code>, <code>headset_choice.rs</code>, <code>pages/onboarding.rs</code></td><td data-l="Test"><code>autosetup::missing_*</code>, <code>the_display_mode_fix_waits_*</code>, <code>checklist::the_headset_parts_*</code>, <code>headset_choice::the_guide_waits_*</code>; screenshots <code>setup-problem-asleep</code>, <code>setup-problem-cameras</code></td></tr>
+<tr><td>The root job's udev trigger covers the eye tracker</td><td data-l="Files"><code>installer/omarchyvr-root.sh</code></td><td data-l="Test"><code>installer/test_root_udev.sh</code></td></tr>
+<tr><td>Preflight: an off eye module is not a reason to drop eye tracking</td><td data-l="Files"><code>preflight.rs</code></td><td data-l="Test"><code>preflight::an_eye_module_switched_off_*</code></td></tr>
+<tr><td>Deliberate test crashes named <code>ovr-test-crash</code>; the leaf test leaves no core dump</td><td data-l="Files"><code>omarchyvr-app/src/window.rs</code>, <code>omarchyvr-autod/tests/leaf_restart.rs</code></td><td data-l="Test">supervisor tests, <code>leaf_restart</code>; checked in the kernel log</td></tr>
+<tr><td>Uninstall: the build cache never goes into the settings tar</td><td data-l="Files"><code>installer/uninstall.sh</code></td><td data-l="Test"><code>installer/test_uninstall_cache.sh</code></td></tr>
+</tbody></table></div>
+<div class="callout warn"><b>Needs the user's OK:</b> the power-cable step was allowed "during setup" (ai/CLAUDE.md). This branch also opens the same guide after a Work/Play start or a headset restart whose cameras did not come back (no session runs then; the power button first; the cable only as the guide's last step). If that should stay setup-only, the start can show the hint without opening the guide.</div>
+</section>
+
+<section id="todo">
+<h2>Still TODO, with a recommendation</h2>
+<div class="tablewrap"><table class="stack">
+<thead><tr><th>Item</th><th>Recommendation</th></tr></thead>
+<tbody>
+<tr><td>Factory calibration kept, read in the setup, plain error</td><td data-l="Recommendation">In progress in a separate change (do not duplicate).</td></tr>
+<tr><td>Warn when the headset has no host for long</td><td data-l="Recommendation">Uninstall and install.sh end with "finish the setup now"; the app shows minutes without keepalive access while the access rule is missing.</td></tr>
+<tr><td>The app's repository path is the build-time clone</td><td data-l="Recommendation">The udev Fix copies <code>linux/70-pimax.rules</code> from the clone (12:40). Prefer the installed data copy (<code>~/.local/share/omarchyvr/data</code>); needs a pass over every repository-relative path (rust/, packaging/ and analysis/ are not in the data copy).</td></tr>
+<tr><td>Keepalive's "udev rule missing?" right after an enumeration</td><td data-l="Recommendation">A 2 s udev race, not a missing rule (13:00:24, 13:14:03). Reword with the next real change of the <code>pimax</code> crate: it is linked into Monado, and a log-text change alone would relink it.</td></tr>
+<tr><td>Job file names in UTC</td><td data-l="Recommendation">Name them in local time with the offset, or show local times in the Logs page; reading them during an incident cost time.</td></tr>
+<tr><td>Manual Restart headset still has the slow and dp fallbacks</td><td data-l="Recommendation">Measure one sys restart with the keepalive running (this branch) on the real headset; if the cameras come back as on Windows (~17 s), drop the fallbacks.</td></tr>
+<tr><td>Run logs</td><td data-l="Recommendation">install.sh and uninstall.sh write their own log to <code>~/</code> (today the main thread did it by hand for installs; uninstall output was lost in /tmp).</td></tr>
+</tbody></table></div>
+</section>
+
+<footer>
+Sources: <code>journalctl -b -3 ... -b 0</code> (kernel and user), <code>journalctl --user -u omarchyvr-keepalived</code>, <code>~/.local/state/omarchyvr/jobs/*.log</code>,
+<code>~/.local/state/omarchyvr/logs/omarchyvr-app.log</code>, <code>~/omarchyvr-install-2026-10-17-*.log</code>, <code>coredumpctl list</code>,
+<code>git log 504f899..21e1655</code>, and the test binaries of the day (<code>od</code>, <code>addr2line</code>). Device serials, paths with the login name and keys are left out on purpose.
+</footer>
+</main>
+<script>
+(function () {
+  var root = document.documentElement, key = "retro-theme";
+  try { var saved = localStorage.getItem(key); if (saved === "light" || saved === "dark") root.setAttribute("data-theme", saved); } catch (e) {}
+  var b = document.getElementById("theme");
+  if (!b) return;
+  b.addEventListener("click", function () {
+    var cur = root.getAttribute("data-theme");
+    if (!cur) cur = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    var next = cur === "dark" ? "light" : "dark";
+    root.setAttribute("data-theme", next);
+    try { localStorage.setItem(key, next); } catch (e) {}
+  });
+})();
+</script>
+</body>
+</html>

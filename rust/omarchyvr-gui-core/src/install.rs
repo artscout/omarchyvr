@@ -53,6 +53,11 @@ impl Install {
     pub fn uninstall_env(&self) -> PathBuf {
         self.share.join("uninstall-plan.env")
     }
+    /// Left by `./install.sh` for the app: check this PC once more at the next start (a changed Monado lost its
+    /// realtime permission, ...). The app removes it when the checks are green.
+    pub fn post_install_check(&self) -> PathBuf {
+        self.share.join("post-install-check")
+    }
 }
 
 /// The wizard's "System setup" root job, when `./install.sh` prepared one. `plan_text` is the content of
@@ -111,6 +116,8 @@ pub struct InstallInfo {
     pub manifest: bool,
     /// The NVIDIA driver and the patch on it (see [`crate::nvidia_patch`]).
     pub nvidia: crate::nvidia_patch::NvidiaInfo,
+    /// `./install.sh` asked for one check after the install ([`Install::post_install_check`]).
+    pub post_install: bool,
 }
 
 /// Read the install state (files only; cheap).
@@ -121,6 +128,7 @@ pub fn read_info(i: &Install) -> InstallInfo {
         root_done: root_done(&|p| p.exists()),
         manifest: i.manifest().is_file(),
         nvidia: crate::nvidia_patch::read_info(i),
+        post_install: i.post_install_check().is_file(),
     }
 }
 
@@ -135,6 +143,7 @@ pub fn demo_info() -> InstallInfo {
         root_done: true,
         manifest: true,
         nvidia: crate::nvidia_patch::demo_info(),
+        post_install: false,
     }
 }
 

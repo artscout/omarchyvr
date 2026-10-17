@@ -499,6 +499,51 @@ fn shots() -> Vec<Shot> {
             setup: |a| demo_setup(a, "problem", SetupStage::Restart),
         },
         Shot {
+            name: "setup-problem-asleep",
+            running: false,
+            page: Page::Onboarding,
+            height: 1250.0,
+            dark: true,
+            setup: |a| {
+                use omarchyvr_gui_core::wake::Wake;
+                demo_setup(a, "parts-asleep", SetupStage::Todo);
+                a.core.onboarding.wake_demo = Some((Wake::PressPower { left: 64.0 }, 0.5));
+            },
+        },
+        Shot {
+            name: "setup-problem-cameras",
+            running: false,
+            page: Page::Onboarding,
+            height: 1100.0,
+            dark: true,
+            setup: |a| {
+                use omarchyvr_gui_core::wake::Wake;
+                demo_setup(a, "parts-cameras", SetupStage::Restart);
+                a.core.onboarding.wake_demo = Some((Wake::UnplugCable, 2.0));
+            },
+        },
+        Shot {
+            name: "setup-after-update",
+            running: false,
+            page: Page::Onboarding,
+            height: 760.0,
+            dark: true,
+            setup: |a| demo_setup(a, "after-update", SetupStage::Done),
+        },
+        Shot {
+            name: "wake-guide-after-start",
+            running: false,
+            page: Page::Onboarding,
+            height: 900.0,
+            dark: true,
+            setup: |a| {
+                use omarchyvr_gui_core::wake::Wake;
+                a.core.state.setup = SetupStage::Done;
+                a.core.wake_after_failure("omarchyvr: camera recovery failed: the headset's camera (34a4:0014) did not come back 60 s after one restart");
+                a.core.onboarding.wake_demo = Some((Wake::PressPower { left: 70.0 }, 1.4));
+            },
+        },
+        Shot {
             name: "setup-stopped",
             running: false,
             page: Page::Onboarding,

@@ -726,6 +726,7 @@ impl AppCore {
         }
         self.setup_poll();
         self.wake_poll();
+        self.post_install_poll();
         self.want_plan(self.effective_toggles());
         self.want_plan(self.effective_toggles().without_eye());
         self.want_plan(self.vr_toggles());
@@ -830,7 +831,12 @@ impl AppCore {
                 self.note_start_result(label, &r);
                 self.consent_force = false;
             }
-            (JobKind::DeskStart, Err(_)) => self.note_start_result(label, &r),
+            (JobKind::DeskStart, Err(e)) => {
+                self.note_start_result(label, &r);
+                // the camera stayed away after the one restart: the guide, not a raw tool error (2026-10-17 13:10)
+                let e = e.clone();
+                self.wake_after_failure(&e);
+            }
             (JobKind::Other(k), _) if k == crate::handtest::KIND => self.hand_test_done(r.is_ok()),
             (JobKind::Stop, _) if self.live.service.is_none() => self.session_tool = None,
             _ => {}

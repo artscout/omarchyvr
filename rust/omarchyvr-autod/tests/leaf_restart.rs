@@ -1,5 +1,6 @@
 //! P5 acceptance with fake processes: a fake desk session (sleep processes named like the real binaries through
-//! symlinks, a fake sysfs, a temp session dir; the real /proc), adopted by the Supervisor; `perf` dies with SIGABRT,
+//! symlinks, a fake sysfs, a temp session dir; the real /proc), adopted by the Supervisor; `perf` dies (classified as a
+//! SIGABRT crash; the stand-in is killed without a core dump),
 //! the reconciler restarts it after the leaf backoff by respawning the argv it captured, through the real executor.
 //! Touches nothing outside the temp dir and its own children.
 use omarchyvr_autod::executor::{self, Ctx};
@@ -20,6 +21,29 @@ fn sleep_bin() -> String {
         }
     }
     panic!("no sleep binary")
+}
+
+/// The stand-ins never leave a system core dump: on 2026-10-17 every run of this test left a core of `/usr/bin/sleep`
+/// named omarchyvr-perf in systemd-coredump (18 that day) and a desktop "Process crashed" notification, which looked
+/// like real crashes of our perf tool.
+fn no_core_dump(c: &mut Command) -> &mut Command {
+    use std::os::unix::process::CommandExt;
+    // SAFETY: setrlimit(2) is async-signal-safe; it runs in the child between fork and exec, on a local struct.
+    unsafe {
+        c.pre_exec(|| {
+            let zero = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
+            if libc::setrlimit(libc::RLIMIT_CORE, &zero) != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        })
+    }
+}
+
+/// `Max core file size` of a process (from /proc/PID/limits): the soft limit.
+fn core_limit(pid: u32) -> Option<String> {
+    let l = std::fs::read_to_string(format!("/proc/{pid}/limits")).ok()?;
+    l.lines().find(|x| x.starts_with("Max core file size")).and_then(|x| x.split_whitespace().nth(4)).map(str::to_string)
 }
 
 struct Kids(Vec<u32>);
@@ -55,7 +79,7 @@ fn a_crashed_leaf_is_respawned_from_its_captured_argv() {
     for (name, file) in [("monado-service", "monado.pid"), ("pimax-cam", "broker.pid"), ("wayvr", "wayvr.pid"), ("omarchyvr-perf", "perf.pid")] {
         let link = bin.join(name);
         std::os::unix::fs::symlink(sleep_bin(), &link).unwrap();
-        let c = Command::new(&link).arg("300").spawn().unwrap();
+        let c = no_core_dump(Command::new(&link).arg("300")).spawn().unwrap();
         kids.0.push(c.id());
         put(&r.session_dir, file, &format!("{}\n", c.id()));
         children.push((name, c));
@@ -88,12 +112,15 @@ fn a_crashed_leaf_is_respawned_from_its_captured_argv() {
     assert_eq!(sup.w.mode(), Mode::Desk);
     assert!(sup.w.wanted("perf"));
     let old = sup.w.c("perf").pid.unwrap();
-    // perf aborts
+    // perf "aborts": the supervisor is told SIGABRT (the exit status below is what it classifies). The stand-in itself
+    // is ended with SIGKILL: a real SIGABRT made systemd-coredump journal a crash of `sleep` on every run, and Omarchy's
+    // crash watcher showed "Process crashed" for each (2026-10-17: 18 times). No core limit either, as a second guard.
     let (_, mut perf) = children.pop().unwrap();
+    assert_eq!(core_limit(perf.id()).as_deref(), Some("0"), "the stand-in must not dump core");
     // SAFETY: our own child.
-    unsafe { libc::kill(perf.id() as i32, libc::SIGABRT) };
+    unsafe { libc::kill(perf.id() as i32, libc::SIGKILL) };
     let st = perf.wait().unwrap();
-    assert_eq!(st.signal(), Some(libc::SIGABRT));
+    assert_eq!(st.signal(), Some(libc::SIGKILL));
     sup.w.exit_status.insert(old, (None, Some(libc::SIGABRT)));
     let d = round(&mut sup, 1.0);
     assert!(d.run.is_none(), "leaf backoff 2 s");

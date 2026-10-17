@@ -50,6 +50,9 @@ NVIDIA_CONF=$CONF_DIR/nvidia.conf
 NVIDIA_STATUS=$STATE/nvidia-patch-status
 MODPROBE=/etc/modprobe.d/nvidia-pimax.conf
 MKINITCPIO=/etc/mkinitcpio.conf.d/pimax.conf
+# applies the udev rule to what is plugged in now: the headset's devices (34a4:*, also their hidraw nodes) and the eye
+# tracker 2104:0561 (the rule covers it too)
+UDEV_TRIGGER='udevadm control --reload && udevadm trigger --subsystem-match=usb --attr-match=idVendor=34a4 && udevadm trigger --subsystem-match=usb --attr-match=idVendor=2104 --attr-match=idProduct=0561 && udevadm trigger --subsystem-match=hidraw'
 
 # shellcheck source=headset-connector.sh
 . "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/headset-connector.sh" 2>/dev/null || headset_connector() { return 1; }
@@ -244,7 +247,9 @@ do_apply() {
 	step "Headset access: udev rule $UDEV_RULE (only Pimax devices 34a4:* and the eye tracker 2104:0561; keeps the hubs above the headset awake)"
 	place "$d/installer/pimax-hub-power.sh" "$LIBDIR/pimax-hub-power.sh" 755 "hub power helper (udev RUN)" || true
 	if place "$d/linux/70-pimax.rules" "$UDEV_RULE" 644 "headset udev rule"; then
-		act "udevadm control --reload; udevadm trigger for the Pimax devices" -- sh -c 'udevadm control --reload && udevadm trigger --subsystem-match=usb --attr-match=idVendor=34a4 && udevadm trigger --subsystem-match=hidraw'
+		# every device the rule covers, the eye chip too: without its trigger the eye tracker's node stayed root-only
+		# until the next replug, the app's access check failed and asked for a second password (2026-10-17 12:40)
+		act "udevadm control --reload; udevadm trigger for the Pimax devices and the eye tracker" -- sh -c "$UDEV_TRIGGER"
 	fi
 
 	step "Uninstall helper: $LIBDIR/omarchyvr-root.sh (root-owned copy of this script, used by the uninstaller)"
