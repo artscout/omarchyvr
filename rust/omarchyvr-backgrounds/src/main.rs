@@ -7,12 +7,13 @@
 //! omarchyvr-backgrounds verify [--deep]          check every file of the library
 //! omarchyvr-backgrounds set NAME|next|previous|off   choose (saved in ~/.config/omarchyvr/background.toml)
 //! omarchyvr-backgrounds res auto|8k|4k|2k        choose the resolution
+//! omarchyvr-backgrounds ocean [low|medium|high]  the animated ocean (Work only), optionally its quality
 //! omarchyvr-backgrounds apply [--wayvrctl PATH]  show the saved choice in the running session
 //! omarchyvr-backgrounds status                   the saved choice
 //! omarchyvr-backgrounds sources                  the curated list
 //! ```
 use omarchyvr_backgrounds::fetch::{self, Options};
-use omarchyvr_backgrounds::{Dirs, Res, Setting};
+use omarchyvr_backgrounds::{Dirs, OceanQuality, Res, Setting, OCEAN_ID};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -98,6 +99,10 @@ fn run(sub: &str, args: &[String], d: &Dirs) -> Result<ExitCode, String> {
                     s.enabled = true;
                     s.id = e.id;
                 }
+                name if omarchyvr_backgrounds::parse_ocean(name).is_some() => {
+                    omarchyvr_backgrounds::remember(d, name).map_err(|e| e.to_string())?;
+                    s = Setting::load(d);
+                }
                 name => {
                     let after = s.enabled.then_some(s.id.as_str());
                     let e = omarchyvr_backgrounds::find(&lib, name, after).ok_or_else(|| format!("no background \"{name}\""))?;
@@ -112,11 +117,25 @@ fn run(sub: &str, args: &[String], d: &Dirs) -> Result<ExitCode, String> {
                 println!("{}", omarchyvr_backgrounds::apply(d, &ctl)?);
             }
         }
+        "ocean" => {
+            let mut s = Setting::load(d);
+            if let Some(q) = args.first().filter(|a| !a.starts_with("--")) {
+                s.ocean_quality = OceanQuality::parse(q).ok_or("ocean: low, medium or high")?;
+            }
+            s.enabled = true;
+            s.id = OCEAN_ID.to_string();
+            s.save(d).map_err(|e| e.to_string())?;
+            println!("background {} ({})", s.id, s.ocean_quality.label());
+            if args.iter().any(|a| a == "--apply") {
+                let ctl = arg(args, "--wayvrctl").map(PathBuf::from).unwrap_or_else(omarchyvr_backgrounds::default_wayvrctl);
+                println!("{}", omarchyvr_backgrounds::apply(d, &ctl)?);
+            }
+        }
         "apply" => {
             let ctl = arg(args, "--wayvrctl").map(PathBuf::from).unwrap_or_else(omarchyvr_backgrounds::default_wayvrctl);
             println!("{}", omarchyvr_backgrounds::apply(d, &ctl)?);
         }
-        _ => return Err("list | download | verify | set | res | apply | status | sources".into()),
+        _ => return Err("list | download | verify | set | res | ocean | apply | status | sources".into()),
     }
     Ok(ExitCode::SUCCESS)
 }

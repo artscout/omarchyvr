@@ -421,6 +421,14 @@ fn shots() -> Vec<Shot> {
             dark: true,
             setup: |a| a.core.profiles.import_legacy(),
         },
+        Shot {
+            name: "backgrounds",
+            running: false,
+            page: Page::Backgrounds,
+            height: 640.0,
+            dark: true,
+            setup: |_| crate::pages::backgrounds::demo(&std::env::temp_dir().join(format!("omarchyvr-bg-shot-{}", std::process::id()))),
+        },
     ]
 }
 

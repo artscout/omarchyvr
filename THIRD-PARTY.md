@@ -19,6 +19,7 @@ each keeps its own licence and notices.
 | Mercury hand-tracking models | **no licence** | **Not included and never redistributed.** The app's "Download hand models" button fetches them from upstream on the user's machine, for personal use. |
 | Whisper / Parakeet / Silero VAD / Kokoro / Qwen voice models | their own licences | Downloaded on first use, never bundled. |
 | NVIDIA open kernel modules (`patches/nvidia/`) | MIT / GPL-2.0 (dual) | Our patches are offered under the same dual licence. |
+| [web-ocean](https://github.com/Noniv/web-ocean) | MIT (c) 2026 Maksymilian Dendura | Inspiration for the animated ocean background only. **No code or shader was copied**; the ocean in WayVR is a clean-room implementation from the papers listed in `docs/research/web-ocean.md` (Tessendorf 2001, Pierson-Moskowitz 1964, JONSWAP 1973, Cox-Munk 1954, Nishita 1993, Walter 2007). |
 | Rust crates (see `rust/Cargo.lock`) | various (MIT, Apache-2.0, BSD, ...) | Fetched by Cargo; their licences apply to the built binaries. |
 | SteamVR, Steam, Pimax Play, Tobii eye-tracker firmware | proprietary | **Never bundled.** We talk to them over their documented or observed interfaces only. |
 
