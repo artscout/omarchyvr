@@ -29,6 +29,30 @@ It is not the desktop wallpaper (`Max, next wallpaper` is Omarchy's and unrelate
 
 CLI (for agents): `omarchyvr-backgrounds list|download|verify|set NAME|next|previous|off|res auto|8k|4k|2k|apply|status`.
 
+## Ocean (animated)
+A live sea and sky drawn by WayVR behind your screens in Work (research and measurements: docs/research/web-ocean.md;
+inspired by github.com/Noniv/web-ocean, MIT, no code taken).
+- **App**: Backgrounds page > Animated > "Ocean (animated)" (a switch like any picture: tap it, tap another picture or
+  Off to leave it) with **Quality: Low / Medium / High**. **Voice**: the library side understands the name "animated ocean" (`backdrop_plan` -> `ocean:<quality>`, the word
+  "ocean" alone keeps meaning the photos), but the voice command grammar was not extended or tested yet (open item). CLI: `omarchyvr-backgrounds ocean [low|medium|high] --apply`.
+- **Saved**: `background.toml` gets `id = "ocean/animated"` and `ocean_quality = "low|medium|high"`; the Work start applies
+  it like a picture (`wayvrctl skybox ocean:<quality>`; no file needed, nothing to download).
+- **Only in Work**: it is a WayVR skybox, and WayVR runs only in Work (Play is SteamVR; the setting is not applied there).
+- **What you see**: a sea under a golden-hour sky, the horizon a few degrees below eye level so it clears the screens, a
+  sun glitter path, clouds drifting, whitecaps on the steeper waves. The water is fixed in the room 3 m under the floor
+  and the waves are anchored to the room; the picture follows your head position, so it has no parallax.
+- **How**: `forks/wayvr/wayvr/src/ocean/` (waves, uniforms, renderer, tests), `shaders/ocean.frag`,
+  `backend/openxr/ocean_sky.rs` and a hook in `skybox.rs`: a sum of 20/40/64 directional waves from a JONSWAP spectrum
+  (Tessendorf, Pierson-Moskowitz, JONSWAP), Fresnel sky reflection, GGX sun glitter with the roughness of the waves too
+  small to draw, Jacobian foam, a closed-form atmosphere (Nishita) with fbm clouds; drawn into the equirect swapchain
+  every 2nd frame (every 3rd on Low). No compute passes, no textures, CPU about zero.
+- **Cost (RTX 4090, headless, per drawn frame)**: Low 0.06 ms (2048x1024), Medium 0.38 ms (4096x2048), High 1.20 ms
+  (6144x3072). Check in the headset with the wrist readout (`miss N /5s` must stay 0).
+- **Test**: `cargo test -p wayvr ocean::` (the GPU part skips itself while `monado-service`, `vrserver` or
+  `vrcompositor` runs, or with `OMARCHYVR_OCEAN_NOGPU=1`); `OMARCHYVR_OCEAN_OUT=DIR` keeps the PNGs (the 360 image and
+  three views per quality) and `ocean-gpu-time.csv`. Pictures: docs/img/ocean-high-view-sun.png,
+  docs/img/ocean-high-view-away.png, docs/img/backgrounds-ocean-page.png.
+
 ## Terms of the sources
 - **Poly Haven**: CC0. Official API (`api.polyhaven.com`) with a named User-Agent; the 8K tonemapped JPG is downloaded
   once per picture, no bulk mirroring (about 40 files).

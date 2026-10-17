@@ -9,7 +9,7 @@ use crate::app::PimaxApp;
 use crate::theme;
 use crate::widgets::{self, caption, card, chip, note};
 use eframe::egui::{self, Color32, CornerRadius, RichText, Sense, Stroke, StrokeKind, TextureHandle, Ui, Vec2};
-use omarchyvr_backgrounds::{fetch, Dirs, Entry, Res, Setting};
+use omarchyvr_backgrounds::{fetch, Dirs, Entry, OceanQuality, Res, Setting, OCEAN_ID};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -148,6 +148,20 @@ pub fn preload() {
     read_all(&dirs, &shared);
 }
 
+/// The screenshot's library: an empty one under `root` with the animated ocean (high) chosen, read at once.
+pub fn demo(root: &std::path::Path) {
+    let dirs = Dirs::under(root);
+    let _ = Setting { enabled: true, id: OCEAN_ID.to_string(), res: Res::Auto, ocean_quality: OceanQuality::High }.save(&dirs);
+    {
+        let mut s = state().lock().unwrap_or_else(|e| e.into_inner());
+        s.setting = Setting::load(&dirs);
+        s.dirs = dirs;
+        s.pending_until = Some(Instant::now() + Duration::from_secs(3600));
+        s.asked = Some(Instant::now() + Duration::from_secs(3600));
+    }
+    preload();
+}
+
 /// Save the choice and show it in the running session (on a thread; a failure lands in the status line).
 fn choose(app: &PimaxApp, s: &mut State, f: impl FnOnce(&mut Setting)) {
     f(&mut s.setting);
@@ -230,7 +244,13 @@ pub fn show(ui: &mut Ui, app: &mut PimaxApp) {
             if app.core.demo {
                 chip(ui, "demo", widgets::pal(ui).info);
             }
-            let cur = if s.setting.enabled { s.lib.iter().find(|e| e.id == s.setting.id).map(|e| e.title.clone()) } else { None };
+            let cur = if !s.setting.enabled {
+                None
+            } else if s.setting.id == OCEAN_ID {
+                Some(format!("Ocean (animated, {})", s.setting.ocean_quality.label().to_lowercase()))
+            } else {
+                s.lib.iter().find(|e| e.id == s.setting.id).map(|e| e.title.clone())
+            };
             chip(ui, cur.as_deref().unwrap_or("Off"), if cur.is_some() { widgets::pal(ui).ok } else { p.faint });
         });
         ui.add_space(6.0);
@@ -280,6 +300,40 @@ pub fn show(ui: &mut Ui, app: &mut PimaxApp) {
         if resp.clicked() && !on {
             choose(app, s, |st| st.enabled = false);
         }
+    });
+    ui.add_space(8.0);
+    card(ui, |ui| {
+        caption(ui, "Animated");
+        ui.add_space(4.0);
+        let on = s.setting.enabled && s.setting.id == OCEAN_ID;
+        ui.horizontal_wrapped(|ui| {
+            let (rect, resp) = ui.allocate_exact_size(Vec2::new(TILE_W, TILE_H), Sense::click());
+            resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, on, "Ocean (animated)"));
+            paint_ocean_preview(ui, rect);
+            outline(ui, rect, on, resp.hovered(), p.accent);
+            if resp.clicked() && !on {
+                choose(app, s, |st| {
+                    st.enabled = true;
+                    st.id = OCEAN_ID.to_string();
+                });
+            }
+            ui.vertical(|ui| {
+                ui.label(RichText::new("Ocean (animated)").size(13.0).color(if on { p.text } else { p.dim }));
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Quality").color(p.dim));
+                    for q in OceanQuality::ALL {
+                        let sel = s.setting.ocean_quality == q;
+                        let resp = ui.selectable_label(sel, q.label());
+                        resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, sel, format!("Ocean quality {}", q.label())));
+                        if resp.clicked() && !sel {
+                            choose(app, s, |st| st.ocean_quality = q);
+                        }
+                    }
+                });
+                ui.label(RichText::new(s.setting.ocean_quality.hint()).size(11.5).color(p.faint));
+                ui.label(RichText::new("Drawn live behind your screens in Work (waves, sky, sun). Never in Play.").size(11.5).color(p.faint));
+            });
+        });
     });
     if s.lib.is_empty() {
         ui.add_space(8.0);
@@ -341,6 +395,48 @@ pub fn show(ui: &mut Ui, app: &mut PimaxApp) {
     }
     ui.add_space(8.0);
     ui.label(RichText::new(format!("{} pictures · {:.1} GB", s.lib.len(), s.bytes as f64 / 1e9)).size(11.5).color(p.faint));
+}
+
+/// A small painted stand-in of the ocean (sky, horizon, sun path): the real one is drawn by WayVR in the headset.
+fn paint_ocean_preview(ui: &Ui, rect: egui::Rect) {
+    let pt = ui.painter();
+    let r = CornerRadius::same(6);
+    let horizon = rect.top() + rect.height() * 0.46;
+    let sky_top = Color32::from_rgb(28, 52, 104);
+    let sky_low = Color32::from_rgb(150, 178, 205);
+    let sea_far = Color32::from_rgb(52, 96, 120);
+    let sea_near = Color32::from_rgb(8, 52, 62);
+    pt.rect_filled(rect, r, sky_top);
+    let bands = 14;
+    for i in 0..bands {
+        let t = i as f32 / bands as f32;
+        let y0 = rect.top() + (horizon - rect.top()) * t;
+        let y1 = rect.top() + (horizon - rect.top()) * (i + 1) as f32 / bands as f32;
+        let c = lerp_color(sky_top, sky_low, t * t);
+        pt.rect_filled(egui::Rect::from_min_max(egui::pos2(rect.left(), y0), egui::pos2(rect.right(), y1.ceil())), if i == 0 { r } else { CornerRadius::ZERO }, c);
+    }
+    for i in 0..bands {
+        let t = i as f32 / bands as f32;
+        let y0 = horizon + (rect.bottom() - horizon) * t;
+        let y1 = horizon + (rect.bottom() - horizon) * (i + 1) as f32 / bands as f32;
+        let c = lerp_color(sea_far, sea_near, t.sqrt());
+        let rr = if i + 1 == bands { CornerRadius { nw: 0, ne: 0, sw: 6, se: 6 } } else { CornerRadius::ZERO };
+        pt.rect_filled(egui::Rect::from_min_max(egui::pos2(rect.left(), y0), egui::pos2(rect.right(), y1.ceil())), rr, c);
+    }
+    let sun = egui::pos2(rect.left() + rect.width() * 0.64, horizon - rect.height() * 0.2);
+    pt.circle_filled(sun, 3.0, Color32::from_rgb(255, 250, 235));
+    for i in 0..9 {
+        let t = i as f32 / 9.0;
+        let y = horizon + (rect.bottom() - horizon) * (0.04 + 0.9 * t);
+        let w = 6.0 + 22.0 * t;
+        let x = sun.x + ((i * 37 % 11) as f32 - 5.0) * 0.8;
+        pt.line_segment([egui::pos2(x - w, y), egui::pos2(x + w, y)], Stroke::new(1.4, Color32::from_rgba_unmultiplied(255, 244, 220, (210.0 - 110.0 * t) as u8)));
+    }
+}
+
+fn lerp_color(a: Color32, b: Color32, t: f32) -> Color32 {
+    let m = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t.clamp(0.0, 1.0)).round() as u8;
+    Color32::from_rgb(m(a.r(), b.r()), m(a.g(), b.g()), m(a.b(), b.b()))
 }
 
 fn outline(ui: &Ui, rect: egui::Rect, on: bool, hover: bool, accent: Color32) {

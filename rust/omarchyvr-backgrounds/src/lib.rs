@@ -92,6 +92,70 @@ impl Res {
     }
 }
 
+/// The id of the animated ocean (not a picture of the library: WayVR draws it live, see docs/BACKGROUNDS.md).
+pub const OCEAN_ID: &str = "ocean/animated";
+
+/// Quality of the animated ocean (resolution, number of waves, clouds).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum OceanQuality {
+    Low,
+    #[default]
+    Medium,
+    High,
+}
+
+impl OceanQuality {
+    pub const ALL: [OceanQuality; 3] = [OceanQuality::Low, OceanQuality::Medium, OceanQuality::High];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            OceanQuality::Low => "low",
+            OceanQuality::Medium => "medium",
+            OceanQuality::High => "high",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            OceanQuality::Low => "Low",
+            OceanQuality::Medium => "Medium",
+            OceanQuality::High => "High",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<OceanQuality> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "low" => Some(OceanQuality::Low),
+            "medium" | "med" | "" => Some(OceanQuality::Medium),
+            "high" => Some(OceanQuality::High),
+            _ => None,
+        }
+    }
+
+    /// One line for the page: what the quality costs (measured on an RTX 4090, `docs/BACKGROUNDS.md`).
+    pub fn hint(self) -> &'static str {
+        match self {
+            OceanQuality::Low => "2K picture, 20 waves, simple clouds: about 0.06 ms of GPU per drawn frame",
+            OceanQuality::Medium => "4K picture, 40 waves, clouds: about 0.4 ms of GPU per drawn frame",
+            OceanQuality::High => "6K picture, 64 waves, detailed clouds: about 1.2 ms of GPU per drawn frame",
+        }
+    }
+}
+
+/// Is this spoken or typed name the animated ocean? ("ocean animated", "animated ocean", "ocean:high", "ocean-animated")
+/// Returns the quality it names (the medium one when it names none).
+pub fn parse_ocean(name: &str) -> Option<Option<OceanQuality>> {
+    let n = name.trim().to_ascii_lowercase().replace(['_', '-', '/'], " ");
+    let words: Vec<&str> = n.split([' ', ':']).filter(|w| !w.is_empty()).collect();
+    let quality = words.iter().find(|w| ["low", "medium", "med", "high"].contains(w)).and_then(|w| OceanQuality::parse(w));
+    let animated = words.iter().any(|w| matches!(*w, "animated" | "live"));
+    let sea = words.iter().any(|w| matches!(*w, "ocean" | "sea" | "waves"));
+    // "ocean:high" (the skybox spelling): the word, a colon and a quality
+    let spelled = name.trim().to_ascii_lowercase().starts_with("ocean:") && words.len() == 2 && quality.is_some();
+    if (animated && (sea || words.len() == 1)) || spelled { Some(quality) } else { None }
+}
+
 /// The saved choice (`background.toml`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -101,11 +165,13 @@ pub struct Setting {
     /// `<theme>/<slug>`.
     pub id: String,
     pub res: Res,
+    /// Quality of the animated ocean (`id = "ocean/animated"`).
+    pub ocean_quality: OceanQuality,
 }
 
 impl Default for Setting {
     fn default() -> Self {
-        Setting { enabled: false, id: String::new(), res: Res::Auto }
+        Setting { enabled: false, id: String::new(), res: Res::Auto, ocean_quality: OceanQuality::Medium }
     }
 }
 
@@ -121,10 +187,11 @@ impl Setting {
             std::fs::create_dir_all(p)?;
         }
         let text = format!(
-            "# VR background (the Pimax app, \"Max, set background ...\" and `omarchyvr-backgrounds`). id = <theme>/<name>; res = auto|8k|4k|2k\nenabled = {}\nid = {:?}\nres = {:?}\n",
+            "# VR background (the Pimax app, \"Max, set background ...\" and `omarchyvr-backgrounds`). id = <theme>/<name>; res = auto|8k|4k|2k\nenabled = {}\nid = {:?}\nres = {:?}\nocean_quality = {:?}\n",
             self.enabled,
             self.id,
-            self.res.label().to_ascii_lowercase()
+            self.res.label().to_ascii_lowercase(),
+            self.ocean_quality.name()
         );
         let tmp = d.setting.with_extension("toml.tmp");
         std::fs::write(&tmp, text)?;
@@ -299,6 +366,9 @@ pub fn plan(d: &Dirs, s: &Setting) -> Option<Plan> {
     if !s.enabled {
         return Some(Plan { skybox: "off".into(), passthrough: "normal" });
     }
+    if s.id == OCEAN_ID {
+        return Some(Plan { skybox: format!("ocean:{}", s.ocean_quality.name()), passthrough: "off" });
+    }
     let lib = library(d);
     let e = lib.iter().find(|e| e.id == s.id)?;
     let p = path_of(d, e, s.res)?;
@@ -307,6 +377,9 @@ pub fn plan(d: &Dirs, s: &Setting) -> Option<Plan> {
 
 /// Voice name -> absolute path of the file to show (the saved resolution). None if it is not a library picture.
 pub fn voice_path(d: &Dirs, name: &str) -> Option<String> {
+    if let Some(q) = parse_ocean(name) {
+        return Some(format!("ocean:{}", q.unwrap_or(Setting::load(d).ocean_quality).name()));
+    }
     let lib = library(d);
     let e = lib.iter().find(|e| e.matches_name(name))?;
     path_of(d, e, Setting::load(d).res).map(|p| p.display().to_string())
@@ -321,6 +394,14 @@ pub fn voice_names(d: &Dirs) -> Vec<String> {
 /// (passthrough, dimmed, black) turns it off. Keeps the resolution.
 pub fn remember(d: &Dirs, name: &str) -> std::io::Result<()> {
     let mut s = Setting::load(d);
+    if let Some(q) = parse_ocean(name) {
+        s.enabled = true;
+        s.id = OCEAN_ID.to_string();
+        if let Some(q) = q {
+            s.ocean_quality = q;
+        }
+        return s.save(d);
+    }
     match library(d).iter().find(|e| e.matches_name(name)) {
         Some(e) => {
             s.enabled = true;
@@ -445,7 +526,7 @@ mod tests {
     fn setting_round_trip_and_default() {
         let d = tmp("setting");
         assert_eq!(Setting::load(&d), Setting::default());
-        let s = Setting { enabled: true, id: "ocean/umhlanga_sunrise".into(), res: Res::K4 };
+        let s = Setting { enabled: true, id: "ocean/umhlanga_sunrise".into(), res: Res::K4, ocean_quality: OceanQuality::High };
         s.save(&d).unwrap();
         assert_eq!(Setting::load(&d), s);
         std::fs::write(&d.setting, "enabled = maybe").unwrap();
@@ -494,7 +575,7 @@ mod tests {
         let d = tmp("plan");
         sample(&d);
         assert_eq!(plan(&d, &Setting::default()).unwrap(), Plan { skybox: "off".into(), passthrough: "normal" });
-        let s = Setting { enabled: true, id: "ocean/umhlanga_sunrise".into(), res: Res::K4 };
+        let s = Setting { enabled: true, id: "ocean/umhlanga_sunrise".into(), res: Res::K4, ocean_quality: OceanQuality::Medium };
         let p = plan(&d, &s).unwrap();
         assert!(p.skybox.ends_with("ocean/umhlanga_sunrise_4k.dds") && p.passthrough == "off", "{p:?}");
         assert!(plan(&d, &Setting { id: "nope/x".into(), ..s.clone() }).is_none());
@@ -506,5 +587,40 @@ mod tests {
         assert!(!l.enabled && l.id == "flowers/wildflower_field", "off keeps the last picture");
         assert!(voice_path(&d, "hawaii_maunakea_sunset").unwrap().ends_with("hawaii/maunakea_sunset_8k.dds"));
         assert!(voice_path(&d, "sky").is_none());
+    }
+
+    #[test]
+    fn the_animated_ocean_is_a_choice_that_needs_no_files() {
+        let d = tmp("ocean");
+        sample(&d);
+        // names that mean the live ocean (and not the "ocean" photo theme)
+        assert_eq!(parse_ocean("ocean animated"), Some(None));
+        assert_eq!(parse_ocean("animated ocean"), Some(None));
+        assert_eq!(parse_ocean("ocean-animated"), Some(None));
+        assert_eq!(parse_ocean("ocean:high"), Some(Some(OceanQuality::High)));
+        assert_eq!(parse_ocean("animated ocean low"), Some(Some(OceanQuality::Low)));
+        assert_eq!(parse_ocean("ocean"), None, "the theme word keeps meaning the photos");
+        assert_eq!(parse_ocean("ocean_umhlanga_sunrise"), None);
+        assert_eq!(parse_ocean("flowers"), None);
+        // saving and planning: skybox name `ocean:<quality>`, camera off
+        remember(&d, "animated ocean high").unwrap();
+        let s = Setting::load(&d);
+        assert!(s.enabled && s.id == OCEAN_ID && s.ocean_quality == OceanQuality::High);
+        assert_eq!(plan(&d, &s).unwrap(), Plan { skybox: "ocean:high".into(), passthrough: "off" });
+        remember(&d, "ocean animated").unwrap();
+        assert_eq!(Setting::load(&d).ocean_quality, OceanQuality::High, "no quality said: the saved one stays");
+        assert_eq!(voice_path(&d, "animated ocean").unwrap(), "ocean:high");
+        // a photo after it, and the quality is kept
+        remember(&d, "flowers_wildflower_field").unwrap();
+        let s = Setting::load(&d);
+        assert_eq!(s.id, "flowers/wildflower_field");
+        assert_eq!(s.ocean_quality, OceanQuality::High);
+        // an old file without the key still loads
+        std::fs::write(&d.setting, "enabled = true\nid = \"ocean/animated\"\nres = \"auto\"\n").unwrap();
+        let s = Setting::load(&d);
+        assert_eq!(s.ocean_quality, OceanQuality::Medium);
+        assert_eq!(plan(&d, &s).unwrap().skybox, "ocean:medium");
+        // the plan of "off" is unchanged
+        assert_eq!(plan(&d, &Setting::default()).unwrap().skybox, "off");
     }
 }
