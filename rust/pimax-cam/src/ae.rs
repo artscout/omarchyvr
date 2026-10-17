@@ -325,6 +325,162 @@ pub fn tile_histogram(t: &TileView, step: usize, mask: &Mask) -> Histogram {
     h
 }
 
+/// Side of a metering cell in tile pixels.
+pub const METER_CELL: usize = 16;
+/// A cell with more than this fraction of clipped samples is left out of the mean.
+pub const METER_CELL_CLIP: f64 = 0.5;
+
+/// The ONE brightness metric (auto exposure, room setup, the "good frame" bit): the mean over the lit image circle
+/// (the black lens corners are outside [`Mask`]) that leaves out cells which are more than half clipped, and the
+/// clipped fraction over all masked samples.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct SceneMetric {
+    /// Masked mean of the unclipped cells (0..255). All masked samples when every cell is clipped.
+    pub mean: f64,
+    /// Fraction of masked samples at or above the saturation level.
+    pub sat: f64,
+    /// Fraction of masked samples at or below 8.
+    pub dark: f64,
+    /// Masked samples.
+    pub n: u32,
+}
+
+/// Metric plus the histograms it was made from (`all` = every masked sample, `kept` = the unclipped cells).
+pub fn scene_metric_hist(tiles: &[TileView], step: usize, mask: &Mask, sat_level: u8) -> (SceneMetric, Histogram, Histogram) {
+    let step = step.max(1);
+    let mut all = Histogram::default();
+    let mut kept = Histogram::default();
+    let (mut sat, mut dark) = (0u64, 0u64);
+    for t in tiles {
+        let cw = t.w.div_ceil(METER_CELL);
+        let ch = t.h.div_ceil(METER_CELL);
+        // Per cell: a small histogram would be heavy; keep sum, count and clipped count, and a list of samples.
+        let mut cells: Vec<(u32, u32, u32)> = vec![(0, 0, 0); cw * ch]; // (sum, n, clipped)
+        let mut samples: Vec<(u16, u8)> = Vec::new();
+        let mut y = step / 2;
+        while y < t.h {
+            let mut x = step / 2;
+            while x < t.w {
+                if mask.inside(x as f64, y as f64) {
+                    let v = t.px(x, y);
+                    let ci = (y / METER_CELL) * cw + x / METER_CELL;
+                    let c = &mut cells[ci];
+                    c.0 += v as u32;
+                    c.1 += 1;
+                    if v >= sat_level {
+                        c.2 += 1;
+                        sat += 1;
+                    }
+                    if v <= 8 {
+                        dark += 1;
+                    }
+                    all.bins[v as usize] += 1;
+                    samples.push((ci as u16, v));
+                }
+                x += step;
+            }
+            y += step;
+        }
+        for (ci, v) in samples {
+            let c = cells[ci as usize];
+            if (c.2 as f64) <= METER_CELL_CLIP * c.1 as f64 {
+                kept.bins[v as usize] += 1;
+            }
+        }
+    }
+    let n = all.total();
+    let src = if kept.total() > 0 { &kept } else { &all };
+    let m = if src.total() > 0 {
+        src.bins.iter().enumerate().map(|(v, &c)| (v as u64 * c as u64) as f64).sum::<f64>() / src.total() as f64
+    } else {
+        0.0
+    };
+    let nf = n.max(1) as f64;
+    (
+        SceneMetric { mean: m, sat: sat as f64 / nf, dark: dark as f64 / nf, n: n as u32 },
+        all,
+        kept,
+    )
+}
+
+/// The shared brightness metric of some tiles (one camera pair, or one frame set).
+pub fn scene_metric(tiles: &[TileView], step: usize, mask: &Mask, sat_level: u8) -> SceneMetric {
+    scene_metric_hist(tiles, step, mask, sat_level).0
+}
+
+/// [`scene_metric`] of a tightly packed 8-bit grey image (room setup, tests): default mask scaled to `w` x `h`,
+/// saturation level 250, every second pixel.
+pub fn scene_metric_grey(data: &[u8], w: usize, h: usize) -> SceneMetric {
+    if w == 0 || h == 0 || data.len() < w * h {
+        return SceneMetric::default();
+    }
+    let d = Mask::default();
+    let mask = Mask {
+        cx: (w as f64 - 1.0) / 2.0,
+        cy: (h as f64 - 1.0) / 2.0,
+        rx: w as f64 / 2.0 * (d.rx / 320.0),
+        ry: h as f64 / 2.0 * (d.ry / 240.0),
+    };
+    scene_metric(&[TileView { data, stride: w, x0: 0, y0: 0, w, h }], 2, &mask, 250)
+}
+
+/// "Good frame": masked mean at least this ...
+pub const GOOD_MEAN_MIN: f64 = 30.0;
+/// ... and at most this ...
+pub const GOOD_MEAN_MAX: f64 = 190.0;
+/// ... clipped fraction at most this ...
+pub const GOOD_SAT_MAX: f64 = 0.20;
+/// ... and quiet for this long after a big exposure step (ns).
+pub const GOOD_QUIET_NS: u64 = 1_000_000_000;
+/// A step of the exposure x gain product by more than this ratio (either way) is a big step.
+pub const BIG_STEP_RATIO: f64 = 1.25;
+/// Exposure or gain that differs from the previous frame by more than this fraction means a step landed.
+pub const STEP_LANDED_FRAC: f64 = 0.03;
+
+/// The one definition of a good tracking frame for a pair (room service, floor, light): the masked mean is in
+/// 30..=190, at most 20 % is clipped, no exposure change landed in this frame, it is not within 1 s of a big step,
+/// and the light is not settling. LED frames are never gated by this.
+pub fn is_good_frame(m: &SceneMetric, step_landed: bool, since_big_step_ns: Option<u64>, settling: bool) -> bool {
+    m.n > 0
+        && (GOOD_MEAN_MIN..=GOOD_MEAN_MAX).contains(&m.mean)
+        && m.sat <= GOOD_SAT_MAX
+        && !step_landed
+        && since_big_step_ns.is_none_or(|t| t >= GOOD_QUIET_NS)
+        && !settling
+}
+
+/// Follows a pair's own frame metadata (exposure, gain) to find landed and big steps for [`is_good_frame`].
+#[derive(Clone, Copy, Debug, Default)]
+pub struct StepWatch {
+    prev: Option<(u16, u16)>,
+    big_at: Option<u64>,
+}
+
+impl StepWatch {
+    /// One tracking frame of the pair: its exposure and gain from the metadata and its host time. Returns
+    /// (a step landed in this frame, time since the last big step).
+    pub fn push(&mut self, exposure: u16, gain: u16, now_ns: u64) -> (bool, Option<u64>) {
+        let mut landed = false;
+        if let Some((pe, pg)) = self.prev {
+            let d = |a: u16, b: u16| (a as f64 - b as f64).abs() > STEP_LANDED_FRAC * b.max(1) as f64;
+            landed = d(exposure, pe) || d(gain, pg);
+            let (a, b) = (exposure as f64 * gain as f64, pe as f64 * pg as f64);
+            let r = a.max(1.0) / b.max(1.0);
+            if r > BIG_STEP_RATIO || r < 1.0 / BIG_STEP_RATIO {
+                self.big_at = Some(now_ns);
+            }
+        }
+        self.prev = Some((exposure, gain));
+        (landed, self.big_at.map(|t| now_ns.saturating_sub(t)))
+    }
+
+    /// [`StepWatch::push`] and [`is_good_frame`] in one call.
+    pub fn good(&mut self, m: &SceneMetric, exposure: u16, gain: u16, now_ns: u64, settling: bool) -> bool {
+        let (landed, since) = self.push(exposure, gain, now_ns);
+        is_good_frame(m, landed, since, settling)
+    }
+}
+
 /// Controller parameters (raw units as on the wire).
 #[derive(Clone, Debug, PartialEq)]
 pub struct AeParams {
@@ -373,7 +529,27 @@ pub struct AeParams {
     pub exposure_soft: u16,
     /// The automatic extended range (low light).
     pub light: LightParams,
+    /// Control law: [`AeLaw::V2`] (masked, unclipped-cell metering, floor 1140 us, rate limited) or the old one.
+    pub law: AeLaw,
+    /// Shortest time between two changes of one pair's setting (ns; 0 = no limit). 200 ms = 5 changes/s.
+    pub min_change_ns: u64,
+    /// The "too bright" rule releases (and brightening is allowed again) only below this clipped fraction.
+    pub sat_release: f64,
 }
+
+/// Which control law runs. `PIMAX_CAM_AE_LAW=old` (also `v1`) selects [`AeLaw::V1`], the kill switch.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AeLaw {
+    /// The law before 2026-10-17: trimmed mean, floor 100 us, rule at 5 % clipped, deadband 0.08.
+    V1,
+    /// Masked mean over unclipped cells, floor 1140 us (300 us low stage), rule above 20 %, deadband 0.15, 5 changes/s.
+    V2,
+}
+
+/// Exposure floor of the normal range (Windows' lowest observed value).
+pub const EXPOSURE_FLOOR: u16 = 1140;
+/// Exposure floor of the low stage (only after 3 s of more than 30 % clipped).
+pub const EXPOSURE_LOW_STAGE: u16 = 300;
 
 impl Default for AeParams {
     /// Windows' behaviour from the captures (`analysis/slam-exposure.md`): target mean ~62/255, one 3 % ladder
@@ -384,16 +560,16 @@ impl Default for AeParams {
     fn default() -> Self {
         AeParams {
             target: 64.0,
-            deadband: 0.08,
+            deadband: 0.15,
             k: 0.5,
             max_step: LADDER_RATIO * LADDER_RATIO * LADDER_RATIO,
             max_step_far: 2.0,
-            exposure_min: 100,
+            exposure_min: EXPOSURE_FLOOR,
             exposure_max: 4108,
             gain_min: 13,
             gain_max: 215,
             sat_level: 250,
-            sat_max_frac: 0.05,
+            sat_max_frac: 0.20,
             sat_pull: 0.15,
             trim: 0.98,
             step: 4,
@@ -405,6 +581,26 @@ impl Default for AeParams {
             quantize: true,
             exposure_soft: 4108,
             light: LightParams::default(),
+            law: AeLaw::V2,
+            min_change_ns: 200_000_000,
+            sat_release: 0.12,
+        }
+    }
+}
+
+impl AeParams {
+    /// The old law (kill switch): floor 100 us, rule at 5 % clipped, deadband 0.08, trimmed-mean metering, no rate
+    /// limit, no low stage.
+    pub fn old_law() -> AeParams {
+        AeParams {
+            deadband: 0.08,
+            exposure_min: 100,
+            sat_max_frac: 0.05,
+            law: AeLaw::V1,
+            min_change_ns: 0,
+            sat_release: 0.05,
+            light: LightParams { clip_enabled: false, ..LightParams::default() },
+            ..AeParams::default()
         }
     }
 }
@@ -415,9 +611,11 @@ fn env_f64(name: &str) -> Option<f64> {
 
 impl AeParams {
     /// Defaults with `PIMAX_CAM_AE_TARGET`, `_EXP_MAX`, `_EXP_MIN`, `_GAIN_MAX`, `_GAIN_MIN`, `_PERIOD_MS`,
-    /// `_K`, `_DEADBAND`, `_UPPER` (0/1) overrides. Values are clamped to sane ranges.
+    /// `_K`, `_DEADBAND`, `_UPPER` (0/1) overrides, and `PIMAX_CAM_AE_LAW=old` (kill switch: the previous law). Values are clamped to sane ranges.
     pub fn from_env() -> AeParams {
-        let mut p = AeParams::default();
+        let old = std::env::var("PIMAX_CAM_AE_LAW")
+            .is_ok_and(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "old" | "v1" | "off" | "0"));
+        let mut p = if old { AeParams::old_law() } else { AeParams::default() };
         if let Some(v) = env_f64("PIMAX_CAM_AE_TARGET") {
             p.target = v.clamp(20.0, 200.0);
         }
@@ -535,6 +733,14 @@ pub struct LightParams {
     pub ext_exposure: u16,
     /// Extended gain cap.
     pub ext_gain: u16,
+    /// The clip-driven low exposure stage is armed (law V2 only).
+    pub clip_enabled: bool,
+    /// Low stage starts when the clipped fraction of a pair stays above this ...
+    pub clip_frac: f64,
+    /// ... for this long (ns), with the exposure already at the normal floor.
+    pub clip_ns: u64,
+    /// Low stage ends when the exposure no longer needs it (above the normal floor) for this long (ns).
+    pub clip_back_ns: u64,
 }
 
 impl Default for LightParams {
@@ -552,6 +758,10 @@ impl Default for LightParams {
             clear_ns: 3_000_000_000,
             ext_exposure: POWER_ON_EXPOSURE,
             ext_gain: POWER_ON_GAIN,
+            clip_enabled: true,
+            clip_frac: 0.30,
+            clip_ns: 3_000_000_000,
+            clip_back_ns: 8_000_000_000,
         }
     }
 }
@@ -581,6 +791,10 @@ pub struct LightGov {
     dark: Option<u64>,
     clear: Option<u64>,
     last_ns: Option<u64>,
+    /// The exposure floor is lowered to [`EXPOSURE_LOW_STAGE`] (clipping window in view).
+    pub clip_low: bool,
+    clipping: Option<u64>,
+    unneeded: Option<u64>,
 }
 
 fn held(t: &mut Option<u64>, now_ns: u64, cond: bool, ns: u64) -> bool {
@@ -645,6 +859,31 @@ impl LightGov {
     }
 }
 
+impl LightGov {
+    /// The clip-driven low stage. `at_floor`: a pair clips more than `clip_frac` with its exposure at the normal
+    /// floor; `free`: every controlled pair is above the normal floor (the low floor is not needed). Returns true
+    /// when `clip_low` changed.
+    pub fn step_clip(&mut self, lp: &LightParams, now_ns: u64, at_floor: bool, free: bool) -> bool {
+        if !lp.clip_enabled {
+            return std::mem::replace(&mut self.clip_low, false);
+        }
+        if !self.clip_low {
+            if held(&mut self.clipping, now_ns, at_floor, lp.clip_ns) {
+                self.clip_low = true;
+                self.clipping = None;
+                self.unneeded = None;
+                return true;
+            }
+        } else if held(&mut self.unneeded, now_ns, free, lp.clip_back_ns) {
+            self.clip_low = false;
+            self.unneeded = None;
+            self.clipping = None;
+            return true;
+        }
+        false
+    }
+}
+
 /// What one update decided.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -676,7 +915,10 @@ pub struct AutoExposure {
     pub light: LightGov,
     base_exposure_max: u16,
     base_gain_max: u16,
+    base_exposure_min: u16,
     events: Vec<LightEvent>,
+    last_change_ns: [Option<u64>; 2],
+    sat_latch: [bool; 2],
 }
 
 impl AutoExposure {
@@ -691,7 +933,10 @@ impl AutoExposure {
             light: LightGov::default(),
             base_exposure_max: p.exposure_max,
             base_gain_max: p.gain_max,
+            base_exposure_min: p.exposure_min,
             events: Vec::new(),
+            last_change_ns: [None; 2],
+            sat_latch: [false; 2],
             p,
         }
     }
@@ -749,6 +994,20 @@ impl AutoExposure {
             self.p.gain_max = g;
         }
         self.events.extend(ev);
+        // The low exposure floor (law V2): a window in view that clips more than 30 % for 3 s at the normal floor.
+        let floor = self.base_exposure_min as f64 * 1.05;
+        let at_floor = pairs.iter().any(|&k| {
+            stats[k].sat_frac > self.p.light.clip_frac && (setting.exposure[self.p.pairs[k][0]] as f64) <= floor
+        });
+        let free = pairs.iter().all(|&k| setting.exposure[self.p.pairs[k][0]] as f64 > floor);
+        let lp = self.p.light.clone();
+        if self.light.step_clip(&lp, now_ns, at_floor, free) {
+            self.p.exposure_min = if self.light.clip_low {
+                EXPOSURE_LOW_STAGE.min(self.base_exposure_min)
+            } else {
+                self.base_exposure_min
+            };
+        }
     }
 
     /// Current target (None before the first frame).
@@ -775,7 +1034,15 @@ impl AutoExposure {
 
     /// New (exposure, gain) for a pair whose frame was taken with `(e, g)` and shows statistics `s`.
     pub fn step_pair(&self, e: u16, g: u16, s: &TileStats) -> (u16, u16, f64) {
-        let err = self.error(s);
+        self.step_pair_with(e, g, s, false)
+    }
+
+    /// [`AutoExposure::step_pair`]; `no_brighter` (the too-bright rule is latched) turns a brighten request into none.
+    fn step_pair_with(&self, e: u16, g: u16, s: &TileStats, no_brighter: bool) -> (u16, u16, f64) {
+        let mut err = self.error(s);
+        if no_brighter && err > 0.0 {
+            err = 0.0;
+        }
         if err == 0.0 {
             return (e, g, 0.0);
         }
@@ -823,7 +1090,27 @@ impl AutoExposure {
             }
             let [a, b] = *pair;
             // The pair runs on one setting; take the frame's value of the first camera.
-            let (e, g, err) = self.step_pair(setting.exposure[a], setting.gain[a], &stats[k]);
+            if self.p.law == AeLaw::V2 {
+                // Hysteresis of the too-bright rule: once it fired, no brightening until the clip is below the
+                // release level (no limit cycle at the edge of the threshold).
+                if stats[k].sat_frac > self.p.sat_max_frac {
+                    self.sat_latch[k] = true;
+                } else if stats[k].sat_frac < self.p.sat_release {
+                    self.sat_latch[k] = false;
+                }
+            }
+            let latched = self.sat_latch[k];
+            let (e, g, mut err) =
+                self.step_pair_with(setting.exposure[a], setting.gain[a], &stats[k], latched);
+            // Rate limit: at most one change per pair per `min_change_ns` (about 5 changes/s). The frames in
+            // between were taken with the old setting and must not be acted on twice.
+            if err != 0.0 && prev.is_some() {
+                if self.last_change_ns[k].is_some_and(|t| now_ns.saturating_sub(t) < self.p.min_change_ns) {
+                    err = 0.0;
+                } else {
+                    self.last_change_ns[k] = Some(now_ns);
+                }
+            }
             errs[k] = err;
             if err != 0.0 || prev.is_none() {
                 // Outside the deadband (or first frame): the new value is relative to what this frame used.
@@ -861,6 +1148,18 @@ impl AutoExposure {
     pub fn frame_stats(&self, tiles: &[TileView; 4], mask: &Mask) -> [TileStats; 2] {
         let mut out = [TileStats::default(); 2];
         for (k, pair) in self.p.pairs.iter().enumerate() {
+            if self.p.law == AeLaw::V2 {
+                // Masked mean of the unclipped cells is the AE input (in `trimmed_mean`); the rest describes
+                // the whole masked view.
+                let t: Vec<TileView> = pair.iter().map(|&i| tiles[i]).collect();
+                let (m, all, _) = scene_metric_hist(&t, self.p.step, mask, self.p.sat_level);
+                let mut st = all.stats(self.p.trim, self.p.sat_level);
+                st.trimmed_mean = m.mean;
+                st.sat_frac = m.sat;
+                st.dark_frac = m.dark;
+                out[k] = st;
+                continue;
+            }
             let mut h = Histogram::default();
             for &t in pair {
                 h.merge(&tile_histogram(&tiles[t], self.p.step, mask));
@@ -1340,5 +1639,256 @@ mod tests {
         assert_eq!(ae.caps(0), (4108, 215));
         assert_eq!(ae.caps(1), (4108, 449));
         assert_eq!(ae.caps(2), (10410, 449));
+    }
+
+    // ---- law V2: window scene, dark room, steady state, floors, rate limit, shared metric, good frame ----
+
+    /// The room (`radiance`) with a window (20x brighter) over the right `frac` of the width, black lens corners.
+    fn render_window(radiance: f64, e: u16, g: u16, frac: f64) -> Vec<u8> {
+        let mut img = render(radiance, e, g, false);
+        let x0 = (640.0 * (1.0 - frac)) as usize;
+        let c = 1.0 / (2000.0 * 13.0);
+        for y in 0..480 {
+            for x in x0..640 {
+                img[y * 640 + x] = (20.0 * radiance * 0.8 * e as f64 * g as f64 * c).round().clamp(0.0, 255.0) as u8;
+            }
+        }
+        img
+    }
+
+    /// Closed loop (2-frame latency, 25 Hz tracking). Returns per-second change counts of the target, the
+    /// per-frame (exposure, gain, room mean, sat) and the controller.
+    fn run_law(
+        p: AeParams,
+        secs: usize,
+        scene: &dyn Fn(u16, u16) -> Vec<u8>,
+        start: AeSetting,
+    ) -> (Vec<u32>, Vec<(u16, u16, f64, f64)>, AutoExposure) {
+        let mut ae = AutoExposure::new(p);
+        let mut applied = start;
+        let mut pipe: Vec<(usize, AeSetting)> = Vec::new();
+        let (mut per_s, mut log) = (vec![0u32; secs], Vec::new());
+        let mut t = 0u64;
+        let mut prev = None;
+        for i in 0..secs * 25 {
+            while pipe.first().is_some_and(|(f, _)| *f <= i) {
+                applied = pipe.remove(0).1;
+            }
+            let img = scene(applied.exposure[0], applied.gain[0]);
+            let st = stats_of(&ae, &img, &img);
+            let d = ae.update(&applied, st, t);
+            if d.send {
+                pipe.push((i + 2, ae.target().unwrap()));
+            }
+            let tg = ae.target().unwrap();
+            if prev.is_some_and(|p| p != tg) {
+                per_s[i / 25] += 1;
+            }
+            prev = Some(tg);
+            log.push((applied.exposure[0], applied.gain[0], st[0].trimmed_mean, st[0].sat_frac));
+            t += 40_000_000;
+        }
+        (per_s, log, ae)
+    }
+
+    fn start_bright() -> AeSetting {
+        AeSetting { exposure: [2000; 4], gain: [13; 4], led_exposure: 40, led_gain: 62 }
+    }
+
+    #[test]
+    fn window_scene_is_steady_at_or_above_the_floor() {
+        // 22 % of the view is a window: above the 20 % rule but below the 30 % low stage.
+        let scene = |e, g| render_window(80.0, e, g, 0.22);
+        let (per_s, log, ae) = run_law(AeParams::default(), 40, &scene, start_bright());
+        let tail = &per_s[15..];
+        assert!(tail.iter().all(|&c| c <= 2), "changes/s in the tail {per_s:?}");
+        assert!(log.iter().all(|l| l.0 >= 1140), "never below the floor: {:?}", log.iter().map(|l| l.0).min());
+        assert!(per_s.iter().all(|&c| c <= 5), "rate limit {per_s:?}");
+        assert!(!ae.light.clip_low, "22 % clipped does not open the low stage");
+        // The room (unclipped cells) is not starved: the metered mean stays well above the old 22-39 range.
+        let m = log.last().unwrap().2;
+        assert!(m > 40.0, "room mean {m}");
+        // The old law on the same scene drives the room dark (the sunny-room failure).
+        let (_, old, _) = run_law(AeParams::old_law(), 40, &scene, start_bright());
+        assert!(old.last().unwrap().0 < 1140 || old.last().unwrap().2 < m, "old {:?} new {:?}", old.last(), log.last());
+    }
+
+    #[test]
+    fn big_window_opens_the_low_stage_after_three_seconds_and_never_goes_to_100() {
+        let scene = |e, g| render_window(80.0, e, g, 0.45);
+        let (per_s, log, ae) = run_law(AeParams::default(), 40, &scene, start_bright());
+        assert!(ae.light.clip_low, "45 % clipped for long: low stage");
+        let lowest = log.iter().map(|l| l.0).min().unwrap();
+        assert!((300..1140).contains(&lowest), "lowest exposure {lowest}");
+        // Before 3 s at the floor, nothing below it.
+        let first_low = log.iter().position(|l| l.0 < 1140).unwrap();
+        let first_floor = log.iter().position(|l| l.0 <= 1197).unwrap();
+        assert!(first_low >= first_floor + 3 * 25, "low stage too early: floor at {first_floor}, low at {first_low}");
+        assert!(per_s[20..].iter().all(|&c| c <= 2), "{per_s:?}");
+    }
+
+    #[test]
+    fn low_stage_returns_when_the_light_changes() {
+        let mut ae = AutoExposure::new(AeParams::default());
+        let bright = |e, g| render_window(80.0, e, g, 0.45);
+        let mut applied = start_bright();
+        let mut t = 0u64;
+        let mut pipe: Vec<(usize, AeSetting)> = Vec::new();
+        for i in 0..1000usize {
+            while pipe.first().is_some_and(|(f, _)| *f <= i) {
+                applied = pipe.remove(0).1;
+            }
+            // First 20 s window, then a plain dim room.
+            let img = if i < 500 { bright(applied.exposure[0], applied.gain[0]) } else { render(5.0, applied.exposure[0], applied.gain[0], false) };
+            let st = stats_of(&ae, &img, &img);
+            if ae.update(&applied, st, t).send {
+                pipe.push((i + 2, ae.target().unwrap()));
+            }
+            if i == 499 {
+                assert!(ae.light.clip_low);
+            }
+            t += 40_000_000;
+        }
+        assert!(!ae.light.clip_low);
+        assert_eq!(ae.p.exposure_min, 1140);
+    }
+
+    #[test]
+    fn dark_room_goes_up_without_oscillation() {
+        let scene = |e, g| render(6.0, e, g, false);
+        let (per_s, log, _) = run_law(AeParams::default(), 40, &scene, start_bright());
+        assert!(per_s[20..].iter().all(|&c| c <= 1), "{per_s:?}");
+        let (e, g, m, _) = *log.last().unwrap();
+        assert!(e as f64 * g as f64 > 2000.0 * 13.0 * 2.0 && m > 30.0, "{e}/{g} mean {m}");
+    }
+
+    #[test]
+    fn steady_room_does_not_move_and_floor_holds() {
+        // A bright but unclipped room (mean in the deadband at the start): no change at all in 20 s.
+        let scene = |e, g| render(80.0, e, g, false);
+        let (per_s, _, ae) = run_law(AeParams::default(), 30, &scene, AeSetting { exposure: [2000; 4], gain: [13; 4], led_exposure: 40, led_gain: 62 });
+        assert!(per_s[10..].iter().all(|&c| c == 0), "{per_s:?}");
+        let t = ae.target().unwrap();
+        assert_eq!((t.led_exposure, t.led_gain), (40, 62));
+        // A very bright, fully clipped room: exposure stops at the floor (normal stage) and never reaches 100.
+        let p = AeParams::default();
+        assert_eq!(p.exposure_min, 1140);
+        assert_eq!(p.split(1.0).0, 1140);
+        assert!(p.sat_max_frac == 0.20 && p.deadband >= 0.15);
+        let mut ae = AutoExposure::new(p);
+        let allsat = TileStats { trimmed_mean: 250.0, sat_frac: 0.9, n: 1000, ..Default::default() };
+        let mut s = start_bright();
+        for i in 0..40u64 {
+            ae.update(&s, [allsat, allsat], i * 300_000_000);
+            s = ae.target().unwrap();
+            assert!(s.exposure[0] >= 1140 || ae.light.clip_low, "{s:?}");
+            assert!(s.exposure[0] >= 300);
+        }
+    }
+
+    #[test]
+    fn too_bright_rule_only_above_twenty_percent_and_rate_limited() {
+        let ae = AutoExposure::new(AeParams::default());
+        let ok = TileStats { trimmed_mean: 64.0, sat_frac: 0.19, n: 1000, ..Default::default() };
+        assert_eq!(ae.error(&ok), 0.0);
+        let bad = TileStats { sat_frac: 0.21, ..ok };
+        assert!(ae.error(&bad) < 0.0);
+        // Rate limit: a dark scene asks for a change on every frame; the target moves at most 5 times per second.
+        let mut ae = AutoExposure::new(AeParams::default());
+        let dark = TileStats { trimmed_mean: 20.0, n: 1000, ..Default::default() };
+        let mut s = start_bright();
+        let mut changes = 0;
+        let mut last = ae.target();
+        for i in 0..100u64 {
+            ae.update(&s, [dark, dark], i * 40_000_000);
+            let t = ae.target();
+            if i > 0 && t != last {
+                changes += 1;
+            }
+            last = t;
+            s = t.unwrap();
+        }
+        assert!(changes <= 5 * 4 + 1, "changes in 4 s: {changes}");
+        assert!(changes >= 10, "still follows the scene: {changes}");
+    }
+
+    #[test]
+    fn old_law_stays_reachable() {
+        let o = AeParams::old_law();
+        assert_eq!((o.exposure_min, o.sat_max_frac, o.deadband, o.law, o.min_change_ns), (100, 0.05, 0.08, AeLaw::V1, 0));
+        assert_eq!(AeParams::default().law, AeLaw::V2);
+        // PIMAX_CAM_AE_LAW is read in from_env (set/unset only inside this test; the env is process wide, so the
+        // other tests never read it: they use AeParams::default()).
+        std::env::set_var("PIMAX_CAM_AE_LAW", "old");
+        let e = AeParams::from_env();
+        std::env::remove_var("PIMAX_CAM_AE_LAW");
+        assert_eq!(e.law, AeLaw::V1);
+        assert_eq!(e.exposure_min, 100);
+        assert_eq!(AeParams::from_env().law, AeLaw::V2);
+    }
+
+    #[test]
+    fn metric_leaves_out_corners_and_clipped_cells() {
+        // Flat 80 room, black corners (outside the mask), a clipped block over about 20 % of the view.
+        let mut d = vec![80u8; 640 * 480];
+        for y in 0..480 {
+            for x in 0..640 {
+                let (dx, dy) = ((x as f64 - 319.5) / 320.0, (y as f64 - 239.5) / 240.0);
+                if dx * dx + dy * dy > 1.0 {
+                    d[y * 640 + x] = 0;
+                }
+                if x >= 512 {
+                    d[y * 640 + x] = 255;
+                }
+            }
+        }
+        let m = scene_metric_grey(&d, 640, 480);
+        assert!((m.mean - 80.0).abs() < 1.0, "{m:?}");
+        assert!(m.sat > 0.1 && m.sat < 0.3, "{m:?}");
+        // The plain mean (corners and window included) is far off.
+        let plain = d.iter().map(|&v| v as f64).sum::<f64>() / d.len() as f64;
+        assert!((plain - 80.0).abs() > 10.0);
+        // All clipped: falls back to the whole view instead of 0.
+        let m = scene_metric_grey(&vec![255u8; 640 * 480], 640, 480);
+        assert!(m.mean > 250.0 && m.sat > 0.99);
+        // Dark room.
+        let m = scene_metric_grey(&vec![6u8; 640 * 480], 640, 480);
+        assert!((m.mean - 6.0).abs() < 0.5 && m.sat == 0.0 && m.dark > 0.99);
+        assert_eq!(scene_metric_grey(&[], 0, 0), SceneMetric::default());
+    }
+
+    #[test]
+    fn good_frame_definition() {
+        let m = |mean, sat| SceneMetric { mean, sat, dark: 0.0, n: 100 };
+        assert!(is_good_frame(&m(60.0, 0.1), false, None, false));
+        assert!(is_good_frame(&m(30.0, 0.20), false, Some(GOOD_QUIET_NS), false));
+        assert!(is_good_frame(&m(190.0, 0.0), false, None, false));
+        assert!(!is_good_frame(&m(29.9, 0.0), false, None, false));
+        assert!(!is_good_frame(&m(190.1, 0.0), false, None, false));
+        assert!(!is_good_frame(&m(60.0, 0.21), false, None, false));
+        assert!(!is_good_frame(&m(60.0, 0.1), true, None, false));
+        assert!(!is_good_frame(&m(60.0, 0.1), false, Some(GOOD_QUIET_NS - 1), false));
+        assert!(!is_good_frame(&m(60.0, 0.1), false, None, true));
+        assert!(!is_good_frame(&SceneMetric::default(), false, None, false));
+        // StepWatch: a landed step, then 1 s of quiet after a big one.
+        let mut w = StepWatch::default();
+        let ok = m(60.0, 0.0);
+        let mut t = 0u64;
+        let step = 40_000_000u64;
+        assert!(w.good(&ok, 2000, 13, t, false));
+        t += step;
+        assert!(w.good(&ok, 2000, 13, t, false));
+        t += step;
+        assert!(!w.good(&ok, 2600, 13, t, false), "a big step landed");
+        let t_big = t;
+        t += step;
+        assert!(!w.good(&ok, 2600, 13, t, false), "within 1 s of the big step");
+        t = t_big + GOOD_QUIET_NS;
+        assert!(w.good(&ok, 2600, 13, t, false));
+        // A small (3 %) ladder step does not count as big, but its own frame is not good.
+        t += step;
+        assert!(!w.good(&ok, 2680, 13, t, false));
+        t += step;
+        assert!(w.good(&ok, 2680, 13, t, false));
     }
 }

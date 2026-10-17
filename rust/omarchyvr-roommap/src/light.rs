@@ -16,8 +16,11 @@ use std::time::Instant;
 /// Quality of one frame set (cameras 0 and 1).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct FrameQuality {
-    /// Mean grey level of both tiles (0..255).
+    /// Masked mean grey level of both tiles (0..255): the auto exposure's metric (lens corners and clipped cells
+    /// left out, `pimax_cam::ae::scene_metric`).
     pub mean: f64,
+    /// Clipped fraction of the lit view (0..1), same metric as the auto exposure.
+    pub sat: f64,
     /// ORB corners per camera.
     pub corners: [usize; 2],
     /// Stereo points (what a keyframe is made of).
@@ -26,6 +29,14 @@ pub struct FrameQuality {
     pub exposure: u16,
     /// Gain code.
     pub gain: u16,
+}
+
+/// The shared brightness metric (`pimax_cam::ae`) pooled over both tiles: (masked mean, clipped fraction).
+fn shared_metric(imgs: [&Grey; 2]) -> (f64, f64) {
+    let ms: Vec<_> = imgs.iter().map(|g| pimax_cam::ae::scene_metric_grey(&g.data, g.w, g.h)).collect();
+    let n: f64 = ms.iter().map(|m| m.n as f64).sum::<f64>().max(1.0);
+    let w = |f: fn(&pimax_cam::ae::SceneMetric) -> f64| ms.iter().map(|m| f(m) * m.n as f64).sum::<f64>() / n;
+    (w(|m| m.mean), w(|m| m.sat))
 }
 
 /// Measure one frame set (with the low-light stretch the map uses).
@@ -41,10 +52,10 @@ pub fn measure_with(rig: &Rig, imgs: [&Grey; 2], orb: &OrbParams, low: Option<Lo
         .map(|(g, c)| features_with(&Image { w: g.w, h: g.h, stride: g.w, data: &g.data }, c, orb, low))
         .collect();
     let stereo = triangulate(&feats[0], &feats[1], &rig.cams[0], &rig.cams[1], &StereoParams::default()).len();
-    let n: usize = imgs.iter().map(|g| g.data.len()).sum();
-    let sum: u64 = imgs.iter().flat_map(|g| g.data.iter()).map(|&v| v as u64).sum();
+    let (mean, sat) = shared_metric(imgs);
     FrameQuality {
-        mean: sum as f64 / n.max(1) as f64,
+        mean,
+        sat,
         corners: [feats[0].kps.len(), feats[1].kps.len()],
         stereo,
         exposure: 0,
@@ -63,8 +74,8 @@ pub enum Advice {
     TooPlain,
 }
 
-/// Mean grey level below which a frame set counts as dark.
-pub const DARK_MEAN: f64 = 35.0;
+/// Masked mean grey level below which a frame set counts as dark (the "good frame" lower bound, 30).
+pub const DARK_MEAN: f64 = pimax_cam::ae::GOOD_MEAN_MIN;
 
 /// Advice from a frame's quality.
 pub fn advice(q: &FrameQuality, need: usize) -> Advice {
@@ -204,9 +215,8 @@ pub fn measure_source(spec: &str, seconds: f64, o: &MeasureOpts, rig: &Rig, orb:
 /// Quality from features already extracted (no second ORB pass).
 pub fn quality_of(rig: &Rig, feats: &[omarchyvr_room::stereo::Features], imgs: [&Grey; 2]) -> FrameQuality {
     let stereo = triangulate(&feats[0], &feats[1], &rig.cams[0], &rig.cams[1], &StereoParams::default()).len();
-    let n: usize = imgs.iter().map(|g| g.data.len()).sum();
-    let sum: u64 = imgs.iter().flat_map(|g| g.data.iter()).map(|&v| v as u64).sum();
-    FrameQuality { mean: sum as f64 / n.max(1) as f64, corners: [feats[0].kps.len(), feats[1].kps.len()], stereo, exposure: 0, gain: 0 }
+    let (mean, sat) = shared_metric(imgs);
+    FrameQuality { mean, sat, corners: [feats[0].kps.len(), feats[1].kps.len()], stereo, exposure: 0, gain: 0 }
 }
 
 /// Live mapping progress (for the headset panel).
@@ -262,6 +272,30 @@ mod tests {
         assert!(progress_text(&p).contains("Turn your head further"));
         let r = summarise(&[q(8.0, 0), q(10.0, 50), q(12.0, 60)], 40);
         assert_eq!((r.frames, r.mean, r.stereo, r.good), (3, 10.0, 50, 2));
+    }
+
+    #[test]
+    fn mean_ignores_lens_corners_and_clipped_cells() {
+        // A 640x480 frame: lit room of 80 everywhere, black lens corners, a clipped window in the upper right.
+        let (w, h) = (640usize, 480usize);
+        let mut d = vec![80u8; w * h];
+        for y in 0..h {
+            for x in 0..w {
+                let (dx, dy) = ((x as f64 - 319.5) / 320.0, (y as f64 - 239.5) / 240.0);
+                if dx * dx + dy * dy > 1.0 {
+                    d[y * w + x] = 0;
+                }
+                if x > 440 && y < 160 {
+                    d[y * w + x] = 255;
+                }
+            }
+        }
+        let plain = d.iter().map(|&v| v as f64).sum::<f64>() / d.len() as f64;
+        let g = Grey { w, h, data: d };
+        let (mean, sat) = shared_metric([&g, &g]);
+        assert!(plain < 90.0, "plain mean {plain}");
+        assert!((mean - 80.0).abs() < 2.0, "masked mean {mean}");
+        assert!(sat > 0.02 && sat < 0.2, "sat {sat}");
     }
 
     #[test]
