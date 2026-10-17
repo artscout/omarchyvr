@@ -289,6 +289,8 @@ pub struct Report {
     pub created: Vec<String>,
     pub kept: Vec<String>,
     pub removed: Vec<String>,
+    /// Floating apps put back on their screen after a re-created output (see [`stale_floating`]).
+    pub replaced: Vec<String>,
     /// Why fewer screens than asked (the session still starts).
     pub error: Option<String>,
     /// Dry run: what would be done.
@@ -309,7 +311,7 @@ impl Report {
             self.main.as_deref().unwrap_or("no main output"),
             self.outputs.iter().map(|(s, n)| format!(", {} = {n}", s.key())).collect::<String>()
         )];
-        for (what, list) in [("created", &self.created), ("kept", &self.kept), ("removed", &self.removed)] {
+        for (what, list) in [("created", &self.created), ("kept", &self.kept), ("removed", &self.removed), ("apps put back on their screen", &self.replaced)] {
             if !list.is_empty() {
                 v.push(format!("{what}: {}", list.join(", ")));
             }
@@ -439,7 +441,112 @@ pub fn prepare(count: u8, h: &mut dyn Hypr, dry_run: bool, session_running: bool
         let e = r.error.take().unwrap_or_default();
         r.error = Some(format!("{} of {} screens ({e})", r.screens(), count));
     }
+    // 4. self-check: every floating app on a VR screen must lie on that screen (lesson 67: a re-created output gets
+    //    its old workspaces back, but their floating apps keep the main screen's coordinates and are never drawn)
+    if !r.outputs.is_empty() {
+        rehome_floating(h, &main, &mut r);
+    }
     r
+}
+
+/// A floating app that lies outside the VR output its workspace is on, and how to put it back.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Stale {
+    pub address: String,
+    pub output: String,
+    /// `Some((dx, dy))`: shift by the output's offset from the main screen (the app keeps its place on the screen);
+    /// `None`: centre it on its output (it was somewhere else entirely).
+    pub shift: Option<(i64, i64)>,
+}
+
+impl Stale {
+    /// The Hyprland 0.56 dispatch (by address: no focus change, nothing else moves).
+    pub fn dispatch(&self) -> String {
+        match self.shift {
+            Some((dx, dy)) => format!("hl.dsp.window.move({{ x = {dx}, y = {dy}, relative = true, window = \"address:{}\" }})", self.address),
+            None => format!("hl.dsp.window.center({{ window = \"address:{}\" }})", self.address),
+        }
+    }
+}
+
+/// Floating apps on our outputs' workspaces whose box does not touch their output (Hyprland 0.56 bug, lesson 67:
+/// when an output is removed its workspaces go to the main screen and floating apps are shifted into the main
+/// screen's area; when an output of that name is created again the workspaces come back to it, but the shift back
+/// is computed before the new output has its position, so the apps keep main-screen coordinates and the new output
+/// draws only its wallpaper). Tiled and maximized apps are laid out again by Hyprland and are fine.
+/// `ws_mon`: workspace id -> output name (`hyprctl -j workspaces`); `clients`: `hyprctl -j clients`.
+pub fn stale_floating(mons: &[Mon], main: &Mon, ws_mon: &HashMap<i64, String>, clients: &serde_json::Value) -> Vec<Stale> {
+    let num = |c: &serde_json::Value, p: &str| c.pointer(p).and_then(serde_json::Value::as_i64);
+    let overlaps = |(x, y, w, h): (i64, i64, i64, i64), m: &Mon| x < m.x + m.width && x + w > m.x && y < m.y + m.height && y + h > m.y;
+    let mut v = Vec::new();
+    for c in clients.as_array().map(Vec::as_slice).unwrap_or_default() {
+        let flag = |k: &str| c.get(k).and_then(serde_json::Value::as_bool).unwrap_or(false);
+        let Some(address) = c.get("address").and_then(serde_json::Value::as_str).filter(|a| address_ok(a)) else { continue };
+        if !flag("floating") || flag("pinned") || !c.get("mapped").and_then(serde_json::Value::as_bool).unwrap_or(true) {
+            continue;
+        }
+        if num(c, "/fullscreen").unwrap_or(0) != 0 {
+            continue;
+        }
+        let Some(ws) = num(c, "/workspace/id").filter(|&w| w > 0) else { continue };
+        let Some(m) = ws_mon.get(&ws).filter(|n| is_ours(n)).and_then(|n| mons.iter().find(|m| &m.name == n && !m.disabled)) else { continue };
+        let (Some(x), Some(y), Some(w), Some(hgt)) = (num(c, "/at/0"), num(c, "/at/1"), num(c, "/size/0"), num(c, "/size/1")) else { continue };
+        if m.width <= 0 || m.height <= 0 || overlaps((x, y, w.max(1), hgt.max(1)), m) {
+            continue;
+        }
+        // where it was left: inside the main screen's area -> the same place on its own output
+        let on_main = x >= main.x && x < main.x + main.width && y >= main.y && y < main.y + main.height;
+        let shift = on_main.then(|| (m.x - main.x, m.y - main.y));
+        v.push(Stale { address: address.to_string(), output: m.name.clone(), shift });
+    }
+    v
+}
+
+fn workspace_monitors(json: &str) -> Result<HashMap<i64, String>, String> {
+    let v: serde_json::Value = serde_json::from_str(json.trim()).map_err(|e| format!("hyprctl workspaces: {e}"))?;
+    Ok(v.as_array()
+        .ok_or("hyprctl workspaces: not a list")?
+        .iter()
+        .filter_map(|w| Some((w.get("id")?.as_i64()?, w.get("monitor")?.as_str()?.to_string())))
+        .collect())
+}
+
+/// Read the floating apps on our outputs (monitors, workspaces, clients) and the stale ones among them.
+fn read_stale(h: &mut dyn Hypr, main: &Mon) -> Result<Vec<Stale>, String> {
+    let mons = monitors(h)?;
+    let ws_mon = workspace_monitors(&h.run(&["-j", "workspaces"])?)?;
+    let clients: serde_json::Value = serde_json::from_str(h.run(&["-j", "clients"])?.trim()).map_err(|e| format!("hyprctl clients: {e}"))?;
+    Ok(stale_floating(&mons, main, &ws_mon, &clients))
+}
+
+/// Put stale floating apps back on their VR output, then check again (the self-check after the outputs exist).
+fn rehome_floating(h: &mut dyn Hypr, main: &Mon, r: &mut Report) {
+    let stale = match read_stale(h, main) {
+        Ok(s) => s,
+        Err(e) => return add_err(r, format!("cannot check the apps on the VR screens: {e}")),
+    };
+    if stale.is_empty() {
+        return;
+    }
+    for s in &stale {
+        match h.run(&["dispatch", &s.dispatch()]).and_then(|o| hypr_ok(&o)) {
+            Ok(()) => r.replaced.push(format!("{} ({})", s.address, s.output)),
+            Err(e) => add_err(r, format!("cannot put app {} back on {}: {e}", s.address, s.output)),
+        }
+    }
+    h.sleep(Duration::from_millis(100));
+    match read_stale(h, main) {
+        Ok(left) if !left.is_empty() => add_err(
+            r,
+            format!(
+                "{} app(s) still outside their VR screen (not drawn): {}",
+                left.len(),
+                left.iter().map(|s| format!("{} on {}", s.address, s.output)).collect::<Vec<_>>().join(", ")
+            ),
+        ),
+        Ok(_) => {}
+        Err(e) => add_err(r, format!("cannot check the apps on the VR screens: {e}")),
+    }
 }
 
 fn add_err(r: &mut Report, e: String) {
@@ -1299,6 +1406,12 @@ mod tests {
         calls: Vec<String>,
         fail_create: bool,
         rule_error: bool,
+        /// `hyprctl -j clients` entries (address, workspace, at, size, floating, ...)
+        wins: Vec<serde_json::Value>,
+        /// workspace id -> output name
+        ws_mon: Vec<(i64, String)>,
+        /// a dispatch is accepted but the app does not move
+        stuck: bool,
     }
 
     fn json(mons: &[Mon]) -> String {
@@ -1317,7 +1430,35 @@ mod tests {
             self.calls.push(args.join(" "));
             match args {
                 ["-j", "monitors", "all"] => Ok(json(&self.mons)),
-                ["-j", "clients"] => Ok("[]".into()),
+                ["-j", "clients"] => Ok(serde_json::Value::Array(self.wins.clone()).to_string()),
+                ["-j", "workspaces"] => {
+                    Ok(serde_json::Value::Array(self.ws_mon.iter().map(|(id, m)| serde_json::json!({"id": id, "monitor": m})).collect()).to_string())
+                }
+                ["dispatch", d] if d.starts_with("hl.dsp.window.move({ x = ") => {
+                    // relative move by address: shift the fake app
+                    let num = |k: &str| d.split(k).nth(1).and_then(|r| r.split(',').next()).and_then(|v| v.trim().parse::<i64>().ok()).unwrap();
+                    let (dx, dy) = (num("x = "), num("y = "));
+                    let addr = d.split("address:").nth(1).unwrap().split('"').next().unwrap().to_string();
+                    if !self.stuck {
+                        for w in self.wins.iter_mut().filter(|w| w["address"] == addr.as_str()) {
+                            let (x, y) = (w["at"][0].as_i64().unwrap(), w["at"][1].as_i64().unwrap());
+                            w["at"] = serde_json::json!([x + dx, y + dy]);
+                        }
+                    }
+                    Ok("ok".into())
+                }
+                ["dispatch", d] if d.starts_with("hl.dsp.window.center(") => {
+                    let addr = d.split("address:").nth(1).unwrap().split('"').next().unwrap().to_string();
+                    let (mons, ws_mon, stuck) = (self.mons.clone(), self.ws_mon.clone(), self.stuck);
+                    for w in self.wins.iter_mut().filter(|w| w["address"] == addr.as_str() && !stuck) {
+                        let ws = w["workspace"]["id"].as_i64().unwrap();
+                        let out = &ws_mon.iter().find(|(i, _)| *i == ws).unwrap().1;
+                        let m = mons.iter().find(|m| &m.name == out).unwrap();
+                        let (sw, sh) = (w["size"][0].as_i64().unwrap(), w["size"][1].as_i64().unwrap());
+                        w["at"] = serde_json::json!([m.x + (m.width - sw) / 2, m.y + (m.height - sh) / 2]);
+                    }
+                    Ok("ok".into())
+                }
                 ["eval", _] => Ok(if self.rule_error { "error: bad lua".into() } else { "ok".into() }),
                 ["output", "create", "headless", n] => {
                     if self.fail_create {
@@ -1447,6 +1588,94 @@ mod tests {
         assert_eq!(r.steps.len(), 4);
         assert!(r.steps[0].contains("hl.monitor") && r.steps[1].ends_with("headless PIMAX-LEFT"));
         assert_eq!(h.calls, ["-j monitors all"]);
+    }
+
+    /// A floating/tiled app as `hyprctl -j clients` reports it.
+    fn client(address: &str, ws: i64, at: (i64, i64), floating: bool, fullscreen: i64) -> serde_json::Value {
+        serde_json::json!({"address": address, "class": "foot", "workspace": {"id": ws, "name": ws.to_string()}, "at": [at.0, at.1],
+            "size": [700, 500], "floating": floating, "fullscreen": fullscreen, "pinned": false, "mapped": true, "hidden": false})
+    }
+
+    /// The desktop after `desk stop` of an earlier session: the outputs are gone, their workspaces (11 left, 12 right,
+    /// 13 up) went to SUNSHINE and Hyprland shifted the floating apps into SUNSHINE's area.
+    fn after_an_earlier_session() -> Fake {
+        let wins = vec![
+            client("0x10", 13, (610, 290), true, 0),   // floating, was on the up screen: stale
+            client("0x11", 12, (5000, 5000), true, 0), // floating, nowhere near: stale, centred
+            client("0x12", 13, (610, -790), true, 0),  // floating, already on the up screen
+            client("0x13", 11, (12, 40), false, 0),    // tiled: Hyprland lays it out again
+            client("0x14", 13, (2, 30), true, 1),      // maximized: Hyprland sizes it again
+            client("0x15", 2, (100, 100), true, 0),    // the main screen's own app
+            client("0x16", 11, (620, 300), true, 0),   // floating, was on the left screen: stale
+        ];
+        let ws_mon = vec![(2, "SUNSHINE".into()), (11, "PIMAX-LEFT".into()), (12, "PIMAX-RIGHT".into()), (13, "PIMAX-UP".into())];
+        Fake { mons: desktop(), wins, ws_mon, ..Fake::default() }
+    }
+
+    #[test]
+    fn a_recreated_output_gets_its_floating_apps_back_and_is_checked_again() {
+        let mut h = after_an_earlier_session();
+        let r = prepare(4, &mut h, false, false);
+        assert_eq!(r.error, None, "{r:?}");
+        assert_eq!(r.replaced, ["0x10 (PIMAX-UP)", "0x11 (PIMAX-RIGHT)", "0x16 (PIMAX-LEFT)"]);
+        // exact order after the outputs exist: read, put back by address (no focus change), read again
+        let i = h.calls.iter().position(|c| c == "-j workspaces").unwrap();
+        assert!(h.calls[..i].iter().any(|c| c == "output create headless PIMAX-UP"), "the check runs after the outputs exist");
+        let tail: Vec<&str> = h.calls[i - 1..].iter().map(String::as_str).collect();
+        assert_eq!(
+            tail,
+            [
+                "-j monitors all",
+                "-j workspaces",
+                "-j clients",
+                r#"dispatch hl.dsp.window.move({ x = 0, y = -1080, relative = true, window = "address:0x10" })"#,
+                r#"dispatch hl.dsp.window.center({ window = "address:0x11" })"#,
+                r#"dispatch hl.dsp.window.move({ x = -1920, y = 0, relative = true, window = "address:0x16" })"#,
+                "-j monitors all",
+                "-j workspaces",
+                "-j clients",
+            ]
+        );
+        assert!(!h.calls.iter().any(|c| ["hl.dsp.focus", "0x12", "0x13", "0x14", "0x15"].iter().any(|x| c.contains(x))), "{:?}", h.calls);
+        assert_eq!(h.wins[0]["at"], serde_json::json!([610, -790]), "back where it was on the up screen");
+        assert!(r.lines().iter().any(|l| l.starts_with("apps put back on their screen: 0x10 (PIMAX-UP)")), "{:?}", r.lines());
+        // the next start (outputs kept): nothing is stale, nothing is dispatched
+        h.calls.clear();
+        let r = prepare(4, &mut h, false, false);
+        assert!(r.replaced.is_empty() && r.error.is_none(), "{r:?}");
+        assert!(!h.calls.iter().any(|c| c.starts_with("dispatch")), "{:?}", h.calls);
+    }
+
+    #[test]
+    fn an_app_that_stays_off_its_screen_is_reported() {
+        let mut h = Fake { stuck: true, ..after_an_earlier_session() };
+        let r = prepare(4, &mut h, false, false);
+        let e = r.error.clone().unwrap();
+        assert!(e.contains("3 app(s) still outside their VR screen (not drawn): 0x10 on PIMAX-UP"), "{e}");
+        assert_eq!(r.screens(), 4, "the screens themselves are fine");
+        // a dry run and a running session never touch apps
+        let mut h = after_an_earlier_session();
+        prepare(4, &mut h, true, false);
+        prepare(4, &mut h, false, true);
+        assert!(!h.calls.iter().any(|c| c.starts_with("dispatch") || c == "-j clients"), "{:?}", h.calls);
+    }
+
+    #[test]
+    fn stale_floating_apps_from_real_hyprctl_json() {
+        // the repro of 2026-10-17 (lesson 67): ws 6 came back to the re-created up output with the app at 609,289
+        let mut mons = desktop();
+        mons.push(mon("PIMAX-UP", 1920, 0, -1080, 6));
+        let main = mons[2].clone();
+        let ws_mon: HashMap<i64, String> = [(6, "PIMAX-UP".to_string()), (5, "SUNSHINE".to_string())].into();
+        let clients: serde_json::Value = serde_json::from_str(
+            r#"[{"address":"0x6079994cc8c0","mapped":true,"hidden":false,"at":[609,289],"size":[700,500],"workspace":{"id":6,"name":"6"},"floating":true,"pinned":false,"monitor":5,"class":"foot","fullscreen":0},
+                {"address":"0x6079994cc8d0","mapped":true,"hidden":false,"at":[609,-791],"size":[700,500],"workspace":{"id":6,"name":"6"},"floating":true,"pinned":false,"monitor":5,"class":"foot","fullscreen":0},
+                {"address":"0x607999351940","mapped":true,"hidden":false,"at":[12,40],"size":[1896,1028],"workspace":{"id":5,"name":"5"},"floating":false,"pinned":false,"monitor":2,"class":"foot","fullscreen":0}]"#,
+        )
+        .unwrap();
+        let s = stale_floating(&mons, &main, &ws_mon, &clients);
+        assert_eq!(s, [Stale { address: "0x6079994cc8c0".into(), output: "PIMAX-UP".into(), shift: Some((0, -1080)) }]);
+        assert_eq!(s[0].dispatch(), r#"hl.dsp.window.move({ x = 0, y = -1080, relative = true, window = "address:0x6079994cc8c0" })"#);
     }
 
     #[test]
