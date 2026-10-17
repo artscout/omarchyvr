@@ -89,6 +89,24 @@ Under the selector, a readiness line shows the state of the screens:
      ```
      The apps put back are listed in `screens.txt` ("apps put back on their screen"); an app that is still outside
      its screen is an error line there, and the app shows it.
+   - **Only workspaces the output owned (2026-10-17 19:05, lesson 73).** The first version of the self-check moved
+     every floating app whose box missed the output of its workspace. But Hyprland also gives a NEW (or re-created)
+     output an existing workspace that no screen shows, e.g. the user's hidden main-screen workspaces 1, 3 or 5, and
+     the self-check then shifted the user's own terminal and the Pimax app from SUNSHINE onto the up-left VR screen.
+     Now `desk start` takes a snapshot (`-j workspaces`, `-j clients`) before any output changes, and keeps a record of
+     which workspaces each `PIMAX-*` output owned (`$XDG_RUNTIME_DIR/omarchyvr-screens.owned`, written by `desk stop`
+     before the outputs go and at the end of every start). After the outputs exist:
+     1. A workspace on a VR output that was NOT owned by it and held apps on a non-VR screen before is **given back**:
+        `hl.dsp.workspace.move({ workspace = "N", monitor = "SUNSHINE" })` (it never changes the shown workspace or the
+        focus; the VR output then gets an empty workspace of its own). Hyprland shifts floating apps wrongly on that
+        move too, so each floating app of it goes back to the position from the snapshot (address-targeted relative
+        move). It is listed in `screens.txt` as "workspaces Hyprland gave to a VR screen, moved back".
+     2. Only floating apps on workspaces the output owned (the lesson 69 case) are shifted/centred as above. An app
+        on any other workspace is never moved, whatever its coordinates.
+     3. No record (first start after an update, or a reboot): nothing is shifted, only step 1 runs.
+     No app ever changes workspace, and apps of SUNSHINE (or any non-VR output) at the start are never touched.
+     The numbering above (1 main, 2 left, 3 right, 4 up, 5 up-left, 6 up-right) is unchanged: it is the screen number,
+     not a Hyprland workspace.
 3. **Layout in VR.** WayVR names each screen after its output.
    - `wayvrctl desk-screens` (WayVR, eye-gaze branch) places the screens in the **default layout** (next section):
      two rows of three around the head, none overlapping from the head. A screen already shown and not re-placed
