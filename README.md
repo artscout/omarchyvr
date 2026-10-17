@@ -19,6 +19,10 @@ Names: the app is `omarchyvr-app`, the command line tool `omarchyvr`, the daemon
 
 Everything is reachable from the omarchyvr app (`omarchyvr-app`, starts at login). Play starts VR games, Work starts the VR desktop.
 
+![The omarchyvr app: Home page with Work running (demo data)](docs/gui/home.png)
+
+More pages: [docs/gui](docs/gui).
+
 ## Requirements
 
 - A Pimax Dream Air headset (USB id `34a4:0044`). Other Pimax models are not supported.
