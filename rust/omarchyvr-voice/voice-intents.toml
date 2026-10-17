@@ -64,9 +64,18 @@ source = "vr"
 say = "Cinema mode"
 
 [[intent]]
+id = "vr.preset.cinema_huge"
+phrases = ["huge cinema", "huge cinema mode", "cinema mode huge", "big cinema", "big cinema mode", "giant cinema", "imax", "imax mode", "imax cinema", "theater mode", "theatre mode", "make it a huge screen", "huge screen", "cine gigante"]
+gloss = "huge cinema: one giant curved screen filling about 68 degrees of view, the room black, captions off (leave with exit cinema)"
+run = ["@preset", "cinema-huge"]
+safety = "safe"
+source = "user request 2026-10-17"
+say = "Huge cinema"
+
+[[intent]]
 id = "vr.preset.exit_cinema"
-phrases = ["exit cinema mode", "exit cinema", "leave cinema mode", "stop cinema mode", "end cinema mode", "cinema mode off", "out of cinema mode", "sal del modo cine"]
-gloss = "leave cinema mode: the layout and background from before it come back"
+phrases = ["exit cinema mode", "exit cinema", "exit huge cinema", "exit imax", "leave cinema mode", "leave huge cinema", "leave imax", "stop cinema mode", "end cinema mode", "cinema mode off", "out of cinema mode", "normal screens", "sal del modo cine"]
+gloss = "leave cinema mode or the huge cinema: the layout and background from before it come back"
 run = ["@preset", "exit-cinema"]
 safety = "safe"
 source = "user request 2026-10-16"

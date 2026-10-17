@@ -159,6 +159,7 @@ fn auto_body(ui: &mut Ui, app: &mut PimaxApp) {
                 .map(|pr| match pr {
                     Preset::None => "None",
                     Preset::Cinema => "Cinema",
+                    Preset::CinemaHuge => "Huge cinema",
                     Preset::Work => "Work",
                     Preset::Assistant => "Assistant",
                 })

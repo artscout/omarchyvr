@@ -3,6 +3,8 @@
 vr.preset.cinema	put on cinema mode
 vr.preset.cinema	i want to watch a movie
 vr.preset.cinema	make it a movie theater
+vr.preset.cinema_huge	I want a really huge cinema screen
+vr.preset.cinema_huge	give me the biggest cinema you can
 vr.screens.count	give me three screens	n=3
 vr.screens.more	open two more screens	n=2
 vr.preset.work3	switch to the work layout

@@ -29,7 +29,7 @@ pub struct LauncherCaps {
     pub no_perf: bool,
     /// `--anchor` (`PIMAX_ANCHOR=1`: the room offset hook).
     pub anchor: bool,
-    /// `--preset cinema|work|assistant`.
+    /// `--preset cinema|cinema-huge|work|assistant`.
     pub preset: bool,
     /// `desk captions on|off|status` (the live subtitles).
     pub captions: bool,
@@ -79,6 +79,8 @@ pub enum Preset {
     None,
     /// Curved screens, passthrough dimmed.
     Cinema,
+    /// A huge cinema: one 6 m screen filling ~68 degrees, the room black.
+    CinemaHuge,
     /// Flat, sharper screens.
     Work,
     /// Voice captions (the LLM assistant setup).
@@ -87,13 +89,14 @@ pub enum Preset {
 
 impl Preset {
     /// Every preset.
-    pub const ALL: [Preset; 4] = [Preset::None, Preset::Cinema, Preset::Work, Preset::Assistant];
+    pub const ALL: [Preset; 5] = [Preset::None, Preset::Cinema, Preset::CinemaHuge, Preset::Work, Preset::Assistant];
 
     /// The launcher's name.
     pub fn name(self) -> &'static str {
         match self {
             Preset::None => "none",
             Preset::Cinema => "cinema",
+            Preset::CinemaHuge => "cinema-huge",
             Preset::Work => "work",
             Preset::Assistant => "assistant",
         }
@@ -631,6 +634,11 @@ mod tests {
         let (t, vr) = toggles_from_argv("desk\n--6dof\n--ctrl-track\n--voice\n--anchor\n--hands\n--preset\nwork-3\n", base).unwrap();
         assert!(!vr && t.sixdof && t.ctrl_track && t.voice && t.anchor && t.hands && !t.hands_roles && t.eye && t.passthrough);
         assert_eq!(t.preset, Preset::Work);
+        // the huge cinema is recorded and read back by its name (start-argv keeps it over restarts)
+        let (th, _) = toggles_from_argv("desk\n--preset\ncinema-huge\n", base).unwrap();
+        assert_eq!(th.preset, Preset::CinemaHuge);
+        assert_eq!(Preset::parse("cinema-huge"), Preset::CinemaHuge);
+        assert_eq!(desk_flags(&th).windows(2).find(|w| w[0] == "--preset").map(|w| w[1].as_str()), Some("cinema-huge"));
         // the same flags come back out (Play repeats the session)
         assert_eq!(desk_flags(&t), ["--fps", "90", "--6dof", "--ctrl-track", "--hands", "--voice", "--anchor", "--preset", "work"]);
         let (t, vr) = toggles_from_argv("vr\n--fps\n90\n--6dof\n--perf\n", base).unwrap();

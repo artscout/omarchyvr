@@ -1,4 +1,4 @@
-//! Desk presets: `omarchyvr desk start [--preset cinema|work-3|work-1|assistant|none]` (cinema is the default) and the
+//! Desk presets: `omarchyvr desk start [--preset cinema|cinema-huge|work-3|work-1|assistant|none]` (cinema is the default) and the
 //! live switch `omarchyvr desk preset NAME [--dry-run]` (used by voice commands).
 //!
 //! At start a preset is written to `<wayvr home>/config/wayvr/conf.d/60-preset.yaml` (rewritten on every start,
@@ -15,14 +15,19 @@
 //!   `wayvrctl desk-screens --place --hide-others` (at start, or with `desk preset NAME --replace`; a plain live switch
 //!   leaves screens that are already placed where they are and only shows/hides) puts the main screen in front of the head and the others left,
 //!   right and above it, and the preset's show state (`$XDG_RUNTIME_DIR/omarchyvr-screens.state`) says which are shown:
-//!   cinema and work-1 the main screen only, work-3 main + left + right, assistant every screen with an app.
+//!   cinema, cinema-huge and work-1 the main screen only, work-3 main + left + right, assistant every screen with an app.
 //!
 //! | preset | screens | curvature | size | passthrough |
 //! |---|---|---|---|---|
 //! | cinema (default) | 1, 3.2 m wide at 3.5 m | 0.35 | big | dimmed (gain 0.35) |
+//! | cinema-huge (`imax`, `huge-cinema`, `theater`) | 1, 6 m wide at 4.36 m (68 deg; 11 m at 8 m when WayVR allows) | 0.2 | huge | off (black), backdrop off |
 //! | work-3 (`work`) | 3: desktop + 2 app panels, 1.6 m at 2 m | flat | | normal |
 //! | work-1 | 1, 2 m at 2.2 m | flat | | normal |
 //! | assistant | all, 2 m at 2.5 m | 0.15 | | normal, + voice captions at start |
+//!
+//! cinema-huge: the wish is a mid-theatre seat (11 m wide at 8 m, 68 degrees, [`huge_size`]), but WayVR clamps IPC
+//! width to 0.3..6 m (and `grab_size_max` 6 m resets bigger screens), so today the same angle is 6 m at 4.36 m.
+//! Raising WayVR's caps and [`WAYVR_MAX_WIDTH`] gives the full size. docs/CINEMA.md.
 //!
 //! `default_curvature` in the YAML applies to screens without a saved curvature; the live layout sets it on every
 //! shown screen. `screen_max_height` (capture size) only changes at the next start.
@@ -40,10 +45,29 @@ pub const DEFAULT: Preset = Preset::Cinema;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Preset {
     Cinema,
+    /// A huge cinema: the main screen as big as WayVR allows, ~68 degrees wide, the room black ([`huge_size`]).
+    CinemaHuge,
     /// Three screens (the old `work` name).
     Work3,
     Work1,
     Assistant,
+}
+
+/// cinema-huge, the wish: a mid-theatre seat, an 11 m screen 8 m away (68 degrees of view). One source of truth.
+pub const HUGE_TARGET_WIDTH: f32 = 11.0;
+pub const HUGE_TARGET_DISTANCE: f32 = 8.0;
+/// cinema-huge: gentle curve so the edges stay readable.
+pub const HUGE_CURVATURE: f32 = 0.2;
+/// What our WayVR accepts today: `desk-layout` / `desk-screens` clamp width to 0.3..6 m and distance to 0.4..8 m, and
+/// `grab_size_max` (6 m, x1.1) auto-resets a larger screen. Raise this (and WayVR's caps) to get the full 11 m at 8 m.
+pub const WAYVR_MAX_WIDTH: f32 = 6.0;
+
+/// The huge cinema's (width, distance) in metres: the target, scaled down together (same angle on the eye) when WayVR's
+/// width cap is lower: 6 m at 4.36 m today, 11 m at 8 m once the cap allows it.
+pub fn huge_size() -> (f32, f32) {
+    let k = (WAYVR_MAX_WIDTH / HUGE_TARGET_WIDTH).min(1.0);
+    let r = |x: f32| (x * 100.0).round() / 100.0;
+    (r(HUGE_TARGET_WIDTH * k), r(HUGE_TARGET_DISTANCE * k))
 }
 
 /// The screen layout of a preset (`wayvrctl desk-layout`).
@@ -59,19 +83,27 @@ pub struct Layout {
 }
 
 impl Preset {
-    pub const ALL: [Preset; 4] = [Preset::Cinema, Preset::Work3, Preset::Work1, Preset::Assistant];
+    /// The horizontal field of view in degrees a screen of `width` metres at `distance` metres fills.
+    pub fn fov_deg(width: f32, distance: f32) -> f32 {
+        2.0 * (width / 2.0 / distance).atan().to_degrees()
+    }
+
+    pub const ALL: [Preset; 5] = [Preset::Cinema, Preset::CinemaHuge, Preset::Work3, Preset::Work1, Preset::Assistant];
 
     /// `none` -> None. `work` is an alias of `work-3`.
     pub fn parse(s: &str) -> Result<Option<Self>, CliError> {
         Ok(match s {
             "none" => None,
             "cinema" => Some(Self::Cinema),
+            "cinema-huge" | "cinema_huge" | "cinemahuge" | "huge-cinema" | "huge_cinema" | "huge" | "imax" | "theater" | "theatre" => {
+                Some(Self::CinemaHuge)
+            }
             "work-3" | "work3" | "work" => Some(Self::Work3),
             "work-1" | "work1" => Some(Self::Work1),
             "assistant" | "llm" => Some(Self::Assistant),
             _ => {
                 return Err(CliError::usage(format!(
-                    "--preset: none, cinema, work-3 (work), work-1 or assistant, not {s}"
+                    "--preset: none, cinema, cinema-huge (imax), work-3 (work), work-1 or assistant, not {s}"
                 )))
             }
         })
@@ -80,6 +112,7 @@ impl Preset {
     pub fn name(self) -> &'static str {
         match self {
             Self::Cinema => "cinema",
+            Self::CinemaHuge => "cinema-huge",
             Self::Work3 => "work-3",
             Self::Work1 => "work-1",
             Self::Assistant => "assistant",
@@ -90,6 +123,7 @@ impl Preset {
     pub fn conf(self) -> String {
         let body = match self {
             Self::Cinema => "default_curvature: 0.35\n",
+            Self::CinemaHuge => "default_curvature: 0.2\n",
             Self::Work3 | Self::Work1 => "default_curvature: 0.0\nscreen_max_height: 2160\n",
             Self::Assistant => "default_curvature: 0.15\n",
         };
@@ -100,6 +134,8 @@ impl Preset {
     pub fn passthrough_args(self) -> &'static [&'static str] {
         match self {
             Self::Cinema => &["--gain", "0.35"],
+            // a dark room: the passthrough app starts with no camera layer (black)
+            Self::CinemaHuge => &["--off"],
             _ => &[],
         }
     }
@@ -108,8 +144,19 @@ impl Preset {
     pub fn passthrough_ctl(self) -> &'static str {
         match self {
             Self::Cinema => "dim",
+            Self::CinemaHuge => "off",
             _ => "normal",
         }
+    }
+
+    /// The preset sets the WayVR skybox/backdrop to off too (a dark room); the voice layer puts the old one back.
+    pub fn skybox_off(self) -> bool {
+        self == Self::CinemaHuge
+    }
+
+    /// The preset's size only holds if the screens are placed again: a plain live switch leaves placed screens alone.
+    pub fn always_place(self) -> bool {
+        self == Self::CinemaHuge
     }
 
     /// The preset turns the voice captions on.
@@ -121,6 +168,7 @@ impl Preset {
         let l = |screens, curvature, width, distance| Layout { screens, curvature, width, distance };
         match self {
             Self::Cinema => l(1, 0.35, 3.2, 3.5),
+            Self::CinemaHuge => l(1, HUGE_CURVATURE, huge_size().0, huge_size().1),
             Self::Work3 => l(3, 0.0, 1.6, 2.0),
             Self::Work1 => l(1, 0.0, 2.0, 2.2),
             Self::Assistant => l(0, 0.15, 2.0, 2.5),
@@ -217,6 +265,10 @@ pub enum Step {
 /// the session has `PIMAX-*` outputs): then `desk-screens` replaces the arc and the app panels.
 pub fn live_steps(p: Preset, panels: &[Panel], screens: Option<&[(super::screens::Slot, String, bool)]>, place: bool) -> Vec<Step> {
     let mut v = vec![Step::Passthrough(p.passthrough_ctl())];
+    if p.skybox_off() {
+        v.push(Step::Wayvrctl(vec!["skybox".into(), "off".into()]));
+    }
+    let place = place || p.always_place();
     let l = p.layout();
     if let Some(vis) = screens.filter(|s| s.len() > 1) {
         v.push(Step::Wayvrctl(super::screens::desk_screens_args(vis, place.then_some((l.width, l.distance, l.curvature)), true)));
@@ -387,6 +439,50 @@ mod tests {
         }
         assert!(Preset::Assistant.voice() && !Preset::Work3.voice());
         assert_eq!(Preset::Cinema.passthrough_args(), ["--gain", "0.35"]);
+    }
+
+    #[test]
+    fn cinema_huge_names_numbers_and_steps() {
+        for n in ["cinema-huge", "huge-cinema", "imax", "theater", "theatre", "huge", "cinema_huge"] {
+            assert_eq!(Preset::parse(n).unwrap(), Some(Preset::CinemaHuge), "{n}");
+        }
+        assert_eq!(Preset::CinemaHuge.name(), "cinema-huge");
+        assert!(Preset::ALL.contains(&Preset::CinemaHuge));
+        // inside the WayVR caps (ipc/events.rs clamps width 0.3..6 and distance 0.4..8)
+        let l = Preset::CinemaHuge.layout();
+        assert_eq!((l.screens, l.width, l.distance, l.curvature), (1, 6.0, 4.36, 0.2));
+        assert!(l.width <= WAYVR_MAX_WIDTH && l.distance <= 8.0 && l.distance >= 0.4);
+        // the same angle as the wish (11 m at 8 m = 68 degrees), 65..75 degrees
+        let fov = Preset::fov_deg(l.width, l.distance);
+        let wish = Preset::fov_deg(HUGE_TARGET_WIDTH, HUGE_TARGET_DISTANCE);
+        assert!((65.0..=75.0).contains(&fov) && (fov - wish).abs() < 0.5, "{fov} {wish}");
+        let normal = Preset::Cinema.layout();
+        assert!(fov > Preset::fov_deg(normal.width, normal.distance) + 10.0);
+        assert_eq!(Preset::CinemaHuge.passthrough_args(), ["--off"]);
+        assert_eq!(Preset::CinemaHuge.passthrough_ctl(), "off");
+        assert!(Preset::CinemaHuge.conf().contains("default_curvature: 0.2") && !Preset::CinemaHuge.voice());
+        // the live steps: room black, backdrop off, one screen placed even without --replace
+        let s = live_steps(Preset::CinemaHuge, &[], None, false);
+        assert_eq!(s.len(), 3);
+        assert_eq!(s[0], Step::Passthrough("off"));
+        assert_eq!(s[1], Step::Wayvrctl(vec!["skybox".into(), "off".into()]));
+        assert_eq!(
+            s[2],
+            Step::Wayvrctl(["desk-layout", "1", "--curvature", "0.2", "--width", "6", "--distance", "4.36"].map(String::from).to_vec())
+        );
+        // with VR screens: placed (--place) with the huge numbers, the others hidden
+        use crate::vr::screens::Slot;
+        let vis = vec![(Slot::Main, "SUNSHINE".to_string(), true), (Slot::Left, "PIMAX-LEFT".to_string(), false)];
+        let s = live_steps(Preset::CinemaHuge, &[], Some(&vis), false);
+        let Step::Wayvrctl(a) = &s[2] else { panic!("{s:?}") };
+        let line = a.join(" ");
+        assert!(line.starts_with("desk-screens --place --width 6 --distance 4.36 --curvature 0.2 --hide-others"), "{line}");
+        // other presets keep skybox alone and place only on request
+        assert!(!live_steps(Preset::Cinema, &[], Some(&vis), false).iter().any(|s| matches!(s, Step::Wayvrctl(a) if a[0] == "skybox" || a.contains(&"--place".to_string()))));
+        // the conf round-trips
+        let d = crate::vr::test_dir("preset-huge");
+        write_conf(&d, Some(Preset::CinemaHuge)).unwrap();
+        assert_eq!(read_conf(&d), Some(Preset::CinemaHuge));
     }
 
     #[test]

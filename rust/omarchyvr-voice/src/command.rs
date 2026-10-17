@@ -757,6 +757,22 @@ mod tests {
         ] {
             is(&c, t, "vr.preset.cinema");
         }
+        for t in [
+            "Pimax, huge cinema",
+            "Max, imax",
+            "Max imax mode",
+            "Max, big cinema",
+            "Max, cinema mode huge",
+            "Max, make it a huge screen",
+            "pimax huge cinema mode",
+            "Max, theater mode",
+        ] {
+            is(&c, t, "vr.preset.cinema_huge");
+        }
+        for t in ["Max, exit cinema", "Max, exit imax", "Max, normal screens", "Max, leave huge cinema"] {
+            is(&c, t, "vr.preset.exit_cinema");
+        }
+        is(&c, "Max, cinema mode", "vr.preset.cinema");
         for t in ["Pimax work mode", "pimax work", "Pimax, work three", "pimax work 3", "Pimax three screens", "pimax switch to work mode", "Pimax tres pantallas"] {
             is(&c, t, "vr.preset.work3");
         }

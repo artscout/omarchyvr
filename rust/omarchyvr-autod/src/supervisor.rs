@@ -381,6 +381,7 @@ mod tests {
         let d = desired_from_argv("vr", &sv(&["--6dof", "--perf", "--anchor", "--eye"]), &base);
         assert_eq!((d.mode, d.sixdof, d.perf, d.anchor, d.passthrough, d.voice, d.eye), (Mode::Vr, true, true, true, false, false, Eye::Pointer));
         assert_eq!(desired_from_argv("desk", &sv(&["--preset=cinema"]), &base).preset, "cinema");
+        assert_eq!(desired_from_argv("desk", &sv(&["--preset", "cinema-huge"]), &base).preset, "cinema-huge");
         // --hands is an opt-in leaf of 6DoF: kept from the argv, off without it (whatever omarchyvrd.toml says)
         let base_h = Desired { hands: true, ..Desired::default() };
         assert!(desired_from_argv("desk", &sv(&["--6dof", "--hands", "--hands-roles"]), &base).hands);
