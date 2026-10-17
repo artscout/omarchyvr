@@ -11,6 +11,7 @@ use omarchyvr_gui_core::app::Page;
 use omarchyvr_gui_core::autosetup::{AutoSetup, CheckFix, Phase, RunKind, StepState, Stop};
 use omarchyvr_gui_core::device::onboarding::Step;
 use omarchyvr_gui_core::guistate::SetupStage;
+use omarchyvr_gui_core::headset_choice::{self, HeadsetPick};
 
 /// The mark and colour of a step state.
 fn mark(ui: &mut Ui, st: StepState) {
@@ -50,6 +51,8 @@ pub fn show(ui: &mut Ui, app: &mut PimaxApp) {
                 });
             });
         }
+        Phase::ChooseHeadset => choose_headset(ui, app, &s),
+        Phase::GetReady => get_ready(ui, app, &s),
         Phase::Looking | Phase::FixingUser | Phase::Password | Phase::Verifying => running(ui, app, &s),
         Phase::NeedsRestart => restart(ui, app, &s),
         Phase::Problems => problems(ui, app, &s),
@@ -66,6 +69,90 @@ pub fn show(ui: &mut Ui, app: &mut PimaxApp) {
         }
         Phase::Ready => ready(ui, app, &s),
     }
+}
+
+/// First screen: "Which headset do you have?". USB detection only pre-selects; the person confirms with Continue.
+fn choose_headset(ui: &mut Ui, app: &mut PimaxApp, s: &AutoSetup) {
+    header(ui, "Which headset do you have?", "Pick yours. The setup does only what that headset needs. Nothing is changed before you press Continue.");
+    card(ui, |ui| {
+        if let Some(found) = &s.found {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(icon::CHECK_CIRCLE).color(pal(ui).ok));
+                ui.label(RichText::new(found).color(theme::pal(ui).text));
+            });
+            ui.add_space(6.0);
+        }
+        let mut entries: Vec<(HeadsetPick, String, String)> = headset_choice::models()
+            .iter()
+            .enumerate()
+            .map(|(i, m)| (HeadsetPick::Model(i as u8), m.descriptor().name.clone(), "Supported and tested".to_string()))
+            .collect();
+        entries.push((HeadsetPick::Other, "Other / not listed".into(), "Not supported yet".into()));
+        for (pick, name, sub) in entries {
+            let on = s.selected == pick;
+            let p = pal(ui);
+            let r = ui
+                .horizontal(|ui| {
+                    ui.label(RichText::new(if on { icon::CHECK_CIRCLE } else { icon::CIRCLE }).color(if on { p.ok } else { theme::pal(ui).faint }));
+                    ui.selectable_label(on, RichText::new(&name).strong()).on_hover_text(&sub)
+                })
+                .inner;
+            ui.indent(("headset-sub", &name), |ui| ui.label(RichText::new(&sub).small().color(theme::pal(ui).faint)));
+            if r.clicked() {
+                app.core.setup_select_headset(pick);
+            }
+            ui.add_space(4.0);
+        }
+        if s.selected == HeadsetPick::Other {
+            ui.add_space(4.0);
+            note(ui, "This headset is not supported yet. The setup still installs the app, but makes no headset-specific changes to this PC (no graphics driver patch, no display override).");
+        }
+        ui.add_space(8.0);
+        if widgets::primary(ui, "Continue", s.selected != HeadsetPick::Unset).on_disabled_hover_text("Choose your headset first").clicked() {
+            app.core.setup_headset_continue();
+        }
+        if s.selected == HeadsetPick::Unset {
+            ui.add_space(4.0);
+            note(ui, if s.found.is_none() { "No headset was found on USB, so nothing is selected. Choose yours above." } else { "Choose your headset above." });
+        }
+    });
+}
+
+/// Second screen: plain steps for the chosen headset, live ticks from detection, "Start setup" (always enabled).
+fn get_ready(ui: &mut Ui, app: &mut PimaxApp, s: &AutoSetup) {
+    header(ui, "Get the headset ready", &format!("{}: do these, then start the setup.", s.selected.title()));
+    let steps = app.core.headset_ready_steps();
+    card(ui, |ui| {
+        for st in &steps {
+            ui.horizontal_wrapped(|ui| {
+                match st.seen {
+                    Some(true) => ui.label(RichText::new(icon::CHECK_CIRCLE).color(pal(ui).ok)),
+                    Some(false) => ui.label(RichText::new(icon::CIRCLE).color(theme::pal(ui).faint)),
+                    None => ui.label(RichText::new("-").color(theme::pal(ui).faint)),
+                };
+                ui.label(RichText::new(&st.text).color(theme::pal(ui).text));
+                match st.seen {
+                    Some(true) => ui.label(RichText::new("seen").small().color(pal(ui).ok)),
+                    Some(false) => ui.label(RichText::new("not seen yet").small().color(theme::pal(ui).faint)),
+                    None => ui.label(RichText::new("").small()),
+                };
+            });
+        }
+        let missing = steps.iter().any(|x| x.seen == Some(false));
+        ui.add_space(8.0);
+        if missing {
+            note(ui, "Something is not seen yet. You can start anyway: a sleeping headset wakes during the setup. If the display is not found, the app tells you and you can press Fix later.");
+            ui.add_space(4.0);
+        }
+        ui.horizontal(|ui| {
+            if widgets::primary(ui, "Start setup", true).clicked() {
+                app.core.setup_get_ready_start();
+            }
+            if widgets::tbutton(ui, "Back", true).clicked() {
+                app.core.onboarding.setup.headset_back();
+            }
+        });
+    });
 }
 
 /// The NVIDIA patch card only when it matters: the driver is not a tested version (the switch "Allow the patch on

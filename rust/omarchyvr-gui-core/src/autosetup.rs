@@ -13,6 +13,7 @@
 use crate::app::{AppCore, Pending};
 use crate::checklist::{Fix, Item};
 use crate::guistate::SetupStage;
+use crate::headset_choice::{self, HeadsetPick};
 use crate::install::{setup_fix, Install};
 use omarchyvr_doctor::Level;
 use std::path::Path;
@@ -138,6 +139,10 @@ pub enum Phase {
     /// Not started.
     #[default]
     Idle,
+    /// First screen: "Which headset do you have?" (nothing has run, no password yet).
+    ChooseHeadset,
+    /// "Get the headset ready": plain steps for the chosen model, then "Start setup".
+    GetReady,
     /// Stage 1.
     Looking,
     /// Stage 2.
@@ -215,6 +220,10 @@ pub struct AutoSetup {
     pub later: bool,
     /// The root job's failure text (the problems list shows it).
     pub root_error: Option<String>,
+    /// The headset list: what is selected now (pre-selected from USB, or by the person).
+    pub selected: HeadsetPick,
+    /// "Found on USB: Pimax Dream Air (asleep)" when detection pre-selected something.
+    pub found: Option<String>,
     /// Cancel was pressed: nothing new starts.
     pub cancel: bool,
     queue: Vec<String>,
@@ -270,6 +279,39 @@ impl AutoSetup {
             self.phase = Phase::Verifying;
         }
         Action::RunChecks
+    }
+
+    /// Show the first screen. Detection only pre-selects (`pre`); nothing detected: nothing is selected.
+    pub fn ask_headset(&mut self, kind: RunKind, pre: Option<(HeadsetPick, String)>) {
+        let (selected, found) = pre.map_or((HeadsetPick::Unset, None), |(p, why)| (p, Some(why)));
+        *self = AutoSetup { kind, selected, found, phase: Phase::ChooseHeadset, ..AutoSetup::default() };
+    }
+
+    /// The person clicked an entry of the list.
+    pub fn select_headset(&mut self, p: HeadsetPick) {
+        if self.phase == Phase::ChooseHeadset {
+            self.selected = p;
+        }
+    }
+
+    /// "Continue" on the first screen: a listed model goes on to the "Get ready" card (`Some(pick)`), "Other" and
+    /// nothing selected do not (the caller starts the setup for Other). Returns the choice to save, None while
+    /// nothing is selected.
+    pub fn headset_continue(&mut self) -> Option<HeadsetPick> {
+        if self.phase != Phase::ChooseHeadset || self.selected == HeadsetPick::Unset {
+            return None;
+        }
+        if self.selected.module().is_some() {
+            self.phase = Phase::GetReady;
+        }
+        Some(self.selected)
+    }
+
+    /// "Back" on the "Get ready" card.
+    pub fn headset_back(&mut self) {
+        if self.phase == Phase::GetReady {
+            self.phase = Phase::ChooseHeadset;
+        }
     }
 
     /// Cancel: nothing new starts after the step that runs now.
@@ -511,6 +553,8 @@ impl AutoSetup {
     pub fn headline(&self) -> String {
         match &self.phase {
             Phase::Idle => "Getting ready...".into(),
+            Phase::ChooseHeadset => "Which headset do you have?".into(),
+            Phase::GetReady => "Get the headset ready, then start the setup.".into(),
             Phase::Looking => "Looking at this PC...".into(),
             Phase::FixingUser => "Fixing what needs no password...".into(),
             Phase::Password => "Setting up the system. Type your password when asked, once.".into(),
@@ -751,6 +795,12 @@ pub fn demo_run(which: &str, plan: &str) -> AutoSetup {
     let mut s = AutoSetup::default();
     s.set_plan(plan);
     match which {
+        "choose" => s.ask_headset(RunKind::Fresh, headset_choice::preselect(&[(0x34a4, 0x43), (0x34a4, 0x14), (0x2104, 0x561)])),
+        "choose-none" => s.ask_headset(RunKind::Fresh, None),
+        "get-ready" => {
+            s.ask_headset(RunKind::Fresh, headset_choice::preselect(&[(0x34a4, 0x43), (0x34a4, 0x14), (0x2104, 0x561)]));
+            s.headset_continue();
+        }
         "ready-after-reboot" => {
             s.start(RunKind::AfterReboot, false);
             s.checks_done(green(&[]));
@@ -811,6 +861,7 @@ pub struct SetupJob {
 
 impl AppCore {
     /// Start the run by itself when the app shows the setup screen (once the facts and the install state are read).
+    /// A fresh setup begins with "Which headset do you have?" until a headset is chosen.
     pub fn want_setup(&mut self) {
         self.want_onboarding();
         let s = &self.onboarding.setup;
@@ -818,7 +869,7 @@ impl AppCore {
             return;
         }
         let kind = if self.state.setup == SetupStage::Restart { RunKind::AfterReboot } else { RunKind::Fresh };
-        self.setup_start(kind);
+        self.setup_begin(kind);
     }
 
     /// "Run setup again" (and "Try again" after a stopped password step).
@@ -826,15 +877,56 @@ impl AppCore {
         if self.onboarding.setup.running() {
             return;
         }
-        self.setup_start(RunKind::Again);
+        self.setup_begin(RunKind::Again);
+    }
+
+    /// The first screen when no headset is chosen yet (not after a restart); else the run itself.
+    fn setup_begin(&mut self, kind: RunKind) {
+        if kind != RunKind::AfterReboot && self.state.headset == HeadsetPick::Unset {
+            self.onboarding.setup.ask_headset(kind, headset_choice::preselect(&self.facts.usb));
+            return;
+        }
+        self.setup_start(kind);
+    }
+
+    /// An entry of the headset list was clicked.
+    pub fn setup_select_headset(&mut self, p: HeadsetPick) {
+        self.onboarding.setup.select_headset(p);
+    }
+
+    /// "Continue" on the first screen: the choice is saved (shared with the CLI); a listed model shows the "Get ready"
+    /// card, "Other" starts the setup without headset-specific system changes.
+    pub fn setup_headset_continue(&mut self) {
+        let kind = self.onboarding.setup.kind;
+        let Some(p) = self.onboarding.setup.headset_continue() else { return };
+        self.state.headset = p;
+        self.write_state();
+        if self.onboarding.setup.phase != Phase::GetReady {
+            self.setup_start(kind);
+        }
+    }
+
+    /// "Start setup" on the "Get ready" card (enabled even when a tick is missing).
+    pub fn setup_get_ready_start(&mut self) {
+        if self.onboarding.setup.phase == Phase::GetReady {
+            let kind = self.onboarding.setup.kind;
+            self.setup_start(kind);
+        }
+    }
+
+    /// The ticks of the "Get ready" card, from what the PC sees now.
+    pub fn headset_ready_steps(&self) -> Vec<headset_choice::ReadyStep> {
+        let connector = self.facts.doctor_level("connector").map(|l| l == Level::Ok);
+        headset_choice::ready_steps(self.onboarding.setup.selected, &self.facts.usb, connector)
     }
 
     fn setup_start(&mut self, kind: RunKind) {
         let root_job = self.onboarding.install.plan_text.is_some() && kind != RunKind::AfterReboot && (kind == RunKind::Again || !self.onboarding.install.root_done);
         if root_job && !self.demo {
-            // the choices made in the app go into the plan: the NVIDIA switch, and the EDID step when the headset is on USB
-            let headset = self.facts.doctor_level("headset") == Some(Level::Ok);
-            match crate::install::prepare_plan(&self.install(), self.state.nvidia_untested, headset) {
+            // the plan is made again from the person's headset choice right before the password step (the plan from
+            // ./install.sh can be stale: a sleeping headset hid 34a4:0044 then), with the NVIDIA switch
+            let usb = headset_choice::headset_state_from_usb(&self.facts.usb);
+            match crate::install::prepare_plan(&self.install(), self.state.nvidia_untested, self.state.headset, usb) {
                 Ok(Some(t)) => self.onboarding.install.plan_text = Some(t),
                 Ok(None) => {}
                 Err(e) => self.message = format!("cannot prepare the setup plan: {e}"),

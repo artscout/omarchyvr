@@ -25,7 +25,7 @@
 #   OVR_NVIDIA_ALLOW_UNTESTED   yes | no (default no): the user's switch "Allow the patch on untested NVIDIA drivers".
 #                               Written to /etc/omarchyvr/nvidia.conf so later pacman hook runs honour it.
 #   OVR_EDID                    the NVKMS override key, e.g. override.[0000:01:00.0].DP-0 (detected; empty = no EDID step;
-#                               auto = look for the headset's display during the job, after the udev step woke it, up to 30 s)
+#                               auto = look for the headset's display during the job, after the udev step woke it, up to 30 s; 60 s when it sleeps)
 #   OVR_STEAMVR_LAUNCHER        SteamVR's vrcompositor-launcher (empty = skip); gets cap_sys_nice=eip like SteamVR's own prompt
 #   OVR_SNAPSHOT                yes | no  (snapper snapshot of / first, when snapper has a "root" config)
 #   OVR_KEEP_LEGACY_CAPS        yes | no  (uninstall: leave the caps of old Monado builds in ~/src alone)
@@ -73,7 +73,7 @@ fi
 
 # ---- the plan ------------------------------------------------------------------------------------------------------
 OVR_USER="" OVR_HOME="" OVR_DATA="" OVR_SERVICE="" OVR_PACKAGES="" OVR_NVIDIA=skip OVR_NVIDIA_VERSION=""
-OVR_NVIDIA_TESTED="" OVR_NVIDIA_ALLOW_UNTESTED=no OVR_EDID="" OVR_STEAMVR_LAUNCHER="" OVR_SNAPSHOT=yes OVR_KEEP_LEGACY_CAPS=no
+OVR_NVIDIA_TESTED="" OVR_NVIDIA_ALLOW_UNTESTED=no OVR_EDID="" OVR_NVIDIA_WANT="" OVR_HEADSET=awake OVR_STEAMVR_LAUNCHER="" OVR_SNAPSHOT=yes OVR_KEEP_LEGACY_CAPS=no
 if [[ -n $PLAN ]]; then
 	[[ -f $PLAN ]] || { echo "plan $PLAN not found" >&2; exit 1; }
 	while IFS= read -r line || [[ -n $line ]]; do
@@ -83,7 +83,7 @@ if [[ -n $PLAN ]]; then
 		[[ $v =~ ^[][A-Za-z0-9_./:@+\ -]*$ ]] || { echo "plan: unsafe value for $k" >&2; exit 1; }
 		case $k in
 		OVR_USER | OVR_HOME | OVR_DATA | OVR_SERVICE | OVR_PACKAGES | OVR_NVIDIA | OVR_NVIDIA_VERSION | OVR_NVIDIA_TESTED | OVR_NVIDIA_ALLOW_UNTESTED | \
-			OVR_EDID | OVR_STEAMVR_LAUNCHER | OVR_SNAPSHOT | OVR_KEEP_LEGACY_CAPS) printf -v "$k" '%s' "$v" ;;
+			OVR_EDID | OVR_NVIDIA_WANT | OVR_HEADSET | OVR_STEAMVR_LAUNCHER | OVR_SNAPSHOT | OVR_KEEP_LEGACY_CAPS) printf -v "$k" '%s' "$v" ;;
 		*) echo "plan: unknown key $k" >&2; exit 1 ;;
 		esac
 	done <"$PLAN"
@@ -173,14 +173,15 @@ fi
 # Returns 3 when "auto" found no headset display (the rest of the job is not affected).
 edid_step() {
 	local d=$1 rc=0 edid=$OVR_EDID
+	local edid_wait=${OVR_EDID_WAIT:-$([[ $OVR_HEADSET == asleep ]] && echo 60 || echo 30)} # a sleeping headset re-enumerates and wakes slowly; still bounded
 	if [[ $edid == auto ]]; then
-		step "Headset display mode at boot: EDID override (connector found after the headset wakes, up to ${OVR_EDID_WAIT:-30} s)"
+		step "Headset display mode at boot: EDID override (connector found after the headset wakes, up to $edid_wait s)"
 		if [[ $DRY == 1 ]]; then
 			info "would: wait for the headset's display (EDID id PVR) to appear, then write the override for its connector"
 			info "the headset wakes once its access rule is in; if it does not show up the step is skipped (press Fix in the app later)"
 			edid=""
 		else
-			edid=$(wait_headset_edid_key "${OVR_EDID_WAIT:-30}") || edid=""
+			edid=$(wait_headset_edid_key "$edid_wait") || edid=""
 			if [[ -z $edid ]]; then
 				info "headset display not seen: put the headset on / turn it on, then press Fix in the app (EDID override skipped, nothing else is affected)"
 				rc=3

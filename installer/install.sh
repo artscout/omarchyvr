@@ -125,7 +125,7 @@ unknown) note "compositor: none detected (fine for a build; VR needs a Wayland c
 *) note "compositor: $COMP - experimental (needs wp_drm_lease_device_v1)"; TIER=experimental ;;
 esac
 GPUS=$(gpu_vendors)
-NV_VER="" NV_PLAN=skip NV_WHY=""
+NV_VER="" NV_PLAN=skip NV_WHY="" HS_SLEEP=awake
 if [[ " $GPUS " == *" nvidia "* ]]; then
 	NV_VER=$(nvidia_pkg_version)
 	if [[ -z $NV_VER ]]; then
@@ -161,15 +161,21 @@ if [[ $SB == on && $NV_PLAN == patch ]]; then
 		warn "$NV_WHY"
 	fi
 fi
+NV_WANT=$NV_PLAN # what the GPU and driver say, before the headset is asked (the app re-detects the headset)
 HS=$(headset_state)
 case $HS in
+asleep) note "headset: Pimax Dream Air (asleep: it wakes after the system setup) - tested ($(pimax_usb | tr '\n' ';'))"; HS=tested; HS_SLEEP=asleep ;;
 tested) note "headset: Pimax Dream Air ($HEADSET_TESTED) - tested" ;;
 untested) note "headset: a Pimax device that is not tested: $(pimax_usb | tr '\n' ';') - read-only probe only, label 'untested'" ;;
 absent) note "headset: not plugged in (fine; the display steps that need it are skipped)" ;;
 esac
 if [[ $NV_PLAN == patch && $HS != tested && $NVIDIA_MODE != yes ]]; then
+	# 2026-10-17: a sleeping headset hides its main USB id, so "not seen" is NOT "not needed". The decision is the
+	# app's: its first screen asks "Which headset do you have?" and rewrites the plan from that choice right before
+	# the password step (OVR_HEADSET=app marks this plan as "decided in the app"; OVR_NVIDIA_WANT keeps the GPU verdict).
 	NV_PLAN=skip
-	NV_WHY="no supported headset plugged in: the NVIDIA patch is not needed (plug it in and run the setup again, or --nvidia yes)"
+	HS_SLEEP=app
+	NV_WHY="headset not recognised on USB: decided in the app (its first screen asks which headset you have; --nvidia yes forces the patch)"
 	note "  $NV_WHY"
 fi
 EDID_KEY=""
@@ -183,7 +189,7 @@ elif [[ $NV_PLAN == patch && $HS == tested ]]; then
 	# itself, right after the rule is in.
 	EDID_KEY=auto
 	note "headset display: not visible yet (the headset sleeps until the access rule is installed)"
-	note "  the connector is found during the system setup, after the headset access rule wakes it (up to 30 s)"
+	note "  the connector is found during the system setup, after the headset access rule wakes it (up to $([[ $HS_SLEEP == asleep ]] && echo 60 || echo 30) s)"
 elif [[ $NV_PLAN == patch ]]; then
 	note "headset display: not found (no EDID with the Pimax id): the EDID override step is skipped"
 fi
@@ -496,6 +502,8 @@ PLAN="$SHARE/root-plan.env"
 	echo "OVR_NVIDIA_TESTED=$NVIDIA_TESTED_VERSIONS"
 	echo "OVR_NVIDIA_ALLOW_UNTESTED=$NV_ALLOW_UNTESTED"
 	echo "OVR_EDID=$EDID_KEY"
+	echo "OVR_NVIDIA_WANT=$NV_WANT"
+	echo "OVR_HEADSET=$HS_SLEEP"
 	echo "OVR_STEAMVR_LAUNCHER=$STEAMVR_LAUNCHER"
 	echo "OVR_SNAPSHOT=yes"
 } >"$PLAN"

@@ -69,6 +69,8 @@ pub struct GuiState {
     pub dev_mode: bool,
     /// "Allow the patch on untested NVIDIA drivers" (off by default; handed to the root job, see `nvidia_patch`).
     pub nvidia_untested: bool,
+    /// The headset the person chose on the first screen of the setup (`headset = dream-air | other`; shared with the CLI).
+    pub headset: crate::headset_choice::HeadsetPick,
     /// The app's colours: follow Omarchy's theme (default), the omarchyvr colours, or one installed Omarchy theme.
     pub colours: Colours,
 }
@@ -89,6 +91,7 @@ impl Default for GuiState {
             argv_at: 0,
             dev_mode: false,
             nvidia_untested: false,
+            headset: crate::headset_choice::HeadsetPick::Unset,
             colours: Colours::Follow,
         }
     }
@@ -120,6 +123,7 @@ impl GuiState {
                 "argv_at" => s.argv_at = v.trim().parse().unwrap_or(0),
                 "dev_mode" => s.dev_mode = on,
                 "nvidia_allow_untested" => s.nvidia_untested = on,
+                "headset" => s.headset = crate::headset_choice::HeadsetPick::parse(v),
                 "colours" => s.colours = Colours::parse(v),
                 "passthrough" => s.toggles.passthrough = on,
                 "voice" => s.toggles.voice = on,
@@ -155,7 +159,7 @@ impl GuiState {
     pub fn render(&self) -> String {
         let t = &self.toggles;
         format!(
-            "# Pimax app state (written by omarchyvr-app)\nonboarded = {}\nsetup_stage = {}\neye_visual = true\neye = {}\nsixdof = {}\nctrl_track = {}\nhands = {}\nhands_roles = {}\nhands_chosen = {}\npassthrough = {}\nvoice = {}\nhz = {}\nperf = {}\nanchor = {}\npreset = {}\ncontrollers_work = {}\ncontrollers_play = {}\nscreens = {}\nscale_pct = {}\nautostart = {}\nlast_mode = {}\nlast_result = {}\nlast_at = {}\nargv_at = {}\ndev_mode = {}\nnvidia_allow_untested = {}\ncolours = {}\n{}",
+            "# Pimax app state (written by omarchyvr-app)\nonboarded = {}\nsetup_stage = {}\neye_visual = true\neye = {}\nsixdof = {}\nctrl_track = {}\nhands = {}\nhands_roles = {}\nhands_chosen = {}\npassthrough = {}\nvoice = {}\nhz = {}\nperf = {}\nanchor = {}\npreset = {}\ncontrollers_work = {}\ncontrollers_play = {}\nscreens = {}\nscale_pct = {}\nautostart = {}\nlast_mode = {}\nlast_result = {}\nlast_at = {}\nargv_at = {}\ndev_mode = {}\nnvidia_allow_untested = {}\nheadset = {}\ncolours = {}\n{}",
             self.onboarded,
             self.setup.name(),
             t.eye,
@@ -185,6 +189,7 @@ impl GuiState {
             self.argv_at,
             self.dev_mode,
             self.nvidia_untested,
+            self.headset.name(),
             self.colours.render(),
             self.page.map(|p| format!("page = {}\n", p.name())).unwrap_or_default()
         )
@@ -237,6 +242,7 @@ mod tests {
             argv_at: 1_791_968_100,
             dev_mode: true,
             nvidia_untested: true,
+            headset: crate::headset_choice::HeadsetPick::Model(0),
             colours: Colours::Theme(crate::colors::ThemeName::new("tokyo-night").unwrap()),
         };
         assert_eq!(GuiState::parse(&s.render()), s);
@@ -248,6 +254,9 @@ mod tests {
         assert!(!GuiState::default().nvidia_untested, "the patch on untested NVIDIA drivers is off by default");
         assert!(!GuiState::parse("onboarded = true\n").nvidia_untested, "an older file: off");
         assert!(GuiState::parse("nvidia_allow_untested = true\n").nvidia_untested);
+        assert_eq!(GuiState::default().headset, crate::headset_choice::HeadsetPick::Unset, "nothing is chosen on a fresh install");
+        assert_eq!(GuiState::parse("headset = other\n").headset, crate::headset_choice::HeadsetPick::Other);
+        assert_eq!(GuiState::parse("headset = dream-air\n").headset, crate::headset_choice::HeadsetPick::Model(0));
         assert_eq!(GuiState::default().setup, SetupStage::Todo, "a fresh install starts the automatic setup");
         assert_eq!(GuiState::parse("onboarded = true\n").setup, SetupStage::Done, "an older finished onboarding is a finished setup");
         assert_eq!(GuiState::parse("onboarded = true\nsetup_stage = restart\n").setup, SetupStage::Restart);

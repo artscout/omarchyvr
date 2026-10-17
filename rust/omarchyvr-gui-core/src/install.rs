@@ -165,33 +165,19 @@ pub fn refresh_plan(i: &Install, allow: bool) -> Result<(), String> {
     std::fs::write(i.plan_txt(), &out.stdout).map_err(|e| e.to_string())
 }
 
-/// The plan with the EDID step switched to "find the headset's display during the job" (`OVR_EDID=auto`), when the plan
-/// patches NVIDIA and has no EDID key (the headset was not visible when `./install.sh` ran, but it is on USB now).
-pub fn set_plan_edid_auto(text: &str) -> String {
-    let patches = text.lines().any(|l| l.trim() == "OVR_NVIDIA=patch");
-    let empty = text.lines().any(|l| l.trim() == "OVR_EDID=" || l.trim() == "OVR_EDID=\"\"");
-    if !patches || !empty {
-        return text.to_string();
-    }
-    let mut out: String = text.lines().map(|l| if l.trim() == "OVR_EDID=" || l.trim() == "OVR_EDID=\"\"" { "OVR_EDID=auto" } else { l }).collect::<Vec<_>>().join("\n");
-    out.push('\n');
-    out
-}
-
-/// Before the automatic setup runs the root job: the NVIDIA choice and the EDID step go into the plan, and the plan
-/// text is made again with the job's own `plan` mode. Returns the new plan text (None: no plan on this PC).
-pub fn prepare_plan(i: &Install, allow: bool, headset_on_usb: bool) -> Result<Option<String>, String> {
+/// Before the automatic setup runs the root job: the headset the person chose (never the install-time guess), the
+/// NVIDIA choice and the EDID step go into the plan, and the plan text is made again with the job's own `plan` mode.
+/// Returns the new plan text (None: no plan on this PC).
+pub fn prepare_plan(i: &Install, allow: bool, pick: crate::headset_choice::HeadsetPick, usb: crate::headset_choice::HeadsetUsb) -> Result<Option<String>, String> {
     if !i.plan_env().is_file() {
         return Ok(None);
     }
-    if headset_on_usb {
-        let text = std::fs::read_to_string(i.plan_env()).map_err(|e| e.to_string())?;
-        let new = set_plan_edid_auto(&text);
-        if new != text {
-            let tmp = i.plan_env().with_extension("env.tmp");
-            std::fs::write(&tmp, new).map_err(|e| e.to_string())?;
-            std::fs::rename(&tmp, i.plan_env()).map_err(|e| e.to_string())?;
-        }
+    let text = std::fs::read_to_string(i.plan_env()).map_err(|e| e.to_string())?;
+    let new = crate::headset_choice::plan_for_pick(&text, pick, usb);
+    if new != text {
+        let tmp = i.plan_env().with_extension("env.tmp");
+        std::fs::write(&tmp, new).map_err(|e| e.to_string())?;
+        std::fs::rename(&tmp, i.plan_env()).map_err(|e| e.to_string())?;
     }
     refresh_plan(i, allow)?;
     Ok(std::fs::read_to_string(i.plan_txt()).ok().filter(|t| !t.trim().is_empty()))
@@ -349,13 +335,22 @@ mod tests {
     }
 
     #[test]
-    fn the_edid_step_becomes_auto_only_when_the_plan_patches_nvidia_and_has_no_key() {
-        let base = "OVR_USER=u\nOVR_NVIDIA=patch\nOVR_EDID=\nOVR_SNAPSHOT=yes\n";
-        assert_eq!(set_plan_edid_auto(base), "OVR_USER=u\nOVR_NVIDIA=patch\nOVR_EDID=auto\nOVR_SNAPSHOT=yes\n");
-        let keyed = "OVR_NVIDIA=patch\nOVR_EDID=override.[0000:01:00.0].DP-0\n";
-        assert_eq!(set_plan_edid_auto(keyed), keyed, "a detected key stays");
-        let skip = "OVR_NVIDIA=skip\nOVR_EDID=\n";
-        assert_eq!(set_plan_edid_auto(skip), skip, "no NVIDIA patch: no EDID step");
+    fn prepare_plan_rewrites_the_plan_file_from_the_choice() {
+        use crate::headset_choice::{HeadsetPick, HeadsetUsb};
+        let d = std::env::temp_dir().join(format!("omarchyvr-plan-pick-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        let i = Install { share: d.clone() };
+        assert_eq!(prepare_plan(&Install { share: d.join("none") }, false, HeadsetPick::Other, HeadsetUsb::Absent).unwrap(), None);
+        std::fs::write(i.plan_env(), "OVR_USER=u\nOVR_NVIDIA=skip\nOVR_NVIDIA_VERSION=610.57.04\nOVR_NVIDIA_WANT=patch\nOVR_EDID=\n").unwrap();
+        // no root script in this share: only the env is written
+        prepare_plan(&i, false, HeadsetPick::Model(0), HeadsetUsb::Asleep).unwrap();
+        let t = std::fs::read_to_string(i.plan_env()).unwrap();
+        assert!(t.contains("OVR_NVIDIA=patch\n") && t.contains("OVR_EDID=auto\n") && t.contains("OVR_HEADSET=asleep\n") && t.contains("OVR_NVIDIA_ALLOW_UNTESTED=no\n"), "{t}");
+        prepare_plan(&i, false, HeadsetPick::Other, HeadsetUsb::Asleep).unwrap();
+        let t = std::fs::read_to_string(i.plan_env()).unwrap();
+        assert!(t.contains("OVR_NVIDIA=skip\n") && t.contains("OVR_EDID=\n"), "{t}");
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]

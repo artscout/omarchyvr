@@ -312,3 +312,46 @@ fn the_edid_mode_passes_the_safety_rules_and_the_restart_button_is_the_only_syst
     crate::safety::check(&restart).expect("the Restart now button");
     assert!(crate::safety::check(&crate::cmd::Cmd::new("systemctl", &["poweroff"])).is_err());
 }
+
+mod choose_headset {
+    use super::super::*;
+    use crate::headset_choice::{preselect, HeadsetPick};
+
+    const ASLEEP: [(u16, u16); 3] = [(0x34a4, 0x43), (0x34a4, 0x14), (0x2104, 0x561)];
+
+    #[test]
+    fn a_sleeping_headset_is_preselected_and_one_click_continues_to_the_ready_card() {
+        let mut s = AutoSetup::default();
+        s.ask_headset(RunKind::Fresh, preselect(&ASLEEP));
+        assert_eq!(s.phase, Phase::ChooseHeadset);
+        assert_eq!(s.selected, HeadsetPick::Model(0));
+        assert_eq!(s.found.as_deref(), Some("Found on USB: Pimax Dream Air (asleep)"));
+        assert!(!s.running(), "nothing runs before the choice");
+        assert_eq!(s.headset_continue(), Some(HeadsetPick::Model(0)));
+        assert_eq!(s.phase, Phase::GetReady);
+        s.headset_back();
+        assert_eq!(s.phase, Phase::ChooseHeadset);
+    }
+
+    #[test]
+    fn nothing_detected_selects_nothing_and_continue_waits_for_a_choice() {
+        let mut s = AutoSetup::default();
+        s.ask_headset(RunKind::Fresh, preselect(&[]));
+        assert_eq!((s.selected, s.found.clone()), (HeadsetPick::Unset, None));
+        assert_eq!(s.headset_continue(), None, "Continue does nothing until the person chooses");
+        assert_eq!(s.phase, Phase::ChooseHeadset);
+        s.select_headset(HeadsetPick::Model(0));
+        assert_eq!(s.headset_continue(), Some(HeadsetPick::Model(0)));
+    }
+
+    #[test]
+    fn other_has_no_ready_card_and_the_caller_starts_the_setup() {
+        let mut s = AutoSetup::default();
+        s.ask_headset(RunKind::Fresh, preselect(&ASLEEP));
+        s.select_headset(HeadsetPick::Other);
+        assert_eq!(s.headset_continue(), Some(HeadsetPick::Other));
+        assert_eq!(s.phase, Phase::ChooseHeadset);
+        assert_eq!(s.start(RunKind::Fresh, true), Action::RunChecks);
+        assert_eq!(s.phase, Phase::Looking);
+    }
+}

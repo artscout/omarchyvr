@@ -119,20 +119,35 @@ secure_boot() {
 	[[ -n "$f" ]] || { echo unknown; return; }
 	[[ "$(od -An -t u1 -j4 -N1 "$f" 2>/dev/null | tr -d ' ')" == 1 ]] && echo on || echo off
 }
-# Pimax devices on USB: lines "vid:pid name"
-pimax_usb() {
+# USB root for the detection (tests point it at a fake sysfs)
+usb_root() { echo "${OVR_USB_ROOT:-/sys/bus/usb/devices}"; }
+# every USB device: lines "vid:pid name"
+all_usb() {
 	local d
-	for d in /sys/bus/usb/devices/*; do
+	for d in "$(usb_root)"/*; do
 		[[ -r "$d/idVendor" ]] || continue
-		[[ "$(cat "$d/idVendor")" == "$HEADSET_VENDOR" ]] || continue
-		printf '%s:%s %s\n' "$(cat "$d/idVendor")" "$(cat "$d/idProduct")" "$(cat "$d/product" 2>/dev/null || echo '?')"
+		printf '%s:%s %s\n' "$(cat "$d/idVendor")" "$(cat "$d/idProduct" 2>/dev/null)" "$(cat "$d/product" 2>/dev/null || echo '?')"
 	done | sort -u
 }
-headset_state() { # tested | untested | absent
-	local l
+# Pimax devices on USB: lines "vid:pid name"
+pimax_usb() { all_usb | grep "^$HEADSET_VENDOR:" || true; }
+# The sleeping signature of the tested Dream Air (2026-10-17): while it sleeps (no keepalive yet) 34a4:0044 is NOT on
+# USB; only the control device 34a4:0043 together with the camera sensor 34a4:0014 and/or the eye chip 2104:0561.
+# One rule, shared with the app (rust/omarchyvr-gui-core/src/install.rs headset_state_from_usb; same test vectors).
+HEADSET_SLEEP_CTRL=34a4:0043
+HEADSET_SLEEP_PEERS="34a4:0014 2104:0561"
+headset_state() { # tested (awake) | asleep (tested, 0044 hidden) | untested | absent
+	local l ids p
 	l=$(pimax_usb)
+	ids=$(all_usb | awk '{print $1}')
+	if grep -qx "$HEADSET_TESTED" <<<"$ids"; then echo tested; return; fi
+	if grep -qx "$HEADSET_SLEEP_CTRL" <<<"$ids"; then
+		for p in $HEADSET_SLEEP_PEERS; do
+			grep -qx "$p" <<<"$ids" && { echo asleep; return; }
+		done
+	fi
 	[[ -z "$l" ]] && { echo absent; return; }
-	grep -q "^$HEADSET_TESTED " <<<"$l" && echo tested || echo untested
+	echo untested
 }
 # headset_connector lives in headset-connector.sh (shared with the root job)
 # shellcheck source=headset-connector.sh

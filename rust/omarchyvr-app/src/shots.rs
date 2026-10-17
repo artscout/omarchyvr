@@ -363,6 +363,22 @@ fn shots() -> Vec<Shot> {
             setup: |a| a.core.want_system(),
         },
         Shot {
+            name: "setup-choose-headset",
+            running: false,
+            page: Page::Onboarding,
+            height: 640.0,
+            dark: true,
+            setup: |a| demo_setup(a, "choose", SetupStage::Todo),
+        },
+        Shot {
+            name: "setup-get-ready",
+            running: false,
+            page: Page::Onboarding,
+            height: 640.0,
+            dark: true,
+            setup: |a| demo_setup(a, "get-ready", SetupStage::Todo),
+        },
+        Shot {
             name: "setup-running",
             running: false,
             page: Page::Onboarding,

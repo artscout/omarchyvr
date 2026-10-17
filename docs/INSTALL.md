@@ -13,7 +13,7 @@ The terminal ends with "The app finishes the setup (one password)": it never ask
 | # | Where | What happens | You press | Password |
 |---|---|---|---|---|
 | 1 | terminal (or Claude) | `./install.sh`: it checks this PC and builds everything (about 15-30 min the first time on a fast PC, at the lowest priority, so you can keep working). It installs the set and opens the app. | nothing after the command | no |
-| 2 | app, "Setting up your PC" | starts by itself: looks at this PC, fixes what needs no password, runs the system part (live list of steps), checks again | nothing | **one** (pkexec window of your desktop) |
+| 2 | app, "Setting up your PC" | first **"Which headset do you have?"** (USB detection only pre-selects, e.g. "Found on USB: Pimax Dream Air (asleep)"; you press **Continue**), then **"Get the headset ready"** (cables, power; live ticks where the PC can tell; **Start setup** works even if a tick is missing). Then it runs by itself: looks at this PC, fixes what needs no password, runs the system part (live list of steps), checks again | Continue, Start setup | **one** (pkexec window of your desktop) |
 | 3 | app | all green and the job said "reboot" (NVIDIA module, boot image): **Restart now**. The app opens again at login and finishes the checks by itself (patched module loaded, EDID override, headset display mode, realtime permission) | **Restart now** (only when a restart is needed) | no |
 | 4 | app, Ready | **Play**: SteamVR starts with the headset | **Play** | no |
 
@@ -94,6 +94,14 @@ the password for the exact file. Play never relinks the installed file, so it ne
   in the app"); the rest of the setup is not affected. **Fix** runs the same step alone
   (`omarchyvr-root.sh edid <plan>`, one password, exit 3 when the display is still not seen). The app also switches an
   empty `OVR_EDID` to `auto` before the job when the headset is on USB.
+- **The headset is chosen in the app, not guessed** (2026-10-17). A sleeping Dream Air (no keepalive yet) hides
+  `34a4:0044` and shows only `34a4:0043` + `34a4:0014` and/or the eye chip `2104:0561`; the installer treats that
+  signature as the tested Dream Air ("asleep: it wakes after the system setup", `installer/lib.sh headset_state`,
+  test `installer/test_headset_detect.sh`), and when it cannot tell it no longer decides "NVIDIA not needed": the plan
+  says `OVR_HEADSET=app`. The app's first screen saves the choice (`headset = dream-air | other` in `gui-state.toml`)
+  and rewrites `root-plan.env`/`.txt` from it right before the password step: Dream Air = NVIDIA patch on a tested or
+  allowed driver + `OVR_EDID=auto` (waits up to 60 s for a sleeping or unseen headset, 30 s for an awake one); "Other /
+  not listed" = no NVIDIA and no EDID step, the app is still installed.
 - AMD and Intel GPUs: no patches, marked experimental.
 
 ## Requirements
