@@ -24,7 +24,8 @@
 #   --lab-data DIR      private lab data (the eye cold-start list) to link before the build (default: found
 #                       automatically in .claude/lab/repo of this repo or ~/omarchyvr)
 #   --gpu-speech        also build whisper.cpp with Vulkan (for the 'Speech on graphics card' switch; off by default)
-#   --hand-models       fetch the Mercury hand-tracking models from their upstream (no licence: personal use only)
+#   --hand-models       fetch the Mercury hand-tracking models from Monado's public server (no licence: personal use only;
+#                       the same download as the app's Tracking > Download hand models button)
 #   --no-ai             skip the local AI runtime and models
 #   --no-downloads      use only what is on disk (no network apart from git submodules already cloned)
 #   --install-packages  install missing build packages with pacman right away (one extra password prompt, only on a
@@ -445,15 +446,10 @@ else
 	fi
 	record data "${XDG_DATA_HOME:-$HOME/.local/share}/omarchyvr/ai" KEEP "local AI runtime and models"
 	if [[ $HAND_MODELS == 1 ]]; then
-		note "Mercury hand models: NO licence, personal use only; fetched from upstream, never redistributed"
-		hm="$HOME/$HANDMODELS_DIR"
-		if [[ ! -d $hm/.git ]]; then
-			git lfs version >/dev/null 2>&1 || die "git-lfs is needed for the hand models"
-			git clone --quiet "$HANDMODELS_URL" "$hm"
-		fi
-		git -C "$hm" -c advice.detachedHead=false checkout --quiet "$HANDMODELS_COMMIT"
-		git -C "$hm" lfs pull
-		record data "$hm" KEEP "Mercury hand models (no licence)"
+		# the one implementation (also behind the app's "Download hand models" button); --hand-models is the consent
+		note "Mercury hand models: NO licence, personal use only; fetched from Monado's public server, never redistributed"
+		heavy "$BIN/omarchyvr" vr hand-models download --yes 2>&1 | sed 's/^/    /' || warn "hand models: download failed (retry from the app: Tracking > Download hand models)"
+		record data "$HOME/$HANDMODELS_DIR" KEEP "Mercury hand models (no licence)"
 	fi
 fi
 

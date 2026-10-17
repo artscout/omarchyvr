@@ -630,7 +630,11 @@ pub fn collect_facts(
     f.hands_models = omarchyvr_tools::vr::hands::MODELS.iter().all(|n| {
             [p.home.join(".local/share"), PathBuf::from("/usr/local/share"), PathBuf::from("/usr/share")]
                 .iter()
-                .any(|d| m.exists(&d.join("monado/hand-tracking-models").join(n)))
+                .any(|d| {
+                    let f = d.join("monado/hand-tracking-models").join(n);
+                    // a git-lfs pointer (an unfinished download) is a few hundred bytes, not a model
+                    m.exists(&f) && m.meta(&f).map_or(true, |x| x.len >= 1024)
+                })
         });
     let argv = p.session_dir.join(omarchyvr_tools::vr::supervise::ARGV_FILE);
     f.screens_report = m.read_str(&p.session_dir.join(omarchyvr_tools::vr::screens::REPORT_FILE));

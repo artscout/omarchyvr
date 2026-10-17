@@ -474,6 +474,7 @@ fn quick_settings(ui: &mut Ui, app: &mut PimaxApp) {
         if let Some(w) = &hands_why {
             r.on_disabled_hover_text(w.as_str());
         }
+        crate::pages::tracking::hand_models(ui, app);
         crate::pages::tracking::rules(app);
     }
 }

@@ -97,6 +97,29 @@ fn shots() -> Vec<Shot> {
             },
         },
         Shot { name: "tracking", running: true, page: Page::Tracking, height: 900.0, dark: true, setup: |_| {} },
+        Shot {
+            name: "tracking-handmodels",
+            running: false,
+            page: Page::Tracking,
+            height: 900.0,
+            dark: true,
+            setup: |a| {
+                // the models are not downloaded yet; the consent notice is on screen (Developer mode: -dev picture)
+                a.core.facts.hands_models = false;
+                a.core.hand_models_ask();
+            },
+        },
+        Shot {
+            name: "tracking-handmodels-error",
+            running: false,
+            page: Page::Tracking,
+            height: 900.0,
+            dark: true,
+            setup: |a| {
+                a.core.facts.hands_models = false;
+                a.core.hand_models.result = Some(Err("git-lfs is not installed on this PC, and the hand models need it. Install the package \"git-lfs\", then press Download again. Nothing was changed.".into()));
+            },
+        },
         Shot { name: "room", running: true, page: Page::Room, height: 900.0, dark: true, setup: |_| {} },
         Shot { name: "desktop", running: true, page: Page::Desktop, height: 820.0, dark: true, setup: |_| {} },
         Shot { name: "developer", running: true, page: Page::Developer, height: 1300.0, dark: true, setup: |_| {} },

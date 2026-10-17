@@ -40,6 +40,7 @@ pub mod gamecheck;
 pub mod gameruntime;
 pub mod guards;
 pub mod guistate;
+pub mod handmodels;
 pub mod handtest;
 pub mod headsets;
 pub mod install;
