@@ -26,6 +26,7 @@ would start: $ROOT/build/src/xrt/targets/service/monado-service
   XR_RUNTIME_JSON=$ROOT/build/openxr_monado-dev.json
   PIMAX_ANCHOR=1
   PIMAX_CTRL_INHAND=always
+  PIMAX_CTRL_ANGLE=30
   PIMAX_BIAS_TIMEOUT_MS=200
   PIMAX_DEBUG_PTRACE=1
   IPC_IGNORE_VERSION=1
