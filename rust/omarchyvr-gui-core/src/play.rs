@@ -172,8 +172,8 @@ impl AppCore {
 
     /// The start job Play runs now (without the cap step).
     fn play_start_job(&self) -> Result<JobSpec, String> {
-        if self.state.last_vr && self.home_lands() {
-            // Start in VR home (default on): Play lands in the home panel (docs/VR-HOME.md)
+        if self.state.last_vr && self.home_lands() && self.start_game().is_none() {
+            // Start in VR home (default on): Play lands in the home panel (docs/VR-HOME.md); Play for a chosen game starts its session
             self.home_start_job(self.consent_force)
         } else if self.state.last_vr {
             self.vr_start_job(self.consent_force)
@@ -221,6 +221,12 @@ impl AppCore {
     /// side's start (Play's start itself clears whatever a crashed Work may have left before anything of Play starts).
     /// The start is judged as if the session were already stopped; `--force` only with the user's consent.
     pub fn switch_job(&self, to_vr: bool) -> Result<JobSpec, String> {
+        self.switch_job_for(to_vr, self.start_game())
+    }
+
+    /// [`switch_job`](Self::switch_job) for a given Steam game (`--game APPID`: a game on the SteamVR list starts the
+    /// session with SteamVR for this start only).
+    pub fn switch_job_for(&self, to_vr: bool, game: Option<String>) -> Result<JobSpec, String> {
         let (live, facts) = self.as_if_stopped();
         let t = if to_vr { self.vr_toggles() } else { self.effective_toggles() };
         let desk_pf = self.preflight_for(&live, &facts, &t);
@@ -231,10 +237,11 @@ impl AppCore {
             Gate::NeedsConsent(_) => true,
             Gate::Ready => false,
         };
-        let start = if to_vr && self.home_lands() {
+        // Start in VR home: Play lands in the home, unless the switch is for a given game (the SteamVR switch)
+        let start = if to_vr && game.is_none() && self.home_lands() {
             self.own_scope(self.home_start_cmd(force), "vr")
         } else if to_vr {
-            let mut c = Cmd::with_args(self.launcher_bin().display().to_string(), crate::launcher::vr_game_args(&t, force, self.light_game(), self.facts.next_game.as_deref()));
+            let mut c = Cmd::with_args(self.launcher_bin().display().to_string(), crate::launcher::vr_game_args(&t, force, self.light_game(), game.as_deref()));
             for (k, v) in self.launcher_env() {
                 c = c.env(&k, v);
             }
@@ -251,7 +258,11 @@ impl AppCore {
         }
         steps.push(Step::Run(start));
         let (to, from) = if to_vr { ("Play", "Work") } else { ("Work", "Play") };
-        Ok(JobSpec { kind: JobKind::DeskStart, label: format!("Switch to {to} (stops {from} first)"), steps })
+        let label = match game.as_deref().filter(|_| to_vr) {
+            Some(g) => format!("Restart Play for game {g} (SteamVR if it is on the list)"),
+            None => format!("Switch to {to} (stops {from} first)"),
+        };
+        Ok(JobSpec { kind: JobKind::DeskStart, label, steps })
     }
 
     /// Which side runs now: Some(true) = a game session (Play), Some(false) = the desk (Work), None = nothing of ours.

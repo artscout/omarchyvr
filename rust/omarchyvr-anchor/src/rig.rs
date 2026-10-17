@@ -19,18 +19,12 @@ pub fn load(calib: Option<&Path>, extrinsics_path: Option<&Path>, factory: bool)
         })
         .collect::<Result<_, String>>()?;
     if !factory {
-        let p = extrinsics_path
-            .map(|p| p.to_path_buf())
-            .unwrap_or_else(extrinsics::default_path);
-        if p.exists() {
-            if let Ok((uid, v)) = extrinsics::load(&p) {
-                if uid.is_empty() || uid == c.uid {
-                    for (id, pose) in v {
-                        if id < cams.len() {
-                            cams[id].cam_from_body = pose;
-                        }
-                    }
-                }
+        // the user's own fit, else the shipped fit for the reference headset (the same rule as pimax-ctrltrack)
+        let env = |k: &str| std::env::var(k).ok();
+        let (v, _) = extrinsics::resolve(&c, extrinsics_path, &env);
+        for (id, pose) in v {
+            if id < cams.len() {
+                cams[id].cam_from_body = pose;
             }
         }
     }

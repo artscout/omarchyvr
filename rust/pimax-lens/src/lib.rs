@@ -155,7 +155,15 @@ pub fn load(aspect: f32, env: &dyn Fn(&str) -> Option<String>) -> Loaded {
     if !explicit && config::reference_allowed(env) && std::fs::metadata(&path).is_err() {
         return load_reference(aspect, env, path);
     }
-    load_file(aspect, env, path)
+    // A user file that sets only some keys inherits the rest from the shipped Windows (PVR) fit, not from the
+    // old angle-table defaults (2026-10-17). `load_file` keeps the old C loader's baseline: the difftest compares it bit for bit.
+    let base = if config::reference_allowed(env) { reference_config(aspect).0 } else { LensConfig::defaults(aspect) };
+    load_file_on(base, env, path)
+}
+
+/// The shipped Dream Air profile as a ready config (and the parse warnings, none for the shipped file).
+pub fn reference_config(aspect: f32) -> (LensConfig, Vec<config::Warning>) {
+    config::parse(REFERENCE_LENS_CONF, aspect)
 }
 
 /// [`load`] when the user has no lens.conf: the shipped profile, parsed like a file (`path` is where the user's own
@@ -227,7 +235,11 @@ fn attach_luts(
 
 /// Like [`load`] with an explicit path.
 pub fn load_file(aspect: f32, env: &dyn Fn(&str) -> Option<String>, path: PathBuf) -> Loaded {
-    let mut cfg = LensConfig::defaults(aspect);
+    load_file_on(LensConfig::defaults(aspect), env, path)
+}
+
+/// [`load_file`] with the config the file's keys are applied on (the baseline).
+fn load_file_on(mut cfg: LensConfig, env: &dyn Fn(&str) -> Option<String>, path: PathBuf) -> Loaded {
     let mut messages = Vec::new();
     let mut file_found = false;
     match std::fs::read(&path) {
@@ -617,6 +629,11 @@ mod tests {
         let l = load(ASPECT, &env);
         assert!(l.file_found && !l.reference);
         assert_eq!(l.lens.config().eye[0].fov, [40.0, 41.0, 42.0, 43.0]);
+        // keys the file does not set come from the shipped Windows fit (cant 2.0, centre 0.02699, 5 terms), not the old defaults
+        assert_eq!(l.lens.config().cant_deg, want.cant_deg);
+        assert_eq!(l.lens.config().eye[0].cx, want.eye[0].cx);
+        assert_eq!(l.lens.config().eye[0].k, want.eye[0].k);
+        assert_eq!(l.lens.config().eye[0].fit_range, want.eye[0].fit_range);
         let _ = std::fs::remove_dir_all(&home);
     }
 }

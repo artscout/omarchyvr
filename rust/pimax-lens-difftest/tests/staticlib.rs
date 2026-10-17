@@ -60,6 +60,8 @@ fn build_abi_check(lib: &Path) -> PathBuf {
 fn run(prog: &Path, conf: &Path) -> String {
     let o = Command::new(prog)
         .env("PIMAX_LENS_CONF", conf)
+        // compare on the code-default baseline (`load_file`), not the shipped Windows fit the driver layers files on
+        .env("PIMAX_NO_REFERENCE", "1")
         .env_remove("PIMAX_LENS_OFF")
         .env_remove("PIMAX_LENS_DEBUG_GRID")
         .output()

@@ -69,7 +69,7 @@ fi
 #   8. the private originals with their serials (when this PC has them) are refused at the reference path and at their
 #      own path; nothing of them is printed (the scanner prints kinds and paths only, the paths here carry no serial)
 REF=rust/pimax-device/devices/dream-air/reference
-FILES=(headset-calibration.xml controllers/left.json controllers/right.json lens.conf)
+FILES=(headset-calibration.xml controllers/left.json controllers/right.json lens.conf ctrl-cam-extrinsics.json)
 stage_ref() {
     for f in "${FILES[@]}"; do
         mkdir -p "$T/$REF/$(dirname "$f")"
@@ -88,7 +88,7 @@ sed -i 's/deviceUID="reference"/deviceUID="reference2"/' "$T/$REF/headset-calibr
 git -C "$T" add -f "$REF/headset-calibration.xml"
 expect "a changed reference calibration is refused" 1
 mkdir -p "$T/docs"
-for f in headset-calibration.xml controllers/left.json lens.conf; do
+for f in headset-calibration.xml controllers/left.json lens.conf ctrl-cam-extrinsics.json; do
     cp "$REPO/$REF/$f" "$T/docs/copy-$(basename "$f")"
     git -C "$T" add -f "docs/copy-$(basename "$f")"
     expect "the reference $f under another path is refused" 1
