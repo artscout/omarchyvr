@@ -13,7 +13,7 @@ Short version:
 
 - The user never uses the command line. Do not reply with a command to run; add a switch or button to the app.
 - HID bytes come only from Windows captures and the allowlist in `rust/pimax-device/devices/<id>/device.toml`.
-- No firmware flashing, no DRM hotplug, never tell the user to unplug the headset, except the app's last-resort power-cable cycle in the setup when the HID chip 34a4:0044 stays off (no session running, after pressing the power button failed; never the DisplayPort cable during a session; lesson 40).
+- No firmware flashing, no DRM hotplug, never tell the user to unplug the headset, except the app's last-resort power-cable cycle (in the setup, or in the wake guide after a failed Work/Play start) when the HID chip 34a4:0044 stays off (no session running, after pressing the power button failed; never the DisplayPort cable during a session; lesson 40).
 - No sudo from agents. Root steps go through the app's pkexec prompt.
 - Never touch a live VR session. Install only between sessions, kill by PID only.
 - After any Monado relink, check `cap_sys_nice=ep` and the feature markers.
