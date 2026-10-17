@@ -15,6 +15,7 @@ use crate::job::{JobKind, JobSpec, Step};
 use crate::launcher;
 use crate::preflight::Gate;
 use omarchyvr_tools::vr::home as h;
+pub use omarchyvr_tools::vr::home::{Background, Game, Settings, Status};
 use std::time::Duration;
 
 /// A finished transition stays on Home this long.
@@ -128,7 +129,7 @@ impl AppCore {
         let ok = s.state != "failed";
         let words = match s.state.as_str() {
             "running" => format!("In the headset: {}", s.text),
-            "failed" => format!("In the headset, {} did not work: {}", s.target, s.text),
+            "failed" => format!("In the headset (VR home > {}): {}", s.target, s.text),
             _ => format!("In the headset: {}", s.text),
         };
         Some((ok, words))
@@ -167,7 +168,7 @@ mod tests {
     #[test]
     fn the_home_job_waits_for_monado_and_runs_the_launcher_with_the_home() {
         let a = core();
-        let j = a.home_start_job(false).expect("ready in the demo");
+        let j = a.home_start_job(true).expect("ready in the demo (consent over its WayVR Xid 31 faults)");
         assert_eq!(j.label, "Start the VR home");
         assert!(matches!(j.steps[0], Step::WaitNoMonado(_)));
         let Step::Run(c) = j.steps.last().unwrap() else { panic!("{:?}", j.steps) };
@@ -200,7 +201,7 @@ mod tests {
         assert_eq!(a.home_transition_line(1000), None);
         a.facts.home_status = Some(h::Status { state: "failed".into(), target: "steamvr".into(), text: "SteamVR did not start: Steam must restart".into(), when: 1000 });
         let (ok, l) = a.home_transition_line(1100).unwrap();
-        assert!(!ok && l.contains("steamvr did not work: SteamVR did not start"), "{l}");
+        assert!(!ok && l.contains("(VR home > steamvr): SteamVR did not start"), "{l}");
         assert_eq!(a.home_transition_line(1000 + STATUS_SHOWN_SECS + 1), None, "an old one is gone");
     }
 }

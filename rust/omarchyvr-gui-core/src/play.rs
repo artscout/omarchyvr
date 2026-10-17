@@ -702,6 +702,7 @@ mod tests {
         // the VR home is Monado: Play into the home never asks (SteamVR is asked for from the headset later)
         a.play();
         assert!(a.pending.is_none() && a.message.starts_with("demo mode: would run Start the VR home"), "{}", a.message);
+        a.log.clear();
         a.facts.home.start_in_home = false;
         a.play();
         assert!(matches!(a.pending, Some(crate::app::Pending::RestartSteam { vr: true, .. })), "the dialog, nothing started: {:?}", a.pending);

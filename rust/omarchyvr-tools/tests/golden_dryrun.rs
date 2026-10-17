@@ -122,7 +122,8 @@ const CASES: &[(&str, &[&str], &[&str])] = &[
     ("vr-start-90-anchor", &["vr", "start", "--dry-run", "--fps", "90", "--anchor", "--no-set-runtime", "--no-light"], &[]),
     // light game mode drops the wrist readout and the room anchor even when asked for
     ("vr-start-light", &["vr", "start", "--dry-run", "--6dof", "--ctrl-track", "--perf", "--anchor", "--light", "--no-set-runtime"], &[]),
-    ("vr-start-wait-debug", &["vr", "start", "--dry-run", "--wait", "--debug", "--connector", "DP-1", "--mode", "3"], &[]),
+    ("vr-start-home", &["vr", "start", "--dry-run", "--6dof", "--ctrl-track", "--anchor", "--home", "--runtime", "monado", "--perf"], &[]),
+    ("vr-start-wait-debug",&["vr", "start", "--dry-run", "--wait", "--debug", "--connector", "DP-1", "--mode", "3"], &[]),
     ("desk-stop", &["desk", "stop", "--dry-run"], &["monado", "wayvr", "passthrough"]),
     (
         "desk-stop-all-clients",

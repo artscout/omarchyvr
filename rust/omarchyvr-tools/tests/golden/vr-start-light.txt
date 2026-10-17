@@ -2,6 +2,7 @@ $ omarchyvr vr start --dry-run --6dof --ctrl-track --perf --anchor --light --no-
 exit Some(0)
 --- stdout
 omarchyvr vr: headset data: calibration = the shipped Dream Air reference, controller models = the shipped Dream Air reference, lens = the shipped Dream Air profile, gyro = the Dream Air default until the headset rests once
+omarchyvr vr: the VR home panel (the menu button opens it) on $ROOT/home/.local/lib/omarchyvr/wayvr/wayvr (minimal WayVR, no screens)
 omarchyvr vr: --6dof would first run: $ROOT/home/.local/bin/omarchyvr-slam export --out $ROOT/session/basalt, then $ROOT/home/.local/bin/pimax-cam broker (socket $ROOT/run/omarchyvr-cam-broker.sock)
 omarchyvr vr: --ctrl-track would also run, after the service: $ROOT/home/.local/bin/pimax-ctrltrack live --source broker:$ROOT/run/omarchyvr-cam-broker.sock
 omarchyvr vr: preflight

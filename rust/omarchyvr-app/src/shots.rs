@@ -121,6 +121,31 @@ fn shots() -> Vec<Shot> {
             },
         },
         Shot { name: "desk-idle-light", running: false, page: Page::Desk, height: 820.0, dark: false, setup: |_| {} },
+        // the VR home card (switches + the headset panel's preview, docs/VR-HOME.md), the whole Home page
+        Shot { name: "home-vr-home", running: false, page: Page::Desk, height: 1300.0, dark: true, setup: |_| {} },
+        Shot { name: "home-vr-home-light", running: false, page: Page::Desk, height: 1300.0, dark: false, setup: |_| {} },
+        Shot {
+            name: "home-vr-home-running",
+            running: true,
+            page: Page::Desk,
+            height: 1300.0,
+            dark: true,
+            setup: |app| {
+                // the VR home runs (a game session started with --home) and the last panel press failed
+                app.core.live.started_as = Some("vr".into());
+                for p in app.core.live.session.iter_mut() {
+                    p.alive = matches!(p.name, "monado" | "broker" | "ctrltrack");
+                }
+                app.core.facts.start_argv = Some(("vr\n--fps\n90\n--6dof\n--anchor\n--home\n--runtime\nmonado\n".into(), 1));
+                let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+                app.core.facts.home_status = Some(omarchyvr_gui_core::vrhome::Status {
+                    state: "failed".into(),
+                    target: "steamvr".into(),
+                    text: "SteamVR did not start: Steam must restart for VR. Back to the VR home.".into(),
+                    when: now,
+                });
+            },
+        },
         Shot {
             name: "home-play-cap",
             running: false,

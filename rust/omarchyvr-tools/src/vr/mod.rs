@@ -531,7 +531,7 @@ pub fn run(mut a: Args) -> CliResult {
                         vout!("omarchyvr vr: --perf would also run, after the service: {} (minimal WayVR, no screens), {}", p.wayvr_bin.display(), p.perf_bin.display());
                         vout!("       PIMAX_PERF_FILE={} for monado-service", p.stats.display());
                     }
-                    if let Some((_, open)) = overlay.as_ref().and_then(|ov| ov.panel.as_ref()) {
+                    if let Some((_, open)) = overlay.as_ref().and_then(|ov| ov.panel.as_ref()).filter(|_| !opts.wait) {
                         vout!(
                             "omarchyvr vr: the VR home panel ({}) on {} (minimal WayVR, no screens){}",
                             if *open { "shown at start" } else { "the menu button opens it" },
