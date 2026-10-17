@@ -333,7 +333,7 @@ fn verdict(ui: &mut Ui, app: &mut PimaxApp, pf: &Preflight) {
         }
     });
     if matches!(pf.gate, Gate::NeedsConsent(_)) {
-        ui.checkbox(&mut app.core.consent_force, RichText::new("Start anyway (only WayVR Xid 31 faults; adds --force)").size(12.5).color(p.warn))
+        ui.checkbox(&mut app.core.consent_force, RichText::new("Start anyway (only WayVR Xid 31 faults; adds --force)").size(12.5).color(p.warn_text))
             .on_hover_text("LESSONS row 9: per-app MMU faults the GPU recovers from. Any other Xid or a display engine error blocks the start.");
     }
     egui::CollapsingHeader::new(caps(&format!("Preflight: {} checks", pf.findings.len()), 10.5, p.dim))
@@ -623,7 +623,7 @@ fn unpair_ui(ui: &mut Ui, app: &mut PimaxApp, side: &'static str) {
     };
     let can = !pairing && !app.core.busy() && owner.is_none();
     if asking && can {
-        ui.label(RichText::new(format!("Unpair the {side} controller? It must be paired again.")).size(11.5).color(p.warn));
+        ui.label(RichText::new(format!("Unpair the {side} controller? It must be paired again.")).size(11.5).color(p.warn_text));
         if widgets::ghost_short(ui, icon::LINK_SIMPLE, "Yes, unpair", &format!("Yes, unpair {side}"), can).clicked() {
             ui.ctx().data_mut(|d| d.insert_temp(id, false));
             app.core.unpair(side);

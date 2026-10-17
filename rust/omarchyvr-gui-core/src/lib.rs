@@ -40,6 +40,7 @@ pub mod fixlog;
 pub mod gamecheck;
 pub mod gameruntime;
 pub mod guards;
+pub mod colors;
 pub mod guistate;
 pub mod handmodels;
 pub mod handtest;

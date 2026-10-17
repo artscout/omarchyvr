@@ -83,7 +83,7 @@ pub fn card_ui(ui: &mut Ui, app: &mut PimaxApp) {
             Indicator::Finishing { file } => {
                 ui.horizontal(|ui| {
                     widgets::spinner(ui);
-                    ui.label(RichText::new(format!("Finishing... {file}")).color(p.warn));
+                    ui.label(RichText::new(format!("Finishing... {file}")).color(p.warn_text));
                 });
             }
             Indicator::Error { note } => {
@@ -106,7 +106,7 @@ pub fn card_ui(ui: &mut Ui, app: &mut PimaxApp) {
             None => {}
         }
         if let Some(e) = &app.core.record.settings_error {
-            ui.label(RichText::new(e).color(p.warn).size(12.0));
+            ui.label(RichText::new(e).color(p.warn_text).size(12.0));
         }
     });
 }

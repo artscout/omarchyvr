@@ -3,6 +3,7 @@
 //! state means defaults.
 use omarchyvr_config::ctrl_inhand::CtrlMode;
 use crate::app::Page;
+use crate::colors::Colours;
 use crate::launcher::DeskToggles;
 use std::path::Path;
 
@@ -68,6 +69,8 @@ pub struct GuiState {
     pub dev_mode: bool,
     /// "Allow the patch on untested NVIDIA drivers" (off by default; handed to the root job, see `nvidia_patch`).
     pub nvidia_untested: bool,
+    /// The app's colours: follow Omarchy's theme (default), the omarchyvr colours, or one installed Omarchy theme.
+    pub colours: Colours,
 }
 
 impl Default for GuiState {
@@ -86,6 +89,7 @@ impl Default for GuiState {
             argv_at: 0,
             dev_mode: false,
             nvidia_untested: false,
+            colours: Colours::Follow,
         }
     }
 }
@@ -116,6 +120,7 @@ impl GuiState {
                 "argv_at" => s.argv_at = v.trim().parse().unwrap_or(0),
                 "dev_mode" => s.dev_mode = on,
                 "nvidia_allow_untested" => s.nvidia_untested = on,
+                "colours" => s.colours = Colours::parse(v),
                 "passthrough" => s.toggles.passthrough = on,
                 "voice" => s.toggles.voice = on,
                 "hz" => s.toggles.hz90 = v.trim() != "72",
@@ -150,7 +155,7 @@ impl GuiState {
     pub fn render(&self) -> String {
         let t = &self.toggles;
         format!(
-            "# Pimax app state (written by omarchyvr-app)\nonboarded = {}\nsetup_stage = {}\neye_visual = true\neye = {}\nsixdof = {}\nctrl_track = {}\nhands = {}\nhands_roles = {}\nhands_chosen = {}\npassthrough = {}\nvoice = {}\nhz = {}\nperf = {}\nanchor = {}\npreset = {}\ncontrollers_work = {}\ncontrollers_play = {}\nscreens = {}\nscale_pct = {}\nautostart = {}\nlast_mode = {}\nlast_result = {}\nlast_at = {}\nargv_at = {}\ndev_mode = {}\nnvidia_allow_untested = {}\n{}",
+            "# Pimax app state (written by omarchyvr-app)\nonboarded = {}\nsetup_stage = {}\neye_visual = true\neye = {}\nsixdof = {}\nctrl_track = {}\nhands = {}\nhands_roles = {}\nhands_chosen = {}\npassthrough = {}\nvoice = {}\nhz = {}\nperf = {}\nanchor = {}\npreset = {}\ncontrollers_work = {}\ncontrollers_play = {}\nscreens = {}\nscale_pct = {}\nautostart = {}\nlast_mode = {}\nlast_result = {}\nlast_at = {}\nargv_at = {}\ndev_mode = {}\nnvidia_allow_untested = {}\ncolours = {}\n{}",
             self.onboarded,
             self.setup.name(),
             t.eye,
@@ -180,6 +185,7 @@ impl GuiState {
             self.argv_at,
             self.dev_mode,
             self.nvidia_untested,
+            self.colours.render(),
             self.page.map(|p| format!("page = {}\n", p.name())).unwrap_or_default()
         )
     }
@@ -231,10 +237,13 @@ mod tests {
             argv_at: 1_791_968_100,
             dev_mode: true,
             nvidia_untested: true,
+            colours: Colours::Theme(crate::colors::ThemeName::new("tokyo-night").unwrap()),
         };
         assert_eq!(GuiState::parse(&s.render()), s);
         assert_eq!(GuiState::parse(""), GuiState::default());
         assert!(!GuiState::default().autostart, "start at login is off by default");
+        assert_eq!(GuiState::default().colours, Colours::Follow, "follow Omarchy by default");
+        assert_eq!(GuiState::parse("colours = default\n").colours, Colours::Default);
         assert!(!GuiState::default().dev_mode, "developer mode is off by default");
         assert!(!GuiState::default().nvidia_untested, "the patch on untested NVIDIA drivers is off by default");
         assert!(!GuiState::parse("onboarded = true\n").nvidia_untested, "an older file: off");

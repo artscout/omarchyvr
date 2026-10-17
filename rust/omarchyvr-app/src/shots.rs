@@ -20,8 +20,26 @@ struct Shot {
     setup: fn(&mut PimaxApp),
 }
 
+/// Show the app in a theme from `rust/fixtures/omarchy-themes` (real Omarchy colour files; not the user's current theme).
+fn in_theme(app: &mut PimaxApp, name: &str) {
+    use omarchyvr_gui_core::colors::{Colours, OmarchyColors, OmarchyPaths, ThemeName};
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/omarchy-themes");
+    let colors = OmarchyColors::load(&root.join(name).join("colors.toml")).expect("theme fixture");
+    let paths = OmarchyPaths { state: root.join("none"), user_themes: root.join("none"), system_themes: root };
+    let themes = paths.themes();
+    app.appearance = crate::appearance::Appearance::with_paths(paths, false);
+    app.appearance.set_themes(themes, None);
+    app.appearance.demo = Some(crate::theme::Colourway::omarchy(&colors));
+    app.core.state.colours = Colours::Theme(ThemeName::new(name).expect("name"));
+}
+
 fn shots() -> Vec<Shot> {
     vec![
+        Shot { name: "desk-tokyo-night", running: false, page: Page::Desk, height: 820.0, dark: true, setup: |app| in_theme(app, "tokyo-night") },
+        Shot { name: "desk-catppuccin-latte", running: false, page: Page::Desk, height: 820.0, dark: false, setup: |app| in_theme(app, "catppuccin-latte") },
+        Shot { name: "appearance-tokyo-night", running: false, page: Page::Display, height: 860.0, dark: true, setup: |app| in_theme(app, "tokyo-night") },
+        Shot { name: "appearance-flexoki-light", running: false, page: Page::Display, height: 860.0, dark: false, setup: |app| in_theme(app, "flexoki-light") },
+        Shot { name: "appearance-follow", running: false, page: Page::Display, height: 860.0, dark: true, setup: |_| {} },
         Shot { name: "desk-idle", running: false, page: Page::Desk, height: 820.0, dark: true, setup: |_| {} },
         Shot {
             name: "desk-running",
@@ -492,6 +510,7 @@ pub fn render_all(dir: &Path) -> io::Result<Vec<PathBuf>> {
         (s.setup)(&mut app);
         let ctx = egui::Context::default();
         crate::theme::install(&ctx, s.dark);
+        crate::appearance::apply_demo(&ctx, &app.appearance);
         if s.name == "ai-help" {
             crate::widgets::open_next_help(&ctx);
         }

@@ -60,6 +60,44 @@ texture cached per size and colour; a greyed headset or controller means "not th
 |---|---|
 | ![before](gui/before/desk-idle.png) | ![after](gui/desk-idle.png) |
 
+## Colours (Omarchy theme)
+
+Display page, **Appearance** card, saved in `gui-state.toml` as `colours = follow | default | theme:<name>`:
+
+- **Follow Omarchy** (default): the app uses the colours of the current Omarchy theme
+  (`~/.local/state/omarchy/current/theme/colors.toml`, name in `theme.name`) and follows a theme change within about
+  2 s, without a restart. Following costs two `stat` calls every 2 s (the mtimes of those two files); the file is
+  read and the palette re-mapped only when one changed. Without that file the omarchyvr colours are used and the
+  card says so in words.
+- **omarchyvr**: the app's own dark colours (the look before this setting).
+- **Pick a theme**: a list of the installed Omarchy themes (`~/.config/omarchy/themes/<name>` and
+  `/usr/share/omarchy/themes/<name>`, those with a `colors.toml`; a user theme replaces a system one of the same
+  name), each with a row of swatches (window, card, text, accent, green, yellow, red, blue). A theme that was
+  uninstalled falls back to the omarchyvr colours, with a note.
+
+Mapping (`theme::from_omarchy`; the `mode` key picks the dark or the light palette, the other one stays the omarchyvr
+palette): window = `background`; bars and inner boxes = `dark_background`, cards = `lighter_background` (light themes:
+the background lifted towards white); text = `bright_foreground`, secondary text = `foreground` (dark) or
+`light_foreground` (light), faint text = `dark_foreground`; lines = `muted`, hover = `selection`; accent, switch
+on-colour and selection = `accent`; links = `blue`; OK / warning / error / info chips = `green` / `yellow` / `red` /
+`blue`; the orange warning text = `orange`; text on an accent fill is white or near-black, whichever reads better.
+A missing key uses the omarchyvr colour of that role. **Contrast**: text roles must reach 4.5:1 on the window, the
+cards and the inner boxes, accent and chips 3:1, faint text 3:1. A colour that fails is replaced by the next candidate
+(for example `foreground` for `bright_foreground`), then by the omarchyvr colour of the role, and as a last step is
+pulled towards the text colour until it passes. A file with bad hex values skips them (and says how many); a missing
+or unreadable file never crashes the app.
+
+Code: `omarchyvr-gui-core/src/colors.rs` (parsing, themes, contrast maths, the saved choice), `omarchyvr-app/src/theme.rs`
+(mapping, palettes kept per egui context), `omarchyvr-app/src/appearance.rs` (apply and follow),
+`omarchyvr-app/src/pages/appearance.rs` (the card). Tests use fixtures copied from real Omarchy themes in
+`rust/fixtures/omarchy-themes/`.
+
+| Tokyo Night (dark) | Catppuccin Latte (light) |
+|---|---|
+| ![Home, Tokyo Night](gui/desk-tokyo-night.png) | ![Home, Catppuccin Latte](gui/desk-catppuccin-latte.png) |
+| ![Appearance, Tokyo Night](gui/appearance-tokyo-night.png) | ![Appearance, Flexoki Light](gui/appearance-flexoki-light.png) |
+| ![Appearance, Follow Omarchy](gui/appearance-follow.png) | |
+
 ## Pages
 
 **Sidebar**: Home, Display, Tracking, Room, Desktop, Backgrounds, Recording, AI; Ready (with the number of

@@ -179,14 +179,14 @@ fn status(ui: &mut Ui, app: &mut PimaxApp, busy: bool) {
         });
         let Some(Ok(s)) = status else {
             if let Some(Err(e)) = &app.core.localai.status {
-                ui.label(RichText::new(e).size(12.0).color(p.warn));
+                ui.label(RichText::new(e).size(12.0).color(p.warn_text));
             }
             return;
         };
         let missing: Vec<&str> = [t.router.as_str(), t.action.as_str()].into_iter().filter(|id| !s.has(id)).collect();
         if !missing.is_empty() {
             let mib: u32 = missing.iter().filter_map(|id| omarchyvr_config::ai::local_model(id)).map(|m| m.download_mib).sum();
-            ui.label(RichText::new(format!("Not downloaded yet: {}.", missing.join(", "))).size(12.5).color(p.warn));
+            ui.label(RichText::new(format!("Not downloaded yet: {}.", missing.join(", "))).size(12.5).color(p.warn_text));
             let tune = missing.contains(&"lara");
             let label = if tune { format!("Download ({:.1} GB) and tune Lara", mib as f64 / 1024.0) } else { format!("Download ({:.1} GB)", mib as f64 / 1024.0) };
             if tune {
@@ -263,7 +263,7 @@ fn test_result(ui: &mut Ui, app: &PimaxApp) {
             }
         }
         Some(Err(e)) => {
-            ui.label(RichText::new(e).size(12.0).color(p.warn));
+            ui.label(RichText::new(e).size(12.0).color(p.warn_text));
         }
         None => {}
     }

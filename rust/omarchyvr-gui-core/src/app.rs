@@ -1724,6 +1724,14 @@ impl AppCore {
         self.docs.as_ref()
     }
 
+    /// The app's colours (Appearance setting): remembered with the other app switches.
+    pub fn set_colours(&mut self, c: crate::colors::Colours) {
+        if self.state.colours != c {
+            self.state.colours = c;
+            self.write_state();
+        }
+    }
+
     /// Remember the switches.
     pub fn save_state(&mut self) {
         self.state.toggles = self.toggles;

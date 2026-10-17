@@ -14,6 +14,7 @@ pub fn show(ui: &mut Ui, app: &mut PimaxApp) {
         if i == 0 {
             picture(ui, app);
             brightness(ui, app);
+            super::appearance::show(ui, app);
         } else {
             performance(ui, app);
             lenses(ui, app);
