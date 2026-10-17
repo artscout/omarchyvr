@@ -104,60 +104,133 @@ pub fn perf_spec(p: &PerfOptions, dir: &Path) -> ProcSpec {
     omarchyvr_components::components::perf::spec(&p.perf_bin, &p.stats, &p.wayvrctl_bin, dir)
 }
 
-/// Game mode: the minimal WayVR (overlay session, no screens) that carries only the wrist panel.
-pub fn vr_wayvr_spec(p: &PerfOptions, o: &StartOptions, openvr_lib: Option<&Path>) -> ProcSpec {
+/// Game mode: the minimal WayVR (overlay session, no screens) that carries the wrist panel and/or the VR home panel.
+/// `tools_dir`: the home panel's buttons run `omarchyvr home go ...` (the tools first on its PATH).
+pub fn vr_wayvr_spec(bin: &Path, wayvr_home: &Path, o: &StartOptions, openvr_lib: Option<&Path>, tools_dir: Option<&Path>) -> ProcSpec {
     omarchyvr_components::components::wayvr::perf_spec(&omarchyvr_components::components::wayvr::Params {
-        bin: &p.wayvr_bin,
-        home: &p.wayvr_home,
+        bin,
+        home: wayvr_home,
         openvr_lib,
         runtime_json: &o.runtime_json(),
         session_dir: &o.session_dir,
-        // the wrist-panel WayVR has no buttons that run commands
-        tools_dir: None,
+        tools_dir,
     })
 }
 
-/// Create the game-mode config home (rewritten on every start).
+/// Create the game-mode config home with the wrist panel only (rewritten on every start).
 pub fn ensure_vr_home(home: &Path) -> io::Result<()> {
+    ensure_overlay_home(home, true, None)
+}
+
+/// Create the game-mode config home (rewritten on every start): the wrist panel when `perf`, the VR home panel
+/// (`panel` = its layout and whether it shows at start; it is the `menu` binding's panel, docs/VR-HOME.md).
+pub fn ensure_overlay_home(home: &Path, perf: bool, panel: Option<(&str, bool)>) -> io::Result<()> {
     let conf_d = home.join("config/wayvr/conf.d");
     std::fs::create_dir_all(&conf_d)?;
     std::fs::create_dir_all(home.join("data"))?;
     std::fs::create_dir_all(home.join("state"))?;
     std::fs::write(conf_d.join("10-perf.yaml"), VR_WAYVR_CONF)?;
-    std::fs::write(conf_d.join("40-panels.yaml"), "custom_panels:\n  - perf\n")?;
-    write_panel(home)
+    let mut panels: Vec<&str> = Vec::new();
+    if perf {
+        write_panel(home)?;
+        panels.push("perf");
+    }
+    let home_conf = conf_d.join("45-home.yaml");
+    match panel {
+        Some((xml, open)) => {
+            let gui = home.join("config/wayvr/theme/gui");
+            std::fs::create_dir_all(&gui)?;
+            std::fs::write(gui.join(format!("{}.xml", super::home::PANEL)), xml)?;
+            std::fs::write(&home_conf, super::home::overlay_conf(open))?;
+            panels.push(super::home::PANEL);
+        }
+        None => {
+            let _ = std::fs::remove_file(&home_conf);
+        }
+    }
+    let list: String = panels.iter().map(|p| format!("  - {p}\n")).collect();
+    std::fs::write(conf_d.join("40-panels.yaml"), format!("custom_panels:\n{list}"))
+}
+
+/// What the game-mode overlay WayVR carries and where it lives (`home::overlay_options`).
+#[derive(Debug, Clone)]
+pub struct OverlayOptions {
+    pub wayvr_bin: PathBuf,
+    pub wayvrctl_bin: PathBuf,
+    pub wayvr_home: PathBuf,
+    /// The VR home panel: its layout and whether it shows at start (the home) or only on the menu button (games).
+    pub panel: Option<(String, bool)>,
+    /// The tools' directory, first on WayVR's PATH (the panel's buttons run `omarchyvr home go ...`).
+    pub tools_dir: Option<PathBuf>,
+    /// The home's passthrough (the main app behind the panel), started before WayVR.
+    pub passthrough: Option<ProcSpec>,
+    /// WayVR's built-in sky behind the panel (the home's background "sky").
+    pub sky: bool,
+}
+
+impl OverlayOptions {
+    /// The wrist readout alone (as before the VR home).
+    pub fn from_perf(p: &PerfOptions) -> Self {
+        OverlayOptions { wayvr_bin: p.wayvr_bin.clone(), wayvrctl_bin: p.wayvrctl_bin.clone(), wayvr_home: p.wayvr_home.clone(), panel: None, tools_dir: None, passthrough: None, sky: false }
+    }
 }
 
 /// `vr start --perf`: after the service is up, the minimal WayVR and the readout. Failures here only warn: the
 /// game session itself does not depend on them.
 pub fn vr_start_clients(p: &PerfOptions, o: &StartOptions, d: &Deps, sp: &dyn Spawner) {
-    let _ = std::fs::remove_file(&p.stats);
-    if let Err(e) = ensure_vr_home(&p.wayvr_home) {
-        verr!("omarchyvr vr: --perf: cannot prepare {}: {e}", p.wayvr_home.display());
+    overlay_start(Some(p), &OverlayOptions::from_perf(p), o, d, sp)
+}
+
+fn spawn_one(s: &ProcSpec, o: &StartOptions, sp: &dyn Spawner) -> bool {
+    if !s.program.exists() {
+        verr!("omarchyvr vr: {} does not exist, so {} is left out (run ./install.sh again in your omarchyvr clone)", s.program.display(), s.name);
+        return false;
+    }
+    match sp.spawn(s) {
+        Ok(pid) => {
+            let _ = std::fs::write(o.session_dir.join(format!("{}.pid", s.name)), format!("{pid}\n"));
+            vout!("omarchyvr vr: {} running, pid {pid}, log {}", s.name, s.log.display());
+            true
+        }
+        Err(e) => {
+            verr!("omarchyvr vr: cannot start {}: {e}", s.program.display());
+            false
+        }
+    }
+}
+
+/// After the service is up: the home's passthrough (the main app), the minimal WayVR with its panels, the readout,
+/// WayVR's sky. Failures only warn: the session itself does not depend on them.
+pub fn overlay_start(p: Option<&PerfOptions>, ov: &OverlayOptions, o: &StartOptions, d: &Deps, sp: &dyn Spawner) {
+    if let Some(p) = p {
+        let _ = std::fs::remove_file(&p.stats);
+    }
+    if let Some(pt) = &ov.passthrough {
+        // the main OpenXR app first, like the desk (WayVR is an overlay on top of it)
+        if spawn_one(pt, o, sp) {
+            d.clock.sleep(Duration::from_secs(2));
+        }
+    }
+    if let Err(e) = ensure_overlay_home(&ov.wayvr_home, p.is_some(), ov.panel.as_ref().map(|(x, open)| (x.as_str(), *open))) {
+        verr!("omarchyvr vr: cannot prepare {}: {e}", ov.wayvr_home.display());
         return;
     }
     let openvr = omarchyvr_config::paths::openvr_lib_dir(&PathBuf::from(std::env::var("HOME").unwrap_or_default()));
-    let specs = [
-        vr_wayvr_spec(p, o, openvr.as_deref()),
-        perf_spec(p, &o.session_dir),
-    ];
-    for s in &specs {
-        if !s.program.exists() {
-            verr!("omarchyvr vr: --perf: {} does not exist, no wrist readout (run ./install.sh again in your omarchyvr clone (or: cd ~/omarchyvr/rust && cargo build --release -p omarchyvr-perf))", s.program.display());
-            return;
-        }
-        match sp.spawn(s) {
-            Ok(pid) => {
-                let _ = std::fs::write(o.session_dir.join(format!("{}.pid", s.name)), format!("{pid}\n"));
-                vout!("omarchyvr vr: --perf: {} running, pid {pid}, log {}", s.name, s.log.display());
-            }
-            Err(e) => {
-                verr!("omarchyvr vr: --perf: cannot start {}: {e}", s.program.display());
-                return;
-            }
-        }
-        // WayVR must be up before the readout talks to it (the readout retries anyway)
-        d.clock.sleep(Duration::from_secs(2));
+    if !spawn_one(&vr_wayvr_spec(&ov.wayvr_bin, &ov.wayvr_home, o, openvr.as_deref(), ov.tools_dir.as_deref()), o, sp) {
+        return;
+    }
+    // WayVR must be up before the readout and wayvrctl talk to it (the readout retries anyway)
+    d.clock.sleep(Duration::from_secs(2));
+    if let Some(p) = p {
+        spawn_one(&perf_spec(p, &o.session_dir), o, sp);
+    }
+    if ov.sky {
+        let _ = std::process::Command::new(&ov.wayvrctl_bin)
+            .args(["skybox", "default"])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
     }
 }
 

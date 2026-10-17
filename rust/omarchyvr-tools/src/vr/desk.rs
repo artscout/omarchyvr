@@ -162,30 +162,11 @@ grab_dist_max: 8.0
 /// left controller's menu button opens the Work menu panel (`menu_panel`; WayVR's `menu` action).
 const WAYVR_DESK_CONF: &str = "enable_keyboard: false\nmenu_panel: work_menu\n";
 
-/// The Work menu (custom panel `work_menu`): the controller's menu button opens it in front of you; "Exit Work" asks for
-/// a second press, then stops everything (`omarchyvr desk exit`, docs/WAYVR-CONTROLS.md). Hands: the watch on the left
-/// wrist has the same Exit Work button.
+/// The Work menu (custom panel `work_menu`): either controller's menu button opens it in front of you; it is the VR
+/// home's panel in Work (`home::panel_xml`, docs/VR-HOME.md): VR home, Games with SteamVR, the games, Room setup,
+/// Close menu, Recenter, WayVR settings and "Exit Work", which asks for a second press, then stops everything
+/// (`omarchyvr desk exit`, docs/WAYVR-CONTROLS.md). Hands: the watch on the left wrist has the same Exit Work button.
 pub const WORK_MENU_NAME: &str = "work_menu";
-const WORK_MENU_XML: &str = r##"<layout>
-  <macro name="menu_button" padding="14" border="2" round="10" align_items="center" justify_content="center" min_width="170" />
-  <elements>
-    <div padding="24" interactable="0" flex_direction="column" gap="12">
-      <rectangle padding="18" color="background" border="2" border_color="outline" round="14" flex_direction="column" gap="14">
-        <label text="Work" size="32" weight="bold" color="on_background" />
-        <div flex_direction="row" gap="12">
-          <Button id="btn_exit" macro="menu_button" text="Exit Work" _press="::ShellExec omarchyvr desk exit" tooltip_str="Stops everything (screens, voice, AI) and goes back to the desktop. Press it twice." tooltip_side="top" />
-          <Button id="btn_close" macro="menu_button" text="Close menu" _press="::OverlayToggle work_menu" tooltip_str="Hide this menu (the menu button opens it again)" tooltip_side="top" />
-        </div>
-        <div flex_direction="row" gap="12">
-          <Button id="btn_recenter" macro="menu_button" text="Recenter" _press="::PlayspaceRecenter" tooltip_str="Put the screens in front of you again" tooltip_side="top" />
-          <Button id="btn_dashboard" macro="menu_button" text="WayVR settings" _press="::DashToggle" tooltip_str="WayVR's own dashboard" tooltip_side="top" />
-        </div>
-        <label id="exit_hint" text="Exit Work: press it, then press it again." size="18" color="on_background_variant" />
-      </rectangle>
-    </div>
-  </elements>
-</layout>
-"##;
 
 /// The caption panel: two single-line labels in a translucent box; `omarchyvr-voice captions` sets cap_l1/cap_l2 text and
 /// shows/hides cap_box over wayvrctl (the outer div keeps the panel size when the box is hidden).
@@ -449,6 +430,12 @@ pub(crate) fn stop_order(o: &DeskOptions) -> Vec<(&'static str, &PathBuf)> {
 /// Create WayVR's isolated XDG directories and the CPU capture config if missing. Returns a warning if an existing
 /// config does not select `capture_method: screencopy` (the dmabuf capture of WayVR 26.8.0 can Xid at exit).
 pub fn ensure_wayvr_home(home: &Path, voice: bool, perf: bool) -> io::Result<Option<String>> {
+    ensure_wayvr_home_with(home, voice, perf, &super::home::panel_xml(super::home::Ctx::Work, &[], ""))
+}
+
+/// [`ensure_wayvr_home`] with the Work menu's layout (`home::panel_xml` in Work: the VR home's entries plus Exit Work,
+/// Recenter and WayVR settings; `desk start` passes the installed games and the last transition's words).
+pub fn ensure_wayvr_home_with(home: &Path, voice: bool, perf: bool, work_menu_xml: &str) -> io::Result<Option<String>> {
     let conf_d = home.join("config/wayvr/conf.d");
     std::fs::create_dir_all(&conf_d)?;
     std::fs::create_dir_all(home.join("data"))?;
@@ -463,7 +450,7 @@ pub fn ensure_wayvr_home(home: &Path, voice: bool, perf: bool) -> io::Result<Opt
     let gui = home.join("config/wayvr/theme/gui");
     // the Work menu (the controller's menu button; Exit Work), in every desk session
     std::fs::create_dir_all(&gui)?;
-    std::fs::write(gui.join(format!("{WORK_MENU_NAME}.xml")), WORK_MENU_XML)?;
+    std::fs::write(gui.join(format!("{WORK_MENU_NAME}.xml")), work_menu_xml)?;
     panels.push(WORK_MENU_NAME);
     if voice {
         std::fs::create_dir_all(&gui)?;
@@ -618,7 +605,8 @@ pub fn start(o: &DeskOptions, d: &Deps, sp: &dyn Spawner) -> CliResult {
         }
         return session::start(&o.vr, d);
     }
-    match ensure_wayvr_home(&o.wayvr_home, o.voice, o.perf.is_some()) {
+    let menu = super::home::panel_xml(super::home::Ctx::Work, &super::home::games(&home_of(d), d.env), &super::home::start_status(&o.vr.session_dir));
+    match ensure_wayvr_home_with(&o.wayvr_home, o.voice, o.perf.is_some(), &menu) {
         Ok(Some(w)) => verr!("omarchyvr desk: WARNING: {w}"),
         Ok(None) => {}
         Err(e) => {

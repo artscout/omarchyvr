@@ -91,6 +91,14 @@ pub fn idle_machine() -> (FakeMachine, Paths) {
     m.file("/home/u/omarchyvr/linux/pimax-dp-edid-msvsdb.bin", "EDID-NON-DESKTOP");
     m.file("/home/u/.local/share/omarchyvr/eye-calibration/eyecal-20261014-103635.json", "{}");
     m.file("/home/u/.config/openvr/openvrpaths.vrpath", "{\"runtime\": [\"/home/u/src/xrizer/target/release\"]}\n");
+    // three installed Steam VR games (the VR home lists them; Half-Life: Alyx runs with SteamVR, the built-in list)
+    m.file(
+        "/home/u/.local/share/Steam/config/steamapps.vrmanifest",
+        r#"{"applications": [{"app_key": "steam.app.546560", "strings": {"en_us": {"name": "Half-Life: Alyx"}}}, {"app_key": "steam.app.658920", "strings": {"en_us": {"name": "Half-Life 2: VR Mod"}}}, {"app_key": "steam.app.3189340", "strings": {"en_us": {"name": "Dungeons of Eternity"}}}]}"#,
+    );
+    for id in ["546560", "658920", "3189340"] {
+        m.file(&format!("/home/u/.local/share/Steam/steamapps/appmanifest_{id}.acf"), format!("\"AppState\"\n{{\n\t\"appid\"\t\t\"{id}\"\n}}\n"));
+    }
     m.set_meta(
         "/home/u/.config/openvr/openvrpaths.vrpath",
         FileMeta { len: 52, mode: 0o100444, ..Default::default() },
