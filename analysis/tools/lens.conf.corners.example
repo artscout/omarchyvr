@@ -24,7 +24,7 @@ fit_range = 1.15
 #   [right] fov = 50 52 44.5 44.5
 
 [left]
-center = 0.1060 0.0090
+center = 0.0271 0.0090
 
 [right]
-center = -0.1060 0.0090
+center = -0.0271 0.0090
