@@ -121,7 +121,7 @@ pub const USAGE: &str = "usage: omarchyvr desk <command> [options]
       (default 30 s); then the kernel log check (Xid / Idling display engine), the camera broker, the VR screens'
       outputs, and a check that nothing of Work still runs (named as a problem otherwise). --no-kill (automatic
       callers: the watchdog, auto mode): never SIGKILL Monado; a hung one is left alive and the GPU gate says reboot.
-      --keep-ai (a restart: `desk restart`, the watchdog): the local AI stays loaded.
+      --keep-ai (only a supervisor restart of a running Work session: `desk restart`, the watchdog): the local AI stays loaded. Every other stop, omarchyvrd's own (headset unplugged, automatic switch) included, unloads it.
       --dry-run: print what would be signalled, in order, and touch nothing.
   exit [--now]
       Exit Work from the headset (the Work menu's and the watch's \"Exit Work\" button): the first press asks for a
@@ -833,7 +833,8 @@ pub fn stop(o: &DeskOptions, grace: Duration, kill: bool, keep_ai: bool, d: &Dep
 
 /// [`stop`] with the AI's directories and Hyprland given (tests use temporary ones and a fake `hyprctl`).
 pub fn stop_with(o: &DeskOptions, grace: Duration, kill: bool, keep_ai: bool, d: &Deps, dirs: &omarchyvr_ai::Dirs, hypr: &mut dyn super::screens::Hypr) -> CliResult {
-    let keep_ai = keep_ai || super::supervise::in_watchdog();
+    // only an explicit --keep-ai (a supervisor restart of a running Work session) keeps the AI; every other stop, omarchyvrd's own
+    // (headset unplugged, automatic switch) included, unloads it like Exit Work
     if o.vr.dry_run {
         vout!("omarchyvr desk: would stop, in this order (SIGINT by pid, never by name):");
         let mut n = 1;

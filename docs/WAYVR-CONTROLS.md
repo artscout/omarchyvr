@@ -33,7 +33,7 @@ did not start are never touched):
 3. monado-service, then a hung WayVR (SIGTERM, SIGKILL once Monado is gone), then the camera broker;
 4. the VR screens' Hyprland outputs (`PIMAX-*`) are removed; headset sound is put back to what it was before Work;
 5. a last check names anything of Work still running ("Work stopped: nothing of it is left running" when clean).
-A restart by the supervisor (`--keep-ai`) keeps the AI loaded; nothing else does. Tests:
+A restart by the supervisor (`--keep-ai`) keeps the AI loaded; nothing else does, omarchyvrd's own stops (headset unplugged, automatic switch) included. Tests:
 `exit_work_stops_every_tracked_component_and_nothing_else`, `exit_work_asks_for_a_second_press_and_only_in_work`
 (rust/omarchyvr-tools/src/vr/work.rs). Audit: docs/PLAY-WORK-AUDIT.md.
 

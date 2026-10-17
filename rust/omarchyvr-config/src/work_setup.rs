@@ -45,10 +45,10 @@ impl Brain {
         Brain::ALL.into_iter().find(|b| b.id() == s.trim())
     }
 
-    /// Lara can sort the commands for this brain (it needs a model that acts afterwards; the Claude CLI reads every
-    /// command itself).
+    /// Lara can sort the commands for this brain (it needs a model that acts afterwards; Claude Code too since
+    /// 2026-10-17: Lara answers what it knows, the rest goes to Claude Code).
     pub fn takes_lara(self) -> bool {
-        matches!(self, Brain::ClaudeKey | Brain::Local | Brain::Compatible)
+        matches!(self, Brain::ClaudeCli | Brain::ClaudeKey | Brain::Local | Brain::Compatible)
     }
 }
 
@@ -177,7 +177,7 @@ mod tests {
     #[test]
     fn lara_needs_a_brain_that_acts() {
         assert!(Brain::Local.takes_lara() && Brain::ClaudeKey.takes_lara() && Brain::Compatible.takes_lara());
-        assert!(!Brain::ClaudeCli.takes_lara(), "the Claude CLI reads every command itself");
+        assert!(Brain::ClaudeCli.takes_lara(), "Lara goes first, then Claude Code");
         assert!(!Brain::None.takes_lara());
         for b in Brain::ALL {
             assert_eq!(Brain::parse(b.id()), Some(b));

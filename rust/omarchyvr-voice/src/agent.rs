@@ -4682,9 +4682,11 @@ mod tests {
         let a = Agent::from_ai_text(key, &cat(), &|_| None, &mut |_| {}).unwrap().unwrap();
         assert!(a.router.is_some() && !a.provider.local, "Lara in front of the online model");
         assert_eq!(a.mode_label(), "Online, Lara sorts");
-        // the Claude CLI reads every command itself: no Lara
+        // the Claude CLI: Lara goes first too (user 2026-10-17); without Lara (voice_lara off) everything goes to Claude Code
         let cli = Agent::from_ai_text("voice_lara = true\nvoice_local_models = false\n", &cat(), &|_| None, &mut |_| {}).unwrap().unwrap();
-        assert!(cli.router.is_none());
+        assert!(cli.router.is_some());
+        let cli_off = Agent::from_ai_text("voice_lara = false\nvoice_local_models = false\n", &cat(), &|_| None, &mut |_| {}).unwrap().unwrap();
+        assert!(cli_off.router.is_none());
         // Lara answers: one online request only (no online classifier), with the category's tools
         for (router, why) in [(Ok(laya("screens", 0.97)), "Lara sorted it"), (Err("curl: (7) Failed to connect".to_string()), "Lara is down")] {
             let s = Script::default();

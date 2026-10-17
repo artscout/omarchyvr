@@ -195,7 +195,7 @@ pub fn apply(c: &Choices, key: Option<Secret>, cfg: &mut AiConfig) -> Result<(),
     match c.brain {
         Brain::ClaudeCli => {
             cfg.voice_local_models = Some(false);
-            cfg.voice_lara = None;
+            cfg.voice_lara = Some(c.lara);
             let name = cfg.claude_cli_provider().name.clone();
             cfg.uses.insert(Feature::Voice, name);
         }
@@ -255,6 +255,19 @@ pub fn apply(c: &Choices, key: Option<Secret>, cfg: &mut AiConfig) -> Result<(),
     Ok(())
 }
 
+/// ai.toml exists and already configures a brain (a provider, a default or a `[use]` entry for voice, or voice turned
+/// off on purpose): the user set the AI up before, so the Work questions count as answered (user, 2026-10-17). They
+/// stay reachable from AI > "Work questions".
+pub fn ai_configured(path: &std::path::Path) -> bool {
+    if !path.is_file() {
+        return false;
+    }
+    match AiConfig::load_from(path) {
+        Ok(cfg) => !cfg.providers.is_empty() || cfg.default.is_some() || cfg.uses.contains_key(&Feature::Voice) || cfg.voice_ai == VoiceAi::Off,
+        Err(_) => false,
+    }
+}
+
 /// The answers as ai.toml says them now (the wizard opens with the current setup).
 pub fn choices_from(cfg: &AiConfig, rec: &WorkSetup) -> Choices {
     let mut c = Choices::default();
@@ -279,7 +292,7 @@ pub fn choices_from(cfg: &AiConfig, rec: &WorkSetup) -> Choices {
     }
     c.lara = match c.brain {
         Brain::Local => cfg.voice_local == VoiceLocal::TwoStage,
-        Brain::ClaudeKey | Brain::Compatible => cfg.voice_lara == Some(true),
+        Brain::ClaudeCli | Brain::ClaudeKey | Brain::Compatible => cfg.voice_lara == Some(true),
         _ => rec.lara,
     };
     c.local_gpu = if c.brain == Brain::Local { cfg.two_stage().gpu_layers != Some(0) } else { rec.local_gpu };
@@ -866,6 +879,10 @@ mod tests {
         apply(&Choices::default(), None, &mut c).unwrap();
         assert_eq!(c.provider_for(Feature::Voice).unwrap().kind, Kind::ClaudeCli);
         assert!(!c.ai_servers_wanted() && c.voice_local_models == Some(false));
+        // the Claude CLI with Lara: Lara goes first, Claude Code gets what it does not handle
+        let mut c = cfg("");
+        apply(&Choices { lara: true, ..Choices::default() }, None, &mut c).unwrap();
+        assert!(c.lara_with_online() && c.ai_servers_wanted() && !c.local_models_on());
         // Claude with a key + Lara: the key is in the provider (mode 600 file), Lara sorts
         let mut c = cfg("");
         let ch = Choices { brain: Brain::ClaudeKey, lara: true, ..Choices::default() };
@@ -933,9 +950,9 @@ mod tests {
         assert_eq!(gb(30_416_480), "29 MB", "small files in MB");
         assert_eq!(plain_download_error("x failed (exit status: 1); press Download again to retry (it resumes)"), "x failed (exit status: 1)");
         assert!(downloads(&local_lara, &here_all()).is_empty(), "everything already here: nothing is fetched");
-        // Lara with Claude: Lara only; the Claude CLI never needs Lara
+        // Lara with Claude (key or Claude Code): Lara only
         assert_eq!(downloads(&Choices { brain: Brain::ClaudeKey, lara: true, ..Choices::default() }, &none), vec!["lara"]);
-        assert!(downloads(&Choices { brain: Brain::ClaudeCli, lara: true, ..Choices::default() }, &none).is_empty());
+        assert_eq!(downloads(&Choices { brain: Brain::ClaudeCli, lara: true, ..Choices::default() }, &none), vec!["lara"]);
         assert!(downloads(&Choices::default(), &none).is_empty(), "the default (Claude CLI, CPU speech) downloads nothing");
     }
 
@@ -1010,6 +1027,20 @@ mod tests {
         let d = std::env::temp_dir().join(format!("pimax-worksetup-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         omarchyvr_config::Store::new(d.join("config"), d.join("cache"))
+    }
+
+    #[test]
+    fn an_ai_toml_with_a_brain_counts_the_questions_as_answered() {
+        let d = std::env::temp_dir().join(format!("pimax-worksetup-aicfg-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        let f = d.join("ai.toml");
+        assert!(!ai_configured(&f), "no file: not configured");
+        std::fs::write(&f, "# nothing\n").unwrap();
+        assert!(!ai_configured(&f), "an empty file: not configured");
+        std::fs::write(&f, "[use]\nvoice = \"claude-cli\"\n").unwrap();
+        assert!(ai_configured(&f), "a voice brain: configured");
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]

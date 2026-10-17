@@ -220,7 +220,7 @@ fn lara(ui: &mut Ui, app: &mut PimaxApp) {
         }
         ui.add(egui::Label::new(RichText::new("2.7 GB download (Apache-2.0). After the download it tunes itself to your voice commands in the background: about an hour on the processor, at low priority; it works meanwhile.").size(11.5).color(p.dim)).wrap());
         match c.brain {
-            Brain::ClaudeCli => note(ui, "Not used with Claude Code: it reads every command itself. Choose \"Claude with my Anthropic API key\" to use Lara with Claude."),
+            Brain::ClaudeCli => note(ui, "With Claude Code, Lara answers the commands it knows at once; only the requests Lara does not handle go to Claude Code. Without Lara, everything goes to Claude Code."),
             Brain::None => note(ui, "Lara needs a brain that acts after it: choose one above."),
             _ => {}
         }

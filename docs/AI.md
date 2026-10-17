@@ -1062,8 +1062,8 @@ with file:line evidence), docs/GAME-MODE.md (Play), docs/WAYVR-CONTROLS.md (Exit
 - **A local model on the processor**: "A model on this PC" without "Use the graphics card" writes
   `[local_two_stage] gpu_layers = 0`; the simple mode (no Lara) now honours it (`twostage::plan`: CPU when `--cpu` or
   `gpu_layers = 0`), as two stages did already (preset Low).
-- **Lara in front of an online brain** (`voice_lara = true` in ai.toml, with Claude through a key or a compatible API;
-  not with the Claude Code program, which reads every command itself): `AiConfig::lara_with_online()`. `omarchyvr-ai up`
+- **Lara in front of an online brain** (`voice_lara = true` in ai.toml, with Claude through a key, a compatible API or
+  the Claude Code program: Lara answers what it knows, the rest goes to the brain; without Lara everything does): `AiConfig::lara_with_online()`. `omarchyvr-ai up`
   then starts the router alone (`up_router_only`: port 8081, processor, no model slot, no speech server, no video
   memory); omarchyvrd's `ai.server` follows `AiConfig::ai_servers_wanted()` (local models on, or Lara with an online
   brain), in Work only; `omarchyvr-voice act` builds `router::for_online`: Lara names the category, the online model gets

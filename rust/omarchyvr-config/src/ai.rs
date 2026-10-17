@@ -875,7 +875,7 @@ pub struct AiConfig {
     /// Lara (the router on this PC, processor only) in front of an online brain (`voice_lara`, the Work first-run
     /// question; docs/WORK-FIRST-RUN.md). With a local model Lara is the two-stage router as before (`voice_local`);
     /// with an online provider that has a key (Claude with a key, any compatible API) Lara sorts each command and the
-    /// online model acts with that category's tools only. The Claude CLI reads every command itself (no Lara).
+    /// online model acts with that category's tools only. Claude Code too: Lara goes first, the rest goes to Claude Code.
     pub voice_lara: Option<bool>,
     /// Speech recognition: Auto / Small (processor) / Large (graphics card) (`asr`, default auto).
     pub asr: Asr,
@@ -1402,10 +1402,11 @@ impl AiConfig {
         self.voice_local_models.unwrap_or_else(|| self.runs_on() != RunsOn::Online)
     }
 
-    /// Lara sorts the commands for an online brain (`voice_lara = true`, and voice uses an online provider reached with
-    /// a key: Claude with an API key or any compatible API; the Claude CLI reads every command itself).
+    /// Lara sorts the commands for an online brain (`voice_lara = true`, and voice uses an online provider: Claude with
+    /// an API key, any compatible API, or Claude Code). Lara goes first; what it does not handle goes to the brain, and
+    /// without Lara installed everything does.
     pub fn lara_with_online(&self) -> bool {
-        self.voice_lara == Some(true) && self.provider_for(Feature::Voice).is_some_and(|p| p.is_remote() && p.kind != Kind::ClaudeCli)
+        self.voice_lara == Some(true) && self.provider_for(Feature::Voice).is_some_and(|p| p.is_remote())
     }
 
     /// Lara is in use: two stages on this PC, or in front of an online brain.
@@ -1922,9 +1923,11 @@ mod tests {
         let c = AiConfig::parse(key).unwrap();
         assert!(c.lara_with_online() && c.lara_on() && c.ai_servers_wanted() && !c.local_models_on());
         assert!(AiConfig::parse(&c.render()).unwrap().voice_lara == Some(true), "the key survives a save");
-        // the Claude CLI reads every command itself: Lara is not used, nothing runs on this PC
+        // the Claude CLI with Lara: Lara goes first, Claude Code gets the rest
         let cli = AiConfig::parse("voice_lara = true\nvoice_local_models = false\n").unwrap();
-        assert!(!cli.lara_with_online() && !cli.ai_servers_wanted(), "default brain = the Claude CLI");
+        assert!(cli.lara_with_online() && cli.ai_servers_wanted(), "default brain = the Claude CLI, Lara in front");
+        let cli_off = AiConfig::parse("voice_lara = false\nvoice_local_models = false\n").unwrap();
+        assert!(!cli_off.lara_with_online() && !cli_off.ai_servers_wanted(), "without Lara everything goes to Claude Code");
         // Lara off with a key: nothing on this PC
         let off = AiConfig::parse(&key.replace("voice_lara = true", "voice_lara = false")).unwrap();
         assert!(!off.ai_servers_wanted() && !off.lara_on());

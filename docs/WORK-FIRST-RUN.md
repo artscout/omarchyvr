@@ -24,8 +24,8 @@ Code: `rust/omarchyvr-gui-core/src/worksetup.rs` (the questions, the answers, th
      - **Another compatible API**: base URL, key, model (OpenRouter, a hosted model, a server on the network); Test.
      - **None**: the built-in commands only.
      - **Install Lara** (2.7 GB, Apache-2.0, processor only): sorts each command on this PC before the brain acts, so the
-       brain sees only the right tools. With Claude Code it is not used (Claude Code reads every command itself: the
-       page says so and offers "Claude with my Anthropic API key" instead); with None it has nothing to sort for.
+       brain sees only the right tools. With Claude Code too: Lara goes first (it answers the commands it knows at
+       once), only the requests it does not handle go to Claude Code; without Lara everything goes to Claude Code; with None it has nothing to sort for.
        After its download it tunes itself to the voice commands in the background (about an hour, processor, low
        priority); Laya as published answers meanwhile.
    - **Speech to text**: on this PC, the processor (Parakeet, recommended, no video memory); on the graphics card
@@ -37,6 +37,8 @@ Code: `rust/omarchyvr-gui-core/src/worksetup.rs` (the questions, the answers, th
 4. **Download** shows each file with its progress, the total, and **Cancel** (the part already downloaded stays; the
    next try goes on from there). A failure says why in plain words, with **Try again** and **Back**.
 5. Saved, then **Work starts by itself**. The next Work presses start at once.
+5b. Already set up: when `~/.config/omarchyvr/ai.toml` exists with a configured brain (a provider, a default or a voice
+   entry), the questions count as answered and the first Work starts at once (`worksetup::ai_configured`).
 6. Change the answers later: AI page > **Work questions** (the same page, it saves without starting Work).
 
 Screenshots (`omarchyvr-app --screenshots DIR`): `worksetup-assistant.png` (the default: Claude Code),

@@ -503,7 +503,11 @@ impl AppCore {
     pub fn new_background(machine: Arc<dyn Machine>, paths: Paths, opts: Opts, env: EnvFn, store: Store) -> AppCore {
         let state = GuiState::load(&paths.gui_state);
         // the Work first run's record (a small file, like the state above): answered = Work starts at once
-        let work_setup_record = crate::worksetup::WorkSetup::load(&crate::worksetup::WorkSetup::path(&paths.config));
+        let mut work_setup_record = crate::worksetup::WorkSetup::load(&crate::worksetup::WorkSetup::path(&paths.config));
+        // an ai.toml with a configured brain (the AI was set up before): the questions count as answered
+        if !work_setup_record.done && crate::worksetup::ai_configured(&paths.config.join("ai.toml")) {
+            work_setup_record.done = true;
+        }
         let paths_for_rows = paths.clone();
         let env_for_rows = env.clone();
         let docs_dir = paths.repo.join("docs");
