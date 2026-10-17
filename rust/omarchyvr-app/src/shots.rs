@@ -379,6 +379,102 @@ fn shots() -> Vec<Shot> {
             setup: |a| demo_setup(a, "get-ready", SetupStage::Todo),
         },
         Shot {
+            name: "setup-wake-a-t05",
+            running: false,
+            page: Page::Onboarding,
+            height: 900.0,
+            dark: true,
+            setup: |a| {
+                use omarchyvr_gui_core::wake::Wake;
+                demo_setup(a, "get-ready", SetupStage::Todo);
+                a.core.onboarding.wake_demo = Some((Wake::PressPower { left: 72.0 }, 0.5));
+            },
+        },
+        Shot {
+            name: "setup-wake-a-t14",
+            running: false,
+            page: Page::Onboarding,
+            height: 900.0,
+            dark: true,
+            setup: |a| {
+                use omarchyvr_gui_core::wake::Wake;
+                demo_setup(a, "get-ready", SetupStage::Todo);
+                a.core.onboarding.wake_demo = Some((Wake::PressPower { left: 70.0 }, 1.4));
+            },
+        },
+        Shot {
+            name: "setup-wake-a-light",
+            running: false,
+            page: Page::Onboarding,
+            height: 900.0,
+            dark: false,
+            setup: |a| {
+                use omarchyvr_gui_core::wake::Wake;
+                demo_setup(a, "get-ready", SetupStage::Todo);
+                a.core.onboarding.wake_demo = Some((Wake::PressPower { left: 70.0 }, 1.4));
+            },
+        },
+        Shot {
+            name: "setup-wake-b-t2",
+            running: false,
+            page: Page::Onboarding,
+            height: 900.0,
+            dark: true,
+            setup: |a| {
+                use omarchyvr_gui_core::wake::Wake;
+                demo_setup(a, "get-ready", SetupStage::Todo);
+                a.core.onboarding.wake_demo = Some((Wake::UnplugCable, 2.0));
+            },
+        },
+        Shot {
+            name: "setup-wake-b-t6",
+            running: false,
+            page: Page::Onboarding,
+            height: 900.0,
+            dark: true,
+            setup: |a| {
+                use omarchyvr_gui_core::wake::Wake;
+                demo_setup(a, "get-ready", SetupStage::Todo);
+                a.core.onboarding.wake_demo = Some((Wake::WaitUnplugged { left: 5.0 }, 6.0));
+            },
+        },
+        Shot {
+            name: "setup-wake-b-light",
+            running: false,
+            page: Page::Onboarding,
+            height: 900.0,
+            dark: false,
+            setup: |a| {
+                use omarchyvr_gui_core::wake::Wake;
+                demo_setup(a, "get-ready", SetupStage::Todo);
+                a.core.onboarding.wake_demo = Some((Wake::PlugBack, 10.8));
+            },
+        },
+        Shot {
+            name: "setup-wake-gaveup",
+            running: false,
+            page: Page::Onboarding,
+            height: 900.0,
+            dark: true,
+            setup: |a| {
+                use omarchyvr_gui_core::wake::Wake;
+                demo_setup(a, "get-ready", SetupStage::Todo);
+                a.core.onboarding.wake_demo = Some((Wake::GaveUp, 0.0));
+            },
+        },
+        Shot {
+            name: "setup-wake-awake",
+            running: false,
+            page: Page::Onboarding,
+            height: 900.0,
+            dark: true,
+            setup: |a| {
+                use omarchyvr_gui_core::wake::Wake;
+                demo_setup(a, "get-ready", SetupStage::Todo);
+                a.core.onboarding.wake_demo = Some((Wake::Awake, 0.0));
+            },
+        },
+        Shot {
             name: "setup-running",
             running: false,
             page: Page::Onboarding,

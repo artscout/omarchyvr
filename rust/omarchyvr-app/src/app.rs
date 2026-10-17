@@ -174,7 +174,7 @@ pub fn page_label(p: Page) -> &'static str {
 
 /// The help page: one short paragraph per feature (the "?" next to each setting says the same where it is).
 const HELP: [(&str, &str); 28] = [
-    ("Setting up your PC", "The first time the app opens it asks Which headset do you have (USB detection only pre-selects; you press Continue), shows Get the headset ready (cables and power, with live ticks; Start setup works even if a tick is missing), then sets up this PC: it looks at the PC, fixes what needs no password, runs the system part with ONE password prompt (steps shown as a list, Show details has the exact text), and checks everything again. All green: Play. A restart needed: Restart now (the app continues by itself afterwards). Something failed: each item says why and has one Fix button; several root fixes become Fix all (one password). A closed password window or a wrong password: Try again. Run setup again is on the Ready screen. IPD, controllers, eye calibration and the room map are optional (Next, in the headset)."),
+    ("Setting up your PC", "The first time the app opens it asks Which headset do you have (USB detection only pre-selects; you press Continue), shows Get the headset ready (cables and power, with live ticks; Start setup works even if a tick is missing; if the headset is asleep it shows live steps with animations: press the power button, and as the last resort unplug its POWER cable for 10 s and plug it back in, DisplayPort stays in; a second start of the app brings the window back, or replaces a window process that has no window), then sets up this PC: it looks at the PC, fixes what needs no password, runs the system part with ONE password prompt (steps shown as a list, Show details has the exact text), and checks everything again. All green: Play. A restart needed: Restart now (the app continues by itself afterwards). Something failed: each item says why and has one Fix button; several root fixes become Fix all (one password). A closed password window or a wrong password: Try again. Run setup again is on the Ready screen. IPD, controllers, eye calibration and the room map are optional (Next, in the headset)."),
     ("Install and uninstall", "Install: ./install.sh in the omarchyvr clone builds and installs everything and opens this app; the app then sets up this PC by itself: it checks, fixes what needs no password, asks for your password once for the system part (the list of steps shows live) and checks again. A restart only when the NVIDIA module or the boot image changed; the app then continues after the restart. Later Plays never ask. Uninstall: Ready > Uninstall omarchyvr (Show what would be removed first); downloads and recordings are kept, settings go into one backup file in your home. docs/INSTALL.md, docs/UNINSTALL.md."),
     ("NVIDIA driver patch", "The Dream Air needs three small fixes in the NVIDIA open kernel module. They are applied to the tested driver versions (patches/nvidia/tested-versions.txt) and again after every driver update. On any other version nothing is patched unless you turn on Allow the patch on untested NVIDIA drivers (shown on the setup screen, then Run setup again, or Ready): the headset picture may break or the patched build may fail, but the desktop keeps working (the normal NVIDIA module is built as a fallback, and a restore snapshot is taken first). Changing the switch needs Apply (one password) so driver updates follow it. docs/NVIDIA-UNTESTED.md."),
     ("The \"?\" marks", "Point at a \"?\" or click it (in the headset, click): a small box says what the setting does. Click it again, click anywhere else or press Esc to close it."),
@@ -255,6 +255,7 @@ impl PimaxApp {
             ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
             ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
             ctx.send_viewport_cmd(egui::ViewportCommand::RequestUserAttention(egui::UserAttentionType::Informational));
+            crate::window::write_ack();
         }
         if self.core.poll() {
             self.ui.pf = None;
@@ -354,7 +355,9 @@ impl PimaxApp {
             // an action started: show its progress
             self.ui.show_log = true;
         }
-        crate::window::FIRST_FRAME.store(true, Ordering::Relaxed);
+        if !crate::window::FIRST_FRAME.swap(true, Ordering::Relaxed) {
+            crate::window::write_ack();
+        }
         let took = t0.elapsed();
         if took > Duration::from_millis(100) && self.ui.slow_warned.is_none_or(|t| t.elapsed() > Duration::from_secs(60)) {
             self.ui.slow_warned = Some(Instant::now());

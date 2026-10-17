@@ -104,6 +104,17 @@ the password for the exact file. Play never relinks the installed file, so it ne
   not listed" = no NVIDIA and no EDID step, the app is still installed.
 - AMD and Intel GPUs: no patches, marked experimental.
 
+## Troubleshooting: the headset does not wake up
+
+Symptom: during "Get the headset ready" the app says the headset is asleep or off, and `34a4:0044` (the headset's HID chip) is not on USB; only `34a4:0043` (bridge), `34a4:0014` (camera) and `2104:0561` (eye chip) are. Without a host the chip restarts every few seconds and after about two hours it switches itself off; a PC restart does not bring it back.
+
+The app guides you and notices success by itself (green tick):
+1. Step A: press the power button on the headset (a short animation shows where). It waits up to 90 s.
+2. Step B, the last resort, only when no VR session runs: unplug the headset's POWER cable, wait 10 seconds, plug it back in. Leave the DisplayPort cable in. The animation counts the 10 s.
+3. If it still does not appear, the app warns and Start setup stays possible: the setup installs the permission rule and the keep-alive, which can wake it. If the display is not found afterwards, the result screen offers the one Fix for the display mode (it asks again every 5 s by itself).
+
+The app window did not open at login? A second start of the app brings the window to the front; if the window process has no window or does not answer within 3 seconds, it is replaced by a new one. At login the app waits for the Wayland display first. Log: `~/.local/state/omarchyvr/logs/omarchyvr-app.log`.
+
 ## Requirements
 
 | Item | Tested | Experimental | Unsupported |

@@ -99,6 +99,23 @@ pub static FIRST_FRAME: AtomicBool = AtomicBool::new(false);
 /// Set by SIGUSR1 (another `omarchyvr-app` was started): bring the window to the front.
 pub static FOCUS: AtomicBool = AtomicBool::new(false);
 
+/// Where the window process tells the supervisor "I have a window" (`$state/window-ack`: `<pid> <counter>`).
+static ACK_FILE: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+static ACK_COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// The ack file of a state directory.
+pub fn ack_file(state: &Path) -> PathBuf {
+    state.join("window-ack")
+}
+
+/// Tell the supervisor the window is alive: written after the first drawn frame and after every "show yourself".
+pub fn write_ack() {
+    if let Some(f) = ACK_FILE.get() {
+        let n = ACK_COUNT.fetch_add(1, Ordering::SeqCst) + 1;
+        let _ = std::fs::write(f, format!("{} {n}\n", std::process::id()));
+    }
+}
+
 extern "C" fn on_usr1(_: libc::c_int) {
     FOCUS.store(true, Ordering::SeqCst);
 }
@@ -270,6 +287,7 @@ pub fn run(o: Options) -> i32 {
         }
     }
     install_focus_signal();
+    let _ = ACK_FILE.set(ack_file(&state));
     let hang_secs = std::env::var("PIMAX_HANG_SECS").ok().and_then(|s| s.parse().ok()).unwrap_or(10);
     crash::start_watchdog(state.clone(), Duration::from_secs(hang_secs));
     if o.supervised {
@@ -343,6 +361,11 @@ fn test_crash() {
             }
         }
         "exit3" => std::process::exit(3),
+        // a window process that runs but never gets a window (the autostart bug): alive, beating, no ack
+        "nowindow" => loop {
+            crash::beat();
+            std::thread::sleep(Duration::from_millis(300));
+        },
         _ => {}
     }
 }

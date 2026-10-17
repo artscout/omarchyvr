@@ -214,6 +214,101 @@ pub enum Next {
     Restart,
     /// Start it with the next renderer of the chain (not counted).
     NextRenderer,
+    /// The supervisor ended a window process that had no window (see [`Watch`]): start a new one after a short wait.
+    Respawn,
+}
+
+/// Why the supervisor ended a window process itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Why {
+    /// No window appeared within the start limit (login autostart before the display was ready, a stuck start).
+    NoWindow,
+    /// A second start asked to show the window and it did not answer.
+    NoAnswer,
+}
+
+/// Seconds the window process gets to draw its first frame.
+const START_SECS: f64 = 25.0;
+/// Seconds the window gets to answer "show yourself".
+const RAISE_SECS: f64 = 3.0;
+
+fn env_secs(name: &str, default: f64) -> f64 {
+    std::env::var(name).ok().and_then(|v| v.parse().ok()).unwrap_or(default)
+}
+
+/// Watches one window process through its ack file (`<pid> <counter>`, see `window::write_ack`). Pure: times and the
+/// file's text come in as arguments, so the tests need no process.
+#[derive(Debug, Clone)]
+pub struct Watch {
+    pid: u32,
+    start_limit: f64,
+    raise_limit: f64,
+    seen: bool,
+    raise: Option<(f64, String)>,
+}
+
+impl Watch {
+    /// A watch of the window process `pid` with the limits in seconds.
+    pub fn new(pid: u32, start_limit: f64, raise_limit: f64) -> Watch {
+        Watch { pid, start_limit, raise_limit, seen: false, raise: None }
+    }
+
+    /// The window drew its first frame.
+    pub fn has_window(&self) -> bool {
+        self.seen
+    }
+
+    fn mine(&self, ack: &str) -> bool {
+        ack.split_whitespace().next().is_some_and(|p| p == self.pid.to_string())
+    }
+
+    /// A second start asked to show the window (`ack` = the file's text now).
+    pub fn raise_asked(&mut self, now: f64, ack: &str) {
+        if self.raise.is_none() {
+            self.raise = Some((now, ack.to_string()));
+        }
+    }
+
+    /// One look. `since_spawn`: seconds since the process started; `now`: seconds on the same clock as
+    /// [`Watch::raise_asked`]; `ack`: the ack file's text. Returns why the process must be ended, if so.
+    pub fn check(&mut self, since_spawn: f64, now: f64, ack: &str) -> Option<Why> {
+        if !self.seen && self.mine(ack) {
+            self.seen = true;
+        }
+        if !self.seen {
+            return (since_spawn > self.start_limit).then_some(Why::NoWindow);
+        }
+        if let Some((t, base)) = &self.raise {
+            if self.mine(ack) && ack != base {
+                self.raise = None;
+            } else if now - t > self.raise_limit {
+                return Some(Why::NoAnswer);
+            }
+        }
+        None
+    }
+}
+
+/// Is the Wayland socket there? (No `WAYLAND_DISPLAY`: nothing to wait for, true.)
+pub fn wayland_ready(env: &dyn Fn(&str) -> Option<String>) -> bool {
+    let Some(name) = env("WAYLAND_DISPLAY").filter(|n| !n.is_empty()) else { return true };
+    let p = std::path::Path::new(&name).to_path_buf();
+    if p.is_absolute() {
+        return p.exists();
+    }
+    env("XDG_RUNTIME_DIR").is_some_and(|d| std::path::Path::new(&d).join(&name).exists())
+}
+
+/// Sleep `secs`, in small steps; false when a stop signal came meanwhile.
+fn sleep_unless_term(secs: f64) -> bool {
+    let end = Instant::now() + Duration::from_secs_f64(secs);
+    while Instant::now() < end {
+        if TERM.load(Ordering::SeqCst) != 0 {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    TERM.load(Ordering::SeqCst) == 0
 }
 
 /// The decision for an exit status (pure, tested). `asked` = the supervisor itself asked it to stop; `hung` = the
@@ -320,8 +415,31 @@ pub fn run(demo: bool, renderer: Option<Renderer>) -> i32 {
     let mut idx = 0usize;
     let mut runtime_errors = 0u32;
     let mut restarts: Vec<Instant> = Vec::new();
+    let mut respawns: Vec<Instant> = Vec::new();
+    let mut display_retries = 0u32;
     let exit = loop {
         let (renderer, x11) = chain[idx];
+        // login autostart can run before the compositor's socket exists: wait for it (up to a minute) rather than
+        // start a window process that hangs without a display
+        if !x11 && !wayland_ready(&env) {
+            log::warn!("the Wayland display is not ready yet: waiting for it (up to 60 s)");
+            let mut ok = false;
+            for _ in 0..120 {
+                if !sleep_unless_term(0.5) {
+                    break;
+                }
+                if wayland_ready(&env) {
+                    ok = true;
+                    break;
+                }
+            }
+            if TERM.load(Ordering::SeqCst) != 0 {
+                break 0;
+            }
+            if !ok {
+                log::warn!("the Wayland display never appeared; starting the window anyway");
+            }
+        }
         let child = spawn_window(&state, renderer, x11, demo, sock.as_deref());
         let mut child = match child {
             Ok(c) => c,
@@ -338,6 +456,10 @@ pub fn run(demo: bool, renderer: Option<Renderer>) -> i32 {
         let mut hung_seen = false;
         let marker = crash::hang_marker(&state, pid);
         let mut tick = 0u32;
+        let spawned = Instant::now();
+        let mut watch = Watch::new(pid, env_secs("PIMAX_START_SECS", START_SECS), env_secs("PIMAX_RAISE_SECS", RAISE_SECS));
+        let mut ended_why: Option<Why> = None;
+        let ack_path = window::ack_file(&state);
         let status = loop {
             match child.try_wait() {
                 Ok(Some(st)) => break Some(st),
@@ -360,8 +482,22 @@ pub fn run(demo: bool, renderer: Option<Renderer>) -> i32 {
                 signal_child(&child, libc::SIGKILL);
                 asked_at = Instant::now() + Duration::from_secs(3600);
             }
-            if FOCUS.swap(false, Ordering::SeqCst) {
+            let focus = FOCUS.swap(false, Ordering::SeqCst);
+            let ack = if focus || tick.is_multiple_of(3) { std::fs::read_to_string(&ack_path).unwrap_or_default() } else { String::new() };
+            if focus {
                 signal_child(&child, libc::SIGUSR1);
+                watch.raise_asked(spawned.elapsed().as_secs_f64(), &ack);
+            }
+            if tick.is_multiple_of(3) && !asked && ended_why.is_none() {
+                let t = spawned.elapsed().as_secs_f64();
+                if let Some(why) = watch.check(t, t, &ack) {
+                    log::error!(
+                        "the window process {pid} {}: ending it and starting a new one",
+                        if why == Why::NoWindow { "never showed a window" } else { "did not answer \"show yourself\"" }
+                    );
+                    ended_why = Some(why);
+                    signal_child(&child, libc::SIGKILL);
+                }
             }
             tick += 1;
             if tick.is_multiple_of(10) {
@@ -383,7 +519,11 @@ pub fn run(demo: bool, renderer: Option<Renderer>) -> i32 {
         };
         let (c, s) = (status.code(), status.signal());
         let hung = hung_seen || marker.exists();
-        let (next, kind) = decide(c, s, asked, hung);
+        let (mut next, mut kind) = decide(c, s, asked, hung);
+        if ended_why.is_some() && !asked {
+            next = Next::Respawn;
+            kind = None;
+        }
         log::info!("window process {pid} ended: {status} -> {next:?}");
         match kind {
             Some(Kind::Native) => {
@@ -420,6 +560,16 @@ pub fn run(demo: bool, renderer: Option<Renderer>) -> i32 {
                         idx = n;
                         runtime_errors = 0;
                     }
+                    None if display && env("WAYLAND_DISPLAY").is_some() && f64::from(display_retries) < env_secs("PIMAX_DISPLAY_RETRIES", 6.0) => {
+                        // a session that has a display name but no connection yet: retry with a growing wait
+                        let wait = [2.0, 4.0, 8.0, 16.0, 30.0, 30.0][display_retries.min(5) as usize];
+                        display_retries += 1;
+                        log::warn!("no display connection yet: trying again in {wait} s (try {display_retries})");
+                        if !sleep_unless_term(wait) {
+                            break 0;
+                        }
+                        idx = 0;
+                    }
                     None => {
                         let msg = if display { "No display connection (Wayland or X11)." } else { "Neither Vulkan (wgpu) nor OpenGL (glow) could open the window." };
                         notify("omarchyvr could not open its window", &format!("{msg} See ~/.local/state/omarchyvr/logs/omarchyvr-app.log"));
@@ -429,6 +579,20 @@ pub fn run(demo: bool, renderer: Option<Renderer>) -> i32 {
                         }
                         break 1;
                     }
+                }
+            }
+            Next::Respawn => {
+                respawns.retain(|t| t.elapsed() < Duration::from_secs(600));
+                respawns.push(Instant::now());
+                if respawns.len() > 6 {
+                    notify("omarchyvr could not open its window", "It started 6 times in 10 minutes without a window. See ~/.local/state/omarchyvr/logs/omarchyvr-app.log");
+                    log::error!("giving up: 6 window starts without a window in 10 minutes");
+                    break 1;
+                }
+                let wait = [1.0, 2.0, 4.0, 8.0, 15.0, 30.0][(respawns.len() - 1).min(5)];
+                log::warn!("starting a new window process in {wait} s (try {})", respawns.len());
+                if !sleep_unless_term(wait) {
+                    break 0;
                 }
             }
             Next::Restart => {
@@ -490,6 +654,44 @@ fn spawn_window(state: &Path, r: Renderer, x11: bool, demo: bool, sock: Option<&
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn watch_ends_a_window_process_without_a_window_and_one_that_does_not_answer() {
+        let mut w = Watch::new(10, 25.0, 3.0);
+        assert_eq!(w.check(5.0, 5.0, ""), None);
+        assert_eq!(w.check(24.0, 24.0, "99 1\n"), None, "an ack of another pid is not ours");
+        assert_eq!(w.check(26.0, 26.0, ""), Some(Why::NoWindow));
+        let mut w = Watch::new(10, 25.0, 3.0);
+        assert_eq!(w.check(2.0, 2.0, "10 1\n"), None);
+        assert!(w.has_window());
+        w.raise_asked(40.0, "10 1\n");
+        assert_eq!(w.check(42.0, 42.0, "10 1\n"), None, "still within 3 s");
+        assert_eq!(w.check(42.5, 42.5, "10 2\n"), None);
+        assert_eq!(w.check(60.0, 60.0, "10 2\n"), None, "answered: nothing pending");
+        w.raise_asked(70.0, "10 2\n");
+        assert_eq!(w.check(72.0, 72.0, "10 2\n"), None);
+        assert_eq!(w.check(73.5, 73.5, "10 2\n"), Some(Why::NoAnswer));
+        let mut w = Watch::new(10, 25.0, 3.0);
+        w.raise_asked(1.0, "");
+        assert_eq!(w.check(10.0, 10.0, ""), None, "a window still starting is not killed by a raise");
+    }
+
+    #[test]
+    fn the_wayland_socket_is_looked_for() {
+        let d = std::env::temp_dir().join(format!("pimax-wl-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        let dir = d.to_string_lossy().to_string();
+        let env = |k: &str| match k {
+            "WAYLAND_DISPLAY" => Some("wayland-9".to_string()),
+            "XDG_RUNTIME_DIR" => Some(dir.clone()),
+            _ => None,
+        };
+        assert!(!wayland_ready(&env));
+        std::fs::write(d.join("wayland-9"), "").unwrap();
+        assert!(wayland_ready(&env));
+        assert!(wayland_ready(&|_| None), "no display name: nothing to wait for");
+        let _ = std::fs::remove_dir_all(d);
+    }
 
     #[test]
     fn exit_decisions() {

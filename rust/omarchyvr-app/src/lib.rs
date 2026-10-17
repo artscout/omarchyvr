@@ -8,5 +8,6 @@ pub mod screenshot;
 pub mod shots;
 pub mod supervisor;
 pub mod theme;
+pub mod wake_art;
 pub mod widgets;
 pub mod window;

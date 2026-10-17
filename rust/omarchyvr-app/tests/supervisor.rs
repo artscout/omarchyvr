@@ -192,3 +192,21 @@ fn one_instance_and_unexpected_exits() {
     let _ = std::fs::remove_dir_all(d);
     let _ = std::fs::remove_dir_all(d2);
 }
+
+#[test]
+fn a_window_process_without_a_window_is_replaced() {
+    // the login-autostart bug: the window process runs but never draws a frame (here: PIMAX_TEST_CRASH=nowindow)
+    let d = dirs("nowindow");
+    let mut sup = start(&d, Some("nowindow"), &[("PIMAX_START_SECS", "2"), ("PIMAX_HANG_SECS", "60")]);
+    let t = Instant::now();
+    while log(&d).matches("never showed a window").count() < 2 {
+        assert!(t.elapsed() < Duration::from_secs(40), "{}", log(&d));
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    let l = log(&d);
+    assert!(l.matches("window process pid").count() >= 2, "a new window process each time: {l}");
+    assert!(reports(&d, Kind::Killed).is_empty(), "our own kill is not a crash report");
+    signal(sup.id(), libc::SIGTERM);
+    assert_eq!(wait(&mut sup, Duration::from_secs(30)).code(), Some(0));
+    let _ = std::fs::remove_dir_all(d);
+}
