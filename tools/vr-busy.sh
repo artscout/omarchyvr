@@ -11,15 +11,42 @@
 #                                     cargo build, test and run inside this repo refuses while VR runs.
 #
 # OMARCHYVR_ALLOW_DURING_VR=1 skips the check. Only for a run the USER asked for during a session; agents never set it.
-# OMARCHYVR_VR_BUSY_PROCS overrides the process names and OMARCHYVR_VR_BUSY_POLL_S the 60 s poll (tests).
+# OMARCHYVR_VR_BUSY_PROCS overrides the process names and OMARCHYVR_VR_BUSY_POLL_S the 60 s poll (tests). Processes run
+# from a test tree (/tmp, cargo's target/tmp: the tests' stand-ins named monado-service) never count as a session.
 set -u
 
 procs=${OMARCHYVR_VR_BUSY_PROCS:-"monado-service vrserver vrcompositor"}
 
-running() { # prints "name pid ..." of each running VR process, returns 0 when one runs
-	local out="" p pids
+# Test stand-ins are not sessions: the Rust tests start fake processes named monado-service / vrserver from temporary
+# trees (/tmp/omarchyvr-vr-test-<pid>-..., cargo's target/tmp, $TMPDIR). A process whose executable, or the script it
+# runs (argv[0] / argv[1] of an interpreter), lies under one of these roots is ignored. A real session never runs from
+# there. OMARCHYVR_VR_BUSY_TEST_ROOTS overrides the list (tests of this script).
+test_roots=${OMARCHYVR_VR_BUSY_TEST_ROOTS:-"/tmp/ ${TMPDIR:+${TMPDIR%/}/} /var/tmp/ */target/tmp/ */target-*/tmp/ */omarchyvr-vr-test-*"}
+
+standin() { # standin PID: 0 when the process runs from a test root
+	local pid=$1 exe path root
+	local -a args=()
+	local -
+	set -f # the roots are patterns, never file names to expand
+	exe=$(readlink "/proc/$pid/exe" 2>/dev/null)
+	[[ -r /proc/$pid/cmdline ]] && mapfile -d '' -t args <"/proc/$pid/cmdline" 2>/dev/null
+	for path in "$exe" "${args[0]:-}" "${args[1]:-}"; do
+		[[ $path == /* ]] || continue
+		for root in $test_roots; do
+			# shellcheck disable=SC2254 # the roots are patterns
+			case $path in $root*) return 0 ;; esac
+		done
+	done
+	return 1
+}
+
+running() { # prints "name pid ..." of each running VR process (test stand-ins left out), returns 0 when one runs
+	local out="" p pid pids
 	for p in $procs; do
-		pids=$(pgrep -x "$p" 2>/dev/null | tr '\n' ' ')
+		pids=""
+		for pid in $(pgrep -x "$p" 2>/dev/null); do
+			standin "$pid" || pids+="$pid "
+		done
 		[[ -n $pids ]] && out+="$p (pid ${pids% }) "
 	done
 	[[ -n $out ]] && { printf '%s\n' "${out% }"; return 0; }
