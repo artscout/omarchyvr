@@ -14,6 +14,9 @@ use std::time::{Duration, Instant};
 
 /// The built-in backdrops, in "next background" order; skybox images (`*.dds`) follow.
 pub const BUILTIN_BACKDROPS: &[&str] = &["passthrough", "dimmed", "black", "sky"];
+/// The animated ocean in the backdrop list and in the state: `ocean:<low|medium|high>`, the same spelling as the
+/// `wayvrctl skybox` argument (omarchyvr-backgrounds `OCEAN_ID`, WayVR draws it live; docs/BACKGROUNDS.md).
+pub const OCEAN_PREFIX: &str = "ocean:";
 
 /// Side effects.
 pub trait Runner {
@@ -42,6 +45,11 @@ pub trait Runner {
     /// A voice command that sends something to VR screen `n` (1-6) or goes there shows it: `n` leaves the hidden
     /// list (`hidden =` in the same state file). Nothing in dry runs and tests.
     fn screen_unhide(&mut self, _n: usize) {}
+    /// The screens state file's text (`$XDG_RUNTIME_DIR/omarchyvr-screens.state`: limit, pinned, hidden), which
+    /// decides which screens VR shows ([`crate::screenstate`]). Empty in dry runs and tests (the defaults).
+    fn screens_state(&mut self) -> String {
+        String::new()
+    }
     /// "Put everything in its own window" (true) / "put everything back together" (false): whether the screens
     /// watcher keeps apps of different kinds on separate screens (`sort = on|off` in the same state file).
     fn screens_sort(&mut self, _on: bool) {}
@@ -91,6 +99,9 @@ impl Runner for Recorder<'_> {
     }
     fn screen_unhide(&mut self, n: usize) {
         self.inner.screen_unhide(n)
+    }
+    fn screens_state(&mut self) -> String {
+        self.inner.screens_state()
     }
     fn screens_sort(&mut self, on: bool) {
         self.inner.screens_sort(on)
@@ -273,6 +284,8 @@ pub fn backdrop_plan(name: &str, skybox_dir: &str) -> (&'static str, String) {
         "dimmed" => ("dim", "off".into()),
         "black" => ("off", "off".into()),
         "sky" => ("off", "default".into()),
+        // the animated ocean: WayVR draws it, no file
+        ocean if ocean.starts_with(OCEAN_PREFIX) => ("off", ocean.to_string()),
         // a picture of the background library (`omarchyvr-backgrounds`: ~/.local/share/omarchyvr/backgrounds), by its saved size
         file => match omarchyvr_backgrounds::voice_path(&omarchyvr_backgrounds::Dirs::from_env(), file) {
             Some(abs) => ("off", abs),
@@ -307,6 +320,18 @@ fn theme_words(spoken: &str) -> String {
 pub fn find_backdrop(list: &[String], spoken: &str) -> Option<String> {
     let norm = |s: &str| command::words(&s.replace(['_', '-'], " ")).join(" ");
     let want = norm(spoken);
+    // the animated ocean (in the list when WayVR can draw it): its names ("animated ocean", "moving ocean", "live
+    // sea", "ocean:high", with low / medium / high), and plain "ocean" / "sea" / "waves", which prefer it over the
+    // library's pictures ("beach", "ocean beach" and the other picture names stay pictures)
+    if let Some(have) = list.iter().find(|n| n.starts_with(OCEAN_PREFIX)) {
+        let plain = matches!(want.as_str(), "ocean" | "the ocean" | "sea" | "the sea" | "waves" | "the waves" | "ocean waves" | "ocean wave" | "sea waves");
+        if let Some(q) = omarchyvr_backgrounds::parse_ocean(spoken).or_else(|| plain.then_some(None)) {
+            return Some(match q {
+                Some(q) => format!("{OCEAN_PREFIX}{}", q.name()),
+                None => have.clone(),
+            });
+        }
+    }
     // the first of these that exists (the downloaded skyboxes first, docs/VOICE.md "Background")
     let alias: &[&str] = match want.as_str() {
         "room" | "camera" | "normal" | "passthrough on" => &["passthrough"],
@@ -757,7 +782,7 @@ impl Actor {
             let lead = words.iter().position(|x| !command::FILLERS.contains(&x.as_str()));
             let opener = lead.is_some_and(|i| matches!(words[i].as_str(), "open" | "launch" | "start") || (words[i] == "bring" && words.get(i + 1).is_some_and(|n| n == "up")));
             if opener && !crate::nlu::wants_plan(&words.join(" ")) {
-                let m = Match { id: "win.app.open".into(), slots: [("app".to_string(), words.join(" "))].into_iter().collect(), score: 0 };
+                let m = Match { id: "win.app.open".into(), slots: [("app".to_string(), open_slot(&words))].into_iter().collect(), score: 0 };
                 if self.cat.get(&m.id).is_some() && self.plausible(&m, r) {
                     matched = Some(m);
                 }
@@ -1218,6 +1243,13 @@ impl Actor {
     /// All backdrops: the built-in ones, then the skybox images.
     pub fn backdrops(&self, r: &mut dyn Runner) -> Vec<String> {
         let mut v: Vec<String> = BUILTIN_BACKDROPS.iter().map(|s| s.to_string()).collect();
+        // the animated ocean, at the quality in use (the state's, else the saved one, else medium)
+        let ocean = match self.state.backdrop.as_deref() {
+            Some(b) if b.starts_with(OCEAN_PREFIX) => b.to_string(),
+            _ if r.live() => format!("{OCEAN_PREFIX}{}", omarchyvr_backgrounds::Setting::load(&omarchyvr_backgrounds::Dirs::from_env()).ocean_quality.name()),
+            _ => format!("{OCEAN_PREFIX}medium"),
+        };
+        v.push(ocean);
         for s in r.skyboxes() {
             if !v.contains(&s) {
                 v.push(s);
@@ -1394,6 +1426,24 @@ pub fn screens_state_path() -> PathBuf {
 
 /// The state text with the limit lifted to at least 4 (every screen on demand), the other lines kept. A higher
 /// limit stays: lowering 6 to 4 would hide screens 5 and 6.
+/// The `app` slot of "open X [on screen N]" heard as a whole sentence: the app words and the screen only
+/// ("can you open the browser in in 4" -> "browser on screen 4", live 2026-10-17), so the log, the debug line and
+/// the model see what was understood. The whole sentence when no app words are left.
+pub fn open_slot(words: &[String]) -> String {
+    let (q, t) = crate::windows::open_target(&words.join(" "));
+    if q.is_empty() {
+        return words.join(" ");
+    }
+    match t.as_deref() {
+        None => q,
+        Some("here") => format!("{q} here"),
+        Some(t) => match t.parse::<usize>().ok().or_else(|| crate::windows::screen_number(t)) {
+            Some(n) => format!("{q} on screen {n}"),
+            None => q,
+        },
+    }
+}
+
 pub fn screens_unlimited(old: &str) -> String {
     let now = old.lines().find_map(|l| l.split_once('=').filter(|(k, _)| k.trim() == "limit").and_then(|(_, v)| v.trim().parse::<u8>().ok()));
     match now {
@@ -1664,6 +1714,10 @@ impl Runner for Real {
 
     fn screen_unhide(&mut self, n: usize) {
         write_screens_state(|old| screens_unhidden(old, n));
+    }
+
+    fn screens_state(&mut self) -> String {
+        std::fs::read_to_string(screens_state_path()).unwrap_or_default()
     }
 
     fn screens_sort(&mut self, on: bool) {
@@ -2190,6 +2244,40 @@ mod tests {
         assert_eq!(j["content"], "hi \"x\"");
         assert_eq!(find_backdrop(&["passthrough".into(), "sky".into(), "mountain_lake".into()], "space"), Some("sky".into()));
         assert_eq!(find_backdrop(&["passthrough".into(), "mountain_lake".into()], "lake"), Some("mountain_lake".into()));
+    }
+
+    /// The animated ocean (omarchyvr-backgrounds OCEAN_ID, WayVR draws it live: `wayvrctl skybox ocean:<quality>`)
+    /// by voice, with its spoken names and quality words; plain "ocean" prefers it, "beach" stays a picture.
+    #[test]
+    fn the_animated_ocean_is_a_background_by_voice() {
+        let mut a = actor();
+        let mut r = dry();
+        let t = Instant::now();
+        assert!(a.backdrops(&mut r).iter().any(|b| b == "ocean:medium"), "{:?}", a.backdrops(&mut r));
+        for (i, (said, arg)) in [
+            ("Pimax animated ocean background", "ocean:medium"),
+            ("Pimax set the background to ocean", "ocean:medium"),
+            ("Pimax set the background to ocean animated high", "ocean:high"),
+            ("Pimax set the background to moving ocean", "ocean:medium"),
+            ("Pimax set the background to live sea", "ocean:medium"),
+            ("Pimax set the background to ocean animation low", "ocean:low"),
+            ("Pimax set background to the sea", "ocean:medium"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            a.state.backdrop = Some("passthrough".into());
+            r.lines.clear();
+            a.hear(said, t + Duration::from_secs(10 * i as u64), &mut r);
+            assert!(r.lines.iter().any(|l| *l == format!("would run: wayvrctl skybox {arg}")), "{said}: {:?}", r.lines);
+            assert_eq!(a.state.backdrop.as_deref(), Some(arg), "{said}: the state shows it");
+        }
+        // the plan of the state's name is the same wayvrctl argument
+        assert_eq!(backdrop_plan("ocean:high", "skybox"), ("off", "ocean:high".into()));
+        let list: Vec<String> = ["passthrough", "sky", "ocean:medium", "ocean_beach"].iter().map(|s| s.to_string()).collect();
+        assert_eq!(find_backdrop(&list, "beach").as_deref(), Some("ocean_beach"), "beach stays the picture");
+        assert_eq!(find_backdrop(&list, "ocean").as_deref(), Some("ocean:medium"), "plain ocean prefers the animated one");
+        assert_eq!(find_backdrop(&list, "animated ocean high").as_deref(), Some("ocean:high"));
     }
 
     #[test]

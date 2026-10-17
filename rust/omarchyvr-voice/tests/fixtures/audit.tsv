@@ -36,6 +36,9 @@ vr.backdrop.set	set background hawaii	name=hawaii
 vr.backdrop.set	set the background to sunset	name=sunset
 vr.backdrop.set	put on a mountains background	name=mountains
 vr.backdrop.set	set background to ocean waves	name=ocean waves
+vr.backdrop.set	animated ocean background	name=animated ocean
+vr.backdrop.set	set the background to the moving ocean high	name=moving ocean high
+vr.backdrop.set	live sea background	name=live sea
 vr.backdrop.next	next background
 vr.backdrop.next	switch to the next background
 vr.passthrough.on	background off

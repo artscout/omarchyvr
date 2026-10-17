@@ -293,6 +293,26 @@ The words follow the user's decisions of 2026-10-15 (docs/VOICE-DECISIONS.md):
 | close window | closes the whole screen's apps. It asks "say yes" only when there are 2 or more apps; with one app it closes at once ("close this" = one app, at once). |
 | close the other windows / only this window / one screen | **shows one screen only** (the work-1 preset). It never closes workspaces or apps. |
 
+### What voice knows, and how a move is checked (2026-10-17)
+The voice keeps the state simple (`rust/omarchyvr-voice/src/screenstate.rs`): per screen **number** 1-6 (found by the
+output name: the main output, `PIMAX-LEFT`, `PIMAX-RIGHT`, `PIMAX-UP`, `PIMAX-UPLEFT`, `PIMAX-UPRIGHT`, never by
+order) whether it **exists** in this session, whether VR **shows** it (the watcher's rule: main always; an extra one when
+pinned, with apps or focused, within the mode's limit, never when hidden by voice), and the windows on it (address,
+class, title). Windows on a workspace no screen shows are "off-screen". It is read fresh for every command from one
+`hyprctl -j monitors` and one `hyprctl -j clients`; nothing is cached.
+
+- A move ("all the terminals to screen 3", "chrome on 4", "move all the terminals") becomes a desired state (window ->
+  screen); the moves are exactly the windows that are not there yet, each moved by its address.
+- After the moves the state is read again. A window still not on its screen gets **one** more try, then a last read
+  decides the answer: "Moved foot 'build' to screen 3 (right); 1 already there", or "Could not move foot 'build' to
+  screen 3 (right), it is still on screen 1 (main)". "Already there" is said only when the fresh read shows it.
+- A screen that does not exist (Screens = 6 in the app, but the session made 4 outputs) moves nothing: "There is no
+  screen 5 (up-left) now: this Work session has 4 screens. Set Screens to 5 or more in the Pimax app and restart Work".
+- A target screen that exists but is hidden shows first. "Open the browser (on screen 4)" also shows the screen the
+  browser is on; a browser that no screen shows comes to the focused screen.
+- The AI model gets the same state: every app as `on 3 right` (never a bare workspace number, which it read as a screen
+  number), and a screens line `1 main shown [w2 foot] ; ... ; 5 up-left missing`.
+
 The app has the same two buttons under **Screens**: **Put everything in its own window** and **Put everything back
 together**. They are enabled while Work runs, and they run the same voice intent (`omarchyvr-voice do --no-wake ...`).
 

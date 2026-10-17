@@ -119,6 +119,7 @@ With one VR screen, work-3 makes up its side screens from **WayVR app panels**:
 | dimmed | the room, darker | passthrough gain 0.35 |
 | black | black | passthrough off (it submits no layer) |
 | sky | WayVR's built-in sky | `wayvrctl skybox default` drawn over the main app, then passthrough off |
+| ocean:medium | the animated ocean (WayVR draws it live; low / medium / high) | `wayvrctl skybox ocean:<quality>`, then passthrough off. "Max, animated ocean", "moving ocean", "live sea", "ocean high"; plain "ocean" / "the sea" / "waves" pick it too ("beach" stays the photo) |
 | *your images* | equirectangular skybox images | `.dds` files in `~/src/desk-out/wayvr-home-am/config/wayvr/skybox/`, named by file name |
 
 Other ways to set it:
@@ -325,6 +326,13 @@ then lists every step's result ("2 of 2 steps: 1. Showing 6 screens | 2. google-
 | exit cinema mode / leave cinema mode / exit huge cinema / exit imax / normal screens | the mode from before cinema comes back, with its passthrough ("cinema mode" while it is on already changes nothing) | vr.preset.exit_cinema |
 | pause / play | mpv answers the media keys (mpv-mpris) | omarchy.media.play_pause |
 | cancel / cancel that / stop | stops a task of several steps (below); else a question waiting for "yes" | voice.cancel |
+
+Every move to a screen is checked (2026-10-17, docs/SCREENS.md "What voice knows"): the screens and windows are read
+fresh, only the windows not on the target move (by address), the state is read again, a window still not there gets
+one more try, and the answer says what the last read shows ("Moved 1 terminal ...; 1 already there", "Could not move
+foot 'build' to screen 3 (right), it is still on screen 1 (main)"). A screen the session does not have is never used
+("There is no screen 5 (up-left) now ... restart Work"). A stutter is fine: "open the browser in in 4" = the browser on
+screen 4.
 
 ### Screens by voice: hide, resize, stop (user rules 2026-10-16, live session 15:49)
 

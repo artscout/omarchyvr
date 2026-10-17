@@ -259,7 +259,7 @@ pub fn open_url(url: &str, r: &mut dyn Runner) -> Result<(), String> {
 /// "launch or focus" for the browser.
 pub fn browser(r: &mut dyn Runner) -> Result<String, String> {
     if let Some(b) = focus_browser(r) {
-        return Ok(format!("Browser (workspace {})", b.workspace));
+        return Ok(crate::screenstate::show_window(r, &b.address, "Browser"));
     }
     r.run(&["omarchy-launch-browser".into()], false)?;
     Ok("Browser".into())

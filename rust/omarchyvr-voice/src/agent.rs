@@ -1335,6 +1335,9 @@ pub struct Context {
     /// The VR screens (main first) and the slots hidden by voice ("hide screen 3").
     pub screens: Vec<windows::Screen>,
     pub hidden: Vec<String>,
+    /// The simple screen state ([`crate::screenstate`]) from the SAME `hyprctl` answers as `clients` and
+    /// `screens`: per screen number whether it exists and shows, and its windows; the VR background and preset.
+    pub desk: Option<crate::screenstate::State>,
 }
 
 /// The VR screens hidden by voice (`hidden = ...` in `$XDG_RUNTIME_DIR/omarchyvr-screens.state`, `omarchyvr desk screens
@@ -1352,7 +1355,10 @@ pub fn hidden_screens() -> Vec<String> {
 impl Context {
     /// Collect the context through the runner (hyprctl) and the providers.
     pub fn collect(request: &str, r: &mut dyn Runner, gaze: Option<&mut Box<dyn GazeSource>>, probe: &mut dyn Probe, actor: &Actor, recent: &VecDeque<(String, String, bool)>, passthrough: bool) -> Context {
-        let mut clients = windows::hyprctl_json(r, "clients").and_then(|j| windows::parse_clients(&j)).unwrap_or_default();
+        // one fresh read per command (never cached): the window list, the screens and the screen state all come
+        // from these two answers, mapped to screen numbers by output name (docs/SCREENS.md)
+        let clients_json = windows::hyprctl_json(r, "clients").unwrap_or_default();
+        let mut clients = windows::parse_clients(&clients_json).unwrap_or_default();
         clients.sort_by_key(|c| c.focus);
         let focused = windows::hyprctl_json(r, "activewindow").ok().and_then(|j| windows::parse_active(&j).ok().flatten());
         // gaze only matters for "this/that" requests: skip the wayvrctl round trip otherwise
@@ -1367,12 +1373,18 @@ impl Context {
             captions: probe.captions_on(),
         };
         let this = deictic_target(g.as_ref(), focused.as_ref(), &clients);
-        // the screens line only for a request about screens (one more hyprctl call)
-        let rw = command::words(request);
-        let about_screens = rw.iter().any(|w| matches!(w.as_str(), "screen" | "screens" | "window" | "windows" | "number" | "numbers" | "pantalla" | "ventana") || w.parse::<u32>().is_ok_and(|n| (1..=6).contains(&n)));
-        let screens = if about_screens { windows::vr_screens(r) } else { Vec::new() };
+        // the screens always (live 2026-10-17: without them "move all the terminals" showed only "ws3", which the
+        // model and the user read as screen 3)
+        let monitors_json = windows::hyprctl_json(r, "monitors").unwrap_or_default();
+        let screens = windows::screens_from_monitors(&monitors_json).unwrap_or_default();
         let hidden = if screens.len() > 1 { hidden_screens() } else { Vec::new() };
-        Context { request: request.into(), time: probe.now(), gaze: g, focused, clients, session, recent: recent.iter().cloned().collect(), this, screens, hidden }
+        let show = r.screens_state();
+        let desk = crate::screenstate::State::from_json(&monitors_json, &clients_json, &show).ok().map(|mut d| {
+            d.preset = session.preset.clone();
+            d.backdrop = session.backdrop.clone();
+            d
+        });
+        Context { request: request.into(), time: probe.now(), gaze: g, focused, clients, session, recent: recent.iter().cloned().collect(), this, screens, hidden, desk }
     }
 
     fn brief(c: &Client, strip: bool) -> Value {
@@ -1458,6 +1470,11 @@ impl Context {
             o.insert("focused".into(), f.address.as_str().into());
         }
         o.insert("windows".into(), self.clients.iter().take(n).map(|c| Context::tuple(c, strip)).collect::<Vec<_>>().into());
+        // which screen each window is on NOW (the third tuple field is a workspace, not a screen number) and which
+        // screens exist (crate::screenstate)
+        if let Some(d) = self.desk.as_ref().filter(|d| d.existing().len() > 1) {
+            o.insert("screens".into(), d.screens_line(&|w| w.address.clone()).into());
+        }
         let mut vr = serde_json::Map::new();
         vr.insert("running".into(), self.session.running.into());
         for (k, v) in [("preset", &self.session.preset), ("background", &self.session.backdrop), ("passthrough", &self.session.passthrough)] {
@@ -3508,6 +3525,7 @@ pub fn typical_context() -> Context {
         this,
         screens,
         hidden: vec![],
+        desk: None,
     }
 }
 
@@ -3598,6 +3616,7 @@ mod tests {
         fn run(&mut self, argv: &[String], _capture: bool) -> Result<String, String> {
             match (argv[0].as_str(), argv.get(1).map(String::as_str), argv.get(2).map(String::as_str)) {
                 ("hyprctl", Some("-j"), Some("clients")) => Ok(CLIENTS.into()),
+                ("hyprctl", Some("-j"), Some("monitors")) => Ok("[]".into()),
                 ("hyprctl", Some("-j"), Some("activewindow")) => {
                     let v: Vec<Value> = serde_json::from_str(CLIENTS).unwrap();
                     Ok(v.into_iter().find(|c| c["address"] == self.active.as_str()).unwrap().to_string())
