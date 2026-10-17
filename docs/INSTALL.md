@@ -63,10 +63,13 @@ the password for the exact file. Play never relinks the installed file, so it ne
 
 ## NVIDIA policy (strict)
 
-- Patched only on the exact tested versions in `installer/components.lock` (`610.57.04`), open kernel modules only.
+- Patched by default only on the exact tested versions in `patches/nvidia/tested-versions.txt` (`610.57.04`), open kernel
+  modules only. Another version is patched only if you turn on **Allow the patch on untested NVIDIA drivers** in the app
+  (off by default, `--nvidia-allow-untested` for `./install.sh`); see [NVIDIA-UNTESTED.md](NVIDIA-UNTESTED.md).
 - Before patching, `nvidia-patch-reapply.sh --check` tests each fix against the source. A fix that is already in
   (for example NVIDIA PR #1262, the viewport fix, once it ships) is skipped.
-- Unknown version: no patch. The app says so in plain words and offers to send a report.
+- Untested version, switch off: no patch, the stock module is built, pacman is not blocked. The app says so in plain
+  words and offers to send a report.
 - Secure Boot on: patched only when the dkms signing key is enrolled (`mokutil --test-key`). Otherwise the module
   could not load.
 - If the patched dkms build fails, the stock source is restored and the stock module is built, so the desktop keeps
@@ -82,7 +85,7 @@ the password for the exact file. Play never relinks the installed file, so it ne
 | Distro | Omarchy (Arch) | other Arch-based | non-Arch (no pacman hooks or packages) |
 | Compositor | Hyprland (Lua config) | other Wayland compositors with `wp_drm_lease_device_v1` | X11 |
 | GPU | NVIDIA RTX 4090 | other NVIDIA RTX with the open modules; AMD, Intel (no patches) | NVIDIA proprietary-only modules (pre-Turing) |
-| NVIDIA driver | `nvidia-open-dkms` 610.57.04 | (none) | any other version: runs unpatched (the left half shows in both eyes) until it is tested |
+| NVIDIA driver | `nvidia-open-dkms` 610.57.04 | (none) | any other version: runs unpatched (the left half shows in both eyes) unless you allow the patch on untested drivers (app switch, off by default) |
 | Headset | Pimax Dream Air (34a4:0044) | other Pimax models: read-only probe, labelled "untested" | |
 | Kernel | 7.2 (linux-omarchy) | other Arch kernels with headers | |
 | Disk | 40 GB free for the build, plus ~30 GB of downloads (reused when present) | | |
@@ -91,7 +94,7 @@ the password for the exact file. Play never relinks the installed file, so it ne
 ## Options
 
 `./install.sh --help` lists all of them. Main ones: `--prefix DIR` (staging install, no system changes),
-`--no-root`, `--dry-run-root`, `--nvidia auto|yes|no`, `--gpu-speech` (whisper.cpp on Vulkan for the
+`--no-root`, `--dry-run-root`, `--nvidia auto|yes|no`, `--nvidia-allow-untested`, `--gpu-speech` (whisper.cpp on Vulkan for the
 "Speech on graphics card" switch), `--hand-models` (Mercury models from upstream, no licence, personal use only),
 `--no-ai`, `--lab-data DIR`.
 

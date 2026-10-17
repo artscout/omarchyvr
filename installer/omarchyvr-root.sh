@@ -15,9 +15,12 @@
 #   OVR_DATA                    the installed data dir (<share>/omarchyvr/data: linux/, patches/, installer/)
 #   OVR_SERVICE                 the installed monado-service (gets cap_sys_nice+ep once)
 #   OVR_PACKAGES                pacman packages to install (space separated; empty = none)
-#   OVR_NVIDIA                  patch | skip   (install.sh decides: tested version + open modules + headset or opt-in)
-#   OVR_NVIDIA_VERSION          the exact nvidia-open-dkms version (must be in OVR_NVIDIA_TESTED)
-#   OVR_NVIDIA_TESTED           tested versions (space separated)
+#   OVR_NVIDIA                  patch | skip   (install.sh decides: open modules + headset or opt-in; a version that is
+#                               not tested is still "patch": the next key decides whether the patch is applied)
+#   OVR_NVIDIA_VERSION          the exact nvidia-open-dkms version
+#   OVR_NVIDIA_TESTED           tested versions (space separated; patches/nvidia/tested-versions.txt wins when present)
+#   OVR_NVIDIA_ALLOW_UNTESTED   yes | no (default no): the user's switch "Allow the patch on untested NVIDIA drivers".
+#                               Written to /etc/omarchyvr/nvidia.conf so later pacman hook runs honour it.
 #   OVR_EDID                    the NVKMS override key, e.g. override.[0000:01:00.0].DP-0 (detected; empty = no EDID step)
 #   OVR_STEAMVR_LAUNCHER        SteamVR's vrcompositor-launcher (empty = skip); gets cap_sys_nice=eip like SteamVR's own prompt
 #   OVR_SNAPSHOT                yes | no  (snapper snapshot of / first, when snapper has a "root" config)
@@ -25,7 +28,8 @@
 #
 # Safety: fixed PATH; every write goes to a fixed list of destinations; originals that are not ours are saved under
 # /var/lib/omarchyvr/backup before they are replaced and put back on uninstall; NVIDIA is patched only on a tested
-# version and falls back to the stock module if the patched build fails, so the desktop keeps working.
+# version (or an untested one the user allowed) and falls back to the stock module if the patched build fails, so the
+# desktop keeps working.
 set -euo pipefail
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/bin
 umask 022
@@ -37,25 +41,30 @@ HOOK_PATCH=/etc/pacman.d/hooks/65-nvidia-pimax-patch.hook
 HOOK_VERIFY=/etc/pacman.d/hooks/75-nvidia-pimax-verify.hook
 UDEV_RULE=/etc/udev/rules.d/70-pimax.rules
 EDID_DIR=/etc/pimax
+CONF_DIR=/etc/omarchyvr
+NVIDIA_CONF=$CONF_DIR/nvidia.conf
+NVIDIA_STATUS=$STATE/nvidia-patch-status
 MODPROBE=/etc/modprobe.d/nvidia-pimax.conf
 MKINITCPIO=/etc/mkinitcpio.conf.d/pimax.conf
 
 MODE=${1:-}
 PLAN=${2:-}
+[[ $MODE == restore-stock ]] && PLAN="" # its argument is a source tree, not a plan
 DRY=1
 case $MODE in
 apply | uninstall) DRY=0 ;;
 plan | uninstall-plan) DRY=1 ;;
+restore-stock) DRY=0 ;; # internal, also used by the tests on a scratch tree: restore-stock SRC_TREE [PATCH_DIR]
 *) sed -n '3,25p' "$0"; exit 2 ;;
 esac
-if [[ $DRY == 0 && $EUID -ne 0 ]]; then
+if [[ $DRY == 0 && $EUID -ne 0 && $MODE != restore-stock ]]; then
 	echo "omarchyvr-root.sh $MODE must run as root (the app runs it through pkexec)" >&2
 	exit 1
 fi
 
 # ---- the plan ------------------------------------------------------------------------------------------------------
 OVR_USER="" OVR_HOME="" OVR_DATA="" OVR_SERVICE="" OVR_PACKAGES="" OVR_NVIDIA=skip OVR_NVIDIA_VERSION=""
-OVR_NVIDIA_TESTED="" OVR_EDID="" OVR_STEAMVR_LAUNCHER="" OVR_SNAPSHOT=yes OVR_KEEP_LEGACY_CAPS=no
+OVR_NVIDIA_TESTED="" OVR_NVIDIA_ALLOW_UNTESTED=no OVR_EDID="" OVR_STEAMVR_LAUNCHER="" OVR_SNAPSHOT=yes OVR_KEEP_LEGACY_CAPS=no
 if [[ -n $PLAN ]]; then
 	[[ -f $PLAN ]] || { echo "plan $PLAN not found" >&2; exit 1; }
 	while IFS= read -r line || [[ -n $line ]]; do
@@ -64,7 +73,7 @@ if [[ -n $PLAN ]]; then
 		v=${v#\"} v=${v%\"}
 		[[ $v =~ ^[][A-Za-z0-9_./:@+\ -]*$ ]] || { echo "plan: unsafe value for $k" >&2; exit 1; }
 		case $k in
-		OVR_USER | OVR_HOME | OVR_DATA | OVR_SERVICE | OVR_PACKAGES | OVR_NVIDIA | OVR_NVIDIA_VERSION | OVR_NVIDIA_TESTED | \
+		OVR_USER | OVR_HOME | OVR_DATA | OVR_SERVICE | OVR_PACKAGES | OVR_NVIDIA | OVR_NVIDIA_VERSION | OVR_NVIDIA_TESTED | OVR_NVIDIA_ALLOW_UNTESTED | \
 			OVR_EDID | OVR_STEAMVR_LAUNCHER | OVR_SNAPSHOT | OVR_KEEP_LEGACY_CAPS) printf -v "$k" '%s' "$v" ;;
 		*) echo "plan: unknown key $k" >&2; exit 1 ;;
 		esac
@@ -91,7 +100,7 @@ backup_of() { echo "$STATE/backup$1"; }
 # files whose names are ours (an older omarchyvr/pimax install wrote them): replaced, never kept as "originals"
 ours_by_name() {
 	case $1 in
-	"$UDEV_RULE" | "$HOOK_PATCH" | "$HOOK_VERIFY" | "$MODPROBE" | "$MKINITCPIO" | "$EDID_DIR"/* | "$LIBDIR"/* | "$LEGACY_LIBDIR"/*) return 0 ;;
+	"$UDEV_RULE" | "$HOOK_PATCH" | "$HOOK_VERIFY" | "$NVIDIA_CONF" | "$MODPROBE" | "$MKINITCPIO" | "$EDID_DIR"/* | "$LIBDIR"/* | "$LEGACY_LIBDIR"/*) return 0 ;;
 	esac
 	return 1
 }
@@ -180,36 +189,57 @@ do_apply() {
 	place "$d/installer/omarchyvr-root.sh" "$LIBDIR/omarchyvr-root.sh" 755 "root job (uninstall)" || true
 
 	if [[ $OVR_NVIDIA == patch ]]; then
-		local v=$OVR_NVIDIA_VERSION
-		step "NVIDIA $v (tested): display patches for the headset's two-head mode, re-applied after driver updates"
-		[[ " $OVR_NVIDIA_TESTED " == *" $v "* ]] || { echo "refusing: $v is not a tested version" >&2; exit 1; }
-		local f
-		for f in nvidia-patch-reapply.sh nvidia-2h1or-viewport.patch nvidia-2h1or-flip-fix.patch nvidia-evo-makeroom-bounded-wait.patch; do
+		local v=$OVR_NVIDIA_VERSION tested=no allow=no flag=() f
+		local tlist=$OVR_NVIDIA_TESTED
+		[[ -r $d/patches/nvidia/tested-versions.txt ]] && tlist=$(sed 's/#.*//' "$d/patches/nvidia/tested-versions.txt" | tr -s ' \t\n' ' ')
+		[[ " $tlist " == *" $v "* ]] && tested=yes
+		[[ $OVR_NVIDIA_ALLOW_UNTESTED == yes ]] && allow=yes
+		if [[ $tested == yes ]]; then
+			step "NVIDIA $v (tested): display patches for the headset's two-head mode, re-applied after driver updates"
+		elif [[ $allow == yes ]]; then
+			step "NVIDIA $v (NOT tested; you allowed the patch on untested drivers): display patches, re-applied after driver updates"
+			info "WARNING: this driver version was never tested with the patches. The patched build may fail, or the headset picture may break."
+			info "The stock module is built as a fallback if the patched build fails, so the desktop keeps working. A restore snapshot is taken first."
+			flag=(--allow-untested)
+		else
+			step "NVIDIA $v (NOT tested): the patch is NOT applied; the stock module stays (the desktop works, the headset picture will not)"
+			info "To patch it anyway: turn on 'Allow the patch on untested NVIDIA drivers' in the app (Onboarding > System setup) and set up again."
+		fi
+		for f in nvidia-patch-reapply.sh nvidia-2h1or-viewport.patch nvidia-2h1or-flip-fix.patch nvidia-evo-makeroom-bounded-wait.patch tested-versions.txt; do
+			[[ -f $d/patches/nvidia/$f ]] || continue
 			place "$d/patches/nvidia/$f" "$LIBDIR/$f" "$([[ $f == *.sh ]] && echo 755 || echo 644)" "nvidia patch set" || true
 		done
 		place "$d/patches/nvidia/nvidia-pimax-patch.hook" "$HOOK_PATCH" 644 "pacman hook: re-apply after driver updates" || true
 		place "$d/patches/nvidia/nvidia-pimax-verify.hook" "$HOOK_VERIFY" 644 "pacman hook: verify, stock fallback" || true
+		# the user's choice, read by the pacman hook on later driver updates (parsed, never sourced)
+		text_to "$NVIDIA_CONF" "NVIDIA patch: allow untested drivers" "# omarchyvr: written by the system setup job (app switch: Allow the patch on untested NVIDIA drivers)
+allow_untested=$([[ $allow == yes ]] && echo 1 || echo 0)" || true
 		if [[ -d $LEGACY_LIBDIR ]]; then
 			act "remove the older copy $LEGACY_LIBDIR (the hooks now use $LIBDIR)" -- rm -r -- "$LEGACY_LIBDIR"
 		fi
+		if [[ $tested == no && $allow == no ]]; then
+			act "record the state for the app (untested driver, patch not applied)" -- "$LIBDIR/nvidia-patch-reapply.sh" --version "$v"
+			[[ $DRY == 0 ]] && mrec nvidia "/usr/src/nvidia-$v" "untested driver, not patched (hooks installed)"
+		else
 		# which fixes the source still needs (a newer source may already contain them: they are skipped)
 		local chk rc=0
-		chk=$("$d/patches/nvidia/nvidia-patch-reapply.sh" --check --version "$v" 2>&1) || rc=$?
+		chk=$("$d/patches/nvidia/nvidia-patch-reapply.sh" --check --version "$v" "${flag[@]}" 2>&1) || rc=$?
 		printf '%s\n' "$chk" | sed 's/^/      /'
 		if [[ $rc == 2 ]]; then
 			act "patch /usr/src/nvidia-$v (originals kept as *.pimax-orig), dkms build + install; stock module if the build fails" -- \
-				"$LIBDIR/nvidia-patch-reapply.sh" --version "$v" --rebuild --fallback
+				"$LIBDIR/nvidia-patch-reapply.sh" --version "$v" "${flag[@]}" --rebuild --fallback
 			[[ $DRY == 0 ]] && mrec nvidia "/usr/src/nvidia-$v" "patched; uninstall restores the *.pimax-orig files and rebuilds stock"
 			REBOOT=1
 		elif [[ $rc == 0 ]]; then
 			info "source already patched (or fixed upstream): nothing to rebuild"
 			[[ $DRY == 0 ]] && mrec nvidia "/usr/src/nvidia-$v" "already patched before this install"
 			if ! "$LIBDIR/nvidia-patch-reapply.sh" --verify >/dev/null 2>&1 && [[ $DRY == 0 ]]; then
-				act "the built module lacks the fix: dkms rebuild" -- "$LIBDIR/nvidia-patch-reapply.sh" --version "$v" --rebuild --force-build --fallback
+				act "the built module lacks the fix: dkms rebuild" -- "$LIBDIR/nvidia-patch-reapply.sh" --version "$v" "${flag[@]}" --rebuild --force-build --fallback
 				REBOOT=1
 			fi
 		else
 			echo "      the patches do not apply to this source: nothing changed (see the message above)" >&2
+		fi
 		fi
 		if [[ -n $OVR_EDID ]]; then
 			step "Headset display mode at boot: EDID override for ${OVR_EDID#override.} (non-desktop, native modes)"
@@ -250,7 +280,110 @@ do_apply() {
 	echo "REBOOT=$([[ $REBOOT == 1 ]] && echo yes || echo no)"
 }
 
+# ---- stock NVIDIA source ---------------------------------------------------------------------------------------------
+PATCH_NAMES=(nvidia-2h1or-viewport.patch nvidia-2h1or-flip-fix.patch nvidia-evo-makeroom-bounded-wait.patch)
+# the files the three patches touch (used only when the patch files themselves cannot be found)
+PATCH_TOUCHED=(kernel-open/nvidia-drm/nvidia-drm-drv.c kernel-open/nvidia-modeset/nvidia-modeset-linux.c
+	kernel-open/nvidia-modeset/nvidia-modeset-os-interface.h src/nvidia-modeset/include/nvkms-dma.h
+	src/nvidia-modeset/include/nvkms-hw-flip.h src/nvidia-modeset/include/nvkms-types.h
+	src/nvidia-modeset/os-interface/include/nvidia-modeset-os-interface.h src/nvidia-modeset/src/nvkms-dma.c
+	src/nvidia-modeset/src/nvkms-evo.c src/nvidia-modeset/src/nvkms-flip.c src/nvidia-modeset/src/nvkms-hw-flip.c
+	src/nvidia-modeset/src/nvkms-rm.c)
+patch_dir_ok() { local n; for n in "${PATCH_NAMES[@]}"; do [[ -f $1/$n ]] || return 1; done; }
+find_patch_dir() { # first of the given directories that holds all three patches
+	local c
+	for c in "$@"; do [[ -n $c ]] && patch_dir_ok "$c" && { echo "$c"; return 0; }; done
+	return 1
+}
+# patch_markers TREE: one line per piece of patch code still in the source tree (empty = stock)
+patch_markers() {
+	local t=$1 ev
+	ev=$t/src/nvidia-modeset/src/nvkms-evo.c
+	grep -rqsF 'merged_head_sync' "$t/kernel-open" "$t/src/nvidia-modeset" && echo "merged_head_sync (flip-fix module parameter)"
+	if [[ -f $ev ]] && awk '/^void nvSetViewPortsEvo/,/^}/' "$ev" | tr '\n' ' ' | grep -Eq 'EvoSetViewportPointIn\([^;]*mergeHeadSection'; then
+		echo "per-head viewport offset in nvSetViewPortsEvo (mergeHeadSection)"
+	fi
+	grep -rqsF 'nvEvoReadChannelGetPut' "$t/src/nvidia-modeset" && echo "nvEvoReadChannelGetPut (flip-fix)"
+	grep -rqsE 'NV_EVO_MAKE_ROOM_MAX_TIMEOUTS|pb\.dead' "$t/src/nvidia-modeset" && echo "bounded make-room code (NV_EVO_MAKE_ROOM_MAX_TIMEOUTS, pb.dead)"
+	return 0
+}
+RS_CHANGED=0 RS_LEFT=""
+# restore_stock_source SRC [PATCHDIR]: put the stock source back in a /usr/src/nvidia-<ver> tree.
+#   1. files with a *.pimax-orig backup are restored from it;
+#   2. every patch that is still in (applied by hand, no backup) is reversed, newest first, file by file: dry run
+#      (patch -R --dry-run --fuzz=0) first, the real reverse only if the dry run succeeds;
+#   3. if a pristine copy SRC.orig exists (and has no patch code itself) the files the patches touch are copied from it
+#      when they still differ;
+#   4. no patch marker may remain (merged_head_sync, the viewport call, nvEvoReadChannelGetPut, the bounded make-room
+#      code): otherwise RS_LEFT lists them and the return value is 1.
+# Sets RS_CHANGED=1 when it changed anything.
+restore_stock_source() {
+	local src=$1 pdir=${2:-} o f p i chunks c n rel
+	RS_CHANGED=0 RS_LEFT=""
+	local origs=()
+	mapfile -t origs < <(find "$src" -name '*.pimax-orig' -type f 2>/dev/null)
+	for o in "${origs[@]}"; do
+		act "restore ${o%.pimax-orig} (stock)" -- mv -f -- "$o" "${o%.pimax-orig}"
+		RS_CHANGED=1
+	done
+	if [[ $DRY == 1 ]]; then
+		[[ -n $(patch_markers "$src") ]] && RS_CHANGED=1
+		info "would then reverse every patch still in $src that has no backup (patch -R --fuzz=0, dry run first), use $src.orig as the reference when it exists, and check that no patch code is left"
+		return 0
+	fi
+	[[ -n $pdir ]] || pdir=$(find_patch_dir "$LIBDIR" "${OVR_HOME:+$OVR_HOME/.local/share/omarchyvr/data/patches/nvidia}" "${OVR_DATA:+$OVR_DATA/patches/nvidia}") || pdir=""
+	local touched=("${PATCH_TOUCHED[@]}")
+	if [[ -n $pdir ]]; then
+		mapfile -t touched < <(for n in "${PATCH_NAMES[@]}"; do sed -n 's|^+++ b/||p' "$pdir/$n" | sed 's/\t.*//'; done | sort -u)
+		chunks=$(mktemp -d)
+		for ((i = ${#PATCH_NAMES[@]} - 1; i >= 0; i--)); do
+			n=${PATCH_NAMES[$i]}
+			mkdir -p "$chunks/$i"
+			# one chunk per file: a patch that is only partly in (some files restored from backups) still reverses file by file
+			awk -v d="$chunks/$i" '/^diff --git /{k++} k>0{print > (d "/" k ".diff")}' "$pdir/$n"
+			for c in "$chunks/$i"/*.diff; do
+				[[ -f $c ]] || continue
+				rel=$(sed -n 's|^+++ b/||p' "$c" | sed 's/\t.*//' | head -n1)
+				if patch -R -p1 --dry-run --fuzz=0 --no-backup-if-mismatch -s -d "$src" -i "$c" >/dev/null 2>&1; then
+					act "reverse $n in $rel (it is still in the source: applied by hand, no backup)" -- \
+						patch -R -p1 --fuzz=0 --no-backup-if-mismatch -s -d "$src" -i "$c"
+					RS_CHANGED=1
+				fi
+			done
+		done
+		rm -rf "$chunks"
+	fi
+	if [[ -d $src.orig ]]; then
+		if [[ -n $(patch_markers "$src.orig") ]]; then
+			info "not using $src.orig as the reference: it contains patch code itself"
+		else
+			for f in "${touched[@]}"; do
+				[[ -f $src.orig/$f ]] || continue
+				if ! cmp -s "$src.orig/$f" "$src/$f"; then
+					act "copy $f back from the pristine copy $src.orig (it still differed)" -- install -m "$(stat -c %a "$src.orig/$f")" -- "$src.orig/$f" "$src/$f"
+					RS_CHANGED=1
+				fi
+			done
+		fi
+	fi
+	RS_LEFT=$(patch_markers "$src")
+	if [[ -n $RS_LEFT ]]; then
+		{
+			echo "################################################################################"
+			echo "# omarchyvr: $src STILL CONTAINS PATCH CODE after the restore:"
+			while IFS= read -r o; do echo "#   - $o"; done <<<"$RS_LEFT"
+			echo "# The files could not be reversed automatically (they were edited by hand?). Reinstall the stock"
+			echo "# driver source: reinstall the package (pacman -S nvidia-open-dkms) or compare it with a pristine copy."
+			echo "################################################################################"
+		} >&2
+		return 1
+	fi
+	info "$src is the stock source (no patch code left)"
+	return 0
+}
+
 # ==== uninstall ======================================================================================================
+NVIDIA_LEFTOVER=()
 LEGACY_FILES=("$UDEV_RULE" "$HOOK_PATCH" "$HOOK_VERIFY" "$MODPROBE" "$MKINITCPIO" "$EDID_DIR/nvidia-modeset.conf" "$EDID_DIR/dp-edid.bin")
 remove_file() { # remove a system file of ours; put a saved original back
 	local p=$1 b
@@ -276,16 +409,24 @@ do_uninstall() {
 	step "NVIDIA: pacman hooks, patch set, stock driver source and module"
 	remove_file "$HOOK_PATCH"
 	remove_file "$HOOK_VERIFY"
-	local src v restored=0 o
+	remove_file "$NVIDIA_CONF"
+	[[ -d $CONF_DIR ]] && act "remove $CONF_DIR if empty" -- rmdir --ignore-fail-on-non-empty -- "$CONF_DIR"
+	remove_file "$NVIDIA_STATUS"
+	local src v restored=0
 	for src in /usr/src/nvidia-[0-9]*; do
 		[[ -d $src ]] || continue
 		case $src in *.orig | *.pimax-orig) continue ;; esac
 		v=${src##*/nvidia-}
-		mapfile -t origs < <(find "$src" -name '*.pimax-orig' -type f 2>/dev/null)
-		if [[ ${#origs[@]} -gt 0 ]]; then
-			for o in "${origs[@]}"; do act "restore ${o%.pimax-orig} (stock)" -- mv -f -- "$o" "${o%.pimax-orig}"; done
+		local rs_rc=0
+		restore_stock_source "$src" || rs_rc=$?
+		if [[ $RS_CHANGED == 1 ]]; then
 			act "dkms build + install nvidia/$v for $(uname -r) (stock module)" -- sh -c "dkms build nvidia/$v -k $(uname -r) --force && dkms install nvidia/$v -k $(uname -r) --force"
 			restored=1
+		fi
+		if [[ $rs_rc != 0 ]]; then
+			NVIDIA_LEFTOVER+=("$src")
+			echo "NVIDIA_STOCK=leftover:$src"
+			continue # keep the pristine copy: it is the only reference left
 		fi
 		if [[ -d $src.orig ]]; then
 			# a pristine copy made by hand before the hooks existed: removed only when it equals the restored source
@@ -335,10 +476,17 @@ do_uninstall() {
 		info "packages installed by omarchyvr stay (other software may use them): $(awk -F'\t' '$1 == "pkg" { printf "%s ", $2 }' "$STATE/manifest.tsv")"
 	fi
 	[[ -d $STATE ]] && act "remove $STATE (manifest and saved originals, after restoring them)" -- rm -r -- "$STATE"
+	if [[ ${#NVIDIA_LEFTOVER[@]} -gt 0 ]]; then
+		echo "WARNING: patch code is STILL in the NVIDIA source: ${NVIDIA_LEFTOVER[*]} (see the message above). The next driver build would be patched."
+	fi
 	echo "REBOOT=$([[ $REBOOT == 1 ]] && echo yes || echo no)"
 }
 
 case $MODE in
 plan | apply) do_apply ;;
 uninstall-plan | uninstall) do_uninstall ;;
+restore-stock)
+	[[ -d ${2:-} ]] || { echo "restore-stock: ${2:-} is not a directory" >&2; exit 2; }
+	restore_stock_source "$2" "${3:-}"
+	;;
 esac

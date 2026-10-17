@@ -12,6 +12,13 @@
 # All patches are first applied to a scratch copy of the files they touch; the real tree is changed only if every
 # patch applied (or was already in), so a conflict never leaves a half-patched tree.
 #
+# Untested drivers: only the versions in tested-versions.txt (next to this script) are patched. Any other driver is left
+# alone (the stock module is built, the desktop keeps working) unless the user opted in: --allow-untested, or
+# allow_untested=1 in /etc/omarchyvr/nvidia.conf (the app's switch "Allow the patch on untested NVIDIA drivers"; the
+# system setup job writes the file). Opted in: a loud WARNING, patches applied with --fuzz=0 and, if that fails, --fuzz=2
+# (said so); merged_head_sync is still required; --fallback still ends with a working stock module. Every run that
+# patches or refuses writes /var/lib/omarchyvr/nvidia-patch-status (driver, result, fuzz) for the app.
+#
 # Usage: nvidia-patch-reapply.sh [--check] [--hook] [--rebuild] [--verify] [--version V] [--src-root DIR] [--patch FILE]...
 #   --check       change nothing; exit 0 if all trees are patched, 2 if a tree needs a patch, 1 on conflict/errors
 #   --hook        pacman hook mode: loud banner and a syslog line whenever the module would be built unpatched (exit 1)
@@ -26,15 +33,21 @@
 #   --force-build with --rebuild: build even when every patch was already in (the module lacked the fix)
 #   --verify      only check the BUILT module: modinfo of nvidia-modeset must list the merged_head_sync parameter
 #                 (exit 1 and a banner if not). Run after the dkms build (the 75 pacman hook does this).
+#   --allow-untested  patch a driver that is not in tested-versions.txt (also allow_untested=1 in the conf file)
 #   --version V   only /usr/src/nvidia-V (default: every /usr/src/nvidia-<digits> tree)
 #   --src-root D  directory holding the nvidia-<ver> trees (default /usr/src, or $NVIDIA_SRC_ROOT)
 #   --patch FILE  patch to use, repeatable, applied in the order given (default: the three above, next to this script)
+# Environment (tests): NVIDIA_PATCH_TESTED (tested list), NVIDIA_PATCH_CONF (conf file), NVIDIA_PATCH_STATUS (status file).
 # Exit codes: 0 ok (already patched or patched now), 1 error or conflict, 2 --check found an unpatched tree.
 set -euo pipefail
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 SRC_ROOT=${NVIDIA_SRC_ROOT:-/usr/src}
 PATCH_FILES=()
+TESTED_FILE=${NVIDIA_PATCH_TESTED:-$HERE/tested-versions.txt}
+CONF_FILE=${NVIDIA_PATCH_CONF:-/etc/omarchyvr/nvidia.conf}
+STATUS_FILE=${NVIDIA_PATCH_STATUS:-/var/lib/omarchyvr/nvidia-patch-status}
+ALLOW_UNTESTED=0 FUZZ=0
 CHECK=0 HOOK=0 REBUILD=0 VERIFY=0 FALLBACK=0 FORCE_BUILD=0 ONLY_VERSION=""
 VIEWPORT_TARGET=src/nvidia-modeset/src/nvkms-evo.c
 FLIP_MARKER_FILE=kernel-open/nvidia-modeset/nvidia-modeset-linux.c # carries the merged_head_sync parameter
@@ -52,6 +65,7 @@ while [ $# -gt 0 ]; do
 	--rebuild) REBUILD=1 ;;
 	--verify) VERIFY=1 ;;
 	--fallback) FALLBACK=1 ;;
+	--allow-untested) ALLOW_UNTESTED=1 ;;
 	--force-build) FORCE_BUILD=1 ;;
 	--version) ONLY_VERSION=${2:?--version needs a value}; shift ;;
 	--src-root) SRC_ROOT=${2:?--src-root needs a value}; shift ;;
@@ -64,6 +78,34 @@ done
 if [ ${#PATCH_FILES[@]} -eq 0 ]; then
 	PATCH_FILES=("$HERE/nvidia-2h1or-viewport.patch" "$HERE/nvidia-2h1or-flip-fix.patch" "$HERE/nvidia-evo-makeroom-bounded-wait.patch")
 fi
+
+# the opt-in saved by the app (parsed, never sourced)
+if [ "$ALLOW_UNTESTED" = 0 ] && [ -r "$CONF_FILE" ] && grep -Eqi '^[[:space:]]*allow_untested[[:space:]]*=[[:space:]]*("?)(1|yes|true|on)\1[[:space:]]*$' "$CONF_FILE"; then
+	ALLOW_UNTESTED=1
+fi
+
+# is_tested VERSION: listed in tested-versions.txt (built-in default when the file is missing)
+is_tested() {
+	if [ -r "$TESTED_FILE" ]; then
+		sed 's/#.*//; s/[[:space:]]//g' "$TESTED_FILE" | grep -Fxq -- "$1"
+	else
+		[ "$1" = 610.57.04 ]
+	fi
+}
+
+# write_status VERSION RESULT FUZZ: what the app shows (tested | untested-allowed | untested-refused | failed)
+write_status() {
+	[ "$CHECK" = 1 ] && return 0
+	local old_fuzz=""
+	if [ "$3" = - ] && [ -r "$STATUS_FILE" ] && grep -qx "driver=$1" "$STATUS_FILE"; then
+		old_fuzz=$(sed -n 's/^fuzz=//p' "$STATUS_FILE" | head -n1) # nothing applied this run: keep what the last patch run used
+	fi
+	{
+		mkdir -p "$(dirname "$STATUS_FILE")" &&
+			printf 'driver=%s\nresult=%s\nfuzz=%s\ntime=%s\n' "$1" "$2" "${old_fuzz:-$3}" "$(date -u +%FT%TZ)" >"$STATUS_FILE.new" &&
+			mv -f "$STATUS_FILE.new" "$STATUS_FILE" && chmod 644 "$STATUS_FILE"
+	} 2>/dev/null || true
+}
 
 say() { echo "==> nvidia-patch-reapply: $*"; }
 
@@ -81,6 +123,32 @@ banner() { # banner WHAT REASON
 	if [ "$HOOK" = 1 ] && [ -z "${NVIDIA_PATCH_NO_SYSLOG:-}" ] && command -v logger >/dev/null 2>&1; then
 		logger -t pimax-nvidia-patch -p user.err "$1 ($2)" || true
 	fi
+}
+
+tested_list() { if [ -r "$TESTED_FILE" ]; then sed 's/#.*//; s/[[:space:]]//g; /^$/d' "$TESTED_FILE" | paste -sd' '; else echo 610.57.04; fi; }
+# untested driver, no opt-in: nothing is patched, the stock module is built, pacman is not blocked
+refuse_untested() { # refuse_untested DIR VERSION
+	{
+		echo "################################################################################"
+		echo "# PIMAX: NVIDIA driver $2 is not tested with the omarchyvr NVIDIA patches."
+		echo "# The patches were NOT applied; the stock nvidia module is built and the desktop works."
+		echo "# The Dream Air headset needs the patches: turn on 'Allow the patch on untested NVIDIA drivers'"
+		echo "# in the omarchyvr app (Onboarding > System setup), then press Apply. Tested: $(tested_list)."
+		echo "################################################################################"
+	} >&2
+	if [ "$HOOK" = 1 ] && [ -z "${NVIDIA_PATCH_NO_SYSLOG:-}" ] && command -v logger >/dev/null 2>&1; then
+		logger -t pimax-nvidia-patch -p user.warning "NVIDIA driver $2 is not tested; patches not applied (allow it in the omarchyvr app)" || true
+	fi
+}
+warn_untested() { # warn_untested DIR VERSION
+	{
+		echo "################################################################################"
+		echo "# PIMAX WARNING: NVIDIA driver $2 is NOT tested with the omarchyvr NVIDIA patches."
+		echo "# You allowed patching untested drivers, so they are applied anyway. The patched module may fail to"
+		echo "# build, or the headset picture may break. If the build fails, the stock module is installed instead"
+		echo "# (--fallback) and the desktop keeps working."
+		echo "################################################################################"
+	} >&2
 }
 
 # --verify: the built module must carry the flip-fix parameter
@@ -114,6 +182,7 @@ restore_stock() {
 		return 1
 	}
 	if command -v "$LIMINE_MKINITCPIO" >/dev/null 2>&1; then "$LIMINE_MKINITCPIO"; else "$MKINITCPIO" -P; fi
+	write_status "$ver" failed "$FUZZ"
 	banner "the patched nvidia module failed to build: the STOCK module is installed instead" "the desktop works; the headset needs the patches (see the pacman log)"
 }
 module_installed() { "$DKMS" status "nvidia/$1" -k "$(uname -r)" 2>/dev/null | grep -q 'installed'; }
@@ -129,6 +198,10 @@ if [ "$VERIFY" = 1 ]; then
 				exit 1
 			fi
 		done
+	fi
+	if [ -r "$STATUS_FILE" ] && grep -qx 'result=untested-refused' "$STATUS_FILE"; then
+		say "verify: NVIDIA driver $(sed -n 's/^driver=//p' "$STATUS_FILE") is untested and was not patched (not allowed in the app); nothing to verify"
+		exit 0
 	fi
 	verify_module
 	exit $?
@@ -154,8 +227,8 @@ patch_files_of() { sed -n 's|^+++ b/||p' "$1" | sed 's/\t.*//'; }
 SCRATCH=$(mktemp -d "${TMPDIR:-/tmp}/nvpatch-scratch.XXXXXX")
 trap 'rm -rf "$SCRATCH"' EXIT
 
-pdry() { patch -p1 --dry-run --fuzz=0 -s -d "$1" -i "$2" >/dev/null 2>&1; }       # forward applies cleanly?
-pdry_r() { patch -R -p1 --dry-run --fuzz=0 -s -d "$1" -i "$2" >/dev/null 2>&1; }  # already in?
+pdry() { patch -p1 --dry-run --fuzz=$FUZZ --no-backup-if-mismatch -s -d "$1" -i "$2" >/dev/null 2>&1; }       # forward applies cleanly?
+pdry_r() { patch -R -p1 --dry-run --fuzz=$FUZZ --no-backup-if-mismatch -s -d "$1" -i "$2" >/dev/null 2>&1; }  # already in?
 
 # Plan the tree in a scratch copy. Sets PLAN_STATE[i] (patched|apply|fixed-upstream), PLAN_FILES (files to copy over),
 # PLAN_ERR (reason, when it returns 1). Returns 0 ok, 1 conflict, 2 not a tree we can handle (missing target).
@@ -178,14 +251,14 @@ plan_tree() {
 	# peel the trailing patches that are already in (a later patch may touch the same lines as an earlier one)
 	k=$n
 	while [ $k -gt 0 ] && pdry_r "$s" "${PATCH_FILES[$((k - 1))]}"; do
-		patch -R -p1 --fuzz=0 -s -d "$s" -i "${PATCH_FILES[$((k - 1))]}" >/dev/null
+		patch -R -p1 --fuzz=$FUZZ --no-backup-if-mismatch -s -d "$s" -i "${PATCH_FILES[$((k - 1))]}" >/dev/null
 		k=$((k - 1))
 	done
 	for ((i = k; i < n; i++)); do PLAN_STATE[$i]=patched; done
 	for ((i = 0; i < k; i++)); do
 		p=${PATCH_FILES[$i]}
 		if pdry "$s" "$p"; then
-			patch -p1 --fuzz=0 -s -d "$s" -i "$p" >/dev/null
+			patch -p1 --fuzz=$FUZZ --no-backup-if-mismatch -s -d "$s" -i "$p" >/dev/null
 			PLAN_STATE[$i]=apply
 		elif pdry_r "$s" "$p"; then
 			PLAN_STATE[$i]=patched
@@ -200,7 +273,7 @@ plan_tree() {
 	done
 	# re-apply the peeled patches on top (they were in before, so this works unless an earlier patch was missing)
 	for ((i = k; i < n; i++)); do
-		if ! patch -p1 --fuzz=0 -s -d "$s" -i "${PATCH_FILES[$i]}" >/dev/null 2>&1; then
+		if ! patch -p1 --fuzz=$FUZZ --no-backup-if-mismatch -s -d "$s" -i "${PATCH_FILES[$i]}" >/dev/null 2>&1; then
 			PLAN_ERR="${PATCH_FILES[$i]##*/} was in, but no longer fits on top of the patches before it"
 			return 1
 		fi
@@ -235,8 +308,34 @@ fi
 rc=0
 patched_now=()
 for d in "${trees[@]}"; do
+	ver=${d##*/nvidia-}
+	UNTESTED=0 FUZZ=0
+	if ! is_tested "$ver"; then
+		UNTESTED=1
+		if [ "$ALLOW_UNTESTED" = 0 ]; then
+			if [ -f "$d/$VIEWPORT_TARGET" ] || [ -f "$d/dkms.conf" ]; then
+				refuse_untested "$d" "$ver"
+				write_status "$ver" untested-refused -
+			else
+				say "$d: $VIEWPORT_TARGET not found, skipped"
+			fi
+			continue
+		fi
+		warn_untested "$d" "$ver"
+	fi
+	okres=tested
+	[ $UNTESTED = 1 ] && okres=untested-allowed
 	plan_rc=0
 	plan_tree "$d" || plan_rc=$?
+	if [ $plan_rc = 1 ] && [ $UNTESTED = 1 ]; then
+		say "$d: the patches do not apply with --fuzz=0 ($PLAN_ERR); trying --fuzz=2 (untested driver)"
+		FUZZ=2
+		plan_rc=0
+		plan_tree "$d" || plan_rc=$?
+		if [ $plan_rc = 0 ]; then
+			echo "==> nvidia-patch-reapply: WARNING: $d: the patches apply only with --fuzz=2 (some context lines differ). Check the headset picture after the build." >&2
+		fi
+	fi
 	if [ $plan_rc = 2 ]; then
 		if [ "$HOOK" = 1 ] && [ -f "$d/dkms.conf" ]; then
 			# a real dkms tree whose layout changed: dkms would build it unpatched
@@ -247,7 +346,8 @@ for d in "${trees[@]}"; do
 		fi
 		continue
 	elif [ $plan_rc = 1 ]; then
-		banner "the Pimax NVIDIA patches could NOT be applied to $d" "$PLAN_ERR"
+		banner "the Pimax NVIDIA patches could NOT be applied to $d" "$PLAN_ERR$([ $FUZZ = 2 ] && echo '; also tried --fuzz=2')"
+		write_status "$ver" failed "$FUZZ"
 		rc=1
 		continue
 	fi
@@ -262,10 +362,11 @@ for d in "${trees[@]}"; do
 	done
 	if [ ${#todo[@]} -eq 0 ]; then
 		say "$d: already patched"
+		write_status "$ver" "$okres" -
 		continue
 	fi
 	if [ "$CHECK" = 1 ]; then
-		say "$d: NOT patched, needs: ${todo[*]} (they apply cleanly)"
+		say "$d: NOT patched, needs: ${todo[*]} (they apply $([ $FUZZ = 2 ] && echo 'only with --fuzz=2' || echo cleanly))"
 		[ $rc -ne 1 ] && rc=2
 		continue
 	fi
@@ -291,17 +392,20 @@ for d in "${trees[@]}"; do
 	fi
 	if [ $again = 1 ]; then
 		banner "the Pimax NVIDIA patches could NOT be applied to $d" "the files do not look patched after copying the result"
+		write_status "$ver" failed "$FUZZ"
 		rc=1
 		continue
 	fi
 	for p in "${PATCH_FILES[@]}"; do
 		if [ "${p##*/}" = nvidia-2h1or-flip-fix.patch ] && ! grep -q merged_head_sync "$d/$FLIP_MARKER_FILE" 2>/dev/null; then
 			banner "the Pimax NVIDIA patches could NOT be applied to $d" "merged_head_sync is missing from $FLIP_MARKER_FILE after patching"
+			write_status "$ver" failed "$FUZZ"
 			rc=1
 			continue 2
 		fi
 	done
-	say "$d: patched ${todo[*]} (originals kept as <file>$BACKUP_SUFFIX)"
+	say "$d: patched ${todo[*]} (originals kept as <file>$BACKUP_SUFFIX)$([ $FUZZ = 2 ] && echo ' with --fuzz=2')"
+	write_status "$ver" "$okres" "$FUZZ"
 	patched_now+=("$d")
 done
 
@@ -317,6 +421,7 @@ if [ "$REBUILD" = 1 ] && [ "${#patched_now[@]}" -gt 0 ] && [ "$CHECK" = 0 ]; the
 				restore_stock "$d" || true
 				exit 1
 			fi
+			write_status "$ver" failed "$FUZZ"
 			banner "dkms could not build the patched nvidia module" "see the dkms output above"
 			exit 1
 		fi

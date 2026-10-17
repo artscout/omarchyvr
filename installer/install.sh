@@ -21,6 +21,8 @@
 #   --dry-run-root      print exactly what the root job would do, change nothing as root
 #   --nvidia auto|yes|no  patch the NVIDIA driver: auto = only on a tested version with a supported headset plugged
 #                       in (default); yes = also without the headset (opt-in); no = never
+#   --nvidia-allow-untested  also patch an NVIDIA driver version that is not in patches/nvidia/tested-versions.txt
+#                       (the app's switch "Allow the patch on untested NVIDIA drivers"; off by default)
 #   --lab-data DIR      private lab data (the eye cold-start list) to link before the build (default: found
 #                       automatically in .claude/lab/repo of this repo or ~/omarchyvr)
 #   --gpu-speech        also build whisper.cpp with Vulkan (for the 'Speech on graphics card' switch; off by default)
@@ -38,8 +40,12 @@ REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 . "$REPO/installer/lib.sh"
 # shellcheck source=components.lock
 . "$REPO/installer/components.lock"
+# the tested NVIDIA driver versions live in one place: patches/nvidia/tested-versions.txt (the patch script reads it too)
+if [[ -r $REPO/patches/nvidia/tested-versions.txt ]]; then
+	NVIDIA_TESTED_VERSIONS=$(sed 's/#.*//' "$REPO/patches/nvidia/tested-versions.txt" | tr -s ' \t\n' ' ' | sed 's/^ //; s/ $//')
+fi
 
-PREFIX="$HOME/.local" NO_ROOT=0 DRY_ROOT=0 NVIDIA_MODE=auto LAB_DATA="" GPU_SPEECH=0 HAND_MODELS=0 NO_AI=0
+PREFIX="$HOME/.local" NO_ROOT=0 DRY_ROOT=0 NVIDIA_MODE=auto LAB_DATA="" GPU_SPEECH=0 HAND_MODELS=0 NO_AI=0 NV_ALLOW_UNTESTED=no
 NO_DL=0 INSTALL_PKGS=0 OPEN_APP=1 JOBS=8 DRY=0
 while [[ $# -gt 0 ]]; do
 	case $1 in
@@ -47,6 +53,7 @@ while [[ $# -gt 0 ]]; do
 	--no-root) NO_ROOT=1 ;;
 	--dry-run-root) DRY_ROOT=1 ;;
 	--nvidia) NVIDIA_MODE=${2:?}; shift ;;
+	--nvidia-allow-untested) NV_ALLOW_UNTESTED=yes ;;
 	--lab-data) LAB_DATA=$(realpath -m "${2:?}"); shift ;;
 	--gpu-speech) GPU_SPEECH=1 ;;
 	--hand-models) HAND_MODELS=1 ;;
@@ -55,7 +62,7 @@ while [[ $# -gt 0 ]]; do
 	--install-packages) INSTALL_PKGS=1 ;;
 	--no-app) OPEN_APP=0 ;;
 	-j) JOBS=${2:?}; shift ;;
-	-h | --help) sed -n '3,36p' "$0"; exit 0 ;;
+	-h | --help) sed -n '3,38p' "$0"; exit 0 ;;
 	*) die "unknown option $1 (see --help)" ;;
 	esac
 	shift
@@ -119,10 +126,13 @@ if [[ " $GPUS " == *" nvidia "* ]]; then
 		NV_WHY="NVIDIA GPU without the $NVIDIA_PACKAGE package (the proprietary or another flavour): no patches. The headset needs the open modules."
 	elif ! nvidia_is_open; then
 		NV_WHY="the loaded NVIDIA module is not the open flavour: no patches"
-	elif [[ " $NVIDIA_TESTED_VERSIONS " != *" $NV_VER "* ]]; then
-		NV_WHY="NVIDIA $NV_VER is not a tested version ($NVIDIA_TESTED_VERSIONS): no patches. Please send a report from the app (Help > Report a problem) so support can be added."
 	elif [[ $NVIDIA_MODE == no ]]; then
 		NV_WHY="NVIDIA patches turned off (--nvidia no)"
+	elif [[ " $NVIDIA_TESTED_VERSIONS " != *" $NV_VER "* ]]; then
+		# not tested: the root job installs the hooks and the choice, but patches only if the user allows it
+		# (app: Onboarding > System setup > "Allow the patch on untested NVIDIA drivers")
+		NV_PLAN=patch
+		NV_WHY="NVIDIA $NV_VER is NOT a tested version ($NVIDIA_TESTED_VERSIONS): the patch is applied only if you allow it in the app (off by default). Please send a report from the app (Help > Report a problem) so support can be added."
 	else
 		NV_PLAN=patch
 		NV_WHY="NVIDIA $NV_VER open modules: tested"
@@ -472,6 +482,7 @@ PLAN="$SHARE/root-plan.env"
 	echo "OVR_NVIDIA=$NV_PLAN"
 	echo "OVR_NVIDIA_VERSION=$NV_VER"
 	echo "OVR_NVIDIA_TESTED=$NVIDIA_TESTED_VERSIONS"
+	echo "OVR_NVIDIA_ALLOW_UNTESTED=$NV_ALLOW_UNTESTED"
 	echo "OVR_EDID=$EDID_KEY"
 	echo "OVR_STEAMVR_LAUNCHER=$STEAMVR_LAUNCHER"
 	echo "OVR_SNAPSHOT=yes"

@@ -53,6 +53,7 @@ pub mod machine;
 pub mod manual;
 pub mod monitor;
 pub mod monlog;
+pub mod nvidia_patch;
 pub mod onboarding;
 pub mod ipdmotor;
 pub mod orphans;

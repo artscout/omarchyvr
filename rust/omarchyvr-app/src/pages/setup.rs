@@ -114,7 +114,48 @@ pub fn show(ui: &mut Ui, app: &mut PimaxApp) {
         SetupTab::Install => install(ui, app),
         SetupTab::Autofix => autofix::show(ui, app),
     }
+    nvidia_card(ui, app);
     uninstall(ui, app);
+}
+
+/// The NVIDIA driver patch: the installed driver and whether it is tested, what the patch did, and the switch
+/// "Allow the patch on untested NVIDIA drivers" (off by default) with its warning. Shown when the setup plan names an
+/// NVIDIA driver; the switch is saved at once, the system copy changes when the setup runs (Apply: one password).
+pub fn nvidia_card(ui: &mut Ui, app: &mut PimaxApp) {
+    let info = app.core.onboarding.install.nvidia.clone();
+    if !info.present() {
+        return;
+    }
+    let root_done = app.core.onboarding.install.root_done;
+    let busy = app.core.busy();
+    let mut sw = app.core.state.nvidia_untested;
+    widgets::section(
+        ui,
+        "NVIDIA driver patch",
+        Some("The Dream Air needs three small fixes in the NVIDIA open kernel module (docs/NVIDIA-UNTESTED.md). They are applied to tested driver versions, and again after every driver update."),
+        |ui| {
+            for (lvl, text) in info.lines(sw, root_done) {
+                ui.horizontal_wrapped(|ui| {
+                    level_chip(ui, lvl);
+                    ui.label(text);
+                });
+            }
+            ui.add_space(4.0);
+            if widgets::switch_row(ui, &mut sw, omarchyvr_gui_core::nvidia_patch::SWITCH_LABEL, None, !busy).changed() {
+                app.core.set_nvidia_untested(sw);
+            }
+            ui.label(RichText::new(omarchyvr_gui_core::nvidia_patch::WARNING).small().color(pal(ui).warn));
+            if info.needs_apply(sw, root_done) {
+                ui.add_space(4.0);
+                ui.horizontal_wrapped(|ui| {
+                    chip(ui, "root", pal(ui).warn);
+                    if widgets::primary(ui, "Apply (one password)...", !busy).on_hover_text("Shows the exact list first; polkit asks for your password").clicked() {
+                        app.core.ask_system_setup();
+                    }
+                });
+            }
+        },
+    );
 }
 
 /// Uninstall omarchyvr: the root part first (one password, its list shown first), then the user files; the app closes.
