@@ -30,10 +30,10 @@ ca_b = 0.995
 [left]
 # Optical centre offset from the panel centre, in half-display-heights: x y (+x right, +y up).
 # The left eye's nose is on its right, so the centre is shifted toward +x.
-center = 0.1060 0.0090
+center = 0.0271 0.0090
 
 [right]
-center = -0.1060 0.0090
+center = -0.0271 0.0090
 
 # ---------------------------------------------------------------------------------------------------------------
 # Optional extensions (the lines above are the whole old format; nothing below is active until you uncomment it, and

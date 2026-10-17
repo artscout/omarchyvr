@@ -308,6 +308,11 @@ pub(crate) fn flock_file(dir: &Path, name: &str, blocking: bool) -> Result<File,
     } else {
         libc::LOCK_EX | libc::LOCK_NB
     };
+    // A flock belongs to the open file description, which every process forked by this process (any thread, e.g.
+    // a notify-send being spawned) holds until it execs: a lock that was just released can look busy for a few
+    // microseconds. A non-blocking attempt therefore retries for a moment before it reports `Busy`; a real holder
+    // (another `vr start`) is still refused, 100 ms later.
+    let give_up = std::time::Instant::now() + Duration::from_millis(100);
     loop {
         // SAFETY: flock(2) on a descriptor that stays open for the lifetime of `file`.
         if unsafe { libc::flock(file.as_raw_fd(), how) } == 0 {
@@ -316,6 +321,9 @@ pub(crate) fn flock_file(dir: &Path, name: &str, blocking: bool) -> Result<File,
         let e = io::Error::last_os_error();
         match e.raw_os_error() {
             Some(libc::EINTR) => continue,
+            Some(libc::EWOULDBLOCK) if std::time::Instant::now() < give_up => {
+                std::thread::sleep(Duration::from_millis(2));
+            }
             Some(libc::EWOULDBLOCK) => return Err(LockError::Busy),
             _ => {
                 return Err(LockError::Failed(format!(

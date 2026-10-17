@@ -68,16 +68,30 @@ fn models_equal(c: &COldLens, r: &Lens, pts: &[(f32, f32)]) -> Result<(), String
     Ok(())
 }
 
+/// The frozen C reference still looks in `<config home>/pimax/lens.conf`; the product was renamed and the Rust loader
+/// (like the installed layout) uses `<config home>/omarchyvr/lens.conf`. That one directory name is the only
+/// deliberate difference in the default path, so it is mapped on the C side before comparing.
+fn c_log(c: &COldLens) -> Vec<LogLine> {
+    c.log
+        .iter()
+        .map(|(l, t)| (*l, t.replace("/pimax/lens.conf", "/omarchyvr/lens.conf")))
+        .collect()
+}
+
 fn logs_equal(c: &COldLens, r: &Loaded) -> Result<(), String> {
+    let cl = c_log(c);
     let rl: Vec<LogLine> = r
         .messages
         .iter()
+        // the one line the Rust loader adds on purpose: `cant_deg` is a later extension the old C file never had
+        // (its value is checked in pimax-lens' own tests); everything else must be identical
+        .filter(|m| !m.text.starts_with("pimax lens: cant "))
         .map(|m| (m.level, m.text.clone()))
         .collect();
-    if c.log != rl {
+    if cl != rl {
         return Err(format!(
             "log lines differ\nC:\n{:#?}\nRust:\n{:#?}",
-            c.log, rl
+            cl, rl
         ));
     }
     Ok(())
@@ -244,7 +258,7 @@ fn config_path_resolution_matches_the_c_loader() {
         let r = load_file(ASPECT, &env, path.clone());
         logs_equal(&c, &r).unwrap_or_else(|e| panic!("{conf:?} {xdgv:?} {homev:?}: {e}"));
         assert!(
-            c.log[0].1.contains(&path.display().to_string()),
+            c_log(&c)[0].1.contains(&path.display().to_string()),
             "{:?} vs {}",
             c.log[0],
             path.display()

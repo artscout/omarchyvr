@@ -536,9 +536,20 @@ mod tests {
         let bin = d.join("slow-notify-send");
         fs::write(&bin, "#!/bin/sh\nsleep 60\n").unwrap();
         fs::set_permissions(&bin, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
-        let t = Instant::now();
-        NotifySend::with_program(true, bin.to_str().unwrap()).notify(false, "summary", "body");
-        let took = t.elapsed();
+        // Spawning a script that was written a moment ago can fail with ETXTBSY ("text file busy") when another
+        // test thread forks while our write descriptor is still open; that returns at once, so try again.
+        let (mut t, mut took);
+        let mut tries = 0;
+        loop {
+            t = Instant::now();
+            NotifySend::with_program(true, bin.to_str().unwrap()).notify(false, "summary", "body");
+            took = t.elapsed();
+            tries += 1;
+            if took >= NOTIFY_TIMEOUT || tries >= 5 {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
         assert!(
             took >= NOTIFY_TIMEOUT && took < NOTIFY_TIMEOUT + Duration::from_secs(2),
             "{took:?}"

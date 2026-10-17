@@ -60,6 +60,13 @@ fn a_crashed_leaf_is_respawned_from_its_captured_argv() {
         put(&r.session_dir, file, &format!("{}\n", c.id()));
         children.push((name, c));
     }
+    // the keepalive (`omarchyvr keepalived`) is a hard dependency of monado: the probe reads the real /proc, so the test
+    // must run its own stand-in instead of relying on a live keepalive of the machine it runs on
+    let ka = bin.join("omarchyvr");
+    std::os::unix::fs::symlink("/usr/bin/tail", &ka).unwrap();
+    put(base, "keepalived", "");
+    let mut ka_child = Command::new(&ka).current_dir(base).args(["keepalived", "-f"]).spawn().unwrap();
+    kids.0.push(ka_child.id());
     let mut w = World::new(Default::default(), Default::default(), Switches { enabled: true, ..Default::default() }, Gate::new("t"), Default::default());
     w.desired.sixdof = true;
     let mut sup = Supervisor::new(w);
@@ -116,6 +123,8 @@ fn a_crashed_leaf_is_respawned_from_its_captured_argv() {
     assert_eq!(sup.w.c("perf").up, Some(true));
     assert_eq!(sup.w.c("perf").restart.spent.len(), 1, "one restart spent");
     assert_eq!(sup.w.overall(&sup.w.health()).name(), "ok", "{:?}", sup.w.health());
+    let _ = ka_child.kill();
+    let _ = ka_child.wait();
     for (_, mut c) in children {
         let _ = c.kill();
         let _ = c.wait();

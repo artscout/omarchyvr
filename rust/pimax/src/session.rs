@@ -638,12 +638,20 @@ fn thread_main(
 }
 
 fn set_state(sh: &Shared, h: &mut dyn Handler, s: State) {
-    {
+    let publish = |sh: &Shared| {
         let _g = sh.lock();
         sh.connected.store(s == State::Connected, Relaxed);
         sh.cv.notify_all();
+    };
+    if s == State::Connected {
+        // Handler first: when `wait_connected` returns (or `is_connected` reads true) the application has already
+        // been told `on_state(Connected)`, so it never reads a stale state right after waiting.
+        h.on_state(s);
+        publish(sh);
+    } else {
+        publish(sh);
+        h.on_state(s);
     }
-    h.on_state(s);
 }
 
 const STALE_AFTER: Duration = Duration::from_millis(1500);
