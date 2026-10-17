@@ -15,7 +15,7 @@ mod tracker;
 use track::track;
 
 fn usage() -> ! {
-    eprintln!("usage: pimax-ctrltrack scan FILE.pxcam [--every N]\n       pimax-ctrltrack dump FILE.pxcam FRAME OUT.png   (LED frame mosaic, blobs marked red)\n       pimax-ctrltrack track FILE.pxcam [--start N] [--count N] [--every N] [--calib XML] [--left JSON] [--right JSON] [--csv OUT] [--no-prior] [--overlay DIR [--overlay-every N]] [--fit-extrinsics [--save-extrinsics P]] [--extrinsics P | --factory]\n       pimax-ctrltrack live [--source broker|FILE] [--out POSEFILE] [--seconds N] [--aim-pitch-deg D] [--extrinsics P | --factory] [--baseline] [--no-body] [--thr T] [--peak P]\n       pimax-ctrltrack lockrate FILE.pxcam [--baseline] [--oracle] [--start N] [--count N] [--csv OUT] [--few N] [--wide PX] [--no-predict] [--rot-w W] [--thr T] [--peak P]   (offline lock-rate replay through the live tracker)\n       pimax-ctrltrack show [--out POSEFILE] [--seconds N]\n       pimax-ctrltrack health [--out POSEFILE] [--max-age S]   (heartbeat as JSON; exit 0 fresh, 1 no file / no heartbeat, 2 stale or source down)\n       pimax-ctrltrack imufit LOG.csv... [--pool] [--save [PATH]]   (controller gyro calibration from a PIMAX_CTRL_IMU_LOG log; --save writes ~/.config/omarchyvr/ctrl-imu.json)\n       pimax-ctrltrack fusereplay IN.csv OUT.csv [--no-filter] [--no-still-lock]   (replay a log through the fuser, A/B)\n       pimax-ctrltrack occlusion LOG.csv... [--gaps 0.5,1,2] [--fit-forearm]   (masked replay: hide visible fixes, score the out-of-view pose)");
+    eprintln!("usage: pimax-ctrltrack scan FILE.pxcam [--every N]\n       pimax-ctrltrack dump FILE.pxcam FRAME OUT.png   (LED frame mosaic, blobs marked red)\n       pimax-ctrltrack track FILE.pxcam [--start N] [--count N] [--every N] [--calib XML] [--left JSON] [--right JSON] [--csv OUT] [--no-prior] [--overlay DIR [--overlay-every N]] [--fit-extrinsics [--save-extrinsics P]] [--extrinsics P | --factory]\n       pimax-ctrltrack live [--source broker|FILE] [--out POSEFILE] [--seconds N] [--aim-pitch-deg D] [--extrinsics P | --factory] [--baseline] [--no-body] [--thr T] [--peak P]\n       pimax-ctrltrack lockrate FILE.pxcam [--baseline] [--oracle] [--start N] [--count N] [--csv OUT] [--few N] [--wide PX] [--no-predict] [--rot-w W] [--thr T] [--peak P]   (offline lock-rate replay through the live tracker)\n       pimax-ctrltrack show [--out POSEFILE] [--seconds N]\n       pimax-ctrltrack health [--out POSEFILE] [--max-age S]   (heartbeat as JSON; exit 0 fresh, 1 no file / no heartbeat, 2 stale or source down)\n       pimax-ctrltrack imufit LOG.csv... [--pool] [--save [PATH]]   (controller gyro calibration from a PIMAX_CTRL_IMU_LOG log; --save writes ~/.config/omarchyvr/ctrl-imu.json)\n       pimax-ctrltrack fusereplay IN.csv OUT.csv [--no-filter] [--no-still-lock] [--legacy]   (replay a log through the fuser, A/B)\n       pimax-ctrltrack occlusion LOG.csv... [--gaps 0.5,1,2] [--fit-forearm]   (masked replay: hide visible fixes, score the out-of-view pose)");
     std::process::exit(2)
 }
 
@@ -38,19 +38,23 @@ fn main() {
         "health" => live::health(&a[2..]),
         "lockrate" => lockrate::lockrate(&a[2..]),
         "fusereplay" => {
-            // fusereplay IN.csv OUT.csv [--no-filter] [--no-still-lock]
+            // fusereplay IN.csv OUT.csv [--no-filter] [--no-still-lock] [--legacy]
             let a = &a[2..];
             if a.len() < 2 {
                 usage();
             }
             let nf = a.iter().any(|s| s == "--no-filter");
             let ns = a.iter().any(|s| s == "--no-still-lock");
+            let legacy = a.iter().any(|s| s == "--legacy");
             match pimax_ctrltrack::fusereplay::replay(
                 std::path::Path::new(&a[0]),
                 std::path::Path::new(&a[1]),
                 |c| {
                     c.filter = !nf;
                     c.still_lock = !ns;
+                    if legacy {
+                        c.set_legacy_window();
+                    }
                 },
             ) {
                 Ok((fixes, shown)) => println!(

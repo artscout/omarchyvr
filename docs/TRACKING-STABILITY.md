@@ -30,3 +30,12 @@ environment variable.
 Not done: the factory accelerometer bias and the ka/kg scale terms (units unverified). To verify them: a still
 recording with the headset in six orientations (+-x, +-y, +-z up) and check that |accel| is 9.81 after subtracting aBias
 and applying (1 - k) per axis, with both sign conventions, then A/B the still drift on the walk replay.
+
+- **Controller mode flips (Phase 1d, 2026-10-17)** (`rust/pimax-hands/src/fuse.rs`): the optical window is 220 ms (was
+  80 ms; 25 Hz fixes plus latency left the fuser in the arm-model hold between fixes), `gap_s` 220 ms so the filter
+  survives short misses (its velocity fades after 100 ms), a fix after a real hold must be confirmed by a second
+  one within 150 ms and 10 cm (`confirm`, one frame of delay on re-entry only), and the fix weight falls
+  continuously with the residual (1 up to 1.5 px, squared above, floor 0.3) with a lower gain for 4 LEDs or fewer.
+  Replay of the 2026-10-17 16:24 logs: flips 77 and 79 per min -> 8 and 12 (what remains are real occlusions
+  longer than 220 ms), still step p95 1.0 mm (unchanged), fast moves in continuous tracking differ by under 7 mm
+  (under 6 ms) from the old fuser. Kill switch: `PIMAX_CTRL_TRACK_HYST=0` (`fusereplay ... --legacy` in replays).

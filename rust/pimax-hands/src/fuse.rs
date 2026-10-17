@@ -671,17 +671,26 @@ pub struct Config {
     /// Out of view, how much of the head's yaw / position change the held controller follows (1 = all).
     pub follow_yaw: f64,
     pub follow_pos: f64,
+    /// Tracking-stability retune (2026-10-17, Phase 1d): the window / gap / re-entry confirmation / residual
+    /// weighting below. false = the old behaviour (80 ms window, no confirmation, step weighting).
+    /// Kill switch: PIMAX_CTRL_TRACK_HYST=0.
+    pub hyst: bool,
+    /// Leaving the arm-model hold needs this many consecutive plausible fixes (1 = the first one).
+    pub confirm_n: u32,
+    /// ... each within this long (s) and `confirm_m` metres of the previous one.
+    pub confirm_s: f64,
+    pub confirm_m: f64,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Config {
-            extrap_s: 0.08,
+            extrap_s: 0.22,
             extrap_tau: 0.06,
             max_vel: 1.5,
             lost_s: 4.0,
             blend_s: 0.15,
-            gap_s: 0.1,
+            gap_s: 0.22,
             max_jump_deg: 35.0,
             max_jump_m: 0.15,
             use_imu: None,
@@ -701,6 +710,10 @@ impl Default for Config {
             blend_ease: false,
             follow_yaw: 0.5,
             follow_pos: 1.0,
+            hyst: true,
+            confirm_n: 2,
+            confirm_s: 0.15,
+            confirm_m: 0.1,
         }
     }
 }
@@ -712,9 +725,24 @@ impl Config {
     /// Defaults plus the environment: PIMAX_CTRL_TRACK_IMU (0/1), PIMAX_CTRL_TRACK_LOST_S, PIMAX_CTRL_TRACK_EXTRAP_MS,
     /// PIMAX_CTRL_TRACK_BLEND_MS, PIMAX_CTRL_IMU_FIT (0 = no online fit), PIMAX_CTRL_TRACK_FOREARM (0 = off, or
     /// x,y,z m), PIMAX_CTRL_TRACK_FOLLOW_YAW (0..1, 1 = the old full head-yaw hold), PIMAX_CTRL_TRACK_BLEND_MPS
-    /// (0 = fixed-length re-acquire blend), PIMAX_CTRL_TRACK_DR_MS (accelerometer carry, 0 = off; measured worse).
+    /// (0 = fixed-length re-acquire blend), PIMAX_CTRL_TRACK_HYST (0 = the old 80 ms window), PIMAX_CTRL_TRACK_DR_MS (accelerometer carry, 0 = off; measured worse).
     pub fn from_env() -> Config {
+        Self::from_env_inner()
+    }
+
+    /// The pre-2026-10-17 optical window: 80 ms, 100 ms gap, no re-entry confirmation, step weighting.
+    pub fn set_legacy_window(&mut self) {
+        self.hyst = false;
+        self.extrap_s = 0.08;
+        self.gap_s = 0.1;
+        self.confirm_n = 1;
+    }
+
+    fn from_env_inner() -> Config {
         let mut c = Config::default();
+        if std::env::var("PIMAX_CTRL_TRACK_HYST").is_ok_and(|v| matches!(v.trim(), "0" | "off" | "false")) {
+            c.set_legacy_window();
+        }
         let num = |k: &str| {
             std::env::var(k)
                 .ok()
@@ -852,6 +880,8 @@ pub struct Fuser {
     last_query_t: u64,
     /// LED count of the fix being judged.
     last_leds: u32,
+    /// Re-entry after a hold: the first fix waiting for its confirmation (time, position, count).
+    reentry: Option<(u64, V3, u32)>,
 }
 
 struct Log {
@@ -908,6 +938,7 @@ impl Fuser {
             log: None,
             last_p_log: 0,
             last_query_t: 0,
+            reentry: None,
             last_leds: 0,
         }
     }
@@ -1246,13 +1277,18 @@ impl Fuser {
 
     /// Position gain for a fix with `leds` LEDs: few-LED solves jitter by centimetres (live: 5-6 LEDs 7-34 mm
     /// fix-to-fix at rest, 10+ LEDs 0.4-0.6 mm).
-    fn gain(leds: u32, rms_px: f32) -> f64 {
+    fn gain(leds: u32, rms_px: f32, smooth: bool) -> f64 {
         let a: f64 = match leds {
+            0..=4 if smooth => 0.12,
             0..=6 => 0.2,
             7..=9 => 0.5,
             _ => 0.85,
         };
-        if rms_px > 1.5 {
+        if smooth {
+            // residual weight: 1 up to 1.5 px, then falling with the square (2 px 0.56, 3 px 0.3 = the floor)
+            let r = f64::from(rms_px).max(1e-3);
+            a * (1.5 / r).min(1.0).powi(2).max(0.3)
+        } else if rms_px > 1.5 {
             a * 0.5
         } else {
             a
@@ -1264,11 +1300,18 @@ impl Fuser {
     fn filter_update(&mut self, f: &Fix, t: u64, w: P, leds: u32, rms_px: f32) -> P {
         let dt = (t - f.t) as f64 * 1e-9;
         let still = self.gyro_still(t) && norm(self.vel) < 0.1;
-        let mut a = Self::gain(leds, rms_px);
+        let mut a = Self::gain(leds, rms_px, self.cfg.hyst);
         if still {
             a *= 0.35; // adaptive: smooth hard at rest, follow quickly when moving (One-Euro idea)
         }
-        let pred_p = add(f.w.p, scale(self.vel, dt));
+        // across a gap longer than 100 ms the velocity fades (like the extrapolation) instead of running on
+        let dt_v = if self.cfg.hyst && dt > 0.1 {
+            let tau = self.cfg.extrap_tau;
+            0.1 + tau * (1.0 - (-(dt - 0.1) / tau).exp())
+        } else {
+            dt
+        };
+        let pred_p = add(f.w.p, scale(self.vel, dt_v));
         let dq = self.gyro_delta(f.t, t);
         let pred_q = match dq {
             Some(d) => qnorm(qmul(f.w.q, d)),
@@ -1540,6 +1583,9 @@ impl Fuser {
                 ),
             );
         }
+        if matches!(verdict, "ok" | "pos-only") && self.needs_confirm(t, &w) {
+            return "confirm";
+        }
         match verdict {
             "ok" => self.accept(t, w, head, leds, rms_px, false),
             // orientation disagrees with the gyro on a few-LED solve (often a flipped solution): keep the position,
@@ -1551,6 +1597,38 @@ impl Fuser {
             _ => {}
         }
         verdict
+    }
+
+    /// Re-entry hysteresis: after the arm-model hold (a gap longer than `gap_s`) a lone fix is not believed; the
+    /// next `confirm_n - 1` fixes must follow within `confirm_s` and `confirm_m` of each other (a single few-LED
+    /// fix would flip the mode for one frame and jump the pose). True = this fix only counts as a confirmation.
+    fn needs_confirm(&mut self, t: u64, w: &P) -> bool {
+        if self.cfg.confirm_n <= 1 {
+            return false;
+        }
+        let Some(f) = self.last else { return false };
+        let age = t.saturating_sub(f.t) as f64 * 1e-9;
+        if age <= self.cfg.gap_s || age > self.cfg.lost_s {
+            self.reentry = None;
+            return false;
+        }
+        let n = match self.reentry {
+            Some((pt, pp, n))
+                if t > pt
+                    && (t - pt) as f64 * 1e-9 <= self.cfg.confirm_s
+                    && norm(sub(w.p, pp)) <= self.cfg.confirm_m =>
+            {
+                n + 1
+            }
+            _ => 1,
+        };
+        if n >= self.cfg.confirm_n {
+            self.reentry = None;
+            false
+        } else {
+            self.reentry = Some((t, w.p, n));
+            true
+        }
     }
 
     /// Body-model and prediction gates. Body-model violations are never accepted; a jump or turn away from the
@@ -1693,6 +1771,7 @@ impl Fuser {
         }
         self.last = Some(fix);
         self.hold = None;
+        self.reentry = None;
         self.stats.fixes += 1;
         if !pos_only {
             self.hist.push_back(raw_fix);
@@ -2061,7 +2140,7 @@ mod tests {
             blend_dps: 0.0,
             ..Config::default()
         };
-        let mut fu = Fuser::new(0, cfg, None);
+        let mut fu = Fuser::new(0, legacy(cfg), None);
         let head = P::ID;
         fu.optical(
             1_000_000_000,
@@ -2184,6 +2263,74 @@ mod tests {
         assert!(norm(sub(p.p, left.shoulder(&far_head))) <= 0.75 + 1e-9);
     }
 
+    fn fix_at(fu: &mut Fuser, t_ms: u64, x: f64) -> &'static str {
+        fu.optical_with(
+            t_ms * 1_000_000,
+            P { q: [0.0, 0.0, 0.0, 1.0], p: [x, 0.0, -0.4] },
+            &P::ID,
+            0.5,
+            10,
+            None,
+        )
+    }
+
+    #[test]
+    fn a_150_ms_miss_stays_optical_with_the_new_window_and_flips_with_the_old() {
+        for (cfg, want) in [(Config { use_imu: Some(false), ..Config::default() }, State::Optical),
+                            (legacy(Config { use_imu: Some(false), ..Config::default() }), State::Hold)] {
+            let mut fu = Fuser::new(0, cfg, None);
+            for k in 0..10 {
+                fix_at(&mut fu, 1000 + 40 * k, 0.0);
+            }
+            let (s, _) = fu.get((1000 + 360 + 150) * 1_000_000, &P::ID);
+            assert_eq!(s, want);
+        }
+    }
+
+    #[test]
+    fn a_lone_fix_after_a_hold_is_not_believed_two_in_a_row_are() {
+        let mut fu = Fuser::new(0, Config { use_imu: Some(false), ..Config::default() }, None);
+        for k in 0..10 {
+            fix_at(&mut fu, 1000 + 40 * k, 0.0);
+        }
+        // 1 s out of view, then a single fix: only a confirmation
+        assert_eq!(fix_at(&mut fu, 2400, 0.0), "confirm");
+        assert_eq!(fu.get(2_410_000_000, &P::ID).0, State::Hold);
+        // it goes silent again: the next lone fix starts over
+        assert_eq!(fix_at(&mut fu, 2800, 0.0), "confirm");
+        // 40 ms later the confirming fix: accepted, optical again
+        assert_eq!(fix_at(&mut fu, 2840, 0.0), "ok");
+        assert_eq!(fu.get(2_850_000_000, &P::ID).0, State::Optical);
+        // inside the window every fix is accepted at once
+        assert_eq!(fix_at(&mut fu, 2880, 0.0), "ok");
+        // two fixes far apart do not confirm each other
+        assert_eq!(fix_at(&mut fu, 4000, 0.0), "confirm");
+        assert_eq!(fix_at(&mut fu, 4040, 0.3), "confirm");
+    }
+
+    #[test]
+    fn the_kill_switch_restores_single_fix_reentry() {
+        let mut fu = Fuser::new(0, legacy(Config { use_imu: Some(false), ..Config::default() }), None);
+        for k in 0..10 {
+            fix_at(&mut fu, 1000 + 40 * k, 0.0);
+        }
+        assert_eq!(fix_at(&mut fu, 2400, 0.0), "ok");
+    }
+
+    #[test]
+    fn few_led_and_high_residual_fixes_get_less_weight_when_smoothing() {
+        assert!(Fuser::gain(4, 0.5, true) < Fuser::gain(6, 0.5, true));
+        assert!(Fuser::gain(12, 3.0, true) < Fuser::gain(12, 2.0, true));
+        assert!(Fuser::gain(12, 2.0, true) < Fuser::gain(12, 1.0, true));
+        assert_eq!(Fuser::gain(12, 0.5, false), 0.85);
+    }
+
+    /// The pre-Phase-1d window (80 ms, single-fix re-entry): the reacquire tests below pin that behaviour.
+    fn legacy(mut c: Config) -> Config {
+        c.set_legacy_window();
+        c
+    }
+
     /// Gyro samples (raw LSB) for a rotation of `w_dps` about aim +x with the built-in left calibration.
     fn raw_for(c: &Calib, w_aim: V3) -> [i16; 3] {
         let ci = inv3(&c.c).unwrap();
@@ -2195,7 +2342,7 @@ mod tests {
     fn forearm_model_swings_the_held_controller_around_the_elbow() {
         let cal = default_calib(0);
         let f = [0.0, 0.0, -0.3];
-        let cfg = Config { forearm: Some(f), follow_yaw: 1.0, still_lock: false, ..Config::default() };
+        let cfg = legacy(Config { forearm: Some(f), follow_yaw: 1.0, still_lock: false, ..Config::default() });
         let mut fu = Fuser::new(0, cfg, Some(cal));
         let head = P::ID;
         let (mut t, mut dev) = (1_000_000_000u64, 0u32);
@@ -2251,7 +2398,7 @@ mod tests {
     #[test]
     fn a_big_reacquire_correction_slides_at_most_half_a_metre_per_second() {
         let cfg = Config { use_imu: Some(false), ..Config::default() };
-        let mut fu = Fuser::new(0, cfg, None);
+        let mut fu = Fuser::new(0, legacy(cfg), None);
         let head = P::ID;
         fu.optical(1_000_000_000, P { q: [0.0, 0.0, 0.0, 1.0], p: [-0.1, 0.0, -0.4] }, &head, 0.5, 10);
         fu.optical(1_040_000_000, P { q: [0.0, 0.0, 0.0, 1.0], p: [-0.1, 0.0, -0.4] }, &head, 0.5, 10);
@@ -2284,7 +2431,7 @@ mod tests {
     fn a_flipped_few_led_solve_keeps_its_position_but_not_its_orientation() {
         // gyro forced on (Monado's guess), controller not rotating: raw gyro 0
         let cfg = Config { use_imu: Some(true), ..Config::default() };
-        let mut fu = Fuser::new(0, cfg, None);
+        let mut fu = Fuser::new(0, legacy(cfg), None);
         let head = P::ID;
         let mut t = 1_000_000_000u64;
         let mut dev = 0u32;
