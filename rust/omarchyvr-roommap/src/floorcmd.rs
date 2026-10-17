@@ -537,6 +537,12 @@ fn cmd_follow(mut v: Vec<String>) -> R<()> {
                 if (y - off.t[1]).abs() >= 0.0002 {
                     let o = Pose { r: off.r, t: [off.t[0], y, off.t[2]] };
                     if !dry {
+                        // one writer per session: the follow never takes the offset from a running writer and
+                        // stops when a room setup (or another user action) takes it
+                        if let Err(e) = crate::take_lease(f.pid, world::Role::Follow) {
+                            eprintln!("floor follow stops: {e}");
+                            return false;
+                        }
                         if let Err(e) = world::write_offset(&path, f.pid, &o) {
                             eprintln!("cannot write {}: {e}", path.display());
                             return false;

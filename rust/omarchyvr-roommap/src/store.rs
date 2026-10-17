@@ -182,6 +182,29 @@ pub fn save_corrections(dir: &Path, c: &[crate::loopclose::Correction]) -> std::
     std::fs::write(dir.join("correction.csv"), t)
 }
 
+/// The map's loop-closure correction at the end of its mapping walk (the last `correction.csv` row:
+/// `room_new_from_room_old`), when `correction.csv` belongs to the current `map.bin` (written with or after it).
+/// None: no loop closure (or an older file).
+pub fn last_correction(dir: &Path) -> Option<Alignment> {
+    let mt = |n: &str| std::fs::metadata(dir.join(n)).and_then(|m| m.modified()).ok();
+    let (c, m) = (mt("correction.csv")?, mt("map.bin")?);
+    if c + std::time::Duration::from_secs(2) < m {
+        return None;
+    }
+    load_corrections(dir).last().map(|c| c.c)
+}
+
+/// The room fix of a map built in this session (`room_from_slam`). The mapping walk's room frame was the app world
+/// then (`offset_at_mapping`), but loop closure moved the map: by the end of the walk the live tracker sat
+/// `correction` away from the corrected map frame (2026-10-17: 19 cm horizontal, 6.7 cm vertical). Without it the
+/// setup placed the floor that far off and the next relocalisation moved it again.
+pub fn fix_after_mapping(offset_at_mapping: &Alignment, correction: Option<&Alignment>) -> Alignment {
+    match correction {
+        Some(c) => compose(c, offset_at_mapping),
+        None => *offset_at_mapping,
+    }
+}
+
 /// Load `correction.csv` (empty when absent: room frame = the mapping session's world).
 pub fn load_corrections(dir: &Path) -> Vec<crate::loopclose::Correction> {
     let Ok(t) = std::fs::read_to_string(dir.join("correction.csv")) else { return Vec::new() };

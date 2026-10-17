@@ -7,6 +7,8 @@
 //! * Offset file (`$XDG_RUNTIME_DIR/pimax-anchor.offset`, written here, read by Monado): text,
 //!   `pimax-anchor-offset 1`, `pid N`, `pose px py pz qx qy qz qw`. Monado applies `app_from_slam = offset * slam` to
 //!   the head pose and ignores the file when the pid is not its own. Monado deletes the file at start.
+//! * Writer lease (`$XDG_RUNTIME_DIR/omarchyvr-anchor.offset.owner`): one writer of the offset per Monado session
+//!   ([`take_lease`], [`write_offset`] refuses without it; see "One writer of the room offset" below).
 
 use pimax_cam::geom::{self, Pose};
 use pimax_ctrltrack::solve::quat_to_mat;
@@ -218,7 +220,19 @@ pub fn parse_offset(s: &str) -> Option<(u32, Pose)> {
     Some((pid, from_pq([v[0], v[1], v[2]], [v[3], v[4], v[5], v[6]])))
 }
 
+/// Write the offset for Monado `pid` (atomic). Refused unless this process holds the writer lease of that session
+/// ([`take_lease`]): one writer of the room offset per Monado session.
 pub fn write_offset(path: &std::path::Path, pid: u32, o: &Pose) -> std::io::Result<()> {
+    write_offset_as(path, pid, std::process::id(), o)
+}
+
+/// [`write_offset`] as writer `me` (tests pass a fake writer pid).
+pub fn write_offset_as(path: &std::path::Path, pid: u32, me: u32, o: &Pose) -> std::io::Result<()> {
+    let _g = LeaseLock::take(path)?;
+    let cur = read_lease(&lease_path_for(path));
+    if !lease_held_by(cur.as_ref(), pid, me) {
+        return Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied, refused_text(cur.as_ref(), pid)));
+    }
     let tmp = path.with_extension("offset.tmp");
     std::fs::write(&tmp, offset_text(pid, o))?;
     std::fs::rename(tmp, path)
@@ -277,6 +291,364 @@ pub fn robust_mean(v: &[Pose], pos_tol: f64, rot_tol_deg: f64) -> Option<(Pose, 
         / keep.len() as f64)
         .sqrt();
     Some((mean, keep.len(), sd_t, sd_r))
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// One writer of the room offset per Monado session (the writer lease).
+//
+// Live failure 2026-10-17 16:16-16:17 (Monado pid 1092498): Fast room setup wrote the offset, and the detached
+// `omarchyvr-roommap auto` started at the session start (still retrying on the old map) recognised the brand-new map
+// 73 s later and wrote a second offset 32 cm away; Monado snapped the world (the "floor jump"). The owner file only
+// told the room map from the AprilTag, not one room-map process from another.
+//
+// The lease is the owner file next to the offset (`omarchyvr-anchor.offset.owner`). Its first line stays the one
+// the app reads (`roommap <monado pid>` / `anchor <monado pid>`); schema 2 adds the writer process and its role:
+//
+// ```text
+// roommap 1092498
+// lease 2
+// writer 1093007
+// role setup
+// ```
+//
+// Every writer takes the lease before it writes ([`take_lease`]); [`write_offset`] refuses without it. A user
+// action (setup, recognise, apply, the AprilTag) takes the lease from a running background writer (auto, floor
+// follow) and ends it by pid; a background writer never takes it from a live holder, and `auto` never writes after
+// anyone placed the room in this session. The check and the write run under one `flock`
+// (`omarchyvr-anchor.offset.lock`), so an evicted writer cannot slip one last write in.
+
+/// Schema of the lease written by this code.
+pub const LEASE_SCHEMA: u32 = 2;
+
+/// Who writes the offset (the lease's role).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Role {
+    /// `omarchyvr-roommap setup fast|full` (the user).
+    Setup,
+    /// `omarchyvr-roommap auto` (detached at the session start).
+    Auto,
+    /// `omarchyvr-roommap floor follow` (the floor.follow leaf).
+    Follow,
+    /// `omarchyvr-roommap relocalize --apply` (Recognise room, the anchor.relocalize job).
+    Reloc,
+    /// `omarchyvr-roommap apply` (a saved result).
+    Apply,
+    /// `omarchyvr-anchor apply` (the printed AprilTag).
+    Tag,
+}
+
+impl Role {
+    pub fn name(self) -> &'static str {
+        match self {
+            Role::Setup => "setup",
+            Role::Auto => "auto",
+            Role::Follow => "follow",
+            Role::Reloc => "reloc",
+            Role::Apply => "apply",
+            Role::Tag => "tag",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Role> {
+        [Role::Setup, Role::Auto, Role::Follow, Role::Reloc, Role::Apply, Role::Tag].into_iter().find(|r| r.name() == s)
+    }
+
+    /// The owner file's first word (the app's writer name).
+    pub fn kind(self) -> &'static str {
+        match self {
+            Role::Tag => "anchor",
+            _ => "roommap",
+        }
+    }
+
+    /// Plain words for the user.
+    pub fn title(self) -> &'static str {
+        match self {
+            Role::Setup => "the room setup",
+            Role::Auto => "the automatic room placement",
+            Role::Follow => "the floor follow",
+            Role::Reloc => "Recognise room",
+            Role::Apply => "a saved room fix",
+            Role::Tag => "the AprilTag",
+        }
+    }
+
+    /// A user action: takes the lease from a running background writer, which is then ended.
+    pub fn preempts(self) -> bool {
+        matches!(self, Role::Setup | Role::Reloc | Role::Apply | Role::Tag)
+    }
+
+    /// Only places a room nobody placed yet in this session (`auto` at the session start).
+    pub fn first_only(self) -> bool {
+        self == Role::Auto
+    }
+}
+
+/// The owner file (lease).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Lease {
+    /// `roommap` or `anchor`.
+    pub kind: String,
+    /// Monado pid (the session).
+    pub session: u32,
+    /// Writer process (0: unknown, a schema 1 file written by the app).
+    pub writer: u32,
+    pub role: Option<Role>,
+    pub schema: u32,
+}
+
+impl Lease {
+    pub fn text(&self) -> String {
+        let mut t = format!("{} {}\nlease {}\nwriter {}\n", self.kind, self.session, self.schema, self.writer);
+        if let Some(r) = self.role {
+            t += &format!("role {}\n", r.name());
+        }
+        t
+    }
+
+    /// Parse schema 2, and the app's schema 1 line (`roommap 42`: writer unknown).
+    pub fn parse(s: &str) -> Option<Lease> {
+        let mut lines = s.lines();
+        let mut w = lines.next()?.split_whitespace();
+        let kind = w.next()?.to_string();
+        let session = w.next()?.parse().ok()?;
+        let mut l = Lease { kind, session, writer: 0, role: None, schema: 1 };
+        for line in lines {
+            match line.trim().split_once(' ') {
+                Some(("lease", v)) => l.schema = v.trim().parse().ok()?,
+                Some(("writer", v)) => l.writer = v.trim().parse().ok()?,
+                Some(("role", v)) => l.role = Role::parse(v.trim()),
+                _ => {}
+            }
+        }
+        if l.schema > LEASE_SCHEMA {
+            // a newer writer's file: keep the session and kind, treat the writer as unknown
+            l.writer = 0;
+            l.role = None;
+        }
+        Some(l)
+    }
+
+    fn holder_title(&self) -> String {
+        match self.role {
+            Some(r) => format!("{} (pid {})", r.title(), self.writer),
+            None if self.kind == "anchor" => "the AprilTag".into(),
+            None => "the room map".into(),
+        }
+    }
+}
+
+/// The lease (owner file) next to an offset file.
+pub fn lease_path_for(offset: &std::path::Path) -> PathBuf {
+    offset.with_file_name("omarchyvr-anchor.offset.owner")
+}
+
+/// The lease of the live offset file.
+pub fn lease_path() -> PathBuf {
+    lease_path_for(&offset_path())
+}
+
+pub fn read_lease(path: &std::path::Path) -> Option<Lease> {
+    Lease::parse(&std::fs::read_to_string(path).ok()?)
+}
+
+fn lease_held_by(cur: Option<&Lease>, session: u32, me: u32) -> bool {
+    cur.is_some_and(|l| l.session == session && l.writer == me && l.schema == LEASE_SCHEMA)
+}
+
+fn refused_text(cur: Option<&Lease>, session: u32) -> String {
+    match cur {
+        Some(l) if l.session == session => {
+            format!("the room offset of this session (Monado pid {session}) belongs to {}; not written", l.holder_title())
+        }
+        _ => format!("no writer lease for the room offset of Monado pid {session}; not written"),
+    }
+}
+
+/// May `me` (role `role`) take the lease of Monado session `session`? Ok(Some(pid)) = yes, after ending the
+/// running writer `pid`. `offset_written`: the offset file holds an offset for this session. Pure.
+pub fn decide_lease(cur: Option<&Lease>, session: u32, me: u32, role: Role, offset_written: bool, alive: impl Fn(u32) -> bool) -> Result<Option<u32>, String> {
+    let Some(cur) = cur.filter(|l| l.session == session) else { return Ok(None) };
+    if cur.writer == me && cur.writer != 0 {
+        return Ok(None);
+    }
+    if cur.writer != 0 && alive(cur.writer) {
+        if role.preempts() {
+            return Ok(Some(cur.writer));
+        }
+        return Err(format!("{} writes the room offset of this session; {} leaves it alone", cur.holder_title(), role.title()));
+    }
+    if offset_written && cur.kind != role.kind() {
+        return Err(format!(
+            "this session's room offset came from {}: only one of the room map and the AprilTag per session. Press Clear offset on the Room page first.",
+            cur.holder_title()
+        ));
+    }
+    if offset_written && role.first_only() {
+        return Err(format!("{} already placed the room in this session; {} leaves it alone", cur.holder_title(), role.title()));
+    }
+    Ok(None)
+}
+
+/// `flock` on `omarchyvr-anchor.offset.lock` next to the offset: lease decisions and offset writes are serialised.
+struct LeaseLock(#[allow(dead_code)] std::fs::File);
+
+impl LeaseLock {
+    fn take(offset: &std::path::Path) -> std::io::Result<LeaseLock> {
+        let p = offset.with_file_name("omarchyvr-anchor.offset.lock");
+        let f = std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(p)?;
+        f.lock()?;
+        Ok(LeaseLock(f))
+    }
+}
+
+fn comm_of(pid: u32) -> String {
+    std::fs::read_to_string(format!("/proc/{pid}/comm")).unwrap_or_default().trim().to_string()
+}
+
+/// End an evicted writer by pid: only our own offset writers (comm checked), SIGTERM, wait up to 3 s.
+fn end_writer(pid: u32) -> Result<(), String> {
+    let c = comm_of(pid);
+    if !matches!(c.as_str(), "omarchyvr-roomm" | "omarchyvr-ancho") {
+        return Err(format!("pid {pid} ({c}) holds the room offset lease but is not an offset writer; not ended"));
+    }
+    // SAFETY: kill(2) on a pid whose name we just checked (one of our own tools).
+    unsafe {
+        libc::kill(pid as i32, libc::SIGTERM);
+    }
+    for _ in 0..30 {
+        if !pid_alive(pid) || comm_of(pid) != c {
+            return Ok(());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    Err(format!("pid {pid} ({c}) did not stop within 3 s"))
+}
+
+/// Take the writer lease of Monado session `session` for this process as `role` (kept as it is when this process
+/// already holds it). A user action ends a running background writer first. Returns a line for the log when
+/// another writer was ended.
+pub fn take_lease(offset: &std::path::Path, session: u32, role: Role) -> Result<Option<String>, String> {
+    take_lease_as(offset, session, std::process::id(), role, pid_alive, end_writer)
+}
+
+/// [`take_lease`] with the writer pid, the liveness check and the eviction passed in (tests).
+pub fn take_lease_as(
+    offset: &std::path::Path,
+    session: u32,
+    me: u32,
+    role: Role,
+    alive: impl Fn(u32) -> bool,
+    evict: impl Fn(u32) -> Result<(), String>,
+) -> Result<Option<String>, String> {
+    let lp = lease_path_for(offset);
+    let _g = LeaseLock::take(offset).map_err(|e| format!("cannot lock the room offset lease: {e}"))?;
+    let cur = read_lease(&lp);
+    if lease_held_by(cur.as_ref(), session, me) {
+        return Ok(None);
+    }
+    let written = read_offset(offset).is_some_and(|(p, _)| p == session);
+    let note = match decide_lease(cur.as_ref(), session, me, role, written, alive)? {
+        Some(pid) => {
+            let who = cur.as_ref().map(|l| l.holder_title()).unwrap_or_default();
+            evict(pid)?;
+            Some(format!("{} took the room offset from {who}, which was ended", role.title()))
+        }
+        None => None,
+    };
+    let l = Lease { kind: role.kind().into(), session, writer: me, role: Some(role), schema: LEASE_SCHEMA };
+    let tmp = lp.with_extension("owner.tmp");
+    std::fs::write(&tmp, l.text()).and_then(|_| std::fs::rename(&tmp, &lp)).map_err(|e| format!("cannot write {}: {e}", lp.display()))?;
+    Ok(note)
+}
+
+/// Does this process hold the lease of session `session`?
+pub fn holds_lease(offset: &std::path::Path, session: u32) -> bool {
+    lease_held_by(read_lease(&lease_path_for(offset)).as_ref(), session, std::process::id())
+}
+
+/// [`holds_lease`] for writer `me` (tests).
+pub fn holds_lease_as(offset: &std::path::Path, session: u32, me: u32) -> bool {
+    lease_held_by(read_lease(&lease_path_for(offset)).as_ref(), session, me)
+}
+
+#[cfg(test)]
+mod lease_tests {
+    use super::*;
+
+    fn tmpdir(tag: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("omarchyvr-lease-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    fn pose(x: f64) -> Pose {
+        Pose { r: geom::rodrigues([0.0, 0.1, 0.0]), t: [x, -0.9, 0.2] }
+    }
+
+    #[test]
+    fn lease_text_round_trip_and_schema_1() {
+        let l = Lease { kind: "roommap".into(), session: 1092498, writer: 77, role: Some(Role::Setup), schema: 2 };
+        assert_eq!(Lease::parse(&l.text()), Some(l.clone()));
+        // the app's first line is unchanged (gui-core parse_owner reads the first two words)
+        assert!(l.text().starts_with("roommap 1092498\n"));
+        let old = Lease::parse("anchor 42\n").unwrap();
+        assert_eq!((old.kind.as_str(), old.session, old.writer, old.role, old.schema), ("anchor", 42, 0, None, 1));
+    }
+
+    #[test]
+    fn no_lease_no_write() {
+        let d = tmpdir("nowrite");
+        let p = d.join("pimax-anchor.offset");
+        let e = write_offset_as(&p, 5, 100, &pose(0.0)).unwrap_err();
+        assert_eq!(e.kind(), std::io::ErrorKind::PermissionDenied);
+        assert!(read_offset(&p).is_none());
+        take_lease_as(&p, 5, 100, Role::Reloc, |_| false, |_| Ok(())).unwrap();
+        write_offset_as(&p, 5, 100, &pose(0.0)).unwrap();
+        // a lease of another session does not let one write this session's offset
+        assert!(write_offset_as(&p, 6, 100, &pose(0.0)).is_err());
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn a_second_writer_is_refused() {
+        let d = tmpdir("second");
+        let p = d.join("pimax-anchor.offset");
+        let alive = |pid: u32| pid == 200 || pid == 300;
+        take_lease_as(&p, 9, 200, Role::Follow, alive, |_| panic!("nothing to end")).unwrap();
+        write_offset_as(&p, 9, 200, &pose(0.1)).unwrap();
+        // auto (300) while follow (200) runs: refused, and it cannot write
+        let e = take_lease_as(&p, 9, 300, Role::Auto, alive, |_| panic!("auto never ends a writer")).unwrap_err();
+        assert!(e.contains("floor follow"), "{e}");
+        assert!(write_offset_as(&p, 9, 300, &pose(0.5)).is_err());
+        assert!((read_offset(&p).unwrap().1.t[0] - 0.1).abs() < 1e-9);
+        assert!(holds_lease_as(&p, 9, 200) && !holds_lease_as(&p, 9, 300));
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn user_action_preempts_and_tag_rule() {
+        let d = tmpdir("preempt");
+        let p = d.join("pimax-anchor.offset");
+        let ended = std::cell::Cell::new(0u32);
+        take_lease_as(&p, 9, 200, Role::Auto, |_| false, |_| Ok(())).unwrap();
+        let note = take_lease_as(&p, 9, 400, Role::Setup, |pid| pid == 200, |pid| { ended.set(pid); Ok(()) }).unwrap();
+        assert_eq!(ended.get(), 200);
+        assert!(note.unwrap().contains("automatic room placement"));
+        assert!(write_offset_as(&p, 9, 200, &pose(0.3)).is_err(), "the evicted auto cannot write");
+        write_offset_as(&p, 9, 400, &pose(0.1)).unwrap();
+        // the setup ended (400 dead): the AprilTag may not take a room-map session, auto may not write again
+        let e = take_lease_as(&p, 9, 500, Role::Tag, |_| false, |_| Ok(())).unwrap_err();
+        assert!(e.contains("Clear offset"), "{e}");
+        let e = take_lease_as(&p, 9, 600, Role::Auto, |_| false, |_| Ok(())).unwrap_err();
+        assert!(e.contains("already placed"), "{e}");
+        // another user action (Recognise room) and the floor follow may take it over from a dead holder
+        take_lease_as(&p, 9, 700, Role::Follow, |_| false, |_| Ok(())).unwrap();
+        // a new session: everything starts free
+        take_lease_as(&p, 10, 600, Role::Auto, |_| false, |_| Ok(())).unwrap();
+        let _ = std::fs::remove_dir_all(d);
+    }
 }
 
 // ---------------------------------------------------------------------------------------------------------------
