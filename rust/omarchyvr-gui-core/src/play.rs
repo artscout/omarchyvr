@@ -187,9 +187,66 @@ impl AppCore {
     }
 
     /// Work: the WayVR desk (screens, voice, AI, captions, presets) on top of the base, `omarchyvr desk start` with the
-    /// desk switches; the same button stops a running session.
+    /// desk switches; the same button stops a running session. The first time, the Work questions come first (the
+    /// voice assistant and speech; docs/WORK-FIRST-RUN.md): Work starts by itself once they are answered.
     pub fn work(&mut self) {
+        if !self.work_setup_done() && !(self.phase() == DeskPhase::Running && self.running_side() == Some(false)) {
+            self.open_work_setup(true);
+            return;
+        }
         self.launch(false);
+    }
+
+    /// The live state and facts as if our session were stopped (a switch or a restart judges its start like this).
+    fn as_if_stopped(&self) -> (crate::facts::Live, crate::facts::Facts) {
+        let session: Vec<u32> = self.live.session.iter().filter_map(|s| s.pid).collect();
+        let mut live = self.live.clone();
+        live.service = None;
+        for s in live.session.iter_mut() {
+            s.alive = false;
+        }
+        live.monado_pids.retain(|p| !session.contains(p));
+        live.foreign_monado.retain(|p| !session.contains(p));
+        let mut facts = self.facts.clone();
+        facts.camera_holders.retain(|h| !session.contains(&h.pid));
+        facts.eye_holders.retain(|h| !session.contains(&h.pid));
+        (live, facts)
+    }
+
+    /// Work -> Play (or Play -> Work) in one job: the running side's full stop first (Work's stop takes everything of
+    /// Work with it, the local AI included; docs/PLAY-WORK-AUDIT.md), the wait until Monado is gone, then the other
+    /// side's start (Play's start itself clears whatever a crashed Work may have left before anything of Play starts).
+    /// The start is judged as if the session were already stopped; `--force` only with the user's consent.
+    pub fn switch_job(&self, to_vr: bool) -> Result<JobSpec, String> {
+        let (live, facts) = self.as_if_stopped();
+        let t = if to_vr { self.vr_toggles() } else { self.effective_toggles() };
+        let desk_pf = self.preflight_for(&live, &facts, &t);
+        let pf = if to_vr { crate::preflight::for_vr(desk_pf, self.plan_for_toggles(&t).and_then(|p| p.ok()).as_ref(), &facts) } else { desk_pf };
+        let force = match pf.gate {
+            Gate::Blocked(r) => return Err(format!("not switching: {}", r.join("; "))),
+            Gate::NeedsConsent(r) if !self.consent_force => return Err(format!("tick 'Start anyway' first: {}", r.join("; "))),
+            Gate::NeedsConsent(_) => true,
+            Gate::Ready => false,
+        };
+        let start = if to_vr {
+            let mut c = Cmd::with_args(self.launcher_bin().display().to_string(), crate::launcher::vr_game_args(&t, force, self.light_game(), self.facts.next_game.as_deref()));
+            for (k, v) in self.launcher_env() {
+                c = c.env(&k, v);
+            }
+            c.env_remove = self.facts.stale_env.iter().map(|(k, _)| k.clone()).collect();
+            self.own_scope(c, "vr")
+        } else {
+            self.own_scope(self.desk_start_cmd(&t, force), "desk")
+        };
+        let mut steps = self.stop_job().steps;
+        steps.push(Step::WaitNoMonado(Duration::from_secs(45)));
+        steps.push(Step::Guard("camera and eye chip still free", crate::guards::devices_free(t.needs_cameras(), t.eye)));
+        if force {
+            steps.push(Step::Guard("still only WayVR Xid 31", crate::guards::force_still_justified()));
+        }
+        steps.push(Step::Run(start));
+        let (to, from) = if to_vr { ("Play", "Work") } else { ("Work", "Play") };
+        Ok(JobSpec { kind: JobKind::DeskStart, label: format!("Switch to {to} (stops {from} first)"), steps })
     }
 
     /// Which side runs now: Some(true) = a game session (Play), Some(false) = the desk (Work), None = nothing of ours.
@@ -223,6 +280,8 @@ impl AppCore {
 
     fn launch(&mut self, vr: bool) {
         match self.phase() {
+            // the other side runs: a switch (its full stop comes first, in the same job); the same side: Stop
+            DeskPhase::Running if self.running_side() == Some(!vr) => {}
             DeskPhase::Running => return self.stop(),
             DeskPhase::Foreign => {
                 self.message = "Another monado-service is running: stop it first (Stop other Monado).".into();
@@ -246,8 +305,9 @@ impl AppCore {
 
     /// Start `vr` (Play) or the desk (Work); `close_steam` first closes the tainted Steam (confirmed by the user).
     fn launch_with(&mut self, vr: bool, close_steam: bool) {
+        let switching = self.phase() == DeskPhase::Running && self.running_side() == Some(!vr);
         self.state.last_vr = vr;
-        let mut job = match self.play_start_job() {
+        let mut job = match if switching { self.switch_job(vr) } else { self.play_start_job() } {
             Ok(j) => j,
             Err(e) => {
                 self.message = e;
@@ -545,6 +605,52 @@ mod tests {
         assert_eq!(r.running_side(), Some(false), "the demo session is the desk");
         r.work();
         assert!(r.message.starts_with("demo mode: would run Stop"), "{}", r.message);
+    }
+
+    #[test]
+    fn switching_work_to_play_is_the_full_stop_of_work_then_play_in_one_job() {
+        let mut a = session_with("switch", Some("desk"), &["broker", "passthrough", "wayvr"]);
+        a.consent_force = true; // the demo kernel log has WayVR Xid 31 faults
+        assert_eq!(a.running_side(), Some(false));
+        let j = a.switch_job(true).unwrap();
+        assert!(j.label.starts_with("Switch to Play (stops Work first)"), "{}", j.label);
+        let s: Vec<String> = j.steps.iter().map(|x| format!("{x:?}")).collect();
+        let stop = s.iter().position(|x| x.contains("desk stop --grace 30")).expect("Work's full stop");
+        let wait = s.iter().rposition(|x| x.contains("WaitNoMonado")).unwrap();
+        let start = s.iter().position(|x| x.contains("vr start")).expect("then Play");
+        assert!(stop < wait && wait < start, "{s:?}");
+        // the button: Play while Work runs switches (one job), Work while Work runs stops
+        a.play();
+        assert!(a.message.starts_with("demo mode: would run Switch to Play"), "{}", a.message);
+        a.work();
+        assert!(a.message.starts_with("demo mode: would run Stop"), "{}", a.message);
+        // and back: Play -> Work stops Play first
+        let b = session_with("switch-back", Some("vr"), &["broker", "ctrltrack"]);
+        let mut b = b;
+        b.consent_force = true;
+        let j = b.switch_job(false).unwrap();
+        let s: Vec<String> = j.steps.iter().map(|x| format!("{x:?}")).collect();
+        assert!(s[0].contains("vr stop --grace 30") && s.iter().any(|x| x.contains("desk start")), "{s:?}");
+    }
+
+    #[test]
+    fn play_keeps_tracking_and_eye_tracking_follows_its_own_switch() {
+        let mut a = AppCore::demo(false, store("play-eye"));
+        a.toggles.eye = true; // Work's eye switch
+        a.facts.eye_games = false;
+        let t = a.vr_toggles();
+        assert!(!t.eye, "eye tracking in games is off by default, whatever Work's switch says");
+        assert!(t.sixdof && !t.voice && !t.passthrough, "{t:?}");
+        a.facts.eye_games = true;
+        a.facts.caps.eye = true;
+        assert!(a.vr_toggles().eye);
+        // Light game mode drops the readout and the anchor, not the eye switch
+        a.facts.light_game = true;
+        let t = a.vr_toggles();
+        assert!(t.eye && !t.perf && !t.anchor);
+        // a Play start's argv does not change Work's eye switch
+        let (w, vr) = crate::launcher::toggles_from_argv("vr\n--6dof\n--no-eye\n--light\n", a.toggles).unwrap();
+        assert!(vr && w.eye, "Work's eye switch stays on");
     }
 
     fn tainted() -> crate::facts::TaintedSteam {

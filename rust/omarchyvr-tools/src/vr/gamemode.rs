@@ -1,18 +1,25 @@
-//! "Game mode: free the graphics card while playing" and the "Compositor time budget".
+//! Play's settings: the graphics card belongs to the game, "Eye tracking in games", Light game mode and the
+//! "Compositor time budget".
 //!
-//! Game mode (Play only): at `vr start` the local voice AI (`omarchyvr-ai`, llama-server on the Vulkan GPU; `pause_ai`, default on)
-//! is stopped the clean way (`omarchyvr-ai stop`: SIGTERM, never SIGKILL by us). Sunshine is NEVER stopped or paused (user rule);
-//! only an old state file that lists it is honoured at restore (start again), what was running is written to `<session dir>/gamemode-paused.txt`,
-//! and exactly that is started again at `vr stop` (and by `omarchyvr vr gamemode restore`, which the app runs at start
-//! when no session is up: crash recovery). It is an optional step: every failure is a plain-words line, VR goes on.
-//! Desk (Work) mode never calls it.
+//! Play frees the graphics card (user decision 2026-10-17): before `vr start` starts anything, everything of Work and
+//! the local AI is stopped by pid ([`super::work::clear_for_play`]: every `omarchyvr-ai` slot, voice, the desk's leftovers);
+//! what was stopped is written to `<session dir>/gamemode-paused.txt` for the app's "Stopped for Play" line. Nothing is
+//! started again at `vr stop`: the local AI and voice belong to Work and start with the next Work. The old switch
+//! `pause_ai` ("Game mode", default on) is read from old files but no longer changes anything: Play always frees the
+//! card. Sunshine is NEVER stopped or paused (user rule); only an old state file that lists it is honoured at restore
+//! (started again). Desk (Work) mode never calls this.
+//!
+//! Eye tracking in games (`eye_in_games`, default off; coordinator decision 2026-10-17): Play passes `--eye` or
+//! `--no-eye` from it, and `vr start` without either flag uses the saved switch; the resolved choice is recorded in
+//! start-argv so restarts keep it. Light game mode no longer decides eye tracking.
 //!
 //! Compositor time budget (`auto` | `6` | `8`, default auto): `U_PACING_COMP_MIN_TIME_MS` of Monado's pacer
 //! (u_pacing_compositor_fake.c: a float in ms, default 3.0): the least time the compositor reserves between its own
 //! wake-up and the display time. A bigger value makes it start the frame earlier (more margin against late commits,
 //! a little more latency). `auto` = leave Monado's default. Set by [`super::config::build_env`].
 //!
-//! Settings: ~/.config/omarchyvr/gamemode.toml (`pause_ai = true|false`, the old `game_mode` key = `pause_ai`; `comp_budget = "auto"|"6"|"8"`).
+//! Settings: ~/.config/omarchyvr/gamemode.toml (`light_game`, `eye_in_games`, `comp_budget = "auto"|"6"|"8"`; old
+//! files: `pause_ai` / `game_mode`, kept but without effect).
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -29,18 +36,22 @@ pub const BUDGETS: [(&str, &str); 3] = [("auto", "Auto"), ("6", "6 ms"), ("8", "
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Settings {
-    /// Pause the local voice AI while playing (default on).
+    /// The old "Game mode" switch (pause the local AI while playing). Kept from old files, no effect any more: Play
+    /// always stops the local AI before it starts (see the module doc).
     pub pause_ai: bool,
     /// "auto" | "6" | "8"
     pub comp_budget: String,
-    /// Light game mode (default on): Play runs only what a game needs (Monado, head 6DoF, controllers); no wrist
-    /// readout, no eye tracking, no room anchor / room search. `vr start --light` / `--no-light` override it.
+    /// Light game mode (default on): Play runs only what a game needs (Monado, head 6DoF, controllers and their
+    /// optical tracking); no wrist readout, no room anchor / room search. `vr start --light` / `--no-light` override it.
     pub light: bool,
+    /// Eye tracking in games (default off): Play starts the eye tracker only when this is on (`vr start --eye` /
+    /// `--no-eye` override it for one start).
+    pub eye_games: bool,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { pause_ai: true, comp_budget: "auto".into(), light: true }
+        Settings { pause_ai: true, comp_budget: "auto".into(), light: true, eye_games: false }
     }
 }
 
@@ -69,6 +80,9 @@ pub fn parse_settings(t: &str) -> Settings {
     if let Some(b) = flag(value(t, "light_game")) {
         s.light = b;
     }
+    if let Some(b) = flag(value(t, "eye_in_games")) {
+        s.eye_games = b;
+    }
     // `pause_sunshine` in an old file is ignored (Sunshine is never paused) and dropped at the next save.
     if let Some(b) = value(t, "comp_budget").filter(|b| BUDGETS.iter().any(|x| x.0 == *b)) {
         s.comp_budget = b.to_string();
@@ -85,7 +99,10 @@ pub fn save(home: &Path, s: &Settings) -> std::io::Result<()> {
     std::fs::create_dir_all(p.parent().unwrap())?;
     std::fs::write(
         p,
-        format!("# Game mode, light game mode and compositor time budget (Pimax app)\npause_ai = {}\nlight_game = {}\ncomp_budget = \"{}\"\n", s.pause_ai, s.light, s.comp_budget),
+        format!(
+            "# Play settings: light game mode, eye tracking in games, compositor time budget (Pimax app)\npause_ai = {}\nlight_game = {}\neye_in_games = {}\ncomp_budget = \"{}\"\n",
+            s.pause_ai, s.light, s.eye_games, s.comp_budget
+        ),
     )
 }
 
@@ -97,6 +114,16 @@ pub fn resolve_light(light: bool, no_light: bool, saved: &Settings) -> Result<bo
         (true, false) => Ok(true),
         (false, true) => Ok(false),
         (false, false) => Ok(saved.light),
+    }
+}
+
+/// Eye tracking for one Play start: `--eye` / `--no-eye` win over the saved switch (`eye_in_games`, default off).
+pub fn resolve_eye(eye: bool, no_eye: bool, saved: &Settings) -> Result<bool, String> {
+    match (eye, no_eye) {
+        (true, true) => Err("--eye and --no-eye together".into()),
+        (true, false) => Ok(true),
+        (false, true) => Ok(false),
+        (false, false) => Ok(saved.eye_games),
     }
 }
 
@@ -140,26 +167,50 @@ fn state_file(session_dir: &Path) -> PathBuf {
     session_dir.join("gamemode-paused.txt")
 }
 
-/// What game mode paused (names for people): from the state file; empty = nothing.
+/// What Play stopped (names for people): from the state file; empty = nothing.
 pub fn paused(session_dir: &Path) -> Vec<String> {
     paused_from(&std::fs::read_to_string(state_file(session_dir)).unwrap_or_default())
 }
 
-/// [`paused`] from the state file's text.
+/// [`paused`] from the state file's text (`key=what` lines; one name per kind).
 pub fn paused_from(t: &str) -> Vec<String> {
-    t.lines()
-        .filter_map(|l| match l.split_once('=')?.0 {
-            "sunshine" => Some("Sunshine".to_string()),
-            "ai" => Some("local AI".to_string()),
-            _ => None,
-        })
-        .collect()
+    let mut v: Vec<String> = Vec::new();
+    for l in t.lines() {
+        let name = match l.split_once('=').map(|x| x.0) {
+            Some("sunshine") => "Sunshine",
+            Some("ai") => "local AI",
+            Some("voice") => "voice",
+            Some("desk") => "Work leftovers",
+            _ => continue,
+        };
+        if !v.iter().any(|x| x == name) {
+            v.push(name.to_string());
+        }
+    }
+    v
 }
 
-/// "Paused for game mode: Sunshine, local AI" (None when nothing is paused).
+/// "Stopped for Play: local AI, voice" (None when nothing was stopped).
 pub fn paused_line(session_dir: &Path) -> Option<String> {
     let p = paused(session_dir);
-    (!p.is_empty()).then(|| format!("Paused for game mode: {}", p.join(", ")))
+    (!p.is_empty()).then(|| format!("Stopped for Play: {}", p.join(", ")))
+}
+
+/// Record what Play stopped before it started (`kind` = `ai`, `voice` or `desk`; `what` for the log). A restart of a
+/// running session adds to the list; the list never loses entries until `vr stop`.
+pub fn record_stopped(session_dir: &Path, entries: &[(&str, String)]) {
+    if entries.is_empty() {
+        return;
+    }
+    let mut keep: Vec<String> = std::fs::read_to_string(state_file(session_dir)).map(|x| x.lines().map(String::from).collect()).unwrap_or_default();
+    for (k, w) in entries {
+        let line = format!("{k}={}", w.replace('\n', " "));
+        if !keep.contains(&line) {
+            keep.push(line);
+        }
+    }
+    let _ = std::fs::create_dir_all(session_dir);
+    let _ = std::fs::write(state_file(session_dir), keep.join("\n") + "\n");
 }
 
 fn systemctl(t: &Tools, args: &[&str]) -> Option<bool> {
@@ -167,58 +218,8 @@ fn systemctl(t: &Tools, args: &[&str]) -> Option<bool> {
     Some(o.status.success())
 }
 
-/// "gpu" | "cpu" when the local AI server runs (from `omarchyvr-ai status`).
-fn running_ai(t: &Tools) -> Option<&'static str> {
-    if !t.omarchyvr_ai.is_file() {
-        return None;
-    }
-    let o = retry_busy(|| Command::new(&t.omarchyvr_ai).arg("status").stdin(Stdio::null()).output()).ok()?;
-    let out = String::from_utf8_lossy(&o.stdout);
-    let l = out.lines().find(|l| l.starts_with("server:"))?;
-    if l.contains("stopped") {
-        None
-    } else if l.contains(", cpu,") {
-        Some("cpu")
-    } else {
-        Some("gpu")
-    }
-}
-
-/// Pause the local AI (only when its switch is on; Sunshine is never touched). A state file already there (a restart of a running
-/// session) is kept: the list of what to bring back must never lose entries. Returns a plain-words line.
-pub fn on_start(s: &Settings, t: &Tools, session_dir: &Path) -> Option<String> {
-    if !s.pause_ai {
-        return None;
-    }
-    let mut keep: Vec<String> = std::fs::read_to_string(state_file(session_dir)).map(|x| x.lines().map(String::from).collect()).unwrap_or_default();
-    let mut notes = Vec::new();
-    if let Some(mode) = s.pause_ai.then(|| running_ai(t)).flatten() {
-        let ok = retry_busy(|| Command::new(&t.omarchyvr_ai).arg("stop").stdin(Stdio::null()).output()).is_ok_and(|o| o.status.success());
-        if ok {
-            keep.retain(|l| !l.starts_with("ai="));
-            keep.push(format!("ai={mode}"));
-        } else {
-            notes.push("the local AI could not be paused".to_string());
-        }
-    }
-    if !keep.is_empty() {
-        let _ = std::fs::create_dir_all(session_dir);
-        let _ = std::fs::write(state_file(session_dir), keep.join("\n") + "\n");
-    }
-    let mut out = if paused(session_dir).is_empty() { String::new() } else { format!("game mode: paused {}", paused(session_dir).join(", ")) };
-    for n in notes {
-        if !out.is_empty() {
-            out.push_str("; ");
-        }
-        out.push_str(&format!("game mode: {n} (VR goes on)"));
-    }
-    (!out.is_empty()).then_some(out)
-}
-
-/// The arguments that bring the local AI back after a pause, or up at a Work start: `omarchyvr-ai up` starts every slot
-/// ai.toml asks for (the action model, the router, the speech server when the video memory fits). `serve` started the
-/// action model only, so the speech server stayed down after a game-mode pause (live 2026-10-16: the whole Work
-/// session used the CPU speech fallback).
+/// The arguments that bring the local AI up at a Work start: `omarchyvr-ai up` starts every slot ai.toml asks for
+/// (the action model, Lara, the speech server when the video memory fits).
 pub fn up_args(cpu: bool) -> Vec<String> {
     let mut v = vec!["up".to_string(), "--wait".into(), "0".into()];
     if cpu {
@@ -227,11 +228,11 @@ pub fn up_args(cpu: bool) -> Vec<String> {
     v
 }
 
-/// Work with voice: bring up what ai.toml asks for when Local AI is on (`omarchyvr-ai up --wait 0`, detached; it keeps a
-/// server that fits and starts the missing ones, the speech server included). The voice listener tries the speech
-/// server again after a pause, so it switches to it once it answers. Off: nothing.
+/// Work with voice: bring up what ai.toml asks for when the local AI has work (`omarchyvr-ai up --wait 0`, detached):
+/// the local models, or Lara alone in front of an online brain. The voice listener tries the speech server again
+/// after a pause, so it switches to it once it answers. Nothing to load: nothing.
 pub fn local_ai_up(t: &Tools, cfg: &omarchyvr_config::ai::AiConfig) -> Option<String> {
-    if !cfg.local_models_on() {
+    if !cfg.ai_servers_wanted() {
         return None;
     }
     let spawned = Command::new(&t.omarchyvr_ai).args(up_args(false)).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn();
@@ -241,25 +242,24 @@ pub fn local_ai_up(t: &Tools, cfg: &omarchyvr_config::ai::AiConfig) -> Option<St
     })
 }
 
-/// Start again exactly what was paused. The state file goes first; the AI is started detached (it takes a while to load).
+/// At `vr stop`: nothing of Work is started again (the local AI and voice start with the next Work); only Sunshine
+/// entries of an old state file are honoured (this version never stops Sunshine). The state file goes.
 pub fn on_stop(t: &Tools, session_dir: &Path) -> Option<String> {
     let text = std::fs::read_to_string(state_file(session_dir)).ok()?;
     let _ = std::fs::remove_file(state_file(session_dir));
     let mut back = Vec::new();
     let mut failed = Vec::new();
+    let mut work = false;
     for l in text.lines() {
         match l.split_once('=') {
             Some(("sunshine", u)) if SUNSHINE_UNITS.contains(&u) => {
-                if systemctl(t, &["start", u]) == Some(true) { back.push("Sunshine") } else { failed.push("Sunshine") }
+                if systemctl(t, &["start", u]) == Some(true) {
+                    back.push("Sunshine")
+                } else {
+                    failed.push("Sunshine")
+                }
             }
-            Some(("ai", m)) if m == "gpu" || m == "cpu" => {
-                let spawned = retry_busy(|| {
-                    let mut c = Command::new(&t.omarchyvr_ai);
-                    c.args(up_args(m == "cpu"));
-                    c.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn()
-                });
-                if spawned.is_ok() { back.push("local AI") } else { failed.push("local AI") }
-            }
+            Some(("ai" | "voice" | "desk", _)) => work = true,
             _ => {}
         }
     }
@@ -270,10 +270,13 @@ pub fn on_stop(t: &Tools, session_dir: &Path) -> Option<String> {
     if !failed.is_empty() {
         out.push_str(&format!("{}game mode: could not start again: {}", if out.is_empty() { "" } else { "; " }, failed.join(", ")));
     }
+    if work {
+        out.push_str(&format!("{}the local AI and voice were stopped for Play; they start again with Work", if out.is_empty() { "" } else { "; " }));
+    }
     (!out.is_empty()).then_some(out)
 }
 
-/// A monado-service or SteamVR's vrserver is alive (by process name): `restore` must not start the AI again into a session.
+/// A monado-service or SteamVR's vrserver is alive (by process name): `restore` must not touch a session.
 fn session_running(proc_root: &Path) -> bool {
     std::fs::read_dir(proc_root).into_iter().flatten().flatten().any(|e| {
         e.file_name().to_string_lossy().bytes().all(|b| b.is_ascii_digit())
@@ -281,14 +284,15 @@ fn session_running(proc_root: &Path) -> bool {
     })
 }
 
-/// `omarchyvr vr gamemode [status|on|off|budget auto|6|8|restore]`.
+/// `omarchyvr vr gamemode [status|on|off|light on|off|eye on|off|budget auto|6|8|restore]`.
 pub fn cli(what: &[String], home: &Path, session_dir: &Path) -> Result<(), String> {
     let mut s = load(home);
     match what.first().map(String::as_str).unwrap_or("status") {
         w @ ("on" | "off") => {
+            // the old "Game mode" switch: kept for old callers, Play always frees the graphics card now
             s.pause_ai = w == "on";
             save(home, &s).map_err(|e| e.to_string())?;
-            println!("Game mode (pause the local AI): {w}");
+            println!("Play always stops the local AI and voice (the graphics card is for the game); this switch has no effect any more");
         }
         w @ ("light" | "light-on" | "light-off") => {
             // `light on|off` (the app) or `light-on` / `light-off`
@@ -300,6 +304,16 @@ pub fn cli(what: &[String], home: &Path, session_dir: &Path) -> Result<(), Strin
             s.light = v;
             save(home, &s).map_err(|e| e.to_string())?;
             println!("Light game mode: {} (next start)", if v { "on" } else { "off" });
+        }
+        "eye" => {
+            let v = match what.get(1).map(String::as_str) {
+                Some("on") => true,
+                Some("off") => false,
+                _ => return Err("eye: on | off".into()),
+            };
+            s.eye_games = v;
+            save(home, &s).map_err(|e| e.to_string())?;
+            println!("Eye tracking in games: {} (next Play)", if v { "on" } else { "off" });
         }
         "budget" => {
             let b = what.get(1).map(|b| b.trim_end_matches("ms").trim().to_string()).unwrap_or_default();
@@ -313,7 +327,7 @@ pub fn cli(what: &[String], home: &Path, session_dir: &Path) -> Result<(), Strin
         "restore" => {
             let t = Tools::real(home);
             if session_running(&t.proc_root) {
-                println!("A VR session is running: nothing started again");
+                println!("A VR session is running: nothing changed");
                 return Ok(());
             }
             if let Some(l) = on_stop(&t, session_dir) {
@@ -321,12 +335,13 @@ pub fn cli(what: &[String], home: &Path, session_dir: &Path) -> Result<(), Strin
             }
         }
         "status" => {
-            println!("Pause the local AI: {}", if s.pause_ai { "on" } else { "off" });
+            println!("Play stops the local AI and voice: always");
             println!("Light game mode: {}", if s.light { "on" } else { "off" });
+            println!("Eye tracking in games: {}", if s.eye_games { "on" } else { "off" });
             println!("Compositor time budget: {}", s.comp_budget);
-            println!("{}", paused_line(session_dir).unwrap_or_else(|| "Nothing paused".into()));
+            println!("{}", paused_line(session_dir).unwrap_or_else(|| "Nothing stopped for Play".into()));
         }
-        w => return Err(format!("unknown choice {w} (status|on|off|light on|off|budget auto|6|8|restore)")),
+        w => return Err(format!("unknown choice {w} (status|light on|off|eye on|off|budget auto|6|8|restore)")),
     }
     Ok(())
 }
@@ -342,7 +357,7 @@ mod tests {
     }
 
     /// Fake systemctl (logs calls; Sunshine "active" while <dir>/sun-up exists) and fake omarchyvr-ai.
-    fn fakes(d: &Path, ai: &str) -> Tools {
+    fn fakes(d: &Path) -> Tools {
         let _ = std::fs::create_dir_all(d.join("proc"));
         let t = Tools { systemctl: d.join("systemctl"), omarchyvr_ai: d.join("omarchyvr-ai"), proc_root: d.join("proc") };
         script(
@@ -352,14 +367,7 @@ mod tests {
                 d = d.display()
             ),
         );
-        script(
-            &t.omarchyvr_ai,
-            &format!(
-                "echo \"ai $@\" >> {d}/calls\ncase \"$1\" in\n status) echo '{ai}' ;;\nesac",
-                d = d.display(),
-                ai = ai
-            ),
-        );
+        script(&t.omarchyvr_ai, &format!("echo \"ai $@\" >> {d}/calls", d = d.display()));
         std::fs::write(d.join("sun-up"), "").unwrap();
         t
     }
@@ -416,81 +424,65 @@ mod tests {
     }
 
     #[test]
-    fn pauses_and_restores_exactly_what_ran() {
-        let d = crate::vr::test_dir("gm-both");
-        let t = fakes(&d, "server:  pid 5 on http://127.0.0.1:8080/v1, cpu, m.gguf, ready");
+    fn play_records_what_it_stopped_and_stop_starts_nothing_of_work_again() {
+        let d = crate::vr::test_dir("gm-play");
+        let t = fakes(&d);
         let sess = d.join("sess");
-        let l = on_start(&Settings::default(), &t, &sess).unwrap();
-        assert_eq!(l, "game mode: paused local AI");
-        assert!(!calls(&d).contains("stop app-dev"), "Sunshine is never stopped");
-        assert!(calls(&d).contains("ai stop"));
-        // a state file from an older version that stopped Sunshine: it is started again, never stopped
+        record_stopped(&sess, &[("ai", "llama-server pid 5".into()), ("voice", "omarchyvr-voice pid 6".into())]);
+        // a restart of the session adds, never loses
+        record_stopped(&sess, &[("ai", "llama-server pid 5".into()), ("ai", "whisper-server pid 7".into())]);
+        assert_eq!(paused(&sess), vec!["local AI".to_string(), "voice".to_string()]);
+        assert_eq!(paused_line(&sess).as_deref(), Some("Stopped for Play: local AI, voice"));
+        // an old state file that also lists Sunshine: it is started again, never stopped
         let mut st = std::fs::read_to_string(sess.join("gamemode-paused.txt")).unwrap();
         st.push_str("sunshine=app-dev.lizardbyte.app.Sunshine.service\n");
         std::fs::write(sess.join("gamemode-paused.txt"), st).unwrap();
         let l = on_stop(&t, &sess).unwrap();
-        assert!(l.contains("started again: Sunshine, local AI") || l.contains("started again: local AI, Sunshine"), "{l}");
+        assert!(l.contains("started again: Sunshine") && l.contains("start again with Work"), "{l}");
+        assert!(calls(&d).contains("--user start app-dev.lizardbyte.app.Sunshine.service"));
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        assert!(!calls(&d).contains("ai up"), "the local AI is not started again after Play: {}", calls(&d));
         assert!(paused(&sess).is_empty());
-        // the AI comes back detached: give a loaded test machine time (up to 10 s)
-        for _ in 0..200 {
-            if calls(&d).contains("ai up --wait 0 --cpu") {
+        assert_eq!(on_stop(&t, &sess), None, "nothing left");
+    }
+
+    #[test]
+    fn nothing_recorded_nothing_said_and_sunshine_is_never_stopped() {
+        let d = crate::vr::test_dir("gm-none");
+        let t = fakes(&d);
+        record_stopped(&d.join("s"), &[]);
+        assert_eq!(on_stop(&t, &d.join("s")), None);
+        assert!(!calls(&d).contains("stop"), "{}", calls(&d));
+        assert!(d.join("sun-up").exists());
+    }
+
+    #[test]
+    fn a_work_start_brings_the_ai_up_only_when_it_has_work() {
+        let d = crate::vr::test_dir("gm-up");
+        let t = fakes(&d);
+        // the Claude CLI brain (the default): nothing to load
+        let cli = omarchyvr_config::ai::AiConfig::parse("").unwrap();
+        assert_eq!(local_ai_up(&t, &cli), None);
+        // local models on
+        let local = omarchyvr_config::ai::AiConfig::parse("voice_local_models = true\n").unwrap();
+        assert!(local_ai_up(&t, &local).is_some());
+        for _ in 0..100 {
+            if calls(&d).contains("ai up --wait 0") {
                 break;
             }
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
-        assert!(calls(&d).contains("--user start app-dev.lizardbyte.app.Sunshine.service"));
-        assert!(calls(&d).contains("ai up --wait 0 --cpu"));
-        assert_eq!(on_stop(&t, &sess), None); // nothing left to restore
+        assert!(calls(&d).contains("ai up --wait 0"), "{}", calls(&d));
     }
 
     #[test]
-    fn nothing_running_nothing_paused_and_off_does_nothing() {
-        let d = crate::vr::test_dir("gm-none");
-        let t = fakes(&d, "server:  stopped");
-        std::fs::remove_file(d.join("sun-up")).unwrap();
-        assert_eq!(on_start(&Settings::default(), &t, &d.join("s")), None);
-        assert!(!calls(&d).contains("stop"));
-        let d = crate::vr::test_dir("gm-off");
-        let t = fakes(&d, "server:  pid 5, gpu (all layers)");
-        let off = Settings { pause_ai: false, ..Settings::default() };
-        assert_eq!(on_start(&off, &t, &d.join("s")), None);
-        assert_eq!(calls(&d), "");
-    }
-
-    #[test]
-    fn restart_keeps_the_list_and_missing_tools_never_fail() {
-        let d = crate::vr::test_dir("gm-keep");
-        let t = fakes(&d, "server:  stopped");
-        let sess = d.join("s");
-        std::fs::create_dir_all(&sess).unwrap();
-        std::fs::write(sess.join("gamemode-paused.txt"), "ai=gpu\n").unwrap();
-        let both = Settings::default();
-        assert_eq!(on_start(&both, &t, &sess), Some("game mode: paused local AI".into())); // AI already paused by the first start: kept
-        let none = Tools { systemctl: d.join("nope"), omarchyvr_ai: d.join("nope2"), proc_root: d.join("proc") };
-        assert_eq!(on_start(&both, &none, &d.join("s2")), None);
-    }
-
-    #[test]
-    fn default_never_touches_sunshine() {
-        let d = crate::vr::test_dir("gm-default-sun");
-        let t = fakes(&d, "server:  pid 5, gpu (all layers)"); // Sunshine is up, AI runs
-        let l = on_start(&Settings::default(), &t, &d.join("s")).unwrap();
-        assert_eq!(l, "game mode: paused local AI");
-        assert!(!calls(&d).contains("Sunshine"), "{}", calls(&d));
-        assert!(d.join("sun-up").exists());
-        let ai_off = Settings { pause_ai: false, ..Settings::default() };
-        let d = crate::vr::test_dir("gm-default-sun2");
-        let t = fakes(&d, "server:  pid 5, gpu (all layers)");
-        assert_eq!(on_start(&ai_off, &t, &d.join("s")), None);
-        assert_eq!(calls(&d), "");
-    }
-
-    #[test]
-    fn light_game_mode_defaults_on_saves_and_flags_win() {
+    fn light_and_eye_switches_default_save_and_flags_win() {
         let d = Settings::default();
         assert!(d.light);
+        assert!(!d.eye_games, "eye tracking in games is off by default");
         assert!(!parse_settings("light_game = false\n").light);
         assert!(parse_settings("pause_ai = false\n").light, "an old file keeps the default");
+        assert!(parse_settings("eye_in_games = true\n").eye_games);
         let h = std::env::temp_dir().join(format!("omarchyvr-light-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&h);
         save(&h, &Settings { light: false, ..d.clone() }).unwrap();
@@ -498,10 +490,18 @@ mod tests {
         cli(&["light".into(), "on".into()], &h, &h).unwrap();
         assert!(load(&h).light);
         assert!(cli(&["light".into(), "maybe".into()], &h, &h).is_err());
+        cli(&["eye".into(), "on".into()], &h, &h).unwrap();
+        assert!(load(&h).eye_games && load(&h).light, "one switch does not change the other");
+        assert!(cli(&["eye".into()], &h, &h).is_err());
         assert_eq!(resolve_light(false, false, &d), Ok(true));
         assert_eq!(resolve_light(false, true, &d), Ok(false));
         assert_eq!(resolve_light(true, false, &Settings { light: false, ..d.clone() }), Ok(true));
         assert!(resolve_light(true, true, &d).is_err());
+        assert_eq!(resolve_eye(false, false, &d), Ok(false), "saved: off");
+        assert_eq!(resolve_eye(true, false, &d), Ok(true));
+        assert_eq!(resolve_eye(false, true, &Settings { eye_games: true, ..d.clone() }), Ok(false));
+        assert_eq!(resolve_eye(false, false, &Settings { eye_games: true, ..d.clone() }), Ok(true));
+        assert!(resolve_eye(true, true, &d).is_err());
         let _ = std::fs::remove_dir_all(&h);
     }
 }

@@ -14,4 +14,6 @@ omarchyvr desk: would stop, in this order (SIGINT by pid, never by name):
   10. broker: pid 999999 from $ROOT/session/broker.pid (pimax-cam), wait 10 s
   then the kernel log check (Xid / Idling display engine)
   then the VR screens' outputs (PIMAX-*) are removed once no monado-service runs
+  then the local AI: nothing runs (by their pid files, SIGTERM, SIGKILL after 5 s)
+  then a check that nothing of Work is left running
 --- stderr

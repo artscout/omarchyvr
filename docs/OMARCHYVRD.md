@@ -147,9 +147,17 @@ The plan is the spec; the user decisions of 2026-10-15 apply.
   its pid file is written. The preset is re-applied after a WayVR restart. A WayVR crash together with an Xid 31 is not
   restarted: the user is asked. `ai.server` starts and restarts through `omarchyvr-ai up` (the saved shape: the simple
   model, or Lara + the action model fitted to the free VRAM; `--cpu` if that was its mode) and stops with
-  `omarchyvr-ai down`; since 2026-10-16 it is a Work-only session component (rule: Work and ai.toml's
-  `voice_local_models`, which omarchyvrd reads each round; Play never starts it, a switch to Play stops it; AI.md 16). The
+  `omarchyvr-ai down`; since 2026-10-16 it is a Work-only session component (rule: Work and
+  `AiConfig::ai_servers_wanted()`: ai.toml's `voice_local_models`, or Lara in front of an online brain, `voice_lara`;
+  omarchyvrd reads it each round; Play never starts it, a switch to Play stops it; AI.md 16 and 21). The
   keepalive restarts through `systemctl --user restart`.
+- **Play has the graphics card (2026-10-17).** The Work-only components (`spec::WORK_ONLY`: `ai.server`,
+  `voice.listen`, `voice.captions`, `voice.act`, `voicehud`) are never wanted in a vr (Play) session, whatever an
+  override or omarchyvrd.toml says, and one found running there is stopped ("Play: the graphics card is for the
+  game"); the voice rules also require desk mode in the spec. A stop or restart of Work by omarchyvrd (its children
+  run with `PIMAX_WATCHDOG=1`) keeps the local AI loaded (`desk stop` keeps it in the watchdog; with no Work left,
+  `ai.server` is no longer wanted), and a switch to Play still frees it (every `vr start` stops every AI slot first);
+  the user's stops (the app's Stop, Exit Work, Switch to Play) stop it at once (docs/PLAY-WORK-AUDIT.md).
 - **Unplug:**
   - Desk: after 6 s, a clean ordered stop. The intent stays on, and the session is restored once the HID has been
     present for 4 s and DP is connected.

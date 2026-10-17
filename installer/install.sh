@@ -28,7 +28,10 @@
 #   --gpu-speech        also build whisper.cpp with Vulkan (for the 'Speech on graphics card' switch; off by default)
 #   --hand-models       fetch the Mercury hand-tracking models from Monado's public server (no licence: personal use only;
 #                       the same download as the app's Tracking > Download hand models button)
-#   --no-ai             skip the local AI runtime and models
+#   --ai-models         also download the local AI now (llama.cpp runtime, Lara, Qwen3.5-4B: about 5.3 GB). Off by
+#                       default: the app asks the first time Work is pressed (docs/WORK-FIRST-RUN.md); AI files already
+#                       on disk are always kept and reused (for agents and tests that need the models)
+#   --no-ai             the default since the Work first run (kept for old scripts)
 #   --no-downloads      use only what is on disk (no network apart from git submodules already cloned)
 #   --install-packages  install missing build packages with pacman right away (one extra password prompt, only on a
 #                       machine that lacks them)
@@ -46,7 +49,7 @@ if [[ -r $REPO/patches/nvidia/tested-versions.txt ]]; then
 	NVIDIA_TESTED_VERSIONS=$(sed 's/#.*//' "$REPO/patches/nvidia/tested-versions.txt" | tr -s ' \t\n' ' ' | sed 's/^ //; s/ $//')
 fi
 
-PREFIX="$HOME/.local" NO_ROOT=0 DRY_ROOT=0 NVIDIA_MODE=auto LAB_DATA="" GPU_SPEECH=0 HAND_MODELS=0 NO_AI=0 NV_ALLOW_UNTESTED=no
+PREFIX="$HOME/.local" NO_ROOT=0 DRY_ROOT=0 NVIDIA_MODE=auto LAB_DATA="" GPU_SPEECH=0 HAND_MODELS=0 AI_MODELS=0 NV_ALLOW_UNTESTED=no
 NO_DL=0 INSTALL_PKGS=0 OPEN_APP=1 JOBS=8 DRY=0
 while [[ $# -gt 0 ]]; do
 	case $1 in
@@ -58,12 +61,13 @@ while [[ $# -gt 0 ]]; do
 	--lab-data) LAB_DATA=$(realpath -m "${2:?}"); shift ;;
 	--gpu-speech) GPU_SPEECH=1 ;;
 	--hand-models) HAND_MODELS=1 ;;
-	--no-ai) NO_AI=1 ;;
+	--ai-models) AI_MODELS=1 ;;
+	--no-ai) AI_MODELS=0 ;;
 	--no-downloads) NO_DL=1 ;;
 	--install-packages) INSTALL_PKGS=1 ;;
 	--no-app) OPEN_APP=0 ;;
 	-j) JOBS=${2:?}; shift ;;
-	-h | --help) sed -n '3,38p' "$0"; exit 0 ;;
+	-h | --help) sed -n '3,39p' "$0"; exit 0 ;;
 	*) die "unknown option $1 (see --help)" ;;
 	esac
 	shift
@@ -458,8 +462,12 @@ else
 		heavy "$BIN/omarchyvr-backgrounds" download 2>&1 | tail -3 | sed 's/^/    /' || warn "backgrounds: download failed (retry from the app)"
 	fi
 	record data "${XDG_DATA_HOME:-$HOME/.local/share}/omarchyvr/backgrounds" KEEP "VR backgrounds"
-	if [[ $NO_AI == 0 && $NO_DL == 0 ]]; then
+	# the local AI's models are the user's choice: the app asks the first time Work is pressed and downloads only what
+	# the answer needs (docs/WORK-FIRST-RUN.md); --ai-models fetches the old default set now (agents, tests)
+	if [[ $AI_MODELS == 1 && $NO_DL == 0 ]]; then
 		heavy "$BIN/omarchyvr-ai" install --two-stage --router lara 2>&1 | tail -5 | sed 's/^/    /' || warn "local AI: install failed (retry from the app's AI tab)"
+	else
+		note "local AI models: not downloaded now (the app asks the first time Work is pressed; files already on disk are kept)"
 	fi
 	record data "${XDG_DATA_HOME:-$HOME/.local/share}/omarchyvr/ai" KEEP "local AI runtime and models"
 	if [[ $HAND_MODELS == 1 ]]; then

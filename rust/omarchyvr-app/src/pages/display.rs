@@ -83,18 +83,20 @@ fn brightness(ui: &mut Ui, app: &mut PimaxApp) {
     });
 }
 
-/// Game mode, the compositor budget; the wrist readout (developer mode).
+/// Play's settings (light game mode, eye tracking in games), the compositor budget; the wrist readout (developer mode).
+/// Play always frees the graphics card (no switch: the local AI and voice never run in Play).
 fn performance(ui: &mut Ui, app: &mut PimaxApp) {
     let ed = editable(app);
     let busy = app.core.busy();
-    section(ui, "Performance", None, |ui| {
-        let mut on = app.core.facts.game_mode;
-        if switch_row(ui, &mut on, "Game mode", Some("Play pauses the local voice AI (it uses the graphics card) and Stop starts it again. Work is not affected."), !busy).changed() {
-            app.core.game_mode(on);
-        }
+    section(ui, "Performance", Some("Play always frees the graphics card for the game: the local AI, voice and the desk are stopped before Play starts and come back only with Work. Sunshine is never touched."), |ui| {
         let mut light = app.core.light_game();
-        if switch_row(ui, &mut light, "Light game mode", Some("Play runs only what a game needs (Monado, head tracking, controllers): no wrist readout, eye tracking or room search. Applies to the next Play."), !busy).changed() {
+        if switch_row(ui, &mut light, "Light game mode", Some("Play runs only what a game needs (Monado, head tracking, the controllers and their tracking): no wrist readout or room search. Applies to the next Play."), !busy).changed() {
             app.core.set_light_game(light);
+        }
+        let was_on = app.core.facts.eye_games;
+        let mut eye_games = was_on;
+        if switch_row(ui, &mut eye_games, "Eye tracking in games", Some("Off (default): Play leaves the eye tracker off. On: games get eye tracking too (visual only). Applies to the next Play."), !busy && (app.core.facts.caps.eye || was_on)).changed() {
+            app.core.set_eye_games(eye_games);
         }
         let names: Vec<&str> = quality::BUDGETS.iter().map(|x| x.1).collect();
         let cur = quality::BUDGETS.iter().position(|x| x.0 == app.core.facts.comp_budget).unwrap_or(usize::MAX);

@@ -134,6 +134,10 @@ pub fn restart(kind: &str, dir: &Path, auto: bool, r: &mut dyn Runner, say: &mut
     if auto {
         stop.push("--no-kill".into());
     }
+    if kind == "desk" {
+        // a restart of Work keeps the local AI loaded (the start's own `omarchyvr-ai up` finds it running)
+        stop.push("--keep-ai".into());
+    }
     stop.extend(stop_args(&args));
     r.run(&stop).map_err(|e| format!("stop failed: {e}"))?;
     say(&format!("starting again: omarchyvr {kind} start {}", args.join(" ")));
@@ -1007,13 +1011,19 @@ mod tests {
         let mut r = Rec(vec![], None);
         let mut said = vec![];
         restart("desk", &d, false, &mut r, &mut |m| said.push(m.to_string())).unwrap();
-        assert_eq!(r.0[0], sv(&["desk", "stop", "--grace", "30"]));
+        // a restart of Work keeps the local AI loaded (a real stop takes it down)
+        assert_eq!(r.0[0], sv(&["desk", "stop", "--grace", "30", "--keep-ai"]));
         assert_eq!(r.0[1], sv(&["desk", "start", "--6dof", "--ctrl-track", "--no-watchdog"]));
         assert_eq!(said.len(), 2);
         // the watchdog's restart never lets the stop SIGKILL Monado
         let mut r = Rec(vec![], None);
         restart("desk", &d, true, &mut r, &mut |_| {}).unwrap();
-        assert_eq!(r.0[0], sv(&["desk", "stop", "--grace", "30", "--no-kill"]));
+        assert_eq!(r.0[0], sv(&["desk", "stop", "--grace", "30", "--no-kill", "--keep-ai"]));
+        // a game session has no AI to keep
+        record_argv(&d, "vr", &args).unwrap();
+        let mut r = Rec(vec![], None);
+        restart("vr", &d, false, &mut r, &mut |_| {}).unwrap();
+        assert_eq!(r.0[0], sv(&["vr", "stop", "--grace", "30"]));
     }
 
     #[test]

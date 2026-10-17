@@ -404,6 +404,10 @@ impl AppCore {
     /// Why starting on the GPU needs a second look (a VR session runs): the budget next to it.
     pub fn localai_gpu_warning(&self) -> Option<String> {
         self.live.service.as_ref()?;
+        if self.running_side() == Some(true) {
+            // Play keeps the whole graphics card for the game: omarchyvr-ai refuses to start next to it
+            return Some("Play is running: the local AI does not start next to a game (it starts with Work).".into());
+        }
         let budget = self.localai.status.as_ref().and_then(|s| s.as_ref().ok()).and_then(|s| s.gpu_budget_mib).unwrap_or(4096);
         Some(format!("A VR session runs: the model takes up to {budget} MiB of VRAM next to it (allowed; Start on the CPU uses none)."))
     }

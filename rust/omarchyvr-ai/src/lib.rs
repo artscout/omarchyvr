@@ -276,7 +276,13 @@ pub fn parse_sha256sum(line: &str) -> Option<String> {
 
 /// The `curl` arguments of one resumable download (`-C -` continues a `.part` file).
 pub fn curl_args(a: &Asset, part: &Path) -> Vec<String> {
-    vec![
+    curl_args_with(a, part, true)
+}
+
+/// [`curl_args`]; `progress_bar` false: silent but errors shown (`-sS`), for callers that report the progress
+/// themselves from the `.part` file's size (`omarchyvr-ai get`, the app's Work setup).
+pub fn curl_args_with(a: &Asset, part: &Path, progress_bar: bool) -> Vec<String> {
+    let mut v: Vec<String> = vec![
         "-L".into(),
         "--fail".into(),
         "--proto".into(),
@@ -287,16 +293,63 @@ pub fn curl_args(a: &Asset, part: &Path) -> Vec<String> {
         "3".into(),
         "-C".into(),
         "-".into(),
-        "--progress-bar".into(),
-        "-o".into(),
-        part.to_string_lossy().into_owned(),
-        a.url.into(),
-    ]
+    ];
+    v.push(if progress_bar { "--progress-bar".into() } else { "-sS".into() });
+    v.extend(["-o".into(), part.to_string_lossy().into_owned(), a.url.into()]);
+    v
+}
+
+/// The error of a download or install the caller cancelled (the part already on disk is kept for the next try).
+pub const CANCELLED: &str = "cancelled";
+
+/// Called about four times a second while a download or an install step runs, with the bytes on disk so far; it
+/// returns false to cancel (the child process is stopped by its pid and the step ends with [`CANCELLED`]).
+pub type Tick<'a, 'b> = &'a mut (dyn FnMut(u64) -> bool + 'b);
+
+/// Stop a child we started (and the process group it leads, when it has one of its own): SIGTERM, up to 3 s, then
+/// SIGKILL. Only ever our own child, by its pid.
+pub fn stop_child(child: &mut std::process::Child, own_group: bool) {
+    let pid = child.id() as i32;
+    let target = if own_group { -pid } else { pid };
+    // SAFETY: kill(2) on our own child (or the process group it leads).
+    unsafe { libc::kill(target, libc::SIGTERM) };
+    for _ in 0..30 {
+        if matches!(child.try_wait(), Ok(Some(_))) {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    // SAFETY: as above.
+    unsafe { libc::kill(target, libc::SIGKILL) };
+    let _ = child.wait();
+}
+
+/// Run a child to the end, calling `tick` with `size()` about four times a second; `tick` returning false stops the
+/// child ([`stop_child`]) and gives [`CANCELLED`].
+pub fn run_ticking(mut child: std::process::Child, own_group: bool, size: &mut dyn FnMut() -> u64, tick: Tick<'_, '_>) -> Result<std::process::ExitStatus, String> {
+    loop {
+        match child.try_wait() {
+            Ok(Some(st)) => return Ok(st),
+            Ok(None) => {}
+            Err(e) => return Err(e.to_string()),
+        }
+        if !tick(size()) {
+            stop_child(&mut child, own_group);
+            return Err(CANCELLED.into());
+        }
+        std::thread::sleep(Duration::from_millis(250));
+    }
 }
 
 /// Download one asset into `dest` (a `.part` file alongside, resumed), check size and SHA-256, then rename.
 /// Already present with the right digest: nothing to do. Returns the final path.
 pub fn fetch(a: &Asset, dest: &Path, log: &mut dyn FnMut(&str)) -> Result<PathBuf, String> {
+    fetch_with(a, dest, log, None)
+}
+
+/// [`fetch`] with progress and cancel (`tick`; see [`Tick`]): the same reuse (a file with the right size and SHA-256 is
+/// kept), resume and checks. A cancel keeps the `.part` file for the next try.
+pub fn fetch_with(a: &Asset, dest: &Path, log: &mut dyn FnMut(&str), tick: Option<Tick<'_, '_>>) -> Result<PathBuf, String> {
     if let Some(d) = dest.parent() {
         std::fs::create_dir_all(d).map_err(|e| format!("{}: {e}", d.display()))?;
     }
@@ -318,9 +371,21 @@ pub fn fetch(a: &Asset, dest: &Path, log: &mut dyn FnMut(&str)) -> Result<PathBu
         None => log(&format!("{}: downloading {} MiB from {}", a.file, a.size >> 20, a.url)),
     }
     if file_size(&part) != Some(a.size) {
-        let st = Command::new("curl").args(curl_args(a, &part)).status().map_err(|e| format!("curl: {e}"))?;
+        let st = match tick {
+            None => Command::new("curl").args(curl_args(a, &part)).status().map_err(|e| format!("curl: {e}"))?,
+            Some(t) => {
+                let child = Command::new("curl")
+                    .args(curl_args_with(a, &part, false))
+                    .stdin(std::process::Stdio::null())
+                    .stdout(std::process::Stdio::null())
+                    .spawn()
+                    .map_err(|e| format!("curl: {e}"))?;
+                let p = part.clone();
+                run_ticking(child, false, &mut || file_size(&p).unwrap_or(0), t)?
+            }
+        };
         if !st.success() {
-            return Err(format!("{}: curl failed ({st}); run install again to resume", a.file));
+            return Err(format!("{}: the download stopped ({st}); check the internet connection and try again (it goes on where it stopped)", a.file));
         }
     }
     let got = file_size(&part).unwrap_or(0);

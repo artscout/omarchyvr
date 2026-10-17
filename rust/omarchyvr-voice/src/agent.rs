@@ -1692,7 +1692,8 @@ impl Agent {
         match (self.provider.local, self.router.is_some()) {
             (true, true) => "This PC, 2 stages",
             (true, false) => "This PC",
-            (false, _) => "Online",
+            (false, true) => "Online, Lara sorts",
+            (false, false) => "Online",
         }
     }
 
@@ -1798,6 +1799,11 @@ impl Agent {
             if a.router.is_some() {
                 a.fallback = Some(Provider::new(&a.provider.name, a.provider.wire, &a.provider.endpoint, &a.provider.model, None, Box::new(Curl)));
             }
+        } else if cfg.lara_with_online() {
+            // Lara on this PC sorts the command, the online model acts with that category's tools (the Work first-run
+            // choice "Lara + Claude with a key / another API"; docs/WORK-FIRST-RUN.md). Lara down: the online
+            // classifier's place is taken by the matcher's guess, the online model still answers.
+            a.router = crate::router::for_online(&cfg);
         }
         if provider_local && cfg.voice_online_backup.unwrap_or(true) {
             a.online_backup = cfg
@@ -2728,8 +2734,9 @@ impl Agent {
             Err(e) if self.router.is_some() && (e.contains("connect") || e.contains("(7)")) => "Lara off".to_string(),
             Err(e) => format!("{lara}class {}", timed_out(e)),
         };
-        // two stages on this PC and the router failed: the simple single-model request on the same server
-        if let (Some(_), Err(e)) = (&self.router, &class) {
+        // two stages on this PC and the router failed: the simple single-model request on the same server (Lara in
+        // front of an online model: the matcher's guess takes the classifier's place below, the online model answers)
+        if let (Some(_), Err(e), true) = (&self.router, &class, self.provider.local) {
             let why = timed_out(e);
             self.log(json!({"request": ctx.request, "provider": self.describe(), "mode": self.settings.mode.id(), "style": "two-stage", "class": {"error": why}, "class_ms": class_ms, "outcome": "router failed: simple request"}));
             return self.fall_back(actor, &ctx, cands, now, r, &class_txt, "router down", cost);
@@ -4666,5 +4673,31 @@ mod tests {
         // prewarm can be switched off
         let a = Agent::from_ai_text("voice_ai_prewarm = false\n", &c, &|_| None, &mut |_| {}).unwrap().unwrap();
         assert!(!a.settings.prewarm);
+    }
+
+    #[test]
+    fn lara_sorts_for_an_online_model_and_its_absence_never_drops_the_online_answer() {
+        // ai.toml of the Work first run "Lara + Claude with a key": Lara is the router, Claude acts
+        let key = "voice_lara = true\nvoice_local_models = false\n[use]\nvoice = \"claude\"\n[providers.claude]\nkind = \"anthropic\"\napi_key = \"sk-ant-TESTNOTAKEY\"\n";
+        let a = Agent::from_ai_text(key, &cat(), &|_| None, &mut |_| {}).unwrap().unwrap();
+        assert!(a.router.is_some() && !a.provider.local, "Lara in front of the online model");
+        assert_eq!(a.mode_label(), "Online, Lara sorts");
+        // the Claude CLI reads every command itself: no Lara
+        let cli = Agent::from_ai_text("voice_lara = true\nvoice_local_models = false\n", &cat(), &|_| None, &mut |_| {}).unwrap().unwrap();
+        assert!(cli.router.is_none());
+        // Lara answers: one online request only (no online classifier), with the category's tools
+        for (router, why) in [(Ok(laya("screens", 0.97)), "Lara sorted it"), (Err("curl: (7) Failed to connect".to_string()), "Lara is down")] {
+            let s = Script::default();
+            s.replies.borrow_mut().extend([or_call("move_window", json!({"window": "0xc3", "workspace": 1}), 0.00004), or_call("move_window", json!({"window": "0xc3", "workspace": 1}), 0.00004)]);
+            let mut actor = setup_remote(Box::new(s.clone()), None);
+            let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+            actor.agent.as_mut().unwrap().router = Some(crate::router::Router::new("laya", "http://127.0.0.1:9", Box::new(LocalPair { router, act: vec![], seen: seen.clone() })));
+            let mut d = Desk::new();
+            let id = actor.hear("Max put the music thing over on the first screen", Instant::now(), &mut d);
+            assert_eq!(id.as_deref(), Some("ai:move_window"), "{why}: the online model still acts");
+            let bodies = s.bodies.borrow();
+            assert!(!bodies.is_empty() && bodies.iter().all(|b| b.2["model"].as_str() == Some("openai/gpt-6-luna")), "{why}: only the action model is asked online (no jev classification): {:?}", bodies.iter().map(|b| b.2["model"].clone()).collect::<Vec<_>>());
+            assert!(seen.lock().unwrap().iter().any(|x| x.0.ends_with("/v1/systemone")), "{why}: Lara was asked");
+        }
     }
 }

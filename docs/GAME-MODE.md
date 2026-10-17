@@ -1,4 +1,27 @@
-# Light game mode and games that crash with xrizer
+# Play: the graphics card for the game, light game mode, games that crash with xrizer
+
+## Play frees the graphics card (user decision 2026-10-17)
+Play keeps everything a game needs (Monado, head 6DoF with the camera broker and SLAM, controllers and their optical
+tracking, sound) and nothing of Work: no WayVR desk, no VR screens, no voice, no subtitles, no local AI, no speech
+server. Before `omarchyvr vr start` starts anything it stops, by pid only, what a crashed or forgotten Work left and
+every `omarchyvr-ai` slot (`work::clear_for_play` in rust/omarchyvr-tools/src/vr/work.rs); a running session is never
+touched, Sunshine never. What it stopped is written to `/tmp/omarchyvr-session/gamemode-paused.txt` and shown on Home
+("Stopped for Play: local AI, voice"). Nothing is started again when Play stops: the AI and voice belong to Work and
+start with the next Work. `omarchyvr-ai up`/`serve` refuse while Play runs (`--force` for agents), omarchyvrd never
+wants a Work component (`ai.server`, voice, voicehud) in a Play session and stops one it finds. Home shows, while Play
+runs, what uses the graphics card (`nvidia-smi --query-compute-apps`, read only, every 10 s): "nothing of Work or the
+AI uses it: 17.0 of 24.0 GB free", or the leftover by name and pid. Audit and evidence: docs/PLAY-WORK-AUDIT.md.
+The old "Game mode" switch (pause the local AI during Play, `pause_ai`) is gone from the app: Play always does it.
+
+Work -> Play from Home ("Switch to Play") is one job: Work's full stop (the same as Exit Work, docs/WAYVR-CONTROLS.md),
+the wait until Monado is gone, then Play's start.
+
+## Eye tracking in games
+Switch: Home > quick settings and Display > Performance, "Eye tracking in games" (default off). Saved as
+`eye_in_games` in `~/.config/omarchyvr/gamemode.toml` (`omarchyvr vr gamemode eye on|off`). Play passes `--eye` or
+`--no-eye` to `omarchyvr vr start` and `start-argv.txt` keeps it; `vr start` without either flag uses the saved switch.
+On: the eye tracker runs in the game session too (visual only, like in Work). Off: Play leaves the eye tracker off.
+It applies to the next Play. Work's own switch (Quick settings "Eye tracking") is separate.
 
 ## Light game mode (Play)
 Switch: Home > quick settings and Display > Performance, "Light game mode" (default on). Saved as `light_game` in
@@ -7,13 +30,14 @@ Play passes `--light` (or `--no-light`) to `omarchyvr vr start`, so `start-argv.
 `vr start` without either flag uses the saved switch.
 
 What Play runs with it on: monado-service (compositor), the Pimax driver, camera broker + SLAM (head 6DoF),
-optical controller tracking, controllers and haptics, headset sound/mic routing, the saved backlight.
-What `--light` drops: eye tracking (`PIMAX_EYE`), the wrist readout (`--perf`: a second WayVR plus omarchyvr-perf),
-the room anchor hook (`PIMAX_ANCHOR`) and the room search after start. Already never in Play: voice (all voice
-processes), passthrough, the desk. Camera hands only when the user switched them on. The local AI is paused by
-"Game mode" (separate switch). The recorder and its Monado tap run only when the user starts a recording.
+optical controller tracking, controllers and haptics, headset sound/mic routing, the saved backlight (and the eye
+tracker when "Eye tracking in games" is on).
+What `--light` drops: the wrist readout (`--perf`: a second WayVR plus omarchyvr-perf), the room anchor hook
+(`PIMAX_ANCHOR`) and the room search after start. Eye tracking is no longer part of it (its own switch above).
+Never in Play: voice (all voice processes), passthrough, the desk, the local AI. Camera hands only when the user
+switched them on. The recorder and its Monado tap run only when the user starts a recording.
 `XRT_COMPOSITOR_OUTPUT_GAMMA` is only set when the user picked Bright/Brighter (Display); with Standard there is no extra pass.
-omarchyvrd follows the argv (`--light` means no perf, anchor, eye).
+omarchyvrd follows the argv (`--light` means no perf and anchor; `--eye`/`--no-eye` the eye tracker).
 
 ## Games that crash with xrizer (xrizer is not changed)
 xrizer aborts a game that calls an OpenVR function it lacks (Half-Life: Alyx: `GetPosesForFrame` is `todo!()`).

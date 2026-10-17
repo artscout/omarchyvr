@@ -183,9 +183,18 @@ pub fn router_id(r: Option<&Router>) -> String {
 /// The router from ai.toml (two stages on this PC), with curl. `PIMAX_AI_ROUTER_BASE` (loopback only) points it
 /// elsewhere.
 pub fn from_config(cfg: &omarchyvr_config::ai::AiConfig) -> Option<Router> {
-    // PIMAX_AI_ROUTER_BASE: another router address (benchmarks next to a running session)
-    let base = std::env::var("PIMAX_AI_ROUTER_BASE").ok().filter(|b| omarchyvr_config::ai::is_loopback(b)).unwrap_or_else(|| omarchyvr_config::ai::ROUTER_BASE.to_string());
-    (cfg.voice_local == omarchyvr_config::ai::VoiceLocal::TwoStage).then(|| Router::new(&cfg.two_stage().router, &base, Box::new(Curl)))
+    (cfg.voice_local == omarchyvr_config::ai::VoiceLocal::TwoStage).then(|| Router::new(&cfg.two_stage().router, &router_base(), Box::new(Curl)))
+}
+
+/// Lara in front of an online brain (`voice_lara = true` with Claude through a key or a compatible API): the router
+/// of ai.toml on this PC, whatever `voice_local` says.
+pub fn for_online(cfg: &omarchyvr_config::ai::AiConfig) -> Option<Router> {
+    cfg.lara_with_online().then(|| Router::new(&cfg.two_stage().router, &router_base(), Box::new(Curl)))
+}
+
+/// The router's address (`PIMAX_AI_ROUTER_BASE`: another one on this PC, for benchmarks next to a running session).
+fn router_base() -> String {
+    std::env::var("PIMAX_AI_ROUTER_BASE").ok().filter(|b| omarchyvr_config::ai::is_loopback(b)).unwrap_or_else(|| omarchyvr_config::ai::ROUTER_BASE.to_string())
 }
 
 #[cfg(test)]

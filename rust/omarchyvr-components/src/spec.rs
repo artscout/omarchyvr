@@ -96,15 +96,20 @@ fn perf(d: &Desired) -> bool {
 fn screens(d: &Desired) -> bool {
     desk(d) && d.screens > 1
 }
+/// Voice runs in Work only (user decision 2026-10-15, VOICE-DECISIONS 4): no voice process in a game session.
 fn voice(d: &Desired) -> bool {
-    d.voice
+    d.voice && desk(d)
 }
 fn voice_desk(d: &Desired) -> bool {
     d.voice && desk(d)
 }
 fn voicehud(d: &Desired) -> bool {
-    d.voice && d.voicehud
+    d.voice && d.voicehud && desk(d)
 }
+
+/// Work's own parts: never in a game session (Play keeps the graphics card for the game; user decision 2026-10-17),
+/// whatever a toggle says. omarchyvrd stops any of them it finds running in one (`reconcile`).
+pub const WORK_ONLY: [&str; 5] = ["ai.server", "voice.listen", "voice.captions", "voice.act", "voicehud"];
 /// The local AI models run in Work (desk) sessions only, never in Play / SteamVR (user decision 2026-10-16): a
 /// switch from Work to Play stops them.
 fn ai(d: &Desired) -> bool {
@@ -638,6 +643,15 @@ mod tests {
         let vr = Desired { mode: Mode::Vr, sixdof: false, ..Desired::default() };
         assert!(!(spec("wayvr").unwrap().rule)(&vr));
         assert!(!(spec("broker").unwrap().rule)(&vr));
+        // Play: none of Work's parts, even with every switch of them on
+        let vr_all = Desired { mode: Mode::Vr, voice: true, voicehud: true, ai_server: true, ..Desired::default() };
+        for id in WORK_ONLY {
+            assert!(!(spec(id).unwrap().rule)(&vr_all), "{id} must never run in a game session");
+        }
+        let desk_all = Desired { mode: Mode::Desk, voice: true, voicehud: true, ai_server: true, ..Desired::default() };
+        for id in WORK_ONLY {
+            assert!((spec(id).unwrap().rule)(&desk_all), "{id} runs in Work when switched on");
+        }
     }
 
     #[test]

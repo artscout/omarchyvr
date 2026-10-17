@@ -28,6 +28,15 @@ Nothing leaves the machine unless you set up a remote LLM yourself.
 - **Where the AI runs.** The Work desk's watch has an "AI: ..." button: This PC (one model) / This PC, 2 stages (the
   router Lara sorts the command, the model on the graphics card answers) / Online. With two stages, two more buttons
   switch Lara and the model. Voice control follows within 2 s, no restart ([AI.md](AI.md) section 16).
+- **Work only** (2026-10-17). Voice runs in Work, never in Play: Play stops any voice process a crashed Work left, and
+  omarchyvrd never starts one in a game session. The first Work asks how speech becomes text (the processor, the
+  graphics card next to the local model, or off) and who answers ([WORK-FIRST-RUN.md](WORK-FIRST-RUN.md)); "off"
+  starts Work without voice. Exit Work (the Work menu on the left menu button, or the watch) stops voice with
+  everything else ([WAYVR-CONTROLS.md](WAYVR-CONTROLS.md)).
+- **Lara in front of an online model** (2026-10-17, `voice_lara = true`): with Claude through your key or another
+  compatible API, Lara sorts each command on this PC (processor) and the online model gets only that category's
+  tools; without Lara running, the matcher's guess is used and the online model still answers. The mode reads
+  "Online, Lara sorts" ([AI.md](AI.md) section 21).
 - **"Max" on its own.** You get a "Listening..." toast, and your next sentence (within 6 s) is taken as the command.
 - **Pauses** (2026-10-16). A sentence that stops mid-way ("Max, can you move uh one of the", "can you write uh") is not
   run: the listener waits 1.1 s instead of 0.5 s for more words after "the", "of", "to", "uh", "can you" and similar

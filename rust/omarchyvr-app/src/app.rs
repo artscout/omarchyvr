@@ -165,22 +165,25 @@ pub fn page_label(p: Page) -> &'static str {
     match p {
         Page::Setup => "Ready",
         Page::Onboarding => "Onboarding",
+        Page::WorkSetup => "Set up Work",
         _ => MAIN.iter().chain(DEV.iter()).find(|n| n.page == p).map(|n| n.label).unwrap_or("Home"),
     }
 }
 
 /// The help page: one short paragraph per feature (the "?" next to each setting says the same where it is).
-const HELP: [(&str, &str); 24] = [
+const HELP: [(&str, &str); 26] = [
     ("Install and uninstall", "Install: ./install.sh in the omarchyvr clone builds and installs everything and opens this app; the Onboarding step System setup lists every system change and asks for your password once (a reboot only when the NVIDIA module or the boot image changed). Later Plays never ask. Uninstall: Ready > Uninstall omarchyvr (Show what would be removed first); downloads and recordings are kept, settings go into one backup file in your home. docs/INSTALL.md, docs/UNINSTALL.md."),
     ("NVIDIA driver patch", "The Dream Air needs three small fixes in the NVIDIA open kernel module. They are applied to the tested driver versions (patches/nvidia/tested-versions.txt) and again after every driver update. On any other version nothing is patched unless you turn on Allow the patch on untested NVIDIA drivers (Onboarding > System setup, or Ready): the headset picture may break or the patched build may fail, but the desktop keeps working (the normal NVIDIA module is built as a fallback, and a restore snapshot is taken first). Changing the switch needs Apply (one password) so driver updates follow it. docs/NVIDIA-UNTESTED.md."),
     ("The \"?\" marks", "Point at a \"?\" or click it (in the headset, click): a small box says what the setting does. Click it again, click anywhere else or press Esc to close it."),
     ("Ready", "Ready checks the PC and the headset; Fix does what is needed. Fixes that need root show their lines and ask for your password first."),
-    ("Play and Work", "Play starts VR for Steam and OpenXR games. Work starts the desk (screens over passthrough). Stop ends what runs. The headset card on Home has the buttons."),
+    ("Play and Work", "Play starts VR for Steam and OpenXR games: 6DoF, the controllers and their tracking, and the whole graphics card for the game (the local AI, voice and the desk never run in Play; Home shows \"Graphics card: nothing of Work or the AI uses it\"). Work starts the desk (screens over passthrough, voice, the AI). Stop ends what runs, everything of it. While one runs, the other button switches: it stops the first completely, then starts the other. docs/PLAY-WORK-AUDIT.md."),
+    ("Set up Work", "The first time you press Work, two questions come before VR starts: the voice assistant (install Lara, and who answers free-form requests: Claude through the Claude Code on this PC or your own API key, a model on this PC, another compatible API, or none) and speech to text (the processor by default). Downloads show their progress and can be cancelled; files already here are reused. Then Work starts. Change the answers on the AI page (Work questions). docs/WORK-FIRST-RUN.md."),
+    ("Exit Work", "In the headset: the controller's menu button opens the Work menu; Exit Work there (or on the watch on your left wrist, the way with bare hands) asks once more, then stops everything of Work: the screens, voice, the AI, the desk's virtual displays, and puts the sound back. The same as Stop in this app. docs/WAYVR-CONTROLS.md."),
     ("Restarts", "Restart service (top bar) restarts the running session with the same settings. Restart headset sends the headset its restart command (stop VR first; back in about 30 seconds)."),
     ("Games run with", "Top bar: Monado (xrizer), or SteamVR (experimental: Play starts SteamVR with the Pimax driver, Stop closes it; Play starts Steam first the normal way; if a Steam that SteamVR once started is still open, Play asks \"Restart Steam now?\" and only closes it on your yes). Steam set up once: Ready > \"Steam set up for VR games\" > Fix, then quit and start Steam once; no game needs launch options. docs/STEAMVR.md."),
     ("Display", "Refresh rate 90 Hz (default) or 72 Hz, applied when VR starts with the commands Pimax Play sends on Windows. Render quality: Quality = the panel's own 3840x3552 per eye, Balanced = 85 %, Performance = 70 % (about half the pixels) for games that stutter. Applies at the next Play. docs/RENDER-QUALITY.md."),
     ("Brightness", "Image (Display page): Standard / Bright (default) / Brighter lifts the mid tones of games at the next start without burning out whites. Panel backlight (20 to 100 %) changes the headset right away; it is already at its maximum on Linux."),
-    ("Game mode", "Display page: Play pauses the local AI to free the graphics card and Stop starts it again; Sunshine is never paused or stopped. Compositor budget (Auto / 6 ms / 8 ms): compare the late % and game fps of the session line on Home."),
+    ("Game mode", "Play always frees the graphics card: the local AI and voice are stopped before a game session starts and come back only with Work; Sunshine is never paused or stopped. Light game mode (on by default) also leaves out the wrist readout and the room search; Eye tracking in games is its own switch (off by default). Compositor budget (Auto / 6 ms / 8 ms): compare the late % and game fps of the session line on Home. docs/GAME-MODE.md."),
     ("IPD", "Display page: set your eye distance (58-72 mm). Apply moves the lenses when VR is stopped and saves it for the next start."),
     ("Tracking", "6DoF follows your head with the headset cameras: start it in a lit room with the cameras free. Eye tracking is visual only: a dot where you look in Work; your eyes never click. It starts with every session once calibrated. In a dim room the cameras raise their exposure by themselves; if even that is too dark, the headset and the Tracking page say \"Tracking cameras see too little infrared light\" (daylight or an IR lamp helps). docs/AUTO-EXPOSURE.md."),
     ("Camera hands", "Tracking page (developer mode): in Work your bare hand is the pointer (pinch = click) and the controllers are ignored unless \"Controllers in Work\" is on (off by default). Say \"Max, use controllers\" or \"Max, hands only\" to switch. The two hand models have no licence, so they are not shipped: press \"Download hand models\" there, read the notice and agree; the download runs as you (needs git-lfs) and the switch turns on when it ends. docs/HANDS.md."),
@@ -371,6 +374,7 @@ impl PimaxApp {
             Page::Backgrounds => pages::backgrounds::show(ui, self),
             Page::System => pages::system::show(ui, self),
             Page::Onboarding => pages::onboarding::show(ui, self),
+            Page::WorkSetup => pages::worksetup::show(ui, self),
         }
     }
 

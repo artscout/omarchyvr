@@ -32,6 +32,9 @@ pub const TORCH_INDEX: &str = "https://download.pytorch.org/whl/cpu";
 pub const LAYA_CONSTRAINTS: &str = "annotated-doc==0.0.5\nannotated-types==0.8.0\nanyio==4.15.1\nclick==8.5.0\nfastapi==0.143.2\nfilelock==3.32.3\nfsspec==2026.7.0\nh11==0.16.0\nhf-xet==1.7.0\nhttpcore2==2.13.1\nhttpx2==2.13.1\nhuggingface_hub==2.2.0\nidna==3.20\nJinja2==3.1.6\nlaya==0.4.8\nmarkdown-it-py==4.2.0\nMarkupSafe==3.0.3\nmdurl==0.1.2\nmpmath==1.3.0\nnetworkx==3.6.1\nnumpy==2.5.4\nopentelemetry-api==1.45.1\npackaging==26.3\npydantic==2.14.1\npydantic_core==2.50.1\nPygments==2.21.0\npython-multipart==0.0.32\nPyYAML==6.0.3\nregex==2026.9.29\nrich==15.0.0\nsafetensors==0.8.0\nsetuptools==78.1.0\nshellingham==1.5.4\nstarlette==1.8.0\nsympy==1.14.0\ntokenizers==0.23.3\ntorch==2.14.1+cpu\ntqdm==4.70.1\ntransformers==5.20.0\ntruststore==0.10.5\ntyper==0.27.3\ntyping-inspection==0.4.4\ntyping_extensions==4.16.0\nuvicorn==0.54.0\n";
 /// Download size of the router (Python packages ~0.4 GiB, the Laya repository 2.3 GiB), for the app.
 pub const LAYA_DOWNLOAD_MIB: u64 = 2760;
+/// What the router takes on disk once installed (packages 1.2 GiB + the repository 2.3 GiB): the progress of
+/// `omarchyvr-ai get lara` is the size of `laya/` against this (an estimate: pip unpacks in bursts).
+pub const LAYA_DISK_MIB: u64 = 3500;
 /// CPU threads of the router (a few: one short forward pass per command, next to VR).
 pub const ROUTER_THREADS: u32 = 8;
 /// Headroom left on the GPU besides the action model's own figure (MiB).
@@ -101,12 +104,44 @@ pub fn model_installed(dirs: &Dirs, id: &str) -> bool {
 }
 
 fn run_logged(cmd: &mut Command, what: &str, log: &mut dyn FnMut(&str)) -> Result<(), String> {
+    run_logged_with(cmd, what, log, None, &mut || 0)
+}
+
+/// [`run_logged`] with progress and cancel: the command runs in a process group of its own (pip's helpers included),
+/// `tick` gets `size()` about four times a second and stops the group when it returns false ([`crate::CANCELLED`]).
+fn run_logged_with(cmd: &mut Command, what: &str, log: &mut dyn FnMut(&str), tick: Option<crate::Tick<'_, '_>>, size: &mut dyn FnMut() -> u64) -> Result<(), String> {
+    use std::os::unix::process::CommandExt;
     log(&format!("{what} ..."));
-    let st = cmd.status().map_err(|e| format!("{what}: {e}"))?;
+    let st = match tick {
+        None => cmd.status().map_err(|e| format!("{what}: {e}"))?,
+        Some(t) => {
+            cmd.process_group(0).stdin(std::process::Stdio::null());
+            let child = cmd.spawn().map_err(|e| format!("{what}: {e}"))?;
+            crate::run_ticking(child, true, size, t)?
+        }
+    };
     if !st.success() {
         return Err(format!("{what} failed ({st}); press Download again to retry (it resumes)"));
     }
     Ok(())
+}
+
+/// Bytes under a directory (files only, symlinks not followed); 0 when it is missing.
+pub fn dir_size(dir: &Path) -> u64 {
+    let mut total = 0;
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        let Ok(rd) = std::fs::read_dir(&d) else { continue };
+        for e in rd.flatten() {
+            let Ok(ft) = e.file_type() else { continue };
+            if ft.is_dir() {
+                stack.push(e.path());
+            } else if ft.is_file() {
+                total += e.metadata().map(|m| m.len()).unwrap_or(0);
+            }
+        }
+    }
+    total
 }
 
 /// The `nice -n 19 ionice -c 2 -n 7` prefix of heavy installs and servers (lowest best-effort I/O; see `serve_argv`).
@@ -125,21 +160,36 @@ pub fn laya_version(dirs: &Dirs) -> Option<String> {
 /// Install Laya: a virtualenv (system `python3`, 3.10 or newer), PyTorch CPU + Laya at the tested versions, and the
 /// checkpoint at the reviewed revision. Resumable: each step is skipped when already done.
 pub fn install_laya(dirs: &Dirs, log: &mut dyn FnMut(&str)) -> Result<(), String> {
+    install_laya_with(dirs, log, None)
+}
+
+/// [`install_laya`] with progress and cancel (`tick` gets the size of `laya/`; see [`crate::Tick`]). A cancelled step
+/// is redone (or resumed by pip / the Hugging Face client) by the next call.
+pub fn install_laya_with(dirs: &Dirs, log: &mut dyn FnMut(&str), mut tick: Option<crate::Tick<'_, '_>>) -> Result<(), String> {
     let venv = laya_venv(dirs);
     std::fs::create_dir_all(dirs.laya()).map_err(|e| format!("{}: {e}", dirs.laya().display()))?;
+    let root = dirs.laya();
+    // the size of laya/ costs a walk over thousands of files: at most every 2 s
+    let mut last: Option<(std::time::Instant, u64)> = None;
+    let mut size = move || {
+        if last.is_none_or(|(t, _)| t.elapsed() >= Duration::from_secs(2)) {
+            last = Some((std::time::Instant::now(), dir_size(&root)));
+        }
+        last.map(|x| x.1).unwrap_or(0)
+    };
     let py = venv.join("bin/python3");
     if !py.is_file() {
-        run_logged(Command::new("python3").args(["-m", "venv"]).arg(&venv), "making the router's Python environment", log)?;
+        run_logged_with(Command::new("python3").args(["-m", "venv"]).arg(&venv), "making the router's Python environment", log, tick.as_deref_mut(), &mut size)?;
     }
     let cons = dirs.laya().join("constraints.txt");
     std::fs::write(&cons, LAYA_CONSTRAINTS).map_err(|e| e.to_string())?;
     if !laya_serve_bin(dirs).is_file() || laya_version(dirs).as_deref() != Some(LAYA_VERSION) {
         let mut c = low(&py);
         c.args(["-m", "pip", "install", "--disable-pip-version-check", "--no-input", "--no-cache-dir", "--index-url", TORCH_INDEX, "-c"]).arg(&cons).arg("torch");
-        run_logged(&mut c, "downloading PyTorch for the CPU (~200 MiB)", log)?;
+        run_logged_with(&mut c, "downloading PyTorch for the CPU (~200 MiB)", log, tick.as_deref_mut(), &mut size)?;
         let mut c = low(&py);
         c.args(["-m", "pip", "install", "--disable-pip-version-check", "--no-input", "--no-cache-dir", "-c"]).arg(&cons).arg(format!("laya[serve]=={LAYA_VERSION}"));
-        run_logged(&mut c, &format!("installing Laya {LAYA_VERSION}"), log)?;
+        run_logged_with(&mut c, &format!("installing Laya {LAYA_VERSION}"), log, tick.as_deref_mut(), &mut size)?;
     }
     if !laya_installed(dirs) {
         let mut c = low(&py);
@@ -149,7 +199,7 @@ pub fn install_laya(dirs: &Dirs, log: &mut dyn FnMut(&str)) -> Result<(), String
             .args([LAYA_REPO, LAYA_REVISION])
             .env("HF_HOME", laya_hf(dirs))
             .env("HF_HUB_DISABLE_TELEMETRY", "1");
-        run_logged(&mut c, &format!("downloading the Laya checkpoint {LAYA_REPO} at {}", &LAYA_REVISION[..7]), log)?;
+        run_logged_with(&mut c, &format!("downloading the Laya checkpoint {LAYA_REPO} at {}", &LAYA_REVISION[..7]), log, tick.as_deref_mut(), &mut size)?;
     }
     if !laya_installed(dirs) {
         return Err("the Laya checkpoint is still missing after the download".into());
@@ -430,6 +480,38 @@ pub fn detect_session(proc_root: &Path) -> Session {
     }
 }
 
+/// The launcher's session directory (`PIMAX_VR_SESSION_DIR`, else `/tmp/omarchyvr-session`).
+pub fn session_dir() -> PathBuf {
+    std::env::var("PIMAX_VR_SESSION_DIR").ok().filter(|s| !s.is_empty()).map(PathBuf::from).unwrap_or_else(|| PathBuf::from("/tmp/omarchyvr-session"))
+}
+
+/// Is a Play session (games) running? Monado started by `omarchyvr vr start` (the session's `start-argv.txt` says `vr`
+/// and its monado-service is alive), or SteamVR's server (`vrserver`, Play with "Games run with: SteamVR"). The local AI
+/// is never loaded next to it: Play keeps the whole graphics card for the game (docs/PLAY-WORK-AUDIT.md). Returns why,
+/// in plain words. `proc_root` = `/proc` (tests give a fake one).
+pub fn play_running(proc_root: &Path, session_dir: &Path) -> Option<String> {
+    let first_line = |p: &Path| std::fs::read_to_string(p).ok().and_then(|t| t.lines().next().map(|l| l.trim().to_string()));
+    if first_line(&session_dir.join("start-argv.txt")).as_deref() == Some("vr") {
+        if let Some(pid) = first_line(&session_dir.join("monado.pid")).filter(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit())) {
+            if first_line(&proc_root.join(&pid).join("comm")).as_deref() == Some("monado-service") {
+                return Some("Play is running".into());
+            }
+        }
+    }
+    let rd = std::fs::read_dir(proc_root).ok()?;
+    for e in rd.flatten() {
+        if !e.file_name().to_string_lossy().bytes().all(|b| b.is_ascii_digit()) {
+            continue;
+        }
+        let Ok(c) = std::fs::read(e.path().join("cmdline")) else { continue };
+        let c = String::from_utf8_lossy(&c);
+        if c.split('\0').next().is_some_and(|first| first.ends_with("/vrserver")) {
+            return Some("SteamVR is running (Play)".into());
+        }
+    }
+    None
+}
+
 /// Where the main slot's model goes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Gpu {
@@ -516,6 +598,9 @@ pub struct Plan {
 pub fn plan(cfg: &AiConfig, dirs: &Dirs, cpu: bool, free: Option<u32>, session: Session) -> Result<Plan, String> {
     match cfg.voice_local {
         VoiceLocal::Simple => {
+            // the processor when asked for (`up --cpu`) or chosen in ai.toml (gpu_layers = 0: "Local model on the
+            // processor", the Work first-run default; docs/WORK-FIRST-RUN.md)
+            let cpu = cpu || cfg.two_stage().gpu_layers == Some(0);
             let o = ServeOpts { gpu_layers: cpu.then_some(0), ..Default::default() };
             Ok(Plan { main_model: pick_model(&o, dirs)?, gpu: if cpu { Gpu::Cpu } else { Gpu::All }, router: None, why: "simple mode".into() })
         }
@@ -545,15 +630,15 @@ pub fn main_opts(p: &Plan) -> ServeOpts {
 /// there), the router in two-stage mode (stopped otherwise), and the VRAM watch when the model is on the GPU. Waits
 /// until both answer `/health` (up to `wait`).
 pub fn up(cfg: &AiConfig, dirs: &Dirs, cpu: bool, wait: Duration, log: &mut dyn FnMut(&str)) -> Result<(), String> {
-    if cfg.voice_local_models == Some(false) {
+    if !cfg.ai_servers_wanted() {
         for (slot, pid) in down(dirs)? {
             log(&format!("{}: stopped (pid {pid})", slot.id()));
         }
-        if let Some(pid) = stop_slot(dirs, Slot::Asr)? {
-            log(&format!("speech: whisper-server stopped (pid {pid})"));
-        }
-        log("Local models are off (AI page): nothing loaded");
+        log("Local models are off and Lara is not used (AI page): nothing loaded");
         return Ok(());
+    }
+    if !cfg.local_models_on() {
+        return up_router_only(cfg, dirs, wait, log);
     }
     let session = detect_session(Path::new("/proc"));
     // our own servers' memory counts as free: a server is replaced if the fit changes
@@ -604,26 +689,7 @@ pub fn up(cfg: &AiConfig, dirs: &Dirs, cpu: bool, wait: Duration, log: &mut dyn 
             }
             stop_watch(dirs);
         }
-        Some(id) => {
-            // Lara not tuned yet (the tuning runs after the download): Laya as published meanwhile
-            let id = if id == "lara" && !lara_installed(dirs) && laya_installed(dirs) {
-                log("router: Lara is not tuned yet; Laya as published runs meanwhile");
-                "laya"
-            } else {
-                id.as_str()
-            };
-            let want = router_model_name(id);
-            if let Some(r) = running_slot(dirs, Slot::Router) {
-                if r.model != want {
-                    log(&format!("router: {} runs; restarting with {want}", r.model));
-                    stop_slot(dirs, Slot::Router)?;
-                }
-            }
-            if running_slot(dirs, Slot::Router).is_none() {
-                let s = serve_router(dirs, id, false)?;
-                log(&format!("router: started {} (pid {}, port {})", s.model, s.pid, s.port));
-            }
-        }
+        Some(id) => ensure_router(dirs, id, log)?,
     }
     if p.gpu != Gpu::Cpu && p.router.is_some() {
         start_watch(dirs, log);
@@ -644,6 +710,56 @@ pub fn up(cfg: &AiConfig, dirs: &Dirs, cpu: bool, wait: Duration, log: &mut dyn 
             return Err(format!("llama-server exited; see {}", dirs.server_log().display()));
         }
         if p.router.is_some() && running_slot(dirs, Slot::Router).is_none() {
+            return Err(format!("the router exited; see {}", dirs.slot_log(Slot::Router).display()));
+        }
+        if t0.elapsed() >= wait {
+            log("still loading; check `omarchyvr-ai status`");
+            return Ok(());
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+}
+
+/// The router slot runs `id` (restarted when another router runs there). Lara not tuned yet (the tuning runs after the
+/// download): Laya as published meanwhile.
+fn ensure_router(dirs: &Dirs, id: &str, log: &mut dyn FnMut(&str)) -> Result<(), String> {
+    let id = if id == "lara" && !lara_installed(dirs) && laya_installed(dirs) {
+        log("router: Lara is not tuned yet; Laya as published runs meanwhile");
+        "laya"
+    } else {
+        id
+    };
+    let want = router_model_name(id);
+    if let Some(r) = running_slot(dirs, Slot::Router) {
+        if r.model != want {
+            log(&format!("router: {} runs; restarting with {want}", r.model));
+            stop_slot(dirs, Slot::Router)?;
+        }
+    }
+    if running_slot(dirs, Slot::Router).is_none() {
+        let s = serve_router(dirs, id, false)?;
+        log(&format!("router: started {} (pid {}, port {})", s.model, s.pid, s.port));
+    }
+    Ok(())
+}
+
+/// Lara alone, in front of an online brain (`voice_lara = true` with Claude through a key or a compatible API): the
+/// router on the processor only; the model slots, the speech server and the VRAM watch are stopped (no video memory).
+fn up_router_only(cfg: &AiConfig, dirs: &Dirs, wait: Duration, log: &mut dyn FnMut(&str)) -> Result<(), String> {
+    stop_watch(dirs);
+    for s in [Slot::Agent, Slot::Asr, Slot::Main] {
+        if let Some(pid) = stop_slot(dirs, s)? {
+            log(&format!("{}: stopped (pid {pid}); the online brain answers, only Lara runs here", s.id()));
+        }
+    }
+    ensure_router(dirs, &cfg.two_stage().router, log)?;
+    let t0 = std::time::Instant::now();
+    loop {
+        if running_slot(dirs, Slot::Router).is_some_and(|r| http_get(r.port, "/health", Duration::from_millis(500)).is_ok_and(|(c, _)| c == 200)) {
+            log("ready (Lara on the processor; the online model acts)");
+            return Ok(());
+        }
+        if running_slot(dirs, Slot::Router).is_none() {
             return Err(format!("the router exited; see {}", dirs.slot_log(Slot::Router).display()));
         }
         if t0.elapsed() >= wait {
@@ -712,11 +828,23 @@ fn watch_alive(dirs: &Dirs) -> Option<i32> {
     (c.contains("omarchyvr-ai") && c.contains("watch")).then_some(pid)
 }
 
+/// The VRAM watch's pid while it runs (its pid file names a live `omarchyvr-ai watch`).
+pub fn watch_running(dirs: &Dirs) -> Option<i32> {
+    watch_alive(dirs)
+}
+
 /// Stop the VRAM watch (the simple mode keeps its own placement).
 pub fn stop_watch(dirs: &Dirs) {
     if let Some(pid) = watch_alive(dirs) {
         // SAFETY: kill(2) on our own watch process (checked by its command line).
         unsafe { libc::kill(pid, libc::SIGTERM) };
+        // it sleeps in 15 s steps but dies on SIGTERM at once: wait for it (2 s at most) so a check after a stop is true
+        for _ in 0..20 {
+            if watch_alive(dirs).is_none() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
     }
     let _ = std::fs::remove_file(watch_pid(dirs));
 }
@@ -919,6 +1047,52 @@ mod tests {
         add(30, "/home/u/.local/share/Steam/steamapps/common/Beat Saber/Beat Saber.exe");
         assert_eq!(detect_session(&root), Session::Game);
         std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn play_is_seen_from_the_session_record_or_steamvr() {
+        let base = std::env::temp_dir().join(format!("omarchyvr-ai-play-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let (root, sess) = (base.join("proc"), base.join("sess"));
+        std::fs::create_dir_all(root.join("77")).unwrap();
+        std::fs::create_dir_all(&sess).unwrap();
+        assert_eq!(play_running(&root, &sess), None, "nothing runs");
+        std::fs::write(root.join("77/comm"), "monado-service\n").unwrap();
+        std::fs::write(sess.join("monado.pid"), "77\n").unwrap();
+        std::fs::write(sess.join("start-argv.txt"), "desk\n--6dof\n").unwrap();
+        assert_eq!(play_running(&root, &sess), None, "Work is not Play: the AI belongs to it");
+        std::fs::write(sess.join("start-argv.txt"), "vr\n--6dof\n--light\n").unwrap();
+        assert_eq!(play_running(&root, &sess).as_deref(), Some("Play is running"));
+        std::fs::write(root.join("77/comm"), "bash\n").unwrap();
+        assert_eq!(play_running(&root, &sess), None, "a stale pid file is not a session");
+        std::fs::create_dir_all(root.join("90")).unwrap();
+        std::fs::write(root.join("90/cmdline"), "/home/u/.local/share/Steam/steamapps/common/SteamVR/bin/linux64/vrserver\0--keepalive\0").unwrap();
+        assert!(play_running(&root, &sess).is_some_and(|w| w.contains("SteamVR")), "SteamVR is always Play");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn the_simple_model_runs_on_the_processor_when_ai_toml_says_so() {
+        let d = dirs("simple-cpu");
+        std::fs::create_dir_all(d.models()).unwrap();
+        std::fs::write(d.model_path(&MODEL_GPU), vec![0u8; 0]).unwrap();
+        let cpu = AiConfig::parse("[local_two_stage]\nrouter = \"lara\"\naction = \"qwen3.5-4b\"\ngpu_layers = 0\n").unwrap();
+        let p = plan(&cpu, &d, false, Some(20000), Session::Work).unwrap();
+        assert_eq!((p.gpu, p.main_model), (Gpu::Cpu, d.model_path(&MODEL_GPU)), "the 4B, on the processor (the Work first-run default)");
+        let gpu = AiConfig::parse("").unwrap();
+        assert_eq!(plan(&gpu, &d, false, Some(20000), Session::Work).unwrap().gpu, Gpu::All, "nothing chosen: as before");
+        let _ = std::fs::remove_dir_all(d.data.parent().unwrap());
+    }
+
+    #[test]
+    fn dir_size_counts_files_below() {
+        let d = dirs("size");
+        std::fs::create_dir_all(d.data.join("a/b")).unwrap();
+        std::fs::write(d.data.join("a/x"), [0u8; 10]).unwrap();
+        std::fs::write(d.data.join("a/b/y"), [0u8; 5]).unwrap();
+        assert_eq!(dir_size(&d.data), 15);
+        assert_eq!(dir_size(&d.data.join("missing")), 0);
+        let _ = std::fs::remove_dir_all(d.data.parent().unwrap());
     }
 
     #[test]

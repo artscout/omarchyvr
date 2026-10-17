@@ -214,6 +214,51 @@ pub fn wayvr_home_perf(home: &Path) -> PathBuf {
     key_path(home, "wayvr_home_perf").unwrap_or_else(|| data_dir(home).join("wayvr-home-perf"))
 }
 
+/// The XDG base directory variables WayVR is given its own values for (the isolated desk WayVR home).
+pub const XDG_VARS: [&str; 4] = ["XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME"];
+
+/// The launcher hands WayVR the user's own value of each [`XDG_VARS`] entry under this prefix (an empty value means
+/// the user had none), because WayVR's own environment points them at its isolated home.
+pub const USER_XDG_PREFIX: &str = "OMARCHYVR_USER_";
+
+/// A command started from WayVR (its watch and Work menu buttons run `sh -c`) inherits WayVR's isolated
+/// `XDG_CONFIG_HOME` / `XDG_DATA_HOME` / `XDG_STATE_HOME`: our tools would then read and write a second, wrong
+/// `ai.toml` and miss the AI servers' pid files. This gives the changes that put the user's own directories back:
+/// `(name, Some(value))` = set, `(name, None)` = remove. The launcher's `OMARCHYVR_USER_<NAME>` wins (empty = unset);
+/// without it, a value inside a WayVR home (`<data_dir>/wayvr-home*`) is removed. Other values are kept.
+pub fn user_xdg_fix(env: &dyn Fn(&str) -> Option<String>, home: &Path) -> Vec<(&'static str, Option<String>)> {
+    let homes = [wayvr_home(home), wayvr_home_perf(home)];
+    let mut v = Vec::new();
+    for name in XDG_VARS {
+        let cur = env(name);
+        match env(&format!("{USER_XDG_PREFIX}{name}")) {
+            Some(user) => {
+                let want = Some(user).filter(|u| !u.is_empty());
+                if cur != want {
+                    v.push((name, want));
+                }
+            }
+            None => {
+                if cur.as_deref().is_some_and(|c| homes.iter().any(|h| Path::new(c).starts_with(h))) {
+                    v.push((name, None));
+                }
+            }
+        }
+    }
+    v
+}
+
+/// [`user_xdg_fix`] applied to this process. Call it first thing in `main` (before any thread starts).
+pub fn restore_user_xdg() {
+    let home = PathBuf::from(std::env::var("HOME").unwrap_or_default());
+    for (k, v) in user_xdg_fix(&|k| std::env::var(k).ok(), &home) {
+        match v {
+            Some(v) => std::env::set_var(k, v),
+            None => std::env::remove_var(k),
+        }
+    }
+}
+
 /// Where `headset-calibration.xml` lives: `~/.config/omarchyvr/headset-calibration.xml`, then
 /// `<repo_dir>/analysis/headset-calibration.xml`.
 pub fn headset_calibration_candidates(home: &Path) -> Vec<PathBuf> {
@@ -313,5 +358,34 @@ mod tests {
         assert_eq!(wayvr_home(&d), PathBuf::from("/wh"));
         assert_eq!(wayvr_home_perf(&d), PathBuf::from("/whp"));
         let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_command_from_a_wayvr_button_gets_the_users_xdg_back() {
+        let h = Path::new("/nonexistent-home-xdg");
+        let wh = wayvr_home(h);
+        let cfg = wh.join("config").to_string_lossy().into_owned();
+        let data = wh.join("data").to_string_lossy().into_owned();
+        // the launcher passed the user's own values: an empty one means "none" (removed), a set one comes back
+        let env = |k: &str| match k {
+            "XDG_CONFIG_HOME" => Some(cfg.clone()),
+            "XDG_DATA_HOME" => Some(data.clone()),
+            "OMARCHYVR_USER_XDG_CONFIG_HOME" => Some(String::new()),
+            "OMARCHYVR_USER_XDG_DATA_HOME" => Some("/home/me/.data".into()),
+            _ => None,
+        };
+        let fix = user_xdg_fix(&env, h);
+        assert!(fix.contains(&("XDG_CONFIG_HOME", None)), "{fix:?}");
+        assert!(fix.contains(&("XDG_DATA_HOME", Some("/home/me/.data".into()))), "{fix:?}");
+        assert_eq!(fix.len(), 2, "nothing else changes: {fix:?}");
+        // no hand-over (an older launcher): only a value inside the WayVR home is dropped
+        let env2 = |k: &str| match k {
+            "XDG_STATE_HOME" => Some(wh.join("state").to_string_lossy().into_owned()),
+            "XDG_CACHE_HOME" => Some("/home/me/.cache".into()),
+            _ => None,
+        };
+        assert_eq!(user_xdg_fix(&env2, h), vec![("XDG_STATE_HOME", None)]);
+        // a normal shell: nothing to change
+        assert!(user_xdg_fix(&|_| None, h).is_empty());
     }
 }

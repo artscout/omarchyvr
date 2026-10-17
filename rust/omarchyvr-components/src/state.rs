@@ -195,6 +195,10 @@ impl World {
     /// Is `id` wanted right now?
     pub fn wanted(&self, id: &str) -> bool {
         let Some(s) = spec(id) else { return false };
+        // Work's parts never run in a game session, whatever a toggle or an override says (Play = the whole GPU)
+        if crate::spec::WORK_ONLY.contains(&s.id) && self.mode() == Mode::Vr {
+            return false;
+        }
         let d = self.desired_now();
         let ov = self.intent.overrides.get(id).copied();
         match s.scope {

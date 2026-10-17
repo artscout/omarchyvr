@@ -222,7 +222,11 @@ fn session(ui: &mut Ui, app: &mut PimaxApp) {
     match phase {
         DeskPhase::Running => {
             let vr = app.core.running_side() == Some(true);
-            let hover = "omarchyvr vr stop / desk stop --grace 30: clients by pid, then Monado (SIGINT; SIGKILL only after 30 s)";
+            let hover = if vr {
+                "Stops Play: the game session, SteamVR or Monado, the trackers (by pid; Monado SIGINT, SIGKILL only after 30 s)"
+            } else {
+                "Stops everything of Work: the screens, voice, the local AI, the desk's virtual displays; the sound goes back (by pid; Monado SIGINT, SIGKILL only after 30 s)"
+            };
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 10.0;
                 for (side_vr, label) in [(true, "Stop Play"), (false, "Stop Work")] {
@@ -231,9 +235,20 @@ fn session(ui: &mut Ui, app: &mut PimaxApp) {
                             app.core.stop();
                         }
                     } else {
-                        let other = if side_vr { "Play" } else { "Work" };
-                        let _ = widgets::action(ui, if side_vr { icon::PLAY } else { icon::DESKTOP }, other, Kind::Secondary, false, half)
-                            .on_disabled_hover_text("Stop the running session first");
+                        // the other side: one job that stops this side completely, then starts that one
+                        let (other, ic, why) = if side_vr {
+                            ("Switch to Play", icon::PLAY, "Stops Work completely first (screens, voice, the local AI: the graphics card is free for the game), then starts Play")
+                        } else {
+                            ("Switch to Work", icon::DESKTOP, "Stops Play first, then starts Work")
+                        };
+                        let r = widgets::action(ui, ic, other, Kind::Secondary, !busy, half).on_hover_text(why);
+                        if r.clicked() {
+                            if side_vr {
+                                app.core.play();
+                            } else {
+                                app.core.work();
+                            }
+                        }
                     }
                 }
             });
@@ -256,16 +271,18 @@ fn session(ui: &mut Ui, app: &mut PimaxApp) {
             let consent = app.core.consent_force;
             let cap = app.core.cap_missing().is_some() && app.core.facts.polkit_agent;
             let first = if cap { " First restores cap_sys_nice on monado-service (one password window)." } else { "" };
+            // the two main choices, side by side: Play (games) and Work (the desk)
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 10.0;
-                if widgets::action(ui, icon::PLAY, "Play", Kind::Primary, can(&vpf, consent), half)
-                    .on_hover_text(format!("Games: the Pimax services (Monado, tracking, controllers, hands) for Steam and OpenXR games. No desk.{first}"))
+                if big_choice(ui, icon::GAME_CONTROLLER, "Play", "Games: SteamVR and OpenXR", can(&vpf, consent), half)
+                    .on_hover_text(format!("Games: the Pimax services (Monado, 6DoF, the controllers and their tracking) for Steam and OpenXR games, and the whole graphics card for the game: no desk, no voice, no local AI.{first}"))
                     .clicked()
                 {
                     app.core.play();
                 }
-                if widgets::action(ui, icon::DESKTOP, "Work", Kind::Secondary, can(&pf, consent), half)
-                    .on_hover_text(format!("The WayVR desk: screens, passthrough, voice, AI, captions, presets.{first}"))
+                let setup = if app.core.work_setup_done() { "" } else { " The first time, two questions come first (voice assistant, speech)." };
+                if big_choice(ui, icon::DESKTOP, "Work", "Desk: screens, voice, AI", can(&pf, consent), half)
+                    .on_hover_text(format!("The WayVR desk: screens, passthrough, voice, the AI, captions, presets.{setup}{first}"))
                     .clicked()
                 {
                     app.core.work();
@@ -304,8 +321,26 @@ fn running_lines(ui: &mut Ui, app: &mut PimaxApp, vr: bool) {
             ui.label(RichText::new(omarchyvr_gui_core::quality::describe(sp)).size(11.5).color(p.dim));
         }
     });
+    if vr {
+        // Play keeps the whole graphics card for the game: the read-only check, every 10 s
+        app.core.want_vram();
+        if let Some((_, r)) = &app.core.vram {
+            let (ok, line) = r.line();
+            let c = match ok {
+                Some(true) => p.ok,
+                Some(false) => p.warn,
+                None => p.faint,
+            };
+            let others = r.others();
+            let hover = if others.is_empty() { "nvidia-smi, read-only: no other program holds video memory".to_string() } else { format!("Also using video memory (not ours, never touched): {}", others.join(", ")) };
+            ui.horizontal_wrapped(|ui| {
+                widgets::dot(ui, c, 3.0);
+                ui.add(egui::Label::new(RichText::new(line).size(11.5).color(if ok == Some(false) { p.warn } else { p.dim })).wrap()).on_hover_text(hover);
+            });
+        }
+    }
     if !app.core.live.gm_paused.is_empty() {
-        ui.label(RichText::new(format!("Paused for game mode: {}", app.core.live.gm_paused.join(", "))).size(11.5).color(p.dim)).on_hover_text("Stop Play starts them again.");
+        ui.label(RichText::new(format!("Stopped for Play: {}", app.core.live.gm_paused.join(", "))).size(11.5).color(p.dim)).on_hover_text("They come back with the next Work, not after Play.");
     }
     if let Some(ps) = &app.core.live.perf {
         let c = if ps.dropped_pct() > 1.0 { p.warn } else { p.dim };
@@ -339,6 +374,35 @@ fn verdict(ui: &mut Ui, app: &mut PimaxApp, pf: &Preflight) {
     egui::CollapsingHeader::new(caps(&format!("Preflight: {} checks", pf.findings.len()), 10.5, p.dim))
         .id_salt("preflight-details")
         .show(ui, |ui| widgets::inset(ui, |ui| desk::banner_body(ui, app, pf)));
+}
+
+/// One of the two big choices of Home (Play, Work): an icon, the name, one line of what it is. Drawn with the theme's
+/// colours, so it follows the app's look.
+fn big_choice(ui: &mut Ui, ic: &str, name: &str, sub: &str, enabled: bool, width: f32) -> egui::Response {
+    let p = theme::pal(ui);
+    let h = 76.0;
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, h), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, name));
+    let hover = theme::ease(ui, resp.id.with("hover"), enabled && resp.hovered(), theme::T_HOVER);
+    let (fill, fg, dim, stroke) = if enabled {
+        (theme::mix(p.accent, p.accent_hover, hover), egui::Color32::WHITE, egui::Color32::from_white_alpha(200), p.accent_hover)
+    } else {
+        (egui::Color32::TRANSPARENT, p.faint, p.faint, p.stroke)
+    };
+    if ui.is_rect_visible(rect) {
+        let painter = ui.painter();
+        painter.rect(rect, egui::CornerRadius::same(8), fill, egui::Stroke::new(1.0, stroke), egui::StrokeKind::Inside);
+        let icon_g = painter.layout_no_wrap(ic.to_string(), egui::FontId::proportional(26.0), fg);
+        let ix = rect.left() + 16.0;
+        painter.galley(egui::pos2(ix, rect.center().y - icon_g.size().y / 2.0), icon_g, fg);
+        let tx = ix + 40.0;
+        let title = painter.layout_no_wrap(name.to_uppercase(), egui::FontId::new(18.0, theme::heading(ui)), fg);
+        let title_h = title.size().y;
+        painter.galley(egui::pos2(tx, rect.center().y - title_h + 2.0), title, fg);
+        let sub_g = painter.layout(sub.to_string(), egui::FontId::proportional(12.0), dim, (rect.right() - tx - 8.0).max(40.0));
+        painter.galley(egui::pos2(tx, rect.center().y + 4.0), sub_g, dim);
+    }
+    resp
 }
 
 /// Both controllers: the line art, the state, the battery, Pair / Unpair / Vibrate.
@@ -450,13 +514,14 @@ fn quick_settings(ui: &mut Ui, app: &mut PimaxApp) {
     switch_row(ui, &mut app.core.toggles.eye, "Eye tracking", Some("Visual only: a dot where you look in Work. Starts with every session; until you calibrate your own eyes it uses the built-in test calibration of the developer (rough aim). Details on the Tracking page."), ed && (caps.eye || caps.no_eye || t.eye));
     switch_row(ui, &mut app.core.toggles.passthrough, "Passthrough", Some("The room behind the screens in Work (camera view)."), ed && (caps.no_passthrough || !t.passthrough));
     subtitles_row(ui, app);
-    let mut gm = app.core.facts.game_mode;
-    if switch_row(ui, &mut gm, "Game mode", Some("Play pauses the local AI (it uses the graphics card); Stop starts it again."), !busy).changed() {
-        app.core.game_mode(gm);
-    }
     let mut light = app.core.light_game();
-    if switch_row(ui, &mut light, "Light game mode", Some("On (default): Play runs only what a game needs: Monado, head tracking, controllers. No wrist readout, eye tracking or room search, and the local AI is paused. Off: Play also runs the wrist readout, eye tracking and the room anchor. Applies to the next Play."), !busy).changed() {
+    if switch_row(ui, &mut light, "Light game mode", Some("On (default): Play runs only what a game needs: Monado, head tracking (6DoF), the controllers and their tracking. No wrist readout or room search. Off: Play also runs the wrist readout and the room anchor. Either way Play never runs the local AI, voice or the desk: the graphics card is the game's. Applies to the next Play."), !busy).changed() {
         app.core.set_light_game(light);
+    }
+    let was_on = app.core.facts.eye_games;
+    let mut eye_games = was_on;
+    if switch_row(ui, &mut eye_games, "Eye tracking in games", Some("Off (default): Play leaves the eye tracker off. On: games get eye tracking too (visual only). Applies to the next Play; Work has its own Eye tracking switch above."), !busy && (app.core.facts.caps.eye || was_on)).changed() {
+        app.core.set_eye_games(eye_games);
     }
     let mut auto = app.core.state.autostart;
     if switch_row(ui, &mut auto, "Start at login", Some("When the app opens at login, the side you used last (Play or Work) starts by itself if the headset is connected, the Monado cap is set and the checks are clear. Never asks for a password."), true).changed() {

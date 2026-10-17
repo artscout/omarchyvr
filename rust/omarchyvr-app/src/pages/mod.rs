@@ -21,6 +21,7 @@ pub mod system;
 pub mod tools;
 pub mod tracking;
 pub mod wayvr;
+pub mod worksetup;
 
 use crate::app::PimaxApp;
 use eframe::egui::{self, Ui};

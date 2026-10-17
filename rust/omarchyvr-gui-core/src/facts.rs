@@ -359,6 +359,8 @@ pub struct Facts {
     pub comp_budget: String,
     /// Light game mode (gamemode.toml `light_game`, default on): Play runs only what a game needs.
     pub light_game: bool,
+    /// Eye tracking in games (gamemode.toml `eye_in_games`, default off): Play passes `--eye` / `--no-eye` from it.
+    pub eye_games: bool,
     /// Games with a saved runtime (`game-runtime.json`; the built-in seed is added by the list function).
     pub game_runtimes: Vec<omarchyvr_tools::vr::gameruntime::Entry>,
     /// The game the next Play is for (`--game`).
@@ -618,6 +620,7 @@ pub fn collect_facts(
     f.game_mode = gm.pause_ai;
     f.comp_budget = gm.comp_budget;
     f.light_game = gm.light;
+    f.eye_games = gm.eye_games;
     let grs = m.read_str(&omarchyvr_tools::vr::gameruntime::store_path(&p.home)).map(|t| omarchyvr_tools::vr::gameruntime::Store::parse(&t)).unwrap_or_default();
     f.game_runtimes = grs.saved.into_values().collect();
     f.next_game = grs.next;

@@ -1758,6 +1758,9 @@ fn run(args: &[String]) -> Result<(), String> {
 }
 
 fn main() -> ExitCode {
+    // run from a WayVR watch button (`ai-mode`): the user's own XDG directories, not WayVR's isolated ones (else
+    // ai.toml would be read and written in the WayVR home, not ~/.config/omarchyvr)
+    omarchyvr_config::paths::restore_user_xdg();
     let args: Vec<String> = std::env::args().skip(1).collect();
     match run(&args) {
         Ok(()) => ExitCode::SUCCESS,

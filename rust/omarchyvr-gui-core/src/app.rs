@@ -70,6 +70,9 @@ pub enum Page {
     System,
     /// Onboarding (the headset module's steps).
     Onboarding,
+    /// The Work first run: the voice assistant and speech questions (worksetup.rs). Not in the navigation (Work and the
+    /// AI page open it) and not in [`Page::ALL`], so the app never reopens it by itself at its next start.
+    WorkSetup,
 }
 
 impl Page {
@@ -110,6 +113,7 @@ impl Page {
             Page::Backgrounds => "backgrounds",
             Page::System => "system",
             Page::Onboarding => "onboarding",
+            Page::WorkSetup => "work-setup",
         }
     }
 
@@ -478,6 +482,10 @@ pub struct AppCore {
     pub auto_socket: PathBuf,
     /// Play, start at login, the hand test.
     pub play: crate::play::PlayView,
+    /// The Work first run (the questions of the first Work press).
+    pub work_setup: crate::worksetup::WorkSetupView,
+    /// The graphics-card check while Play runs (when it was made).
+    pub vram: Option<(Instant, crate::vram::VramReport)>,
 }
 
 const LOG_MAX: usize = 3000;
@@ -494,6 +502,8 @@ impl AppCore {
     /// ([`AppCore::start_threads`]) fills it in (the desk preflight says "Checking this PC..." until then).
     pub fn new_background(machine: Arc<dyn Machine>, paths: Paths, opts: Opts, env: EnvFn, store: Store) -> AppCore {
         let state = GuiState::load(&paths.gui_state);
+        // the Work first run's record (a small file, like the state above): answered = Work starts at once
+        let work_setup_record = crate::worksetup::WorkSetup::load(&crate::worksetup::WorkSetup::path(&paths.config));
         let paths_for_rows = paths.clone();
         let env_for_rows = env.clone();
         let docs_dir = paths.repo.join("docs");
@@ -567,6 +577,8 @@ impl AppCore {
             game_watch: Default::default(),
             auto_socket: crate::auto::socket_path(&|k| env_for_rows(k)),
             play: Default::default(),
+            work_setup: crate::worksetup::WorkSetupView { record: work_setup_record, ..Default::default() },
+            vram: None,
         };
         crate::crash::note("page", a.page.name());
         a
@@ -606,6 +618,8 @@ impl AppCore {
         a.state = GuiState::default();
         a.toggles = DeskToggles::with_eye();
         a.page = Page::Desk;
+        // demo: the Work questions count as answered (screenshots and tests open them on purpose)
+        a.work_setup.record.done = true;
         a
     }
 
@@ -710,6 +724,9 @@ impl AppCore {
         self.want_plan(self.vr_toggles());
         changed |= self.poll_autostart();
         changed |= self.poll_gamemode_recovery();
+        // the Work first run: its downloads, and ai.toml's answers once they are read
+        changed |= self.ws_poll();
+        self.ws_sync_from_ai();
         if let Some((side, _, crate::auto::PairState::Paired, _)) = &self.auto.pair {
             self.onboarding.paired[usize::from(*side == "right")] = true;
         }
@@ -1111,17 +1128,25 @@ impl AppCore {
         t
     }
 
-    /// The switches of a game session (`omarchyvr vr start`): no desk clients; eye tracking follows its switch (visual only, no overlay in games).
+    /// The switches of a game session (`omarchyvr vr start`): no desk clients (no passthrough, no voice); 6DoF,
+    /// controllers and their optical tracking as set; eye tracking from its own Play switch "Eye tracking in games"
+    /// (gamemode.toml, off by default), whatever Light game mode or Work's eye switch say.
     pub fn vr_toggles(&self) -> DeskToggles {
         let t = self.effective_toggles();
         let hands = self.state.hands_chosen && t.hands;
-        let t = DeskToggles { passthrough: false, voice: false, hands, hands_roles: hands && t.hands_roles, ..t };
+        let t = DeskToggles { passthrough: false, voice: false, hands, hands_roles: hands && t.hands_roles, eye: self.facts.eye_games && self.facts.caps.eye, ..t };
         if self.light_game() {
             // Light game mode: only what a game needs (docs/GAME-MODE.md); the camera hands stay as the user chose
-            DeskToggles { eye: false, perf: false, anchor: false, ..t }
+            DeskToggles { perf: false, anchor: false, ..t }
         } else {
             t
         }
+    }
+
+    /// The "Eye tracking in games" switch (gamemode.toml `eye_in_games`, shared with the CLI; the next Play).
+    pub fn set_eye_games(&mut self, on: bool) {
+        let j = crate::tools::gamemode_job(&self.paths, &self.facts, &["eye", if on { "on" } else { "off" }]);
+        self.spawn(j);
     }
 
     /// The preflight of a game session.
