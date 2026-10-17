@@ -21,7 +21,8 @@
 #   OVR_NVIDIA_TESTED           tested versions (space separated; patches/nvidia/tested-versions.txt wins when present)
 #   OVR_NVIDIA_ALLOW_UNTESTED   yes | no (default no): the user's switch "Allow the patch on untested NVIDIA drivers".
 #                               Written to /etc/omarchyvr/nvidia.conf so later pacman hook runs honour it.
-#   OVR_EDID                    the NVKMS override key, e.g. override.[0000:01:00.0].DP-0 (detected; empty = no EDID step)
+#   OVR_EDID                    the NVKMS override key, e.g. override.[0000:01:00.0].DP-0 (detected; empty = no EDID step;
+#                               auto = look for the headset's display during the job, after the udev step woke it, up to 30 s)
 #   OVR_STEAMVR_LAUNCHER        SteamVR's vrcompositor-launcher (empty = skip); gets cap_sys_nice=eip like SteamVR's own prompt
 #   OVR_SNAPSHOT                yes | no  (snapper snapshot of / first, when snapper has a "root" config)
 #   OVR_KEEP_LEGACY_CAPS        yes | no  (uninstall: leave the caps of old Monado builds in ~/src alone)
@@ -47,13 +48,17 @@ NVIDIA_STATUS=$STATE/nvidia-patch-status
 MODPROBE=/etc/modprobe.d/nvidia-pimax.conf
 MKINITCPIO=/etc/mkinitcpio.conf.d/pimax.conf
 
+# shellcheck source=headset-connector.sh
+. "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/headset-connector.sh" 2>/dev/null || headset_connector() { return 1; }
+
 MODE=${1:-}
 PLAN=${2:-}
-[[ $MODE == restore-stock ]] && PLAN="" # its argument is a source tree, not a plan
+[[ $MODE == restore-stock || $MODE == edid-key ]] && PLAN="" # its argument is a source tree, not a plan
 DRY=1
 case $MODE in
 apply | uninstall) DRY=0 ;;
 plan | uninstall-plan) DRY=1 ;;
+edid-key) DRY=1 ;; # internal, tests: edid-key [SECONDS]: print the headset's override key once its EDID shows (OVR_DRM_ROOT)
 restore-stock) DRY=0 ;; # internal, also used by the tests on a scratch tree: restore-stock SRC_TREE [PATCH_DIR]
 *) sed -n '3,25p' "$0"; exit 2 ;;
 esac
@@ -140,6 +145,25 @@ text_to() { # text_to DEST NOTE TEXT: like place, from a string
 	rm -f "$t"
 	return $rc
 }
+# wait_headset_edid_key SECONDS: poll every 0.5 s for the headset's EDID (the udev step woke it); prints the NVKMS key
+# "override.[<pci>].<NVKMS connector>" or fails on timeout. OVR_DRM_ROOT (tests) moves the sysfs root.
+wait_headset_edid_key() {
+	local max=$1 i=0 c pci nv
+	while :; do
+		if c=$(headset_connector); then
+			read -r pci _ nv <<<"$c"
+			echo "override.[$pci].$nv"
+			return 0
+		fi
+		[[ $i -ge $((max * 2)) ]] && return 1
+		sleep "${OVR_EDID_POLL:-0.5}"
+		i=$((i + 1))
+	done
+}
+if [[ $MODE == edid-key ]]; then
+	wait_headset_edid_key "${2:-30}"
+	exit
+fi
 rebuild_initramfs() {
 	if command -v limine-mkinitcpio >/dev/null 2>&1; then
 		act "limine-mkinitcpio (boot image with the nvidia modules and the EDID files)" -- limine-mkinitcpio
@@ -241,11 +265,28 @@ allow_untested=$([[ $allow == yes ]] && echo 1 || echo 0)" || true
 			echo "      the patches do not apply to this source: nothing changed (see the message above)" >&2
 		fi
 		fi
-		if [[ -n $OVR_EDID ]]; then
-			step "Headset display mode at boot: EDID override for ${OVR_EDID#override.} (non-desktop, native modes)"
+		local edid=$OVR_EDID
+		if [[ $edid == auto ]]; then
+			step "Headset display mode at boot: EDID override (connector found after the headset wakes, up to ${OVR_EDID_WAIT:-30} s)"
+			if [[ $DRY == 1 ]]; then
+				info "would: wait for the headset's display (EDID id PVR) to appear, then write the override for its connector"
+				info "the headset wakes once its access rule is in; if it does not show up the step is skipped (press Fix in the app later)"
+				edid=""
+			else
+				edid=$(wait_headset_edid_key "${OVR_EDID_WAIT:-30}") || edid=""
+				if [[ -z $edid ]]; then
+					info "headset display not seen: put the headset on / turn it on, then press Fix in the app (EDID override skipped, nothing else is affected)"
+				else
+					info "headset display found: ${edid#override.}"
+				fi
+			fi
+		elif [[ -n $edid ]]; then
+			step "Headset display mode at boot: EDID override for ${edid#override.} (non-desktop, native modes)"
+		fi
+		if [[ -n $edid ]]; then
 			local ch=0
 			place "$d/linux/pimax-dp-edid-msvsdb.bin" "$EDID_DIR/dp-edid.bin" 644 "headset EDID" && ch=1
-			text_to "$EDID_DIR/nvidia-modeset.conf" "EDID override key" "$OVR_EDID=$EDID_DIR/dp-edid.bin" && ch=1
+			text_to "$EDID_DIR/nvidia-modeset.conf" "EDID override key" "$edid=$EDID_DIR/dp-edid.bin" && ch=1
 			text_to "$MODPROBE" "nvidia-modeset options" "options nvidia-modeset config_file=$EDID_DIR/nvidia-modeset.conf" && ch=1
 			text_to "$MKINITCPIO" "initramfs files" "FILES+=($EDID_DIR/nvidia-modeset.conf $EDID_DIR/dp-edid.bin)" && ch=1
 			if [[ $ch == 1 ]]; then INITRAMFS=1; REBOOT=1; fi

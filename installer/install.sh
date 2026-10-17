@@ -172,6 +172,13 @@ if [[ $NV_PLAN == patch ]] && CONNECTOR=$(headset_connector); then
 	read -r PCI DRM_CONN NV_CONN <<<"$CONNECTOR"
 	EDID_KEY="override.[$PCI].$NV_CONN"
 	note "headset display: $DRM_CONN on $PCI -> EDID override key $EDID_KEY (detected on this PC)"
+elif [[ $NV_PLAN == patch && $HS == tested ]]; then
+	# chicken and egg (2026-10-17): the headset shows its display only after the keepalive wakes it, and the keepalive
+	# can open the headset only once the root job has written the udev rule. So the root job looks for the connector
+	# itself, right after the rule is in.
+	EDID_KEY=auto
+	note "headset display: not visible yet (the headset sleeps until the access rule is installed)"
+	note "  the connector is found during the system setup, after the headset access rule wakes it (up to 30 s)"
 elif [[ $NV_PLAN == patch ]]; then
 	note "headset display: not found (no EDID with the Pimax id): the EDID override step is skipped"
 fi
