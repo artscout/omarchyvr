@@ -1447,9 +1447,9 @@ pub fn open_slot(words: &[String]) -> String {
 pub fn screens_unlimited(old: &str) -> String {
     let now = old.lines().find_map(|l| l.split_once('=').filter(|(k, _)| k.trim() == "limit").and_then(|(_, v)| v.trim().parse::<u8>().ok()));
     match now {
-        Some(n) if n >= 4 => old.to_string(),
+        Some(n) if n >= 6 => old.to_string(),
         None if !old.trim().is_empty() => old.to_string(),
-        _ => screens_state_set(old, "limit", "4"),
+        _ => screens_state_set(old, "limit", "6"),
     }
 }
 
@@ -1887,7 +1887,7 @@ mod tests {
         let st = "# VR screens shown\nlimit = 1\npinned = \nsort = on\n";
         let off = screens_state_set(st, "sort", "off");
         assert!(off.contains("limit = 1") && off.contains("sort = off") && !off.contains("sort = on"), "{off}");
-        assert!(screens_unlimited(&off).contains("limit = 4") && screens_unlimited(&off).contains("sort = off"));
+        assert!(screens_unlimited(&off).contains("limit = 6") && screens_unlimited(&off).contains("sort = off"));
     }
 
     #[test]
