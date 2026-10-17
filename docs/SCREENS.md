@@ -71,6 +71,23 @@ Under the selector, a readiness line shows the state of the screens:
    - Missing outputs are created.
    - Any failure is written to `<session dir>/screens.txt` and shown in the app; the session goes on with the
      screens that exist.
+   - **Self-check after the outputs exist (2026-10-17, lesson 69).** Every floating app on a VR screen's workspace
+     must lie on that screen. Hyprland 0.56 gets this wrong for a re-created output: at `desk stop` the outputs'
+     workspaces go to the main screen and their floating apps are shifted into the main screen's area; at the next
+     `desk start` the workspaces come back to the new output of the same name, but the shift back is computed
+     before the new output has its position, so the apps keep main-screen coordinates (e.g. 609,289 on PIMAX-UP at
+     0,-1080). Hyprland still lists them as mapped on that workspace, but the output draws only its wallpaper (in
+     VR and in `grim -o`). Any output was affected, not only PIMAX-UP: it showed on the up screen because the app on it
+     (Chrome) was floating, while the apps on the right screen were tiled; tiled and maximized apps are laid out
+     again and are fine. Moving the app to the workspace it is already on does nothing, and un-maximizing brings
+     back the wrong floating position. So `desk start` reads `hyprctl -j monitors all`, `-j workspaces` and `-j clients`,
+     and moves each such app by address (no focus change, nothing else moves), then reads them again:
+     ```
+     hyprctl dispatch 'hl.dsp.window.move({ x = 0, y = -1080, relative = true, window = "address:0x..." })'  # back to the same place
+     hyprctl dispatch 'hl.dsp.window.center({ window = "address:0x..." })'                                 # was not on the main screen
+     ```
+     The apps put back are listed in `screens.txt` ("apps put back on their screen"); an app that is still outside
+     its screen is an error line there, and the app shows it.
 3. **Layout in VR.** WayVR names each screen after its output.
    - `wayvrctl desk-screens` (WayVR, eye-gaze branch) places the screens in the **default layout** (next section):
      two rows of three around the head, none overlapping from the head. A screen already shown and not re-placed
