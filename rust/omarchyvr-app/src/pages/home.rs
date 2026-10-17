@@ -288,6 +288,8 @@ fn session(ui: &mut Ui, app: &mut PimaxApp) {
                     app.core.work();
                 }
             });
+            ui.add_space(10.0);
+            super::roomsetup::tile(ui, app, w);
             if cap {
                 widgets::status(ui, "Play and Work first restore the Monado cap: your password is asked once.", p.warn);
             }

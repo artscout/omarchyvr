@@ -953,7 +953,8 @@ impl AppCore {
             self.setup_exec(a);
             return;
         }
-        if self.onboarding.setup.phase != Phase::GetReady || self.onboarding.setup.selected.module().is_none_or(|m| m.id() != "dream-air") {
+        let room_flow = self.room_flow.wants_wake();
+        if !room_flow && (self.onboarding.setup.phase != Phase::GetReady || self.onboarding.setup.selected.module().is_none_or(|m| m.id() != "dream-air")) {
             return;
         }
         let now = Self::wake_now();

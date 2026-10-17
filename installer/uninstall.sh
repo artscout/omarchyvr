@@ -14,6 +14,7 @@
 #   --dry-run            list exactly what would be removed, restored or kept; change nothing (no password)
 #   --remove-downloads   also delete the downloads (AI models, voice models, backgrounds, hand models); default: kept
 #   --keep-settings      keep settings and calibration; default: saved into one tar in your home, then removed
+#                        (the headset's factory calibration, headset-calibration.xml, and ai.toml are always kept)
 #   --remove-keys        also delete ai.toml (your cloud AI keys); default: kept
 #   --remove-lab-builds  also delete the lab source trees and build dirs in ~/src (~150 GB); default: only listed
 #   --no-root            skip the root job (system files stay)
@@ -42,7 +43,7 @@ while [[ $# -gt 0 ]]; do
 	--no-root) NO_ROOT=1 ;;
 	--prefix) PREFIX=$(realpath -m "${2:?}"); shift ;;
 	--yes) YES=1 ;;
-	-h | --help) sed -n '3,22p' "$0"; exit 0 ;;
+	-h | --help) sed -n '3,23p' "$0"; exit 0 ;;
 	*) die "unknown option $1" ;;
 	esac
 	shift
@@ -215,6 +216,9 @@ for p in "$SHARE"/{eye-calibration,eye-accuracy,roommap,ctrl-sessions,wayvr-home
 	if [[ $KEEP_SET == 1 ]]; then do_keep RESET "$p" "--keep-settings"; else SETTINGS+=("$p"); line RESET reset "$p"; fi
 done
 if [[ ${#SETTINGS[@]} -gt 0 && $KEEP_SET == 0 ]]; then
+	# the headset's factory calibration is device data, not a setting: kept like ai.toml (mode 600), also from the older places
+	CALS=()
+	for k in "$CONF/omarchyvr/headset-calibration.xml" "$HOME/.config/pimax/headset-calibration.xml"; do [[ -s $k ]] && CALS+=("$k"); done
 	KEYS=()
 	for k in "$HOME/.config/pimax/ai.toml" "$CONF/omarchyvr/ai.toml"; do [[ -f $k ]] && KEYS+=("$k"); done
 	line RESET backup "${#SETTINGS[@]} settings/calibration paths -> $SETTINGS_TAR (mode 600)"
@@ -222,12 +226,16 @@ if [[ ${#SETTINGS[@]} -gt 0 && $KEEP_SET == 0 ]]; then
 		(umask 077; tar -czf "$SETTINGS_TAR" --absolute-names "${SETTINGS[@]}" 2>/dev/null) || warn "settings backup incomplete"
 	fi
 	if [[ ${#KEYS[@]} -gt 0 && $RM_KEYS == 0 ]]; then line RESET keep "ai.toml (your keys) -> $CONF/omarchyvr/ai.toml"; fi
+	if [[ ${#CALS[@]} -gt 0 ]]; then line RESET keep "headset-calibration.xml (your headset's factory calibration) -> $CONF/omarchyvr/headset-calibration.xml"; n_keep=$((n_keep + 1)); fi
+	CALTMP=""
+	if [[ $DRY == 0 && ${#CALS[@]} -gt 0 ]]; then CALTMP=$(mktemp); cp -p "${CALS[0]}" "$CALTMP"; fi
 	KEYTMP=""
 	if [[ $DRY == 0 && ${#KEYS[@]} -gt 0 && $RM_KEYS == 0 ]]; then KEYTMP=$(mktemp); cp -p "${KEYS[0]}" "$KEYTMP"; fi
 	for p in "${SETTINGS[@]}"; do
 		n_rm=$((n_rm + 1))
 		[[ $DRY == 0 ]] && rm -rf -- "$p"
 	done
+	if [[ -n $CALTMP ]]; then mkdir -p "$CONF/omarchyvr"; mv -f "$CALTMP" "$CONF/omarchyvr/headset-calibration.xml"; chmod 600 "$CONF/omarchyvr/headset-calibration.xml"; fi
 	if [[ -n $KEYTMP ]]; then mkdir -p "$CONF/omarchyvr"; mv -f "$KEYTMP" "$CONF/omarchyvr/ai.toml"; chmod 600 "$CONF/omarchyvr/ai.toml"; fi
 fi
 # downloads kept from the old data dir move to the new one, so the next install reuses them

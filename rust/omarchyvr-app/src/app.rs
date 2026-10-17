@@ -168,12 +168,13 @@ pub fn page_label(p: Page) -> &'static str {
         Page::Setup => "Ready",
         Page::Onboarding => "Onboarding",
         Page::WorkSetup => "Set up Work",
+        Page::RoomSetup => "Room setup",
         _ => MAIN.iter().chain(DEV.iter()).find(|n| n.page == p).map(|n| n.label).unwrap_or("Home"),
     }
 }
 
 /// The help page: one short paragraph per feature (the "?" next to each setting says the same where it is).
-const HELP: [(&str, &str); 28] = [
+const HELP: [(&str, &str); 29] = [
     ("Setting up your PC", "The first time the app opens it asks Which headset do you have (USB detection only pre-selects; you press Continue), shows Get the headset ready (cables and power, with live ticks; Start setup works even if a tick is missing; if the headset is asleep it shows live steps with animations: press the power button, and as the last resort unplug its POWER cable for 10 s and plug it back in, DisplayPort stays in; a second start of the app brings the window back, or replaces a window process that has no window), then sets up this PC: it looks at the PC, fixes what needs no password, runs the system part with ONE password prompt (steps shown as a list, Show details has the exact text), and checks everything again. All green: Play. A restart needed: Restart now (the app continues by itself afterwards). Something failed: each item says why and has one Fix button; several root fixes become Fix all (one password). A closed password window or a wrong password: Try again. Run setup again is on the Ready screen. IPD, controllers, eye calibration and the room map are optional (Next, in the headset)."),
     ("Install and uninstall", "Install: ./install.sh in the omarchyvr clone builds and installs everything and opens this app; the app then sets up this PC by itself: it checks, fixes what needs no password, asks for your password once for the system part (the list of steps shows live) and checks again. A restart only when the NVIDIA module or the boot image changed; the app then continues after the restart. Later Plays never ask. Uninstall: Ready > Uninstall omarchyvr (Show what would be removed first); downloads and recordings are kept, settings go into one backup file in your home. docs/INSTALL.md, docs/UNINSTALL.md."),
     ("NVIDIA driver patch", "The Dream Air needs three small fixes in the NVIDIA open kernel module. They are applied to the tested driver versions (patches/nvidia/tested-versions.txt) and again after every driver update. On any other version nothing is patched unless you turn on Allow the patch on untested NVIDIA drivers (shown on the setup screen, then Run setup again, or Ready): the headset picture may break or the patched build may fail, but the desktop keeps working (the normal NVIDIA module is built as a fallback, and a restore snapshot is taken first). Changing the switch needs Apply (one password) so driver updates follow it. docs/NVIDIA-UNTESTED.md."),
@@ -195,6 +196,7 @@ const HELP: [(&str, &str); 28] = [
     ("Controllers when picked up", "Home, Controllers card: In Work (default When picked up) a controller lying on the desk is hidden, so it never shows or jumps around; pick it up or touch a button and it is back at once, 5 s still puts it away. In games it is Always by default. Each controller shows \"in hand\" or \"put down\" while VR runs. Voice: \"Max, controllers on / off\". docs/CONTROLLERS-INHAND.md."),
     ("Controller models", "Desktop page (developer mode): with controllers in use in Work you see a 3D controller in each hand, like SteamVR shows; the pointer ray leaves its front tip. \"Pointer and grip axes\" draws coloured axes to check that in the headset. docs/WAYVR-CONTROLS.md."),
     ("Sound and microphone", "Home: Headset sound sends all sound to the headset speakers while VR runs (they get it over the video cable a few seconds after the headset lights up); Stop puts your old output back. Test plays two soft notes there. Headset mic makes it the input for voice, games and calls while VR runs; Test records 3 s and plays it back (start VR first: the microphone is silent while the display is off). Sunshine is left alone."),
+    ("Room setup", "The third big button on Home and the Ready screen, under Play and Work: Calibrate and map your room. One guided flow: it reads your headset's factory calibration if this PC does not have it (a sleeping headset gets the wake steps), then the room setup (Fast 30 s or Full) guided in the headset, then a summary with ticks. Work and Play ask for it when the calibration is missing. docs/ROOM-SETUP.md."),
     ("Room", "Room page: Fast setup (30 s: stand in the middle, look around, look forward and pull a trigger) or Full setup (walk the room, controller on the floor, trace the play area with a trigger). The steps show in the headset. \"Room at every start\" puts the floor, centre and forward back every session; \"Share with SteamVR\" gives SteamVR the same play area. View room map opens the map in the browser, offline. docs/ROOM-SETUP.md."),
     ("Desktop", "Passthrough shows the room behind the screens. Presets: Cinema (curved screens, dimmed room), Work (flat, sharper screens), Assistant (voice captions on). Screen numbers: 1 main, 2 left, 3 right, 4 up, 5 up-left, 6 up-right. docs/SCREENS.md."),
     ("Backgrounds", "Backgrounds page: the VR environment around you (not the desktop wallpaper). Tap a picture to show it, pick a resolution (Auto, 8K, 4K, 2K), Off / passthrough brings the room back, Download more fetches the free pictures. \"Ocean (animated)\" is a live sea and sky drawn behind your screens in Work (Quality low, medium, high; never in Play). Work starts with your choice. Say \"Max, set background flowers\" (universe, ocean, Hawaii, sunset ...), \"Max, next background\" or \"Max, background off\". docs/BACKGROUNDS.md."),
@@ -384,6 +386,7 @@ impl PimaxApp {
             Page::System => pages::system::show(ui, self),
             Page::Onboarding => pages::onboarding::show(ui, self),
             Page::WorkSetup => pages::worksetup::show(ui, self),
+            Page::RoomSetup => pages::roomsetup::show(ui, self),
         }
     }
 

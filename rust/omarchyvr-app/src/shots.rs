@@ -7,6 +7,7 @@ use omarchyvr_config::Store;
 use omarchyvr_gui_core::app::{AppCore, Page, Pending};
 use omarchyvr_gui_core::checklist::Fix;
 use omarchyvr_gui_core::guistate::SetupStage;
+use omarchyvr_gui_core::roomflow::Stage;
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -56,6 +57,67 @@ fn shots() -> Vec<Shot> {
                     left: side("down", "no reports"),
                     right: side("held", "motion"),
                 });
+            },
+        },
+        // Room setup (the third big button): each step of the guided flow, dark and light
+        Shot { name: "room-flow-need", running: false, page: Page::RoomSetup, height: 760.0, dark: true, setup: |a| room_flow(a, Stage::NeedCalibration, false) },
+        Shot { name: "room-flow-need-light", running: false, page: Page::RoomSetup, height: 760.0, dark: false, setup: |a| room_flow(a, Stage::NeedCalibration, false) },
+        Shot {
+            name: "room-flow-asleep",
+            running: false,
+            page: Page::RoomSetup,
+            height: 980.0,
+            dark: true,
+            setup: |a| {
+                room_flow(a, Stage::Asleep, false);
+                a.core.onboarding.wake_demo = Some((omarchyvr_gui_core::wake::Wake::PressPower { left: 72.0 }, 0.5));
+            },
+        },
+        Shot { name: "room-flow-reading", running: false, page: Page::RoomSetup, height: 620.0, dark: true, setup: |a| room_flow(a, Stage::Reading, false) },
+        Shot {
+            name: "room-flow-failed",
+            running: false,
+            page: Page::RoomSetup,
+            height: 760.0,
+            dark: true,
+            setup: |a| room_flow(a, Stage::ReadFailed("The headset did not give its calibration. Make sure it is awake (press its power button once) and nothing else is using it, then try again.".into()), false),
+        },
+        Shot { name: "room-flow-choose", running: false, page: Page::RoomSetup, height: 860.0, dark: true, setup: |a| room_flow(a, Stage::Choose, true) },
+        Shot { name: "room-flow-choose-light", running: false, page: Page::RoomSetup, height: 860.0, dark: false, setup: |a| room_flow(a, Stage::Choose, true) },
+        Shot { name: "room-flow-mapping", running: false, page: Page::RoomSetup, height: 620.0, dark: true, setup: |a| room_flow(a, Stage::Mapping { full: false }, true) },
+        Shot {
+            name: "room-flow-summary",
+            running: false,
+            page: Page::RoomSetup,
+            height: 760.0,
+            dark: true,
+            setup: |a| {
+                room_flow(a, Stage::Summary, true);
+                a.core.room_flow.room_ok = Some(true);
+                a.core.room_flow.read_now = true;
+            },
+        },
+        Shot {
+            name: "room-flow-summary-light",
+            running: false,
+            page: Page::RoomSetup,
+            height: 760.0,
+            dark: false,
+            setup: |a| {
+                room_flow(a, Stage::Summary, true);
+                a.core.room_flow.room_ok = Some(true);
+            },
+        },
+        // Home with the third tile: calibrated and mapped (the other Home shots show "Not done")
+        Shot {
+            name: "desk-room-done",
+            running: false,
+            page: Page::Desk,
+            height: 820.0,
+            dark: true,
+            setup: |a| {
+                a.core.demo_calibration = Some(true);
+                a.core.room.state.setups.push(("home".into(), omarchyvr_gui_core::room::SetupInfo { label: "home".into(), mode: "fast".into(), play_cm: [260, 200], when: 1_791_968_000, ..Default::default() }));
             },
         },
         Shot { name: "desk-idle-light", running: false, page: Page::Desk, height: 820.0, dark: false, setup: |_| {} },
@@ -676,6 +738,11 @@ fn shots() -> Vec<Shot> {
 }
 
 /// The automatic setup in a fixed state (screenshots): driven through the real state machine with fake checks.
+fn room_flow(a: &mut PimaxApp, stage: omarchyvr_gui_core::roomflow::Stage, calibration: bool) {
+    a.core.demo_calibration = Some(calibration);
+    a.core.room_flow.stage = stage;
+}
+
 fn demo_setup(a: &mut PimaxApp, which: &str, stage: SetupStage) {
     a.core.want_onboarding();
     let plan = a.core.onboarding.install.plan_text.clone().unwrap_or_default();

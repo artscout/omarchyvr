@@ -140,7 +140,7 @@ fn get_ready(ui: &mut Ui, app: &mut PimaxApp, s: &AutoSetup) {
         }
         if s.selected.module().is_some_and(|m| m.id() == "dream-air") {
             ui.add_space(8.0);
-            wake_guide(ui, app);
+            wake_guide(ui, app, true);
         }
         let missing = steps.iter().any(|x| x.seen == Some(false));
         ui.add_space(8.0);
@@ -160,7 +160,7 @@ fn get_ready(ui: &mut Ui, app: &mut PimaxApp, s: &AutoSetup) {
 }
 
 /// The live state of the headset's HID chip and, when it is off, the two guided steps with their animations.
-fn wake_guide(ui: &mut Ui, app: &mut PimaxApp) {
+pub(crate) fn wake_guide(ui: &mut Ui, app: &mut PimaxApp, in_setup: bool) {
     use omarchyvr_gui_core::wake::Wake;
     let (view, t) = app.core.wake_view(ui.input(|i| i.time));
     let p = pal(ui);
@@ -212,7 +212,11 @@ fn wake_guide(ui: &mut Ui, app: &mut PimaxApp) {
         }
         Wake::GaveUp => {
             line(ui, icon::X_CIRCLE, p.warn, "The headset did not wake up");
-            note(ui, "You can still start the setup: it installs the permission rule and the keep-alive, which can wake it. If the display is not found afterwards, the result screen tells you and offers the Fix.");
+            if in_setup {
+                note(ui, "You can still start the setup: it installs the permission rule and the keep-alive, which can wake it. If the display is not found afterwards, the result screen tells you and offers the Fix.");
+            } else {
+                note(ui, "Without a headset that is awake, the calibration cannot be read. Try the steps again, or check both cables.");
+            }
             if widgets::tbutton(ui, "Try the steps again", true).clicked() {
                 app.core.wake_retry();
             }
@@ -443,6 +447,8 @@ fn ready(ui: &mut Ui, app: &mut PimaxApp, s: &AutoSetup) {
                 app.core.work();
             }
         });
+        ui.add_space(10.0);
+        super::roomsetup::tile(ui, app, ui.available_width());
         if !s.checks.is_empty() {
             ui.add_space(4.0);
             details(ui, s, &s.checks.iter().map(|c| format!("ok  {}", c.title)).collect::<Vec<_>>());

@@ -22,6 +22,7 @@ pub mod system;
 pub mod tools;
 pub mod tracking;
 pub mod wayvr;
+pub mod roomsetup;
 pub mod worksetup;
 
 use crate::app::PimaxApp;

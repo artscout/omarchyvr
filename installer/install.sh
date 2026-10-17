@@ -104,6 +104,20 @@ if [[ $STAGING == 0 ]]; then
 	fi
 fi
 mkdir -p "$CACHE" "$SHARE"
+# the headset's factory calibration is device data: an older place (the pimax config, the lab tree) is copied once to
+# ~/.config/omarchyvr/headset-calibration.xml (mode 600); when none exists the app reads it from the headset (Room setup)
+if [[ $STAGING == 0 && ! -s "$CONF/omarchyvr/headset-calibration.xml" ]]; then
+	for old in "$HOME/.config/pimax/headset-calibration.xml" "$HOME/.local/share/omarchyvr/data/analysis/headset-calibration.xml" \
+		"$REPO/analysis/headset-calibration.xml" "$HOME/pimax-re/analysis/headset-calibration.xml"; do
+		if [[ -s $old ]]; then
+			mkdir -p "$CONF/omarchyvr"
+			(umask 077; cp -p "$old" "$CONF/omarchyvr/headset-calibration.xml.tmp") && chmod 600 "$CONF/omarchyvr/headset-calibration.xml.tmp" \
+				&& mv -f "$CONF/omarchyvr/headset-calibration.xml.tmp" "$CONF/omarchyvr/headset-calibration.xml"
+			note "headset calibration copied from $old"
+			break
+		fi
+	done
+fi
 manifest_init
 
 say "omarchyvr install from $REPO ($(git -C "$REPO" describe --always --dirty 2>/dev/null || echo '?'))"

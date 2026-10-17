@@ -259,6 +259,22 @@ pub fn restore_user_xdg() {
     }
 }
 
+/// The one place the app keeps the headset's factory calibration (private per-device data, mode 600).
+pub fn headset_calibration_target(home: &Path) -> PathBuf {
+    home.join(".config/omarchyvr/headset-calibration.xml")
+}
+
+/// Older places of the same file, newest first (an install from before the move, the lab tree). Read-only sources
+/// for the migration; never written.
+pub fn headset_calibration_old(home: &Path) -> Vec<PathBuf> {
+    vec![
+        home.join(".config/pimax/headset-calibration.xml"),
+        home.join(".local/share/omarchyvr/data/analysis/headset-calibration.xml"),
+        repo_dir(home).join("analysis/headset-calibration.xml"),
+        home.join("pimax-re/analysis/headset-calibration.xml"),
+    ]
+}
+
 /// Where `headset-calibration.xml` lives: `~/.config/omarchyvr/headset-calibration.xml`, then
 /// `<repo_dir>/analysis/headset-calibration.xml`.
 pub fn headset_calibration_candidates(home: &Path) -> Vec<PathBuf> {
