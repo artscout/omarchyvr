@@ -481,7 +481,7 @@ fn local_model(ui: &mut Ui, app: &mut PimaxApp) {
         match &status {
             Some(Err(e)) => {
                 ui.label(RichText::new(e).size(12.0).color(p.warn_text));
-                if !built && widgets::ibutton(ui, icon::CODE, "Build omarchyvr-ai", !busy).on_hover_text("cargo build --release -p omarchyvr-ai").clicked() {
+                if !built && widgets::ibutton(ui, icon::CODE, "Repair omarchyvr-ai", !busy).on_hover_text("Rebuilds omarchyvr-ai from this install's source (a few minutes)").clicked() {
                     act = Some("build");
                 }
             }

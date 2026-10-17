@@ -539,7 +539,7 @@ pub fn floor_cmd(r: &RoomPaths, name: &str, a: &FloorAction) -> Cmd {
 pub fn floor_blockers(live: &Live, st: &RoomState, name: &str, a: &FloorAction) -> Vec<String> {
     let mut v = Vec::new();
     if !st.tools.0 {
-        v.push("omarchyvr-roommap is not built (cargo build --release -p omarchyvr-roommap).".into());
+        v.push("The room tool is missing from this install: press Fix.".into());
     }
     if !st.maps.iter().any(|m| m == name) {
         v.push(format!("No room map named \"{name}\" yet: map the room first."));

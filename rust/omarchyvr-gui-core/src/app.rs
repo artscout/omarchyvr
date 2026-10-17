@@ -2457,7 +2457,7 @@ impl AppCore {
             RoomAction::ViewMap => {
                 let mut v = Vec::new();
                 if !st.tools.0 && self.room.loaded {
-                    v.push("The tool is not built (cargo build --release -p omarchyvr-roommap -p omarchyvr-anchor).".to_string());
+                    v.push("The room tools are missing from this install: press Fix.".to_string());
                 }
                 if !st.maps.iter().any(|m| *m == self.room.map_name) {
                     v.push(format!("No room map named \"{}\" yet: map the room first.", self.room.map_name));
@@ -2468,7 +2468,7 @@ impl AppCore {
         };
         let mut v = Vec::new();
         if !bin_ok && self.room.loaded {
-            v.push("The tool is not built (cargo build --release -p omarchyvr-roommap -p omarchyvr-anchor).".to_string());
+            v.push("The room tools are missing from this install: press Fix.".to_string());
         }
         if a == RoomAction::Clear {
             if st.offset_pid.is_none() {

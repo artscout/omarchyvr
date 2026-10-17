@@ -671,6 +671,7 @@ pub fn collect_facts(
     for b in &p.builds {
         check.push(b.dir.join("CMakeCache.txt"));
     }
+    check.push(p.rust.join("Cargo.toml")); // a repo workspace to build from (a clean install has none)
     f.present = check.into_iter().filter(|x| m.exists(x)).collect();
     use omarchyvr_tools::mount_shared::{mounted_at, SHARED_TARGET};
     // the shared drive is a personal setting (paths.toml shared_drive_uuid, no default): no UUID, no check

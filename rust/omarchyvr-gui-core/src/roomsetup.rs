@@ -71,7 +71,7 @@ impl AppCore {
             v.push("another action is running".to_string());
         }
         if !self.room.state.tools.0 && !self.demo {
-            v.push("omarchyvr-roommap is not built (Setup > Install).".into());
+            v.push("the room tool is missing from this install: press Fix".into());
         }
         if !crate::room::valid_name(&self.room.map_name) {
             v.push("Room names are letters, digits, - and _.".into());
@@ -80,7 +80,7 @@ impl AppCore {
             v.push("the headset is not connected".into());
         }
         if !self.facts.caps.anchor && !self.demo {
-            v.push("the installed pimax launcher has no --anchor (Setup > Install)".into());
+            v.push("the installed launcher is too old for the room anchor: press Fix".into());
         }
         if !self.live.foreign_monado.is_empty() {
             v.push("a monado-service the app did not start is running".into());
@@ -139,6 +139,20 @@ impl AppCore {
                 _ => self.paths.desk_build().dir.clone(),
             }
         };
+        // like Play: a relink drops cap_sys_nice, the click restores it (one password prompt) before the restart
+        let mut label_prefix = "";
+        if !self.room_session_ready(full) {
+            if let Some(svc) = self.cap_missing() {
+                match self.setcap_cmd(&svc) {
+                    Ok(c) => {
+                        steps.insert(0, Step::Note(format!("{} lacks cap_sys_nice: restoring it (password prompt)", svc.display())));
+                        steps.insert(1, Step::RunAllowFail(c));
+                        label_prefix = "Restore cap_sys_nice, then ";
+                    }
+                    Err(e) => steps.insert(0, Step::Note(format!("cap_sys_nice not restored ({e}); starting anyway"))),
+                }
+            }
+        }
         steps.push(Step::Note(if full {
             "Full room setup in the headset: walk the room (60 s), lay a controller on the floor, trace the boundary holding a trigger, then stand in the middle and look forward.".into()
         } else {
@@ -147,7 +161,7 @@ impl AppCore {
         steps.push(Step::Run(setup_cmd(&self.room_paths.roommap_bin, full, &name, &build.join("openxr_monado-dev.json"))));
         Ok(JobSpec {
             kind: JobKind::Other(KIND.into()),
-            label: format!("{} room setup \"{name}\" (in the headset)", if full { "Full" } else { "Fast" }),
+            label: format!("{label_prefix}{} room setup \"{name}\" (in the headset)", if full { "Full" } else { "Fast" }),
             steps,
         })
     }
@@ -399,6 +413,21 @@ mod tests {
             assert!(a.job.is_none(), "nothing started");
             assert_eq!(a.room_flow.stage, crate::roomflow::Stage::NeedCalibration);
         }
+    }
+
+    /// The click does what the job can do itself (stop our own session, restart Work with 6DoF + anchor): no blocker
+    /// names a running session or the missing capability.
+    #[test]
+    fn our_own_session_and_the_capability_are_not_blockers() {
+        let mut a = core("blockers");
+        a.facts.headset = true;
+        a.facts.caps.anchor = true;
+        a.room.state.tools = (true, true);
+        let b = a.room_setup_blockers(false);
+        assert!(!b.iter().any(|x| x.contains("cap_sys_nice") || x.contains("session is running") || x.contains("not built") || x.contains("cargo")), "{b:?}");
+        a.facts.headset = false;
+        a.demo = false;
+        assert!(a.room_setup_blockers(false).iter().any(|x| x.contains("headset is not connected")), "a real blocker stays");
     }
 
     #[test]

@@ -227,6 +227,12 @@ pub fn setcap_fix(service: &std::path::Path) -> RootFix {
     )
 }
 
+/// True when this install carries the Rust sources, so a user fix may build from them. A clean install (tools in
+/// `~/.local/bin`, no `rust/` workspace) must never be told to build (LESSONS row 59).
+pub fn repo_build_possible(facts: &Facts, p: &Paths) -> bool {
+    facts.has(&p.rust.join("Cargo.toml"))
+}
+
 /// Build + install the launcher (only while nothing runs: LESSONS row 8).
 pub fn launcher_fix(p: &Paths) -> UserFix {
     UserFix {
@@ -524,6 +530,10 @@ pub fn build(facts: &Facts, live: &Live, p: &Paths) -> Vec<Item> {
                     v.push(Item::new(&format!("feature-{id}"), Group::Builds, &format!("Feature: {name}"), level, detail, Some(16), Fix::None));
                 }
             }
+        } else if !main && b.cmake.is_none() {
+            // an optional developer build (~/src/monado-slam, ~/src/monado) that is not there: nothing to show on a
+            // clean install (it is not part of the install, so it must not look missing)
+            continue;
         } else {
             let fix = if b.cmake.is_some() {
                 Fix::User(rebuild_fix(&b.build, false))
@@ -564,7 +574,7 @@ pub fn build(facts: &Facts, live: &Live, p: &Paths) -> Vec<Item> {
     v.push(if facts.has(&p.wayvr_bin) {
         Item::new("wayvr", Group::Desk, "WayVR (eye-gaze branch)", Level::Ok, p.wayvr_bin.display().to_string(), None, Fix::None)
     } else {
-        Item::new("wayvr", Group::Desk, "WayVR (eye-gaze branch)", Level::Fail, format!("{} missing and no source in {}", p.wayvr_bin.display(), p.wayvr_src.display()), None,
+        Item::new("wayvr", Group::Desk, "WayVR (eye-gaze branch)", Level::Fail, format!("{} is missing from this install", p.wayvr_bin.display()), None,
             manual("Run the installer (./install.sh builds the WayVR fork into ~/.local/lib/omarchyvr/wayvr), or set wayvr_bin in paths.toml.", &[]))
     });
     v.push(if facts.has(&p.basalt_lib) {
@@ -586,23 +596,25 @@ pub fn build(facts: &Facts, live: &Live, p: &Paths) -> Vec<Item> {
         }
         Item::new("rust-bins", Group::Desk, "Rust tools (release build)", Level::Warn,
             format!("missing: {}", missing.iter().map(|(b, _)| *b).collect::<Vec<_>>().join(", ")), None,
-            user("Build the missing tools in the workspace.", vec![Cmd::with_args("cargo", args).cwd(&p.rust)]))
+            if repo_build_possible(facts, p) { user("Build the missing tools in the workspace.", vec![Cmd::with_args("cargo", args).cwd(&p.rust)]) } else { manual("Some tools are missing from this install: press Fix on the Home page (it repairs the install).", &[]) })
     });
 
     // Launcher and app
-    let lf = Fix::User(launcher_fix(p));
+    // a build from the repo is only possible when this install carries the sources (a clean install may not)
+    let can_build = repo_build_possible(facts, p);
+    let lf = if can_build { Fix::User(launcher_fix(p)) } else { manual("The launcher is missing from this install: press Fix on the Home page (it repairs the install).", &[]) };
     v.push(match facts.launcher {
         Some(InstallState::UpToDate) => Item::new("launcher", Group::App, "omarchyvr launcher", Level::Ok, "~/.local/bin/omarchyvr matches the build", Some(8), Fix::None),
         Some(InstallState::NotInstalled) => Item::new("launcher", Group::App, "omarchyvr launcher", Level::Warn, "not installed in ~/.local/bin (the app uses the workspace build)", Some(8), lf),
         Some(InstallState::Differs) => Item::new("launcher", Group::App, "omarchyvr launcher", Level::Warn, "~/.local/bin/omarchyvr differs from the workspace build", Some(8), lf),
         Some(InstallState::BuildStale) => Item::new("launcher", Group::App, "omarchyvr launcher", Level::Warn, "the sources changed after the last build", Some(8), lf),
-        Some(InstallState::InstalledOnly) => Item::new("launcher", Group::App, "omarchyvr launcher", Level::Info, "installed; no workspace build to compare with", Some(8), lf),
+        Some(InstallState::InstalledOnly) => Item::new("launcher", Group::App, "omarchyvr launcher", Level::Ok, "installed in ~/.local/bin", Some(8), Fix::None),
         Some(InstallState::Missing) | None => Item::new("launcher", Group::App, "omarchyvr launcher", Level::Fail, "not built and not installed", Some(8), lf),
     });
-    let app_ok = matches!(facts.app, Some(InstallState::UpToDate)) && facts.desktop_entry;
+    let app_ok = matches!(facts.app, Some(InstallState::UpToDate) | Some(InstallState::InstalledOnly)) && facts.desktop_entry;
     v.push(Item::new("app", Group::App, "This app (desktop entry 'omarchyvr')", if app_ok { Level::Ok } else { Level::Info },
         if app_ok { "installed in ~/.local/bin with its desktop entry".to_string() } else { format!("desktop entry {}, binary {:?}", if facts.desktop_entry { "present" } else { "missing" }, facts.app.unwrap_or(InstallState::Missing)) },
-        None, if app_ok { Fix::None } else { Fix::User(app_fix(p)) }));
+        None, if app_ok { Fix::None } else if can_build { Fix::User(app_fix(p)) } else { manual("The app's desktop entry or binary is missing from this install: press Fix on the Home page.", &[]) }));
 
     // Extras
     v.push(if facts.has(&p.voice_model) && facts.has(&p.sherpa_lib) {
@@ -678,6 +690,33 @@ mod tests {
 
     fn item<'a>(v: &'a [Item], id: &str) -> &'a Item {
         v.iter().find(|i| i.id == id).unwrap_or_else(|| panic!("no item {id}: {:?}", v.iter().map(|i| &i.id).collect::<Vec<_>>()))
+    }
+
+    /// LESSONS row 59: a clean install has no repo build, no rust/ workspace and no developer Monado builds.
+    #[test]
+    fn a_clean_install_never_offers_a_build_or_shows_developer_builds_as_missing() {
+        let (mut m, p) = demo::idle_machine();
+        m.host.files.retain(|k, _| !k.to_string_lossy().starts_with("/home/u/src/monado"));
+        m.metas.retain(|k, _| !k.to_string_lossy().starts_with("/home/u/src/monado")); // no developer builds on a clean install
+        let v = items_of(&m, &p);
+        let facts = collect_facts(&m, &p, &demo::opts(&p), &MarkerCache::default(), None, true, true);
+        assert!(!repo_build_possible(&facts, &p), "the demo repo has no rust/Cargo.toml");
+        for i in &v {
+            if let Fix::User(u) = &i.fix {
+                assert!(!u.steps.iter().any(|c| c.display().contains("cargo")), "{} offers a cargo build on a clean install", i.id);
+            }
+        }
+        assert!(v.iter().all(|i| i.id != "build-slam" && i.id != "build-pimax"), "optional developer builds are not listed when absent");
+        assert!(v.iter().all(|i| !i.detail.contains("no source in")));
+    }
+
+    #[test]
+    fn the_hooks_fix_uses_the_repo_dir_not_the_old_lab() {
+        let (_, p) = demo::idle_machine();
+        let r = hooks_fix(&p);
+        assert!(r.lines[0].contains(&p.repo.join("linux").display().to_string()));
+        assert!(!r.lines[0].contains("pimax-re"));
+        assert_eq!(crate::safety::check(&crate::cmd::pkexec_cmd(&r.lines)), Ok(()));
     }
 
     /// 2026-10-17: the setup said "done" with the cameras gone and the eye module off. Both are items with one step.
@@ -772,6 +811,7 @@ mod tests {
     #[test]
     fn broken_pieces_get_the_right_fix_kind() {
         let (mut m, p) = demo::idle_machine();
+        m.file("/home/u/omarchyvr/rust/Cargo.toml", "[workspace]\n"); // a repo checkout: the build fixes are offered
         m.file(
             "/home/u/.local/lib/omarchyvr/monado/CMakeCache.txt",
             include_str!("../tests/fixtures/CMakeCache-desk.txt").replace("PIMAX_CAM:BOOL=ON", "PIMAX_CAM:BOOL=OFF"),

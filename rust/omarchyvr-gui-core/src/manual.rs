@@ -130,10 +130,10 @@ pub fn keepalive_fix(p: &Paths) -> UserFix {
 
 /// The auto mode unit (MANUAL-STEPS 3.5): build the daemon where the unit runs it, install the unit and a dry-run
 /// config. Nothing is started: Developer > Auto mode starts it on request.
-pub fn autod_fix(p: &Paths, f: &ManualFacts) -> UserFix {
+pub fn autod_fix(p: &Paths, f: &ManualFacts, can_build: bool) -> UserFix {
     let s = |x: &Path| x.display().to_string();
     let mut steps = Vec::new();
-    if !f.autod_build {
+    if !f.autod_build && can_build {
         steps.push(Cmd::new("cargo", &["build", "--release", "-p", "omarchyvr-autod"]).cwd(&p.rust));
     }
     if f.autod_unit.is_none() {
@@ -190,7 +190,7 @@ pub fn items(facts: &Facts, p: &Paths) -> Vec<Item> {
     v.push(if missing.is_empty() {
         Item::new("auto-mode", Group::App, "Auto mode daemon", Level::Ok, "built, unit and config installed (Developer > Auto mode starts it)", None, Fix::None)
     } else {
-        Item::new("auto-mode", Group::App, "Auto mode daemon", Level::Info, format!("optional; missing: {}", missing.join(", ")), None, Fix::User(autod_fix(p, f)))
+        Item::new("auto-mode", Group::App, "Auto mode daemon", Level::Info, format!("optional; missing: {}", missing.join(", ")), None, Fix::User(autod_fix(p, f, crate::checklist::repo_build_possible(facts, p))))
     });
     // 1.1 EDID and 1.2 Hyprland's DP-1 line (read only: the app never edits Hyprland's config)
     v.push(match f.edid {
