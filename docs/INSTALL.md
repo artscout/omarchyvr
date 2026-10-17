@@ -89,7 +89,7 @@ says so.**
 | Gyro bias | `~/.cache/omarchyvr/gyro-bias` | kept | `~/.cache/pimax/gyro-bias`, a backup | the Dream Air default, measured and saved the first time the headset rests for 2 s. No start waits for a still headset (`PIMAX_BIAS_TIMEOUT_MS=200`) |
 | IPD | `~/.config/omarchyvr/ipd.env` | kept | `~/.config/pimax/ipd.env`, a backup | 63 mm (Tools > IPD sets yours) |
 | Eye calibration | `~/.config/omarchyvr/eye-calibration.toml`, `eye-correction.toml` | kept | `~/.config/pimax/`, a backup | the built-in test calibration of the base start list |
-| Controller fits, IMU noise | `ctrl-cam-extrinsics.json`, `ctrl-imu.json`, `slam-imu.json` in `~/.config/omarchyvr/` | kept | `~/.config/pimax/`, a backup | factory extrinsics, the built-in gyro fit, Pimax's noise values |
+| Controller fits, IMU noise | `ctrl-cam-extrinsics.json`, `ctrl-imu.json`, `slam-imu.json` in `~/.config/omarchyvr/` | kept | `~/.config/pimax/`, a backup | for the reference headset the shipped camera fit (`dream-air/reference/ctrl-cam-extrinsics.json`: cams 1-3 off by 0.5-3.2 deg in the factory data, which tilted the controllers), else factory extrinsics; the built-in gyro fit, Pimax's noise values |
 | Room map | `~/.local/share/omarchyvr/roommap/` | kept | `~/.local/share/pimax/roommap/`, a backup | no anchor until Room setup maps the room |
 | Settings (background, game mode, games, recording, brightness, sound, eye and WayVR settings, `paths.toml`, the Work first-run answers) | `~/.config/omarchyvr/*` | reset (into the backup tar) | `~/.config/pimax/`, the newest backup that has them | the defaults |
 | Cloud AI keys | `~/.config/omarchyvr/ai.toml` | kept in place, never put into the tar | never by the import (its own handling) | none |

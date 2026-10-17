@@ -1,0 +1,9 @@
+# Every cargo build, test and run started inside this repo (the rust/ workspace, forks/wayvr, worktrees) goes through
+# tools/vr-busy.sh: during a VR session (monado-service, vrserver or vrcompositor running) it refuses, otherwise it runs
+# the compiler and the test binaries at nice 19. Builds and tests during a session made VR drop frames
+# (docs/research/perf-2026-10-17.md, ai/CLAUDE.md section 4). Paths are relative to this directory's parent.
+[build]
+rustc-wrapper = "tools/vr-guard.sh"
+
+[target.'cfg(all())']
+runner = "tools/vr-busy.sh --guard"
