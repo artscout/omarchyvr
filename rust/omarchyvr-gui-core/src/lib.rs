@@ -26,6 +26,7 @@ pub mod autofix;
 pub mod builds;
 pub mod bundle;
 pub mod caps;
+pub mod autosetup;
 pub mod checklist;
 pub mod cmake;
 pub mod cmd;

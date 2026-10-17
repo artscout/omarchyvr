@@ -5,6 +5,9 @@
 #
 #   omarchyvr-root.sh plan      PLAN.env   print exactly what `apply` would change (any user, changes nothing)
 #   omarchyvr-root.sh apply     PLAN.env   do it (root); writes /var/lib/omarchyvr/manifest.tsv
+#   omarchyvr-root.sh edid      PLAN.env   only the EDID override step (root): finds the headset's display (OVR_EDID=auto
+#                                          logic, waits up to OVR_EDID_WAIT s), writes the files, rebuilds the boot image;
+#                                          exit 3 = the headset display was not seen (nothing changed)
 #   omarchyvr-root.sh uninstall-plan [PLAN.env]  print what `uninstall` would remove or restore (any user)
 #   omarchyvr-root.sh uninstall [PLAN.env]       reverse every system change (root), incl. installs from before the
 #                                                manifest existed (known paths only)
@@ -56,13 +59,14 @@ PLAN=${2:-}
 [[ $MODE == restore-stock || $MODE == edid-key ]] && PLAN="" # its argument is a source tree, not a plan
 DRY=1
 case $MODE in
-apply | uninstall) DRY=0 ;;
+apply | uninstall | edid) DRY=0 ;;
 plan | uninstall-plan) DRY=1 ;;
 edid-key) DRY=1 ;; # internal, tests: edid-key [SECONDS]: print the headset's override key once its EDID shows (OVR_DRM_ROOT)
 restore-stock) DRY=0 ;; # internal, also used by the tests on a scratch tree: restore-stock SRC_TREE [PATCH_DIR]
-*) sed -n '3,25p' "$0"; exit 2 ;;
+*) sed -n '3,28p' "$0"; exit 2 ;;
 esac
-if [[ $DRY == 0 && $EUID -ne 0 && $MODE != restore-stock ]]; then
+# OVR_TEST_NO_ROOT=1 (tests of the not-found path only, which writes nothing; pkexec drops the environment)
+if [[ $DRY == 0 && $EUID -ne 0 && $MODE != restore-stock && ! ( $MODE == edid && ${OVR_TEST_NO_ROOT:-} == 1 ) ]]; then
 	echo "omarchyvr-root.sh $MODE must run as root (the app runs it through pkexec)" >&2
 	exit 1
 fi
@@ -164,6 +168,39 @@ if [[ $MODE == edid-key ]]; then
 	wait_headset_edid_key "${2:-30}"
 	exit
 fi
+# edid_step DATA: the EDID override (headset display mode at boot): files, initramfs flag, reboot flag. OVR_EDID decides:
+# "auto" = look for the headset's display now (the udev step woke it), a key = use it, empty = no step.
+# Returns 3 when "auto" found no headset display (the rest of the job is not affected).
+edid_step() {
+	local d=$1 rc=0 edid=$OVR_EDID
+	if [[ $edid == auto ]]; then
+		step "Headset display mode at boot: EDID override (connector found after the headset wakes, up to ${OVR_EDID_WAIT:-30} s)"
+		if [[ $DRY == 1 ]]; then
+			info "would: wait for the headset's display (EDID id PVR) to appear, then write the override for its connector"
+			info "the headset wakes once its access rule is in; if it does not show up the step is skipped (press Fix in the app later)"
+			edid=""
+		else
+			edid=$(wait_headset_edid_key "${OVR_EDID_WAIT:-30}") || edid=""
+			if [[ -z $edid ]]; then
+				info "headset display not seen: put the headset on / turn it on, then press Fix in the app (EDID override skipped, nothing else is affected)"
+				rc=3
+			else
+				info "headset display found: ${edid#override.}"
+			fi
+		fi
+	elif [[ -n $edid ]]; then
+		step "Headset display mode at boot: EDID override for ${edid#override.} (non-desktop, native modes)"
+	fi
+	if [[ -n $edid ]]; then
+		local ch=0
+		place "$d/linux/pimax-dp-edid-msvsdb.bin" "$EDID_DIR/dp-edid.bin" 644 "headset EDID" && ch=1
+		text_to "$EDID_DIR/nvidia-modeset.conf" "EDID override key" "$edid=$EDID_DIR/dp-edid.bin" && ch=1
+		text_to "$MODPROBE" "nvidia-modeset options" "options nvidia-modeset config_file=$EDID_DIR/nvidia-modeset.conf" && ch=1
+		text_to "$MKINITCPIO" "initramfs files" "FILES+=($EDID_DIR/nvidia-modeset.conf $EDID_DIR/dp-edid.bin)" && ch=1
+		if [[ $ch == 1 ]]; then INITRAMFS=1; REBOOT=1; fi
+	fi
+	return $rc
+}
 rebuild_initramfs() {
 	if command -v limine-mkinitcpio >/dev/null 2>&1; then
 		act "limine-mkinitcpio (boot image with the nvidia modules and the EDID files)" -- limine-mkinitcpio
@@ -227,7 +264,7 @@ do_apply() {
 			flag=(--allow-untested)
 		else
 			step "NVIDIA $v (NOT tested): the patch is NOT applied; the stock module stays (the desktop works, the headset picture will not)"
-			info "To patch it anyway: turn on 'Allow the patch on untested NVIDIA drivers' in the app (Onboarding > System setup) and set up again."
+			info "To patch it anyway: turn on 'Allow the patch on untested NVIDIA drivers' in the app (the setup screen, NVIDIA driver patch card) and press Run setup again."
 		fi
 		for f in nvidia-patch-reapply.sh nvidia-2h1or-viewport.patch nvidia-2h1or-flip-fix.patch nvidia-evo-makeroom-bounded-wait.patch tested-versions.txt; do
 			[[ -f $d/patches/nvidia/$f ]] || continue
@@ -265,32 +302,7 @@ allow_untested=$([[ $allow == yes ]] && echo 1 || echo 0)" || true
 			echo "      the patches do not apply to this source: nothing changed (see the message above)" >&2
 		fi
 		fi
-		local edid=$OVR_EDID
-		if [[ $edid == auto ]]; then
-			step "Headset display mode at boot: EDID override (connector found after the headset wakes, up to ${OVR_EDID_WAIT:-30} s)"
-			if [[ $DRY == 1 ]]; then
-				info "would: wait for the headset's display (EDID id PVR) to appear, then write the override for its connector"
-				info "the headset wakes once its access rule is in; if it does not show up the step is skipped (press Fix in the app later)"
-				edid=""
-			else
-				edid=$(wait_headset_edid_key "${OVR_EDID_WAIT:-30}") || edid=""
-				if [[ -z $edid ]]; then
-					info "headset display not seen: put the headset on / turn it on, then press Fix in the app (EDID override skipped, nothing else is affected)"
-				else
-					info "headset display found: ${edid#override.}"
-				fi
-			fi
-		elif [[ -n $edid ]]; then
-			step "Headset display mode at boot: EDID override for ${edid#override.} (non-desktop, native modes)"
-		fi
-		if [[ -n $edid ]]; then
-			local ch=0
-			place "$d/linux/pimax-dp-edid-msvsdb.bin" "$EDID_DIR/dp-edid.bin" 644 "headset EDID" && ch=1
-			text_to "$EDID_DIR/nvidia-modeset.conf" "EDID override key" "$edid=$EDID_DIR/dp-edid.bin" && ch=1
-			text_to "$MODPROBE" "nvidia-modeset options" "options nvidia-modeset config_file=$EDID_DIR/nvidia-modeset.conf" && ch=1
-			text_to "$MKINITCPIO" "initramfs files" "FILES+=($EDID_DIR/nvidia-modeset.conf $EDID_DIR/dp-edid.bin)" && ch=1
-			if [[ $ch == 1 ]]; then INITRAMFS=1; REBOOT=1; fi
-		fi
+		edid_step "$d" || true # returns 3 when the headset display was not seen: only this step is skipped
 	else
 		step "NVIDIA: no driver patch (not needed or not a tested version; see the installer's message)"
 	fi
@@ -319,6 +331,19 @@ allow_untested=$([[ $allow == yes ]] && echo 1 || echo 0)" || true
 		fi
 	fi
 	echo "REBOOT=$([[ $REBOOT == 1 ]] && echo yes || echo no)"
+}
+
+# The EDID override alone (the app's "Fix" for the headset display mode): the same wait and the same files as the
+# EDID step of `apply`, so one click fixes it after a headset that was off during the setup.
+do_edid() {
+	local d=$OVR_DATA rc=0
+	[[ -n $OVR_USER && -n $OVR_HOME && -d $d/linux ]] || { echo "plan: OVR_USER/OVR_HOME/OVR_DATA missing or $d has no linux/" >&2; exit 1; }
+	echo "omarchyvr headset display mode (EDID override only):"
+	[[ -n $OVR_EDID ]] || OVR_EDID=auto
+	edid_step "$d" || rc=$?
+	if [[ $INITRAMFS == 1 ]]; then rebuild_initramfs; fi
+	echo "REBOOT=$([[ $REBOOT == 1 ]] && echo yes || echo no)"
+	exit $rc
 }
 
 # ---- stock NVIDIA source ---------------------------------------------------------------------------------------------
@@ -525,6 +550,7 @@ do_uninstall() {
 
 case $MODE in
 plan | apply) do_apply ;;
+edid) do_edid ;;
 uninstall-plan | uninstall) do_uninstall ;;
 restore-stock)
 	[[ -d ${2:-} ]] || { echo "restore-stock: ${2:-} is not a directory" >&2; exit 2; }

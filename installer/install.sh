@@ -12,7 +12,8 @@
 # 3. installs the set together into ~/.local/{bin,lib/omarchyvr,share/omarchyvr} and writes the install manifest
 #    (every file with its checksum, and the originals it replaced) that ./uninstall.sh reverses;
 # 4. prepares the ONE root job (udev rule, NVIDIA patches on a tested driver, EDID override, the realtime permission)
-#    and opens the app: its setup wizard lists exactly what changes and asks for the password once.
+#    and opens the app: the app finishes the setup by itself (checks, user fixes, the root job with ONE password prompt,
+#    checks again, restart if needed). Nothing asks for a password in this terminal.
 #
 # Options:
 #   --prefix DIR        install into DIR instead of ~/.local (a staging install: no user config, units, autostart,
@@ -131,7 +132,7 @@ if [[ " $GPUS " == *" nvidia "* ]]; then
 		NV_WHY="NVIDIA patches turned off (--nvidia no)"
 	elif [[ " $NVIDIA_TESTED_VERSIONS " != *" $NV_VER "* ]]; then
 		# not tested: the root job installs the hooks and the choice, but patches only if the user allows it
-		# (app: Onboarding > System setup > "Allow the patch on untested NVIDIA drivers")
+		# (app: setup screen > NVIDIA driver patch > "Allow the patch on untested NVIDIA drivers")
 		NV_PLAN=patch
 		NV_WHY="NVIDIA $NV_VER is NOT a tested version ($NVIDIA_TESTED_VERSIONS): the patch is applied only if you allow it in the app (off by default). Please send a report from the app (Help > Report a problem) so support can be added."
 	else
@@ -497,12 +498,12 @@ ROOT_CMD="/usr/bin/pkexec $DATA/installer/omarchyvr-root.sh apply $PLAN"
 if [[ $STAGING == 1 || $DRY_ROOT == 1 ]]; then
 	note "the root job is only printed ($([[ $STAGING == 1 ]] && echo staging || echo --dry-run-root)): $ROOT_CMD"
 elif [[ $NO_ROOT == 1 || $OPEN_APP == 1 ]]; then
-	note "the app's setup wizard shows this list and runs it with one password prompt"
+	note "The app finishes the setup (one password): it shows this list while it runs it. No password is asked in this terminal."
 fi
 
 # ==== 7. done ======================================================================================================
 say "7/7 Done: $(grep -vc '^#' "$SHARE/manifest.tsv") artefacts in $SHARE/manifest.tsv"
 if [[ $STAGING == 0 && $OPEN_APP == 1 && -n ${WAYLAND_DISPLAY:-}${DISPLAY:-} ]]; then
-	note "opening the app (its wizard continues from here)"
+	note "opening the app: it checks this PC, asks for the password once and finishes the setup by itself"
 	setsid -f "$BIN/omarchyvr-app" >/dev/null 2>&1 </dev/null || true
 fi

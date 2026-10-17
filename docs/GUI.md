@@ -34,9 +34,9 @@ Monado never lives in the app's cgroup: closing the app, a crash of the app, or 
 app's scope does not stop it. Stop it with the Stop button (or `omarchyvr desk stop`). A start's output goes to a file
 (`~/.local/state/omarchyvr/jobs/`) that the app follows, so a start goes on if the window dies in the middle of it.
 
-The first start opens the onboarding (until it is finished or closed); later starts open the last page. The app
-remembers whether the onboarding was finished, the switches, the supersampling and the last page in
-`~/.config/omarchyvr/gui-state.toml`; the onboarding's own progress is in `~/.local/state/omarchyvr/onboarding.state`.
+The first start opens the automatic setup (below) until it is all green; later starts open the last page. The app
+remembers where the setup stands (`setup_stage = todo|restart|done`), the switches, the supersampling and the last page in
+`~/.config/omarchyvr/gui-state.toml`; the optional in-headset steps are in `~/.local/state/omarchyvr/onboarding.state`.
 
 ## Look
 
@@ -171,7 +171,6 @@ every page at the window's minimum size):
 | ![Tools](gui/tools.png) | ![Logs](gui/logs.png) |
 | ![History](gui/history.png) | ![Lessons](gui/lessons.png) |
 | ![Setup: Checks](gui/setup-checks.png) | ![Setup: Autofix with the demo answer](gui/autofix.png) |
-| ![Onboarding: find the headset](gui/onboarding.png) | ![Onboarding: pair the controllers](gui/onboarding-pair.png) |
 | ![AI providers](gui/ai.png) | ![AI: editing a provider](gui/ai-edit.png) |
 | ![System (omarchyvrd)](gui/system.png) | ![Profiles](gui/profiles.png) |
 
@@ -199,23 +198,58 @@ uses the mirror `$XDG_RUNTIME_DIR/omarchyvrd/state.json` while it is at most 10 
 Every action is one request; turning a session or a component off, Fix, leaving safe mode, acknowledging the GPU and
 the forced start ask first. The switches wait while only the mirror or the probe answers. Demo mode shows a fixture.
 
-## Onboarding
+## Setting up your PC (the automatic setup, was "Onboarding")
 
-The steps of the headset's module (`[onboarding] steps` in its `device.toml`): find the headset, check this computer,
-fix what the checks found, udev access, IPD, pair the controllers, eye calibration, map the room, done. The mocks
-only list find, checks, fixes, udev and done. A stepper shows every step with its state (done, skipped, failed).
-Each step has **Run** (its action), **Next** (marks it done; only when its condition holds, e.g. the udev rule is
-installed and the headset nodes are writable, an IPD is saved, both controllers paired, a room map exists), **Skip**
-and **Back**. The progress is `~/.local/state/omarchyvr/onboarding.state` (`pimax_device::onboarding::Progress`, written
-atomically in the background), so the page resumes at the first step that is neither done nor skipped; a step whose
-job failed comes back first. **Start over** deletes the file. Help > Onboarding opens it again later.
+The first start opens **Setting up your PC** and it starts by itself: no button has to be pressed. Four stages, with a
+live list while the system part runs (code: `omarchyvr_gui_core::autosetup`, a state machine the tests drive with fake
+checks and a fake root job):
+
+1. **Look at this PC**: the read-only checks (headset on USB, access rule, NVIDIA patch, display mode, realtime priority).
+2. **Fix what needs no password**: fixes as your user (for example the keep-alive service).
+3. **System setup (one password)**: the installer's root job (`omarchyvr-root.sh apply`, plan in
+   `~/.local/share/omarchyvr/root-plan.txt`) through ONE pkexec prompt. Every step of the job is listed and changes
+   from waiting to running to done, skipped (with the reason) or failed. The list is parsed from the job's own output.
+4. **Check everything again**: the full checks. A check that is set up correctly but only works after a restart
+   counts as "waits for the restart", not as a failure.
+
+**Show details** (a small expander) has the exact plan and log text. **Cancel** is the only other button; it stops
+before the next stage (the system step cannot be interrupted once started).
+
+| ![Setting up: the system step runs](gui/setup-running.png) | ![All green, restart now](gui/setup-restart.png) |
+|---|---|
+| ![A failed item with one Fix](gui/setup-problem.png) | ![Ready after the restart](gui/setup-ready.png) |
+| ![The password window was closed](gui/setup-stopped.png) | |
+
+What comes out:
+
+- **All green, the job said REBOOT=yes** (or a check waits for the restart): one big **Restart now** (`systemctl reboot`
+  as you; logind needs no password) and **Later**. The state `setup_stage = restart` is saved in `gui-state.toml`
+  (shared with the CLI). The app autostarts at login (`~/.config/autostart/omarchyvr-app.desktop`), sees that stage and
+  continues by itself: the patched module has `merged_head_sync`, the EDID override is in place, the headset display
+  has its native modes, `cap_sys_nice` is set. Then **Ready**.
+- **All green**: **Ready** with the **Play** button. Nothing green needs a button.
+- **Something failed**: each item shows its plain reason and ONE **Fix** (a password badge when it needs root).
+  Several root fixes become **Fix all (one password)**: all lines in one pkexec. A problem only you can solve (a
+  cable) says so and **Check again** runs the checks once more. The headset display mode has a real one-click Fix:
+  `omarchyvr-root.sh edid PLAN` (the EDID step of the root job alone: it waits up to 30 s for the headset's display
+  after the udev rule woke it, finds the connector itself, writes the override, rebuilds the boot image; exit 3 =
+  display not seen, nothing changed). It replaces the old copy-only "connector" check.
+- **The password window was closed / wrong password / no password window on this desktop**: said in plain words,
+  nothing was changed, one **Try again**.
+
+**Ready** also has **Next, in the headset**: IPD, pair the controllers, eye calibration, room map. They need you
+wearing the headset, so they are optional and never block the setup; each is one button on the existing guided flows
+(which talk to you in the headset). **Run setup again** is on the Ready screen (and Help > Set up this PC). The NVIDIA
+card with the switch "Allow the patch on untested NVIDIA drivers" shows on this screen when the driver is not a tested
+version (always in Developer mode); change it, then Run setup again.
+
+`~/.local/state/omarchyvr/onboarding.state` now only holds the optional steps (IPD, pairing, eye calibration, room).
+Developer mode keeps the full Setup page (every check, builds, Autofix) one click away from Ready.
+
+The actions behind the optional steps and the rest of this page:
 
 | Step | Run |
 |---|---|
-| Find the headset | The USB list matched against the modules (`pimax_device::detect`); pick a model when it is not plugged in. |
-| Check this computer | The checks below, again. |
-| Fix what the checks found | The failing findings with their fixes (as on Setup > Checks). |
-| udev access | The `udev.install_rules` catalogue fix: the pkexec dialog with the lines first. |
 | IPD | `pimax-eye ipd --watch` in a terminal (the IPD tool; `a` sets the lens motor once). |
 | Pair the controllers | Pair left / Pair right (one StartPair through auto mode per click, at most one per hand every 30 s). |
 | Headset sound / Test sound | Home > Sound: while VR runs the headset speakers (DisplayPort audio, the NVIDIA HDA card's "Pimax" port) are the default output; Stop restores it. Test sound plays a chime there only (docs/AUDIO.md). |

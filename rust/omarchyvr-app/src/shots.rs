@@ -6,7 +6,7 @@ use eframe::egui;
 use omarchyvr_config::Store;
 use omarchyvr_gui_core::app::{AppCore, Page, Pending};
 use omarchyvr_gui_core::checklist::Fix;
-use omarchyvr_gui_core::device::onboarding::{State, Step};
+use omarchyvr_gui_core::guistate::SetupStage;
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -345,55 +345,61 @@ fn shots() -> Vec<Shot> {
             setup: |a| a.core.want_system(),
         },
         Shot {
-            name: "onboarding",
+            name: "setup-running",
             running: false,
             page: Page::Onboarding,
-            height: 1000.0,
+            height: 760.0,
             dark: true,
-            setup: |a| a.core.want_onboarding(),
+            setup: |a| demo_setup(a, "running", SetupStage::Todo),
         },
         Shot {
-            name: "onboarding-pair",
-            running: true,
+            name: "setup-restart",
+            running: false,
+            page: Page::Onboarding,
+            height: 760.0,
+            dark: true,
+            setup: |a| demo_setup(a, "restart", SetupStage::Restart),
+        },
+        Shot {
+            name: "setup-problem",
+            running: false,
+            page: Page::Onboarding,
+            height: 760.0,
+            dark: true,
+            setup: |a| demo_setup(a, "problem", SetupStage::Restart),
+        },
+        Shot {
+            name: "setup-stopped",
+            running: false,
+            page: Page::Onboarding,
+            height: 760.0,
+            dark: true,
+            setup: |a| demo_setup(a, "stopped", SetupStage::Todo),
+        },
+        Shot {
+            name: "setup-ready",
+            running: false,
             page: Page::Onboarding,
             height: 900.0,
             dark: true,
-            setup: |a| {
-                a.core.want_onboarding();
-                a.core.onboarding_use_module("dream-air");
-                for s in [Step::Checks, Step::Fixes, Step::Udev, Step::Ipd] {
-                    a.core.onboarding_set(s, State::Done);
-                }
-                a.core.pair("left");
-            },
+            setup: |a| demo_setup(a, "ready-after-reboot", SetupStage::Done),
         },
         Shot {
-            name: "onboarding-system",
+            name: "setup-ready-light",
             running: false,
             page: Page::Onboarding,
             height: 900.0,
-            dark: true,
-            setup: |a| {
-                a.core.want_onboarding();
-                a.core.onboarding_use_module("dream-air");
-                for s in [Step::Checks, Step::Fixes] {
-                    a.core.onboarding_set(s, State::Done);
-                }
-                a.core.onboarding.install.root_done = false;
-            },
+            dark: false,
+            setup: |a| demo_setup(a, "ready-after-reboot", SetupStage::Done),
         },
         Shot {
-            name: "onboarding-nvidia-untested",
+            name: "setup-nvidia-untested",
             running: false,
             page: Page::Onboarding,
             height: 1300.0,
             dark: true,
             setup: |a| {
-                a.core.want_onboarding();
-                a.core.onboarding_use_module("dream-air");
-                for s in [Step::Checks, Step::Fixes] {
-                    a.core.onboarding_set(s, State::Done);
-                }
+                demo_setup(a, "ready-after-reboot", SetupStage::Done);
                 // an untested driver, patched because the user allowed it (relaxed matching), the switch just turned off
                 a.core.onboarding.install.nvidia = omarchyvr_gui_core::nvidia_patch::NvidiaInfo {
                     driver: Some("610.58.01".into()),
@@ -422,6 +428,14 @@ fn shots() -> Vec<Shot> {
             setup: |a| a.core.profiles.import_legacy(),
         },
     ]
+}
+
+/// The automatic setup in a fixed state (screenshots): driven through the real state machine with fake checks.
+fn demo_setup(a: &mut PimaxApp, which: &str, stage: SetupStage) {
+    a.core.want_onboarding();
+    let plan = a.core.onboarding.install.plan_text.clone().unwrap_or_default();
+    a.core.onboarding.setup = omarchyvr_gui_core::autosetup::demo_run(which, &plan);
+    a.core.state.setup = stage;
 }
 
 /// Render every page of an existing core (the real machine: `--screenshots DIR --real`, for bug reports). Only the

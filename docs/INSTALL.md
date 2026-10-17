@@ -7,14 +7,20 @@ Unofficial. Supports the Pimax Dream Air. Not affiliated with Pimax or Omarchy.
     git clone --recursive https://github.com/laughtt/omarchyvr.git
     cd omarchyvr && ./install.sh
 
-That is the only command. Claude Code can run it for you. Everything after it happens in the app.
+That is the only command. Claude Code can run it for you. Everything after it happens in the app, by itself.
+The terminal ends with "The app finishes the setup (one password)": it never asks for a password.
 
-| # | Where | What you do | Password |
-|---|---|---|---|
-| 1 | terminal (or Claude) | `./install.sh`: it checks this PC and builds everything (about 15-30 min the first time on a fast PC, at the lowest priority, so you can keep working). It installs the set and opens the app. | no |
-| 2 | app, setup wizard, "System setup" step | read the list of system changes, click **Set up this PC** | **one** (pkexec) |
-| 3 | app | if the list said "reboot": reboot (only when the NVIDIA module or the boot image changed) | no |
-| 4 | app, Home | **Play**: SteamVR starts with the headset | no |
+| # | Where | What happens | You press | Password |
+|---|---|---|---|---|
+| 1 | terminal (or Claude) | `./install.sh`: it checks this PC and builds everything (about 15-30 min the first time on a fast PC, at the lowest priority, so you can keep working). It installs the set and opens the app. | nothing after the command | no |
+| 2 | app, "Setting up your PC" | starts by itself: looks at this PC, fixes what needs no password, runs the system part (live list of steps), checks again | nothing | **one** (pkexec window of your desktop) |
+| 3 | app | all green and the job said "reboot" (NVIDIA module, boot image): **Restart now**. The app opens again at login and finishes the checks by itself (patched module loaded, EDID override, headset display mode, realtime permission) | **Restart now** (only when a restart is needed) | no |
+| 4 | app, Ready | **Play**: SteamVR starts with the headset | **Play** | no |
+
+All green and no restart needed: the only press is Play. If an item fails, it shows why and has one **Fix** button
+(several root fixes: **Fix all (one password)**); a closed password window or a wrong password shows **Try again**.
+IPD, controllers, eye calibration and the room map are optional ("Next, in the headset" on the Ready screen).
+**Run setup again** is on the Ready screen. How it works: [GUI.md](GUI.md#setting-up-your-pc-the-automatic-setup-was-onboarding).
 
 Later Plays never ask for a password. The realtime permission (`cap_sys_nice`) sits on the installed
 `monado-service` at a fixed path (`~/.local/lib/omarchyvr/monado/...`). Builds in other directories never relink
@@ -40,7 +46,7 @@ them and stops.
 | `~/.config/autostart/omarchyvr-app.desktop`, `~/.local/share/applications/omarchyvr.desktop`, icon | app at login, launcher | removed |
 | OpenXR/OpenVR registration | SteamVR is the OpenXR runtime; Monado's SteamVR driver is registered in `openvrpaths.vrpath`; the Steam entry gets the OpenXR import variable | undone |
 
-### The one root job (the wizard shows it before you type the password)
+### The one root job (the app runs it by itself with one password; Show details has this list as text)
 
 | Change | When | Undo |
 |---|---|---|
@@ -81,7 +87,9 @@ the password for the exact file. Play never relinks the installed file, so it ne
   writes `OVR_EDID=auto` and the system setup looks for the connector itself: it installs the access rule first, then
   waits up to 30 s for the headset's EDID, then writes the override. One password, one reboot. If the display never
   shows up, only the EDID step is skipped ("headset display not seen: put the headset on / turn it on, then press Fix
-  in the app"); the rest of the setup is not affected.
+  in the app"); the rest of the setup is not affected. **Fix** runs the same step alone
+  (`omarchyvr-root.sh edid <plan>`, one password, exit 3 when the display is still not seen). The app also switches an
+  empty `OVR_EDID` to `auto` before the job when the headset is on USB.
 - AMD and Intel GPUs: no patches, marked experimental.
 
 ## Requirements

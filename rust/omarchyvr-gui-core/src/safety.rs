@@ -252,7 +252,10 @@ fn check_user_words(w: &[String], depth: usize) -> Result<(), String> {
         return Err(format!("`{name}` in a user command: root fixes are shown and run with pkexec by the user only"));
     }
     check_program_rules(&cw)?;
-    if name == "systemctl" && !cw.iter().any(|a| a == "--user") {
+    // the one exception: the "Restart now" button of the automatic setup (logind lets the logged-in user reboot; the
+    // person pressed the button, the app never reboots on its own)
+    let restart_button = cw.len() == 2 && cw[1] == "reboot";
+    if name == "systemctl" && !restart_button && !cw.iter().any(|a| a == "--user") {
         return Err("system units are not touched by the app (only systemctl --user)".into());
     }
     if name == "systemd-run" && !(cw.iter().any(|a| a == "--user") && cw.iter().any(|a| a == "--scope")) {
@@ -442,13 +445,13 @@ fn check_root_depth(script: &str, depth: usize) -> Result<(), String> {
                     || (prog.starts_with('/') && prog.ends_with("/.local/share/omarchyvr/data/installer/omarchyvr-root.sh"));
                 let ok = installed
                     && !prog.contains("..")
-                    && matches!(args.first().map(String::as_str), Some("apply" | "uninstall"))
+                    && matches!(args.first().map(String::as_str), Some("apply" | "uninstall" | "edid"))
                     && args.len() == 2
                     && args[1].starts_with('/')
                     && args[1].ends_with(".env")
                     && !args[1].contains("..");
                 if !ok {
-                    return Err("the root job runs only as <installed>/omarchyvr-root.sh apply|uninstall /absolute/plan.env".into());
+                    return Err("the root job runs only as <installed>/omarchyvr-root.sh apply|uninstall|edid /absolute/plan.env".into());
                 }
             }
             "nvidia-patch-reapply.sh" => {
@@ -601,6 +604,7 @@ mod tests {
             Cmd::new("/home/u/.local/bin/omarchyvr", &["desk", "stop", "--grace", "30"]),
             Cmd::new("/home/u/.local/bin/omarchyvr", &["vr", "stop", "--grace", "30", "--all"]),
             Cmd::new("systemctl", &["--user", "enable", "--now", "omarchyvr-keepalived"]),
+            Cmd::new("systemctl", &["reboot"]), // the setup's "Restart now" button
             Cmd::new("cargo", &["build", "--release", "-p", "omarchyvr-tools"]),
             Cmd::new("install", &["-m755", "/r/target/release/omarchyvr", "/home/u/.local/bin/omarchyvr"]),
             Cmd::new("chmod", &["444", "/home/u/.config/openvr/openvrpaths.vrpath"]),

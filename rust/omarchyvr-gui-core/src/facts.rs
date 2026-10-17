@@ -655,6 +655,12 @@ pub fn collect_facts(
         PathBuf::from(ROOT_REAPPLY),
         PathBuf::from(ROOT_REAPPLY_LEGACY),
     ]);
+    check.extend(crate::autosetup::EDID_FILES.iter().map(PathBuf::from));
+    {
+        // the installed root job (its EDID-only mode is the connector check's fix)
+        let i = crate::install::Install::of_home(&p.home);
+        check.extend([i.root_script(), i.plan_env()]);
+    }
     for b in &p.builds {
         check.push(b.dir.join("CMakeCache.txt"));
     }

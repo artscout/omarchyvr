@@ -342,6 +342,20 @@ pub fn from_doctor(facts: &Facts, live: &Live, p: &Paths) -> Vec<Item> {
             },
             None => Fix::None,
         };
+        // the EDID override in one click: the root job's EDID mode finds the headset's connector itself (it waits for
+        // the display up to 30 s), so the lines no longer have to be checked and run by hand
+        if c.id == "connector" && c.level == Level::Fail && !c.detail.contains("not connected") {
+            let i = crate::install::Install::of_home(&p.home);
+            if facts.has(&i.root_script()) && facts.has(&i.plan_env()) {
+                let undo = c.fix.as_ref().map(|f| f.undo.clone()).unwrap_or_default();
+                fix = Fix::Root(RootFix::new(
+                    "Set up the headset's display mode: the job finds the headset's display (waits up to 30 s for it), writes the EDID override and rebuilds the boot image. One password; restart afterwards.",
+                    vec![crate::autosetup::edid_fix_line(&i)],
+                    undo,
+                    true,
+                ));
+            }
+        }
         match c.id {
             "keepalive" => {
                 fix = user(
