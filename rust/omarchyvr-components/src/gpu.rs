@@ -279,7 +279,8 @@ impl Gate {
         let mut g = Gate::new(current_boot);
         let mut boot = String::new();
         let mut why = None;
-        g.fault = true; // no cause= key: unknown, strict
+        g.fault = true; // no cause= key: strict unless every evidence line is a process kill (below)
+        let has_cause = text.lines().any(|l| l.starts_with("cause="));
         for l in text.lines() {
             match l.split_once('=') {
                 Some(("boot_id", v)) => boot = v.to_string(),
@@ -301,6 +302,10 @@ impl Gate {
         if g.evidence.is_empty() {
             g.evidence.extend(why);
         }
+        // a file from before the cause= key: kill-only when every evidence line is a Monado kill or hang
+        if !has_cause && !g.evidence.is_empty() && g.evidence.iter().all(|e| is_kill_evidence(e)) {
+            g.fault = false;
+        }
         g
     }
 
@@ -312,6 +317,15 @@ impl Gate {
     pub fn save(&self, path: &Path) -> std::io::Result<()> {
         crate::util::write_atomic(path, self.to_text().as_bytes())
     }
+}
+
+/// Process-kill evidence written before the `cause=` key existed: Monado SIGKILLed, hung after SIGINT, still alive
+/// after its stop grace, or not exiting after an automatic stop. Anything else (Xid, display engine, D state) is a fault.
+fn is_kill_evidence(e: &str) -> bool {
+    let e = e.to_ascii_lowercase();
+    let kill = e.contains("was sigkilled") || e.contains("hung after sigint") || e.contains("still alive after its stop grace") || e.contains("did not exit and was not killed");
+    let fault = e.contains("xid") || e.contains("display engine") || e.contains("stuck layer") || e.contains("d state") || e.contains("uninterruptible");
+    kill && !fault
 }
 
 #[cfg(test)]
@@ -456,13 +470,19 @@ mod tests {
     }
 
     #[test]
-    fn an_old_file_without_the_cause_key_is_strict() {
+    fn an_old_file_without_the_cause_key_is_strict_unless_its_evidence_is_only_a_kill() {
+        // the live file of 2026-10-17 13:29: only a SIGKILL, so it may be released by a clean session
         let old = "boot_id=b1\nlevel=needs-reboot\nwhy=monado-service was SIGKILLed (pid 43968)\nacked=false\nevidence=monado-service was SIGKILLed (pid 43968)\n";
-        let mut g = Gate::from_text(old, "b1");
-        assert!(g.fault && !g.kill_only());
-        g.clean_tick(0.0, M1);
-        assert!(!g.clean_tick(10_000.0, M1));
-        assert_eq!(g.level, GateLevel::NeedsReboot);
+        let g = Gate::from_text(old, "b1");
+        assert!(!g.fault && g.kill_only());
+        // with a GPU fault next to the kill, or unknown evidence, it stays strict
+        for extra in ["evidence=NVRM: Xid (PCI:0000:01:00): 31", "evidence=something unknown"] {
+            let mut g = Gate::from_text(&format!("{old}{extra}\n"), "b1");
+            assert!(g.fault && !g.kill_only(), "{extra}");
+            g.clean_tick(0.0, M1);
+            assert!(!g.clean_tick(10_000.0, M1));
+            assert_eq!(g.level, GateLevel::NeedsReboot);
+        }
     }
 
     #[test]
