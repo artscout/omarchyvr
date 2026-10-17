@@ -2139,9 +2139,26 @@ impl AppCore {
         }
     }
 
+    /// The eye calibration in use: the user's own file once it exists (setting `auto`), else the built-in test one.
+    pub fn eye_cal_source(&self) -> omarchyvr_config::eye::CalSource {
+        self.eye_settings.calibration.source(self.facts.eye_calibration)
+    }
+
+    /// The eye calibration choice: saved in `eye.conf` (read by the next session start).
+    pub fn set_eye_calibration(&mut self, mode: omarchyvr_config::eye::CalMode) {
+        self.eye_settings.calibration = mode;
+        self.save_eye_settings();
+    }
+
     /// The eye tracking status in plain words.
     pub fn eye_status(&self) -> (String, bool) {
-        eye_status_text(self.toggles.eye, self.facts.eye_calibration, self.facts.caps.eye || self.facts.caps.no_eye, self.live.service.as_ref().map(|s| s.eye))
+        let usable = self.facts.eye_calibration || self.eye_cal_source() == omarchyvr_config::eye::CalSource::Builtin;
+        eye_status_text(self.toggles.eye, usable, self.facts.caps.eye || self.facts.caps.no_eye, self.live.service.as_ref().map(|s| s.eye))
+    }
+
+    /// Which start list and which calibration the eyes use, in plain words (the Eyes card).
+    pub fn eye_sources_text(&self) -> String {
+        eye_sources_text(pimax_eye::frames::list().1, self.eye_cal_source(), self.facts.eye_calibration)
     }
 
     /// The eye laser of the running session (`wayvrctl gaze-laser on|off`).
@@ -2884,6 +2901,22 @@ mod mic_test_tests {
     }
 }
 
+/// The start list and the calibration in use, in plain words.
+pub fn eye_sources_text(list: pimax_eye::frames::ListKind, cal: omarchyvr_config::eye::CalSource, own_exists: bool) -> String {
+    use omarchyvr_config::eye::CalSource;
+    use pimax_eye::frames::ListKind;
+    let l = match list {
+        ListKind::Base => "Start list: the base list (no sign-in step, tested on one headset).",
+        ListKind::Full => "Start list: the full list of this build.",
+    };
+    let c = match (cal, own_exists) {
+        (CalSource::Builtin, _) => "Calibration: the built-in test calibration. It was made on someone else's eyes, so the aim is rough until you calibrate your own.",
+        (CalSource::Own, true) => "Calibration: your own.",
+        (CalSource::Own, false) => "Calibration: your own, but none is saved yet, so eye tracking does not run. Calibrate, or switch to the built-in one.",
+    };
+    format!("{l} {c}")
+}
+
 /// Plain-words eye tracking status: (text, ok). `running`: Some(eye flag of the running Monado).
 pub fn eye_status_text(switch_on: bool, calibrated: bool, supported: bool, running: Option<bool>) -> (String, bool) {
     if !switch_on {
@@ -2905,6 +2938,17 @@ pub fn eye_status_text(switch_on: bool, calibrated: bool, supported: bool, runni
 #[cfg(test)]
 mod eye_status_tests {
     use super::eye_status_text as t;
+
+    #[test]
+    fn sources_text_names_the_list_and_whose_eyes() {
+        use omarchyvr_config::eye::CalSource;
+        use pimax_eye::frames::ListKind;
+        let b = super::eye_sources_text(ListKind::Base, CalSource::Builtin, false);
+        assert!(b.contains("base list") && b.contains("someone else's eyes") && b.contains("rough"));
+        let o = super::eye_sources_text(ListKind::Full, CalSource::Own, true);
+        assert!(o.contains("full list") && o.contains("your own") && !o.contains("someone else"));
+        assert!(super::eye_sources_text(ListKind::Base, CalSource::Own, false).contains("does not run"));
+    }
 
     #[test]
     fn plain_words() {

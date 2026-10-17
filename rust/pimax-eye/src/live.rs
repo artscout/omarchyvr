@@ -11,7 +11,7 @@ use crate::clock::{monotonic_ns, ClockMap};
 use crate::correction::{tangent_of, Correction};
 use crate::drift::{Drift, DriftParams};
 use crate::filter::{FilterParams, OneEuro};
-use crate::frames::{parse, select, Action, Guard, Skips, DATA};
+use crate::frames::{parse, select, Action, Guard, Skips};
 use crate::gaze::parse_payload;
 use crate::session::{in_decoder, CAPTURED_UNSUBSCRIBE_GAZE, IN_BUFFER};
 use crate::track::{convert, sample_at, FrameConv, Sample};
@@ -447,7 +447,7 @@ pub fn run_link<T: Transport>(
     state: &mut dyn FnMut(State),
     log: &mut dyn FnMut(&str),
 ) -> Result<(), LinkError> {
-    let steps = parse(DATA).map_err(|e| LinkError::new(Failure::Other, e))?;
+    let steps = parse(crate::frames::list().0).map_err(|e| LinkError::new(Failure::Other, e))?;
     let skips = Skips {
         auth: cfg.skip_auth,
         cal: !cfg.with_cal,

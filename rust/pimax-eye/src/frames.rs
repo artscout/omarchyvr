@@ -11,8 +11,31 @@ use std::collections::HashSet;
 use std::io;
 use std::time::Duration;
 
-/// The checked-in frame list.
+/// The frame list file `data/replay-frames.txt`: the synthetic stand-in in the public tree (no steps), the private
+/// full cold-start list (with the two auth steps) when `tools/lab-data.sh link` linked it.
 pub const DATA: &str = include_str!("../data/replay-frames.txt");
+
+/// The public BASE list `data/base-frames.txt` (user decision 2026-10-17, docs/EYE.md): the cold start without the
+/// two auth steps (0x76c, 0x777) and with the developer's calibration blob (0x456) as the built-in test calibration.
+pub const BASE: &str = include_str!("../data/base-frames.txt");
+
+/// Which list [`list`] chose.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ListKind {
+    /// The public base list.
+    Base,
+    /// The private full list (linked from the lab data).
+    Full,
+}
+
+/// The list the eye start uses: the private full list when it is linked in (it has steps), else the base list.
+pub fn list() -> (&'static str, ListKind) {
+    if DATA.lines().any(|l| l.starts_with("STEP ")) {
+        (DATA, ListKind::Full)
+    } else {
+        (BASE, ListKind::Base)
+    }
+}
 
 /// Calibration opcodes that are never sent.
 pub const DENIED_OPS: [u32; 5] = [0x3f2, 0x407, 0x42e, 0x3fc, 0x44c];
@@ -442,6 +465,85 @@ mod tests {
             Action::Control { setup, .. } => !(setup[0] == 0x41 && setup[1] == 48),
             _ => false,
         }));
+    }
+
+    fn base_steps() -> Vec<FStep> {
+        parse(BASE).unwrap()
+    }
+
+    #[test]
+    fn base_list_parses_and_has_no_auth_ops() {
+        let s = base_steps();
+        assert_eq!(s.len(), 24, "26 steps of the cold start minus the 2 auth steps");
+        assert!(s.iter().all(|x| x.class != "AUTH"));
+        let ops: Vec<u32> = s
+            .iter()
+            .filter_map(|x| match &x.action {
+                Action::Ttp { op, .. } => Some(*op),
+                _ => None,
+            })
+            .collect();
+        assert!(ops.iter().all(|o| !AUTH_OPS.contains(o) && !DENIED_OPS.contains(o)), "{ops:x?}");
+        assert_eq!(
+            ops,
+            [
+                0x3e8, 0x640, 0x852, 0x77b, 0x532, 0x58c, 0x546, 0x547, 0x5d2, 0x5cd, 0x4b0, 0x596, 0x578,
+                0x686, 0x67c, 0x5be, 0x672, 0x4c4, 0x456
+            ]
+        );
+        // skipping auth changes nothing (it is absent); enumeration is never sent
+        assert_eq!(select(&s, Skips::default()).len(), 23);
+        assert_eq!(select(&s, Skips { auth: true, ..Skips::default() }).len(), 23);
+    }
+
+    #[test]
+    fn base_calibration_step_matches_the_pins() {
+        let s = base_steps();
+        let Action::Ttp { frames, op, .. } = &s.last().unwrap().action else {
+            panic!()
+        };
+        assert_eq!(*op, CAL_OP);
+        let (m, h) = ttp_info(frames).unwrap();
+        assert_eq!(h.payload_len, CAL_PAYLOAD_LEN);
+        assert_eq!(m.payload.len(), CAL_PAYLOAD_LEN as usize);
+        assert_eq!(fnv1a(&m.payload), CAL_PAYLOAD_FNV);
+        // the guard accepts the list (it pins the blob) and rejects a changed blob
+        assert!(Guard::new(&s).is_ok());
+        let mut bad = s.clone();
+        if let Action::Ttp { frames, .. } = &mut bad.last_mut().unwrap().action {
+            let n = frames.len() - 1;
+            let l = frames[n].len() - 1;
+            frames[n][l] ^= 1;
+        }
+        assert!(Guard::new(&bad).is_err());
+    }
+
+    #[test]
+    fn list_picks_the_base_list_unless_the_full_one_is_linked() {
+        let (text, kind) = list();
+        match kind {
+            ListKind::Base => assert_eq!(text, BASE),
+            ListKind::Full => {
+                assert_eq!(text, DATA);
+                assert!(parse(text).unwrap().iter().any(|x| x.class == "AUTH"));
+            }
+        }
+    }
+
+    #[test]
+    #[cfg_attr(not(lab_data), ignore = "needs the private lab data (real calibration, room recording or eye transcript)")]
+    fn base_frames_are_byte_identical_to_the_private_list() {
+        let full = steps();
+        let base = base_steps();
+        assert_eq!(base.len() + 2, full.len());
+        for b in &base {
+            let f = full.iter().find(|x| x.n == b.n).expect("same step number in the full list");
+            assert_eq!(b.class, f.class, "step {}", b.n);
+            assert_eq!(b.desc, f.desc, "step {}", b.n);
+            assert_eq!(b.action, f.action, "step {}", b.n);
+        }
+        let missing: Vec<u32> = full.iter().filter(|f| !base.iter().any(|b| b.n == f.n)).map(|f| f.n).collect();
+        assert_eq!(missing, [8, 9]);
     }
 
     #[test]

@@ -5,6 +5,46 @@ host-side per-eye calibration in `~/.config/omarchyvr/eye-calibration.toml` (v1:
 Monado exposes `XR_EXT_eye_gaze_interaction`; WayVR (`~/src/wayvr`, branch `eye-gaze`) reads it.
 Background: `analysis/eye-gaze-full.md`, `analysis/eye-precision.md`, `analysis/wayvr-gaze.md`.
 
+## The base start list and the built-in test calibration (user decision 2026-10-17)
+
+So that other Dream Air owners can try eye tracking, the public tree ships a **base start list**:
+`rust/pimax-eye/data/base-frames.txt` (compiled into `pimax-eye`, so every component has it).
+
+**What it is.** The Windows cold start of the eye chip as 24 steps (descriptor/enumeration step 1 is never sent), byte
+for byte as captured: hello (0x3e8), two reads (0x640 ...), the platform config (0x852), the post-auth acknowledgement
+(0x77b), the read-only gets (0x532, 0x58c, 0x546, 0x547, 0x5d2, 0x5cd, 0x4b0, 0x596, 0x578, 0x686), the 120 Hz and lens
+position setters (0x67c, 0x5be), the rate read (0x672), the gaze subscribe (0x4c4) and the calibration upload (0x456).
+Four vendor control transfers (bReq 48 write and read, 70 read, 65 write) are in it as well; the live path leaves the bReq 48 write out.
+
+**What it leaves out.** The two authentication steps (0x76c request challenge, 0x777 answer). The answer belongs to a
+live challenge and cannot be replayed, so the list does not carry it. Lab result 2026-10-14: the same start without
+the auth pair gave 119 Hz gaze on both eyes (the chip may flag the platform config 0x852 as rejected without auth; gaze does not need it).
+Nothing that identifies a unit is in the list (no serial).
+
+**The calibration is the developer's.** Step 26 (0x456, 34 KB) is the developer's own eye calibration profile, shipped as
+the default "for people to test". It was made on one person's eyes and **tested on one headset**: expect a rough aim
+until you calibrate your own. The Guard still pins that blob by length and FNV-1a hash and refuses every other 0x456 and
+the calibration opcodes (0x3f2, 0x407, 0x42e, 0x3fc, 0x44c).
+
+**Which list.** The eye start uses the base list. A developer build that linked the private full list
+(`tools/lab-data.sh link`) uses that one (`pimax_eye::frames::list()`); the Eyes card says which.
+
+**Which calibration (the switch).** `calibration=` in `~/.config/omarchyvr/eye.conf`, the app's "Built-in test
+calibration" switch (Tracking page, Eyes card):
+
+| value | meaning |
+|---|---|
+| `auto` (default) | your own `eye-calibration.toml` once you have calibrated, until then the built-in one |
+| `builtin` | always the built-in one: the start list sends the blob (`PIMAX_EYE_CAL=1`) and no host-side file is applied (`PIMAX_EYE_CALIBRATION=none`) |
+| `own` | always your own: nothing extra is sent, the host-side calibration is applied; no file means eye tracking does not run |
+
+The Eyes card says in plain words which list and which calibration are in use, and that the built-in one is someone
+else's eyes. Run the app's eye calibration step to make your own; after that it is used automatically.
+
+**Leak scanners.** `tools/leak-scan.py` (pre-commit, pre-push) blocks eye-chip bytes everywhere except this one file,
+identified by path **and** SHA-256 (`EYE_BASE_*` in the script). A changed list needs a reviewed new hash. The private
+full list and the USB transcripts stay refused. `tools/leak-scan-test.sh` checks both.
+
 ## Eye tracking: always on, visual only (user decision 2026-10-16)
 
 Eye tracking is on in every session when the eye build and `~/.config/omarchyvr/eye-calibration.toml` exist. If it is not

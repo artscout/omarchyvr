@@ -42,6 +42,8 @@ would start: $ROOT/build/src/xrt/targets/service/monado-service
   XR_RUNTIME_JSON=$ROOT/build/openxr_monado-dev.json
   PIMAX_CTRL_INHAND=auto
   PIMAX_EYE=1
+  PIMAX_EYE_CAL=1
+  PIMAX_EYE_CALIBRATION=none
   PIMAX_CTRL_AIM=head
   PIMAX_PERF_FILE=$ROOT/run/omarchyvr-perf.stats
   PIMAX_DEBUG_PTRACE=1

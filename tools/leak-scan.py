@@ -12,12 +12,21 @@ Windows user paths, machine values from ~/.config/omarchyvr (compared by value, 
 private lab path. Only added lines of text files are scanned; binary and .gz files are scanned whole.
 Prints the kind of hit and the path, never the value. Exit 1 on any hit.
 """
-import collections, gzip, math, os, re, subprocess, sys
+import collections, gzip, hashlib, math, os, re, subprocess, sys
 from pathlib import PurePosixPath
 
 REPO = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, check=True).stdout.strip()
 HOME = os.path.expanduser("~")
 USER = os.path.basename(HOME)
+
+
+# The ONE allowed holder of eye-chip cold-start bytes (user decision 2026-10-17, docs/EYE.md): the public BASE start
+# list (no auth steps, the developer's calibration blob as the built-in test calibration). The allowance is exactly this
+# path AND this content hash; it only switches off the "eye-chip cold-start bytes" check, every other scan still runs on
+# the file. A changed list needs a reviewed new hash here. The private full list, transcripts and any other file that
+# carries those bytes stay refused.
+EYE_BASE_PATH = "rust/pimax-eye/data/base-frames.txt"
+EYE_BASE_SHA256 = "e5201907ee8ddc51a3b8533599be7872840d1e468269362dfcc2d340bd580843"
 
 
 def git(*a, text=False):
@@ -72,7 +81,11 @@ def private_values():
 def eye_bytes():
     """hex payloads (>= 12 bytes) of the private eye-chip cold-start list, lower case, never printed"""
     out = set()
+    # the private list of this clone, and of the main checkout when this is a git worktree of it
+    common = git("rev-parse", "--path-format=absolute", "--git-common-dir", text=True).strip()
+    main = os.path.dirname(common) if common.endswith("/.git") else REPO
     for p in (os.path.join(REPO, ".claude/lab/repo/rust/pimax-eye/data/replay-frames.txt"),
+              os.path.join(main, ".claude/lab/repo/rust/pimax-eye/data/replay-frames.txt"),
               os.path.join(REPO, "rust/pimax-eye/data/replay-frames.txt")):
         if os.path.isfile(p):
             for h in re.findall(r"(?i)\b(?:data=)?([0-9a-f]{24,})\b", open(p, encoding="utf-8", errors="replace").read()):
@@ -88,6 +101,7 @@ class Scan:
         self.mail_ok = allowed_mail()
         self.priv = private_values()
         self.eye = eye_bytes()
+        self.eye_ok = set()  # paths whose content hash matches the eye allowance
 
     def hit(self, kind, path):
         self.hits[kind].add(path)
@@ -116,7 +130,7 @@ class Scan:
                 self.hit("private machine value", p)
             if len(HOME) > 6 and HOME.encode() in x:
                 self.hit("home path", p)
-            if self.eye:
+            if self.eye and p not in self.eye_ok:
                 low = re.sub(rb"[^0-9a-f]", b"", x.lower()) if len(x) < 4_000_000 else b""
                 if any(e.encode() in low for e in self.eye):
                     self.hit("eye-chip cold-start bytes", p)
@@ -175,6 +189,8 @@ def scan_change(s, names_cmd, diff_cmd, show):
             s.path(p)
             continue
         b = show(p)
+        if p == EYE_BASE_PATH and mode != "120000" and hashlib.sha256(b).hexdigest() == EYE_BASE_SHA256:
+            s.eye_ok.add(p)
         s.path(p, mode, b if mode == "120000" else b"")
         if mode == "120000":
             continue

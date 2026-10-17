@@ -119,12 +119,27 @@ fn eyes(ui: &mut Ui, app: &mut PimaxApp) {
     let (status, status_ok) = app.core.eye_status();
     section(ui, "Eyes", None, |ui| {
         let p = theme::pal(ui);
-        switch_row(ui, &mut app.core.toggles.eye, "Eye tracking", Some("Visual only: a small dot where you look in Work. Your eyes never click, point, scroll or pick a window. It starts with every session once calibrated; if it cannot start, VR keeps running without it."), ed && (caps.eye || caps.no_eye || t.eye));
+        switch_row(ui, &mut app.core.toggles.eye, "Eye tracking", Some("Visual only: a small dot where you look in Work. Your eyes never click, point, scroll or pick a window. It starts with every session (with the built-in test calibration until you calibrate your own); if it cannot start, VR keeps running without it."), ed && (caps.eye || caps.no_eye || t.eye));
         widgets::status(ui, &status, if status_ok { p.ok } else { p.warn });
         let mut dot = app.core.eye_settings.dot;
         if switch_row(ui, &mut dot, "Gaze dot", Some("The dot where you look, in Work."), app.core.toggles.eye).changed() {
             app.core.set_eye_dot(dot);
         }
+        // which start list and which calibration: in plain words, with the switch between the built-in test calibration and yours
+        let own = app.core.facts.eye_calibration;
+        let mut builtin = app.core.eye_cal_source() == omarchyvr_config::eye::CalSource::Builtin;
+        let was_builtin = builtin;
+        let r = switch_row(
+            ui,
+            &mut builtin,
+            "Built-in test calibration",
+            Some("On: the calibration of the developer's eyes (someone else's, so the aim is rough). Off: your own, made with the eye calibration step in Onboarding. Once you have calibrated, yours is used by default."),
+            app.core.toggles.eye && (own || !was_builtin),
+        );
+        if r.changed() {
+            app.core.set_eye_calibration(if builtin { omarchyvr_config::eye::CalMode::Builtin } else { omarchyvr_config::eye::CalMode::Own });
+        }
+        widgets::status(ui, &app.core.eye_sources_text(), if builtin { p.warn } else { p.dim });
         if !dev {
             return;
         }

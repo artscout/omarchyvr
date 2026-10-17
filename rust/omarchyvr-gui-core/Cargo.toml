@@ -13,6 +13,8 @@ memchr = "2"
 regex-lite = "0.1"
 serde_json = "1"
 omarchyvr-config = { path = "../omarchyvr-config" }
+# the eye start list in use (base or full) for the Eyes card
+pimax-eye = { path = "../pimax-eye" }
 omarchyvr-doctor = { path = "../omarchyvr-doctor" }
 # headset modules, system checks with the fix catalogue, onboarding progress (no device I/O of its own)
 pimax-device = { path = "../pimax-device" }

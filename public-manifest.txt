@@ -42,6 +42,8 @@
 - tools/restore-claude-omarchy.sh
 - tools/usb-stick-test.ps1
 
+# the BASE eye start list is public on purpose (user decision 2026-10-17, docs/EYE.md; the leak scanner allows exactly it by sha256)
++ rust/pimax-eye/data/base-frames.txt
 # private fixtures: per-unit calibration, room images, Tobii (eye chip) USB transcripts and gaze captures
 - rust/pimax-cam/tests/fixtures/evening2.pxcam
 - rust/omarchyvr-passthrough/tests/fixtures/*.png

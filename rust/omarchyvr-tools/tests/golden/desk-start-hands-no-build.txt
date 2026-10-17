@@ -49,6 +49,9 @@ would start: $ROOT/home/.local/lib/omarchyvr/monado/src/xrt/targets/service/mona
   PIMAX_CTRL_TRACK=1
   PIMAX_CTRL_IMU_LOG=$ROOT/session/ctrl-imu
   PIMAX_CTRL_INHAND=auto
+  PIMAX_EYE=1
+  PIMAX_EYE_CAL=1
+  PIMAX_EYE_CALIBRATION=none
   PIMAX_CTRL_AIM=head
   PIMAX_PERF_FILE=$ROOT/run/omarchyvr-perf.stats
   PIMAX_DEBUG_PTRACE=1
