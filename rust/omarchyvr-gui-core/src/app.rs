@@ -398,6 +398,8 @@ pub struct AppCore {
     pub ai: crate::ai::AiView,
     /// The AI tab's local model (omarchyvr-ai).
     pub localai: crate::localai::LocalAiView,
+    /// The hand models download (Tracking page).
+    pub hand_models: crate::handmodels::HandModelsView,
     /// The System page (omarchyvrd).
     pub system: crate::system::SystemView,
     /// The Record card (omarchyvr-record).
@@ -523,6 +525,7 @@ impl AppCore {
             autofix: AutofixView::new(Arc::new(crate::llm::Net)),
             ai: crate::ai::AiView::default(),
             localai: crate::localai::LocalAiView::default(),
+            hand_models: Default::default(),
             system: crate::system::SystemView::default(),
             record: crate::record::RecordView::default(),
             fixes: FixesView::default(),
@@ -814,6 +817,9 @@ impl AppCore {
                     p.2 = if r.is_ok() { crate::auto::PairState::Paired } else { crate::auto::PairState::Timeout };
                     p.3 = if r.is_ok() { "paired".into() } else { "not paired (see the output)".into() };
                 }
+            }
+            if k == crate::handmodels::KIND {
+                self.hand_models_done(r.is_ok());
             }
             if k == MIC_TEST_KIND {
                 self.mic_test_done(r.is_ok());

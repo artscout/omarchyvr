@@ -126,7 +126,7 @@ impl AppCore {
         } else if markers.is_none() {
             Some(format!("The Monado build ({}) was not checked yet.", b.display()))
         } else if !self.facts.hands_models {
-            Some("The hand models are not installed (~/.local/share/monado/hand-tracking-models, docs/HANDS.md).".into())
+            Some("The hand models are not downloaded yet (Tracking page: Download hand models; docs/HANDS.md).".into())
         } else {
             None
         }

@@ -40,6 +40,7 @@ pub mod edid;
 pub mod eye_desk;
 pub mod game_check;
 pub mod gate;
+pub mod hand_models;
 pub mod hands;
 pub mod hang;
 pub mod host;
@@ -73,6 +74,7 @@ use std::time::Duration;
 
 /// Usage text of the `vr` subcommands.
 pub const USAGE: &str = "usage: omarchyvr vr <command> [options]
+  hand-models status|download --yes   fetch the Mercury hand models from Monado's public server (no licence, personal use; docs/HANDS.md)
   start [--fps 72|90] [--6dof [--ctrl-track] [--hands [--hands-roles]]] [--controllers always|when-held|off] [--no-eye] [--perf] [--anchor] [--light|--no-light] [--game APPID] [--dump DIR [--dump-frames 100,300]] [--wait] [--dry-run] [--force] [--debug] [--no-set-runtime]
         [--no-notify] [--monado-build DIR] [--connector NAME] [--mode N] [--timeout SECS]
       the connector is found by the headset's EDID (PVR 0xD242 / product 0x1019) unless --connector is given; the
@@ -707,6 +709,13 @@ pub fn run(mut a: Args) -> CliResult {
             };
             reject_leftovers(&a)?;
             steamvr::restart_cli(wait)
+        }
+        "hand-models" => {
+            let what = if a.0.first().is_some_and(|x| !x.starts_with('-')) { a.0.remove(0) } else { "status".into() };
+            let yes = a.flag("--yes");
+            reject_leftovers(&a)?;
+            let home = PathBuf::from(real_env("HOME").unwrap_or_default());
+            hand_models::run(&what, yes, &home).map_err(CliError::new)
         }
         "steam-setup" => {
             let what = if a.0.first().is_some_and(|x| !x.starts_with('-')) { a.0.remove(0) } else { "status".into() };

@@ -123,11 +123,28 @@ when no hand is tracked (the pointer is then simply absent).
   switch the controllers off or put them down.
 * CPU: up to about a third of a core while hands are in view, in addition to SLAM and the compositor.
 
-## Licence
+## Models and licence
 
 * Mercury code: BSL-1.0 (Monado).
-* **The models in `~/.local/share/monado/hand-tracking-models` have no licence**: the repository has no LICENSE file
-  and GitLab reports none. Use them locally only. Do not redistribute them, bundle them, or put them in this repo.
+* **The two models have no licence**: Monado's `hand-tracking-models` repository has no LICENSE file and GitLab reports
+  none. So omarchyvr never ships, bundles or mirrors them, and they never go into this repo. You download them to
+  your own PC, for personal use, from Monado's public server (`gitlab.freedesktop.org/monado/utilities/hand-tracking-models`,
+  pinned to one commit in `installer/components.lock`).
+* **In the app:** Tracking > Hands > **Download hand models** (developer mode; also under Home > Quick settings). It first
+  shows the notice: "These hand-tracking models come from Monado's public server. They have no licence. They are
+  downloaded by you, to this PC, for your personal use, and are never shipped by omarchyvr." Only **I agree, download**
+  starts it. It runs as you (no password), shows its step ("Step 2 of 3 ...") and any error in plain words, and when it
+  ends the **Camera hands** switch becomes available without a restart.
+* **Needs** `git` and `git-lfs` on the PC. If `git-lfs` is missing the page says so and nothing is changed; omarchyvr does
+  not install packages for you.
+* **Where:** `~/.local/share/monado/hand-tracking-models` (the folder Monado reads). The download goes to a `.part` folder
+  first and is moved in only when both models are complete, so a failed or stopped download leaves nothing half-installed;
+  press the button again to retry. A folder that is not a download of these models is left alone.
+* **One implementation:** `omarchyvr vr hand-models status|download --yes` (`rust/omarchyvr-tools/src/vr/hand_models.rs`)
+  is what the app's button runs and what `installer/install.sh --hand-models` calls (the flag is the consent there).
+  Without `--yes` the command only prints the notice.
+* **Tests** use temp dirs and a mocked download step; nothing is fetched. A licence request to the Monado maintainers
+  is drafted (not sent) in `docs/upstream/hand-models-licence-request.md`.
 
 ## Install (between sessions only: no Monado running)
 

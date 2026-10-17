@@ -107,7 +107,53 @@ fn hands(ui: &mut Ui, app: &mut PimaxApp) {
         if let Some(w) = &hands_why {
             widgets::status(ui, w, theme::pal(ui).faint);
         }
+        hand_models(ui, app);
     });
+}
+
+/// The hand models: not shipped (no licence), downloaded by the user after reading the notice. Shown until they are installed.
+pub(crate) fn hand_models(ui: &mut Ui, app: &mut PimaxApp) {
+    let p = theme::pal(ui);
+    let running = app.core.hand_models_running();
+    if app.core.facts.hands_models && !running && app.core.hand_models.result.is_none() {
+        return;
+    }
+    let busy = app.core.busy();
+    widgets::setting(
+        ui,
+        "Hand models",
+        Some("Camera hands need two small model files from Monado's public server. They have no licence, so omarchyvr does not ship them: you download them to this PC yourself. docs/HANDS.md."),
+        |ui| {
+            if app.core.facts.hands_models {
+                widgets::chip(ui, "installed", p.ok);
+            } else if running {
+                widgets::spinner(ui);
+            } else if !app.core.hand_models.asking && widgets::primary(ui, "Download hand models", !busy).clicked() {
+                app.core.hand_models_ask();
+            }
+        },
+    );
+    if app.core.hand_models.asking {
+        widgets::note(ui, omarchyvr_gui_core::handmodels::CONSENT);
+        widgets::note(ui, "It needs git and git-lfs on this PC and a few minutes of internet. Nothing needs your password.");
+        ui.horizontal(|ui| {
+            if widgets::primary(ui, "I agree, download", !busy).clicked() {
+                app.core.hand_models_download();
+            }
+            if widgets::ghost(ui, icon::X_CIRCLE, "Cancel", true).clicked() {
+                app.core.hand_models_cancel();
+            }
+        });
+    }
+    if running {
+        let line = app.core.hand_models_progress().unwrap_or_else(|| "Starting the download...".into());
+        widgets::status(ui, &line, p.dim);
+    }
+    match app.core.hand_models.result.clone() {
+        Some(Ok(m)) => widgets::status(ui, &m, p.ok),
+        Some(Err(e)) => widgets::status(ui, &e, p.fail),
+        None => {}
+    }
 }
 
 /// Eye tracking: on / off, the state, the gaze dot; calibration, refit and the live numbers in developer mode.
