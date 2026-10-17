@@ -195,3 +195,109 @@ headset_state() { # tested (awake) | asleep (tested, 0044 hidden) | untested | a
 # headset_connector lives in headset-connector.sh (shared with the root job)
 # shellcheck source=headset-connector.sh
 . "$(dirname "${BASH_SOURCE[0]}")/headset-connector.sh"
+
+# ---- packages ------------------------------------------------------------------------------------------------------
+# BUILD packages: only ./install.sh --from-source (and the release container) needs them.
+OVR_BUILD_PKGS=(git base-devel cmake ninja rust clang pkgconf python patch eigen opencv onetbb boost boost-libs fmt lz4
+	vulkan-headers vulkan-icd-loader glslang shaderc hidapi libusb sdl2-compat gstreamer gst-plugins-base libjpeg-turbo
+	libbsd bluez-libs wayland wayland-protocols libdrm libxkbcommon libx11 libxcb libxrandr openxr pipewire dbus
+	systemd-libs alsa-lib fontconfig libepoxy qt6-base)
+# RUNTIME packages: the libraries a PREBUILT release leaves to the system (the "core" list of
+# packaging/release/bundle-libs.py: stable sonames). Everything else (OpenCV, tbb, fmt, ...) travels inside the release.
+OVR_RUNTIME_PKGS=(glibc gcc-libs vulkan-icd-loader wayland libx11 libxext libxrandr libxrender libxfixes libxi libxcursor
+	libxinerama libxss libxxf86vm libsm libice libxcb libxkbcommon libxkbcommon-x11 sdl2-compat gstreamer
+	gst-plugins-base-libs glib2 dbus systemd-libs libusb hidapi libdrm zlib bluez-libs libjpeg-turbo libbsd pipewire
+	alsa-lib libinput openxr libglvnd libpng zstd lz4 xz libffi pcre2 fontconfig freetype2 expat)
+
+# ---- prebuilt release ----------------------------------------------------------------------------------------------
+# A release tarball unpacks to a directory with MANIFEST.txt, bin/, lib/omarchyvr/ and this installer. Sections of
+# MANIFEST.txt after the "key: value" header: [markers] [bundled-libs] [links] (path TAB target) [sha256] (sha256sum -c
+# format, last). packaging/release/manifest.sh writes it; verify_release reads it.
+release_mode() { # release_mode DIR: prebuilt | source
+	if [[ -f "$1/MANIFEST.txt" && -d "$1/lib/omarchyvr" ]]; then echo prebuilt; else echo source; fi
+}
+manifest_field() { sed -n "s/^$2: //p" "$1/MANIFEST.txt" | head -1; }
+# verify_release DIR: every listed file has its checksum, no unlisted file, every link points where it said. Prints
+# the failures; returns 1 on any.
+verify_release() {
+	local dir=$1 m=$1/MANIFEST.txt tmp bad=0 out
+	[[ -f $m ]] || { warn "no MANIFEST.txt in $dir"; return 1; }
+	tmp=$(mktemp -d)
+	sed -n '/^\[sha256\]$/,$p' "$m" | tail -n +2 >"$tmp/sums"
+	[[ -s $tmp/sums ]] || { warn "MANIFEST.txt has no [sha256] list"; rm -rf "$tmp"; return 1; }
+	if ! out=$(cd "$dir" && sha256sum -c --quiet "$tmp/sums" 2>&1); then
+		warn "checksum mismatch:"
+		printf '%s\n' "$out" | head -10 | sed 's/^/    /' >&2
+		bad=1
+	fi
+	cut -c67- "$tmp/sums" | LC_ALL=C sort >"$tmp/listed"
+	(cd "$dir" && find . -type f ! -path ./MANIFEST.txt | sed 's|^\./||' | LC_ALL=C sort) >"$tmp/present"
+	if [[ -n $(LC_ALL=C comm -13 "$tmp/listed" "$tmp/present") ]]; then
+		warn "files that are not in MANIFEST.txt:"
+		LC_ALL=C comm -13 "$tmp/listed" "$tmp/present" | head -10 | sed 's/^/    /' >&2
+		bad=1
+	fi
+	local p t
+	while IFS=$'\t' read -r p t; do
+		[[ -z $p || $p == \[* ]] && continue
+		if ! [[ -L "$dir/$p" && "$(readlink "$dir/$p")" == "$t" ]]; then warn "link $p should point to $t"; bad=1; fi
+	done < <(sed -n '/^\[links\]$/,/^\[sha256\]$/p' "$m")
+	rm -rf "$tmp"
+	return $bad
+}
+# install_tree SRC DST CLASS NOTE: copy a directory tree (files, links) into DST. A file with the same bytes stays as it
+# is (its inode and its file capability are kept); changed files are replaced atomically; files of an older install
+# that SRC does not have are removed. DST is recorded as one directory for the uninstaller.
+install_tree() {
+	local src=$1 dst=$2 class=$3 note=${4:-} rel t mode
+	if [[ "$DRY" == 1 ]]; then printf 'WOULD install tree\t%s -> %s\n' "$src" "$dst"; return 0; fi
+	mkdir -p "$dst"
+	(cd "$src" && find . -mindepth 1 -type d -print0) | while IFS= read -r -d '' rel; do mkdir -p "$dst/$rel"; done
+	while IFS= read -r -d '' rel; do
+		rel=${rel#./}
+		if [[ -L "$src/$rel" ]]; then
+			t=$(readlink "$src/$rel")
+			if [[ -L "$dst/$rel" && "$(readlink "$dst/$rel")" == "$t" ]]; then continue; fi
+			rm -rf -- "${dst:?}/$rel"
+			ln -s -- "$t" "$dst/$rel"
+		elif [[ -f "$dst/$rel" && ! -L "$dst/$rel" ]] && cmp -s "$src/$rel" "$dst/$rel"; then
+			continue
+		else
+			mode=$(stat -c %a "$src/$rel")
+			rm -rf -- "${dst:?}/$rel.ovr-new"
+			install -m "$mode" "$src/$rel" "$dst/$rel.ovr-new"
+			mv -f -- "$dst/$rel.ovr-new" "$dst/$rel"
+		fi
+	done < <(cd "$src" && find . -mindepth 1 \( -type f -o -type l \) -print0)
+	(cd "$dst" && find . -mindepth 1 \( -type f -o -type l \) ! -name '*.cap-keep' -print0) |
+		while IFS= read -r -d '' rel; do [[ -e "$src/$rel" || -L "$src/$rel" ]] || rm -f -- "${dst:?}/$rel"; done
+	find "$dst" -mindepth 1 -depth -type d -empty -delete
+	record dir "$dst" "$class" "$note"
+}
+# write_runtime_json MONADO_DIR: the OpenXR runtime manifest with absolute paths into THIS prefix (it cannot be shipped:
+# the paths are the user's). Same shape as the file Monado's CMake wrote for a build tree.
+write_runtime_json() {
+	local d=$1 oxr lm
+	oxr=$d/src/xrt/targets/openxr/libopenxr_monado.so
+	[[ -f $oxr ]] || return 1
+	lm=$(find "$d/src/xrt/targets/libmonado" -maxdepth 1 -name 'libmonado.so.*.*.*' 2>/dev/null | sort | head -1)
+	python3 -I - "$d/openxr_monado-dev.json" "$oxr" "$lm" <<'PY'
+import json, sys
+out, lib, lm = sys.argv[1:4]
+rt = {"name": "Monado", "library_path": lib}
+if lm:
+    rt["MND_libmonado_path"] = lm
+with open(out + ".ovr-new", "w") as f:
+    json.dump({"file_format_version": "1.0.0", "runtime": rt}, f, indent=4)
+    f.write("\n")
+PY
+	mv -f -- "$d/openxr_monado-dev.json.ovr-new" "$d/openxr_monado-dev.json"
+}
+# vr_free: nothing is built or installed while a VR session runs (builds take the CPU and the graphics card from the
+# compositor and made VR drop frames: docs/research/perf-2026-10-17.md); checked before every step.
+vr_free() {
+	[[ ${OMARCHYVR_ALLOW_DURING_VR:-0} == 1 ]] && return 0
+	local what
+	what=$("$REPO/tools/vr-busy.sh") && return 0
+	die "a VR session is running (${what#busy: }): nothing is built or installed during a session (it makes VR drop frames). Stop VR in the app and run ./install.sh again (the finished parts are reused)."
+}

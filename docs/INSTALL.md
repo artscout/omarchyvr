@@ -23,17 +23,38 @@ The install itself runs as your user. The app then runs one root job after one p
 
 A reboot is needed when the NVIDIA module or the boot image changed. The table "The one root job" below lists each change with its undo.
 
-## From clone to SteamVR
+## From download to SteamVR
 
-    git clone --recursive https://github.com/laughtt/omarchyvr.git
-    cd omarchyvr && ./install.sh
+Download `omarchyvr-<version>-x86_64.tar.zst` (and its `.sha256`) from the
+[Releases page](https://github.com/laughtt/omarchyvr/releases/latest), then:
 
-That is the only command. Everything after it happens in the app, by itself.
+    tar --zstd -xf omarchyvr-<version>-x86_64.tar.zst
+    cd omarchyvr-<version> && ./install.sh
+
+That is the only command. No git clone, no compiler, no 40 GB: the release is a finished build made in a clean Arch
+container (maintainers: [RELEASE.md](RELEASE.md)). Everything after it happens in the app, by itself.
 The terminal ends with "The app finishes the setup (one password)": it never asks for a password.
+
+`./install.sh` in an unpacked release (it has a `MANIFEST.txt` next to it) is the **prebuilt install**:
+
+- it checks every file against `MANIFEST.txt` first; a damaged download stops there and nothing is changed;
+- it needs only the runtime packages (`--install-packages` installs missing ones with one password prompt);
+- it refuses to run while a VR session is active;
+- it copies the set into `~/.local/bin`, `~/.local/lib/omarchyvr` and `~/.local/share/omarchyvr` (the same layout a
+  build gives), writes the files that hold your paths (the OpenXR runtime manifest `openxr_monado-dev.json`, the SteamVR
+  driver registration, units, desktop entries), records everything for the uninstaller, and keeps Monado's realtime
+  permission when `monado-service` did not change;
+- libraries that change often on Arch (OpenCV, tbb, fmt, ...) travel inside the release (`lib/omarchyvr/deps`); stable
+  system libraries (Vulkan, Wayland, X11, SDL2, GStreamer, glib, dbus, ...) come from your system. `MANIFEST.txt` lists
+  which is which, the commits of Monado and WayVR, the Monado feature markers and the checksum of every file.
+
+Build from source instead (a clone with the forks): `git clone --recursive https://github.com/laughtt/omarchyvr.git`,
+`cd omarchyvr && ./install.sh` (15-30 minutes, about 40 GB; `--from-source` forces it inside a release folder that has
+the forks). The table below is the same for both.
 
 | # | Where | What happens | You press | Password |
 |---|---|---|---|---|
-| 1 | terminal | `./install.sh`: it checks this PC and builds everything (about 15-30 min the first time on a fast PC, at the lowest priority, so you can keep working). It installs the set and opens the app. | nothing after the command | no |
+| 1 | terminal | `./install.sh`: it checks this PC and installs the prebuilt set (about a minute; from source it builds everything instead: about 15-30 min on a fast PC, at the lowest priority). It opens the app. | nothing after the command | no |
 | 2 | app, "Setting up your PC" | first **"Which headset do you have?"** (USB detection only pre-selects, e.g. "Found on USB: Pimax Dream Air (asleep)"; you press **Continue**), then **"Get the headset ready"** (cables, power; live ticks where the PC can tell; **Start setup** works even if a tick is missing). Then it runs by itself: looks at this PC, fixes what needs no password, runs the system part (live list of steps), checks again | Continue, Start setup | **one** (pkexec window of your desktop) |
 | 3 | app | all green and the job said "reboot" (NVIDIA module, boot image): **Restart now**. The app opens again at login and finishes the checks by itself (patched module loaded, EDID override, headset display mode, realtime permission) | **Restart now** (only when a restart is needed) | no |
 | 4 | app, Ready | **Play**: SteamVR starts with the headset | **Play** | no |
