@@ -134,23 +134,6 @@ headset_state() { # tested | untested | absent
 	[[ -z "$l" ]] && { echo absent; return; }
 	grep -q "^$HEADSET_TESTED " <<<"$l" && echo tested || echo untested
 }
-# The headset's display connector, from the EDID manufacturer id "PVR". Prints "<pci> <drm connector> <nvkms name>".
-# nvidia-drm names connectors per type from 1 (DP-1), NVKMS from 0 (DP-0): the override wants the NVKMS name.
-headset_connector() {
-	local e c card pci mfg name t n
-	for e in /sys/class/drm/card*-*/edid; do
-		[[ -n "$(head -c 8 "$e" 2>/dev/null | od -An -t x1)" ]] || continue
-		mfg=$(od -An -t x1 -j8 -N2 "$e" | tr -d ' \n')
-		[[ "$mfg" == 42d2 ]] || continue # "PVR" (EISA id bytes 42 d2)
-		c=${e%/edid}
-		c=${c##*/}
-		card=${c%%-*}
-		name=${c#*-}
-		pci=$(basename "$(readlink -f "/sys/class/drm/$card/device")")
-		t=${name%-*}
-		n=${name##*-}
-		printf '%s %s %s-%s\n' "$pci" "$name" "$t" "$((n - 1))"
-		return 0
-	done
-	return 1
-}
+# headset_connector lives in headset-connector.sh (shared with the root job)
+# shellcheck source=headset-connector.sh
+. "$(dirname "${BASH_SOURCE[0]}")/headset-connector.sh"

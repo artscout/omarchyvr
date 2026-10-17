@@ -76,6 +76,12 @@ the password for the exact file. Play never relinks the installed file, so it ne
   working. This holds for the installer and for the pacman hook on driver updates.
 - The EDID override key (`override.[<PCI address>].<NVKMS connector>`) is detected on your PC from the headset's
   EDID. It is never copied from ours.
+  A fresh PC does not show the headset's display yet (it sleeps until the keepalive wakes it, and that needs the
+  headset access rule from the same job). So when the headset is on USB but no display is visible, the installer
+  writes `OVR_EDID=auto` and the system setup looks for the connector itself: it installs the access rule first, then
+  waits up to 30 s for the headset's EDID, then writes the override. One password, one reboot. If the display never
+  shows up, only the EDID step is skipped ("headset display not seen: put the headset on / turn it on, then press Fix
+  in the app"); the rest of the setup is not affected.
 - AMD and Intel GPUs: no patches, marked experimental.
 
 ## Requirements
