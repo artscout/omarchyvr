@@ -128,11 +128,14 @@ there is no tracking, no controllers and no sound. This is how each part was mad
   Its colours follow the Omarchy theme.
 - **omarchyvrd** owns the running stack and restarts a failed part without stopping VR.
 - **`./install.sh`** builds everything from a clean clone; every system change is written in a manifest with its
-  original saved, and the root part is **one** pkexec job. On 2026-10-17 we ran the full cycle on our PC (everything
-  removed, back to the stock NVIDIA module, then a fresh clone and reinstall). It needed 12 password prompts and
-  ended with Work not starting; the gaps it found were fixed the same day (one password, the realtime permission kept
-  across installs, the headset's calibration kept and read back, a wake guide). The honest account:
-  [docs/RETRO-2026-10-17.html](docs/RETRO-2026-10-17.html).
+  original saved, and the root part is **one** pkexec job. On 2026-10-17 we ran the full cycle on our PC: everything
+  removed, back to the stock NVIDIA module, then a fresh clone, one password, one restart, and Play into SteamVR.
+
+### 6. Knowledge for AI troubleshooting
+Everything we learned is written down for AI agents in [ai/](ai/README.md): the system overview and how to diagnose a
+user's failure ([ai/AI-KNOWLEDGE.md](ai/AI-KNOWLEDGE.md)), every pitfall we hit, numbered ([ai/LESSONS.md](ai/LESSONS.md)),
+and the binding rules ([ai/CLAUDE.md](ai/CLAUDE.md)). If something breaks, point your AI assistant at `AGENTS.md` and
+the `ai/` folder together with the app's problem report.
 
 ## What works today
 
@@ -248,7 +251,7 @@ Everything is built and tested on one PC with one headset. Nothing is tested on 
 
 Open a GitHub issue and attach the report from the app: **Report a problem** writes
 `~/.local/state/omarchyvr/reports/omarchyvr-report-<time>.tar.gz` (summary, checks, logs; text goes through a redactor).
-It stays on your PC until you share it, so read it first. Security problems: see [SECURITY.md](SECURITY.md), not a public issue.
+It stays on your PC until you share it, so read it first. An AI assistant can read it together with [ai/](ai/README.md) to find the cause. Security problems: see [SECURITY.md](SECURITY.md), not a public issue.
 
 ## Credits and licences
 
