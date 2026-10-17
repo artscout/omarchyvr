@@ -19,6 +19,13 @@ environment variable.
   kept (`Tracker::carried_rotation`) for the gyro to carry while the controller is out of view.
 - **Windows data on a plugged-in drive** (`rust/omarchyvr-config/src/import.rs`): besides `/mnt/shared`, every
   `/run/media/$USER/*` mount is searched for an `omarchyvr-windows` folder or `ProgramData-Pimax`.
+- **Room light law v2** (`rust/pimax-cam/src/ae.rs`, Phase 1a of the tracking services plan): the auto exposure meters
+  the masked mean of the unclipped cells (lens corners and cells more than half clipped left out); this one metric
+  (`ae::scene_metric`) is also what the room setup measures (`omarchyvr-roommap` `light.rs`, "Too dark" below 30). The
+  "too bright" rule needs more than 20 % clipped (released below 12 %), deadband 0.15, exposure floor 1140 us with a
+  low stage down to 300 us only after 3 s of more than 30 % clipped (back after 8 s), at most 5 changes/s per pair,
+  LED pair constant 40/62. `ae::is_good_frame` / `StepWatch` is the shared "good frame" (masked mean 30-190, clipped
+  at most 20 %, no step landed, 1 s quiet after a big step). Kill switch: `PIMAX_CAM_AE_LAW=old` restores the previous law.
 
 Not done: the factory accelerometer bias and the ka/kg scale terms (units unverified). To verify them: a still
 recording with the headset in six orientations (+-x, +-y, +-z up) and check that |accel| is 9.81 after subtracting aBias
