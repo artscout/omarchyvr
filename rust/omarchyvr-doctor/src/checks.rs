@@ -70,7 +70,7 @@ impl Opts {
         Opts {
             monado_build: env("PIMAX_MONADO_BUILD")
                 .filter(|v| !v.is_empty())
-                .map_or_else(|| omarchyvr_config::paths::src_dir(&home).join("monado/build"), PathBuf::from),
+                .map_or_else(|| omarchyvr_config::paths::monado_build(&home), PathBuf::from),
             linux_dir,
             config_root: store.root().to_path_buf(),
             cache_root: store.cache().to_path_buf(),
