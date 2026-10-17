@@ -73,6 +73,9 @@ pub enum Page {
     /// The Work first run: the voice assistant and speech questions (worksetup.rs). Not in the navigation (Work and the
     /// AI page open it) and not in [`Page::ALL`], so the app never reopens it by itself at its next start.
     WorkSetup,
+    /// Room setup: calibration + room map in one guided flow (roomflow.rs). Not in the navigation and not in
+    /// [`Page::ALL`]; the third big button opens it.
+    RoomSetup,
 }
 
 impl Page {
@@ -114,6 +117,7 @@ impl Page {
             Page::System => "system",
             Page::Onboarding => "onboarding",
             Page::WorkSetup => "work-setup",
+            Page::RoomSetup => "room-setup",
         }
     }
 
@@ -484,6 +488,12 @@ pub struct AppCore {
     pub play: crate::play::PlayView,
     /// The Work first run (the questions of the first Work press).
     pub work_setup: crate::worksetup::WorkSetupView,
+    /// The Room setup flow behind the third big button (calibration, room map, summary).
+    pub room_flow: crate::roomflow::RoomFlow,
+    /// Screenshots and demo mode: the calibration is present (`Some(true)`) or missing, whatever the disk says.
+    pub demo_calibration: Option<bool>,
+    /// Screenshots: the lookup falls back to the shipped reference calibration.
+    pub demo_reference: bool,
     /// The graphics-card check while Play runs (when it was made).
     pub vram: Option<(Instant, crate::vram::VramReport)>,
 }
@@ -582,6 +592,9 @@ impl AppCore {
             auto_socket: crate::auto::socket_path(&|k| env_for_rows(k)),
             play: Default::default(),
             work_setup: crate::worksetup::WorkSetupView { record: work_setup_record, ..Default::default() },
+            room_flow: Default::default(),
+            demo_calibration: None,
+            demo_reference: false,
             vram: None,
         };
         crate::crash::note("page", a.page.name());
@@ -726,6 +739,7 @@ impl AppCore {
         }
         self.setup_poll();
         self.wake_poll();
+        self.room_flow_poll();
         self.want_plan(self.effective_toggles());
         self.want_plan(self.effective_toggles().without_eye());
         self.want_plan(self.vr_toggles());
@@ -851,6 +865,12 @@ impl AppCore {
             if k == SPEAKER_TEST_KIND {
                 let from = self.speaker_test_from.take().unwrap_or(0).min(self.log.len());
                 self.speaker_result = Some(test_result_from(&self.log[from..], "Speaker test:", r.is_ok()));
+            }
+            if k == crate::calibration::READ_KIND {
+                self.calib_read_done(r.is_ok());
+            }
+            if k == crate::roomsetup::KIND {
+                self.room_flow_room_done(r.is_ok());
             }
             if k.starts_with("room:") {
                 let k = k.clone();

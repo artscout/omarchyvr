@@ -153,12 +153,13 @@ impl AppCore {
     }
 
     /// Start Fast setup (`full = false`) or Full setup.
-    pub fn start_room_setup(&mut self, full: bool) {
+    pub fn start_room_setup(&mut self, full: bool) -> bool {
         match self.room_setup_job(full) {
-            Ok(j) => {
-                self.spawn(j);
+            Ok(j) => self.spawn(j),
+            Err(e) => {
+                self.message = e;
+                false
             }
-            Err(e) => self.message = e,
         }
     }
 
@@ -191,6 +192,154 @@ impl AppCore {
     }
 }
 
+struct CoreEnv<'a>(&'a AppCore);
+
+impl crate::roomflow::FlowEnv for CoreEnv<'_> {
+    fn calibration_present(&self) -> bool {
+        self.0.calibration_ok()
+    }
+    fn chip(&self) -> crate::headset_choice::HeadsetUsb {
+        crate::headset_choice::headset_state_from_usb(&self.0.facts.usb)
+    }
+}
+
+/// `2026-10-17` from Unix seconds (UTC; the tile only needs the day).
+pub fn ymd(unix: u64) -> String {
+    let z = (unix / 86_400) as i64 + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    format!("{y:04}-{m:02}-{d:02}")
+}
+
+impl AppCore {
+    /// The headset's factory calibration is in `~/.config/omarchyvr/headset-calibration.xml`.
+    pub fn calibration_ok(&self) -> bool {
+        if let (true, Some(v)) = (self.demo, self.demo_calibration) {
+            return v;
+        }
+        crate::calibration::present(&self.paths.home)
+    }
+
+    /// The third big button: open the guided Room setup at its first undone step.
+    pub fn open_room_flow(&mut self) {
+        if !self.demo {
+            let _ = crate::calibration::migrate(&self.paths.home);
+        }
+        self.want_room();
+        self.page = crate::app::Page::RoomSetup;
+        self.onboarding.wake.reset();
+        self.onboarding.wake_asked = 0.0;
+        let mut f = self.room_flow.clone();
+        f.open(&CoreEnv(self));
+        self.room_flow = f;
+    }
+
+    /// "Read it from the headset" (also "Try again").
+    pub fn room_flow_read(&mut self) {
+        let mut f = self.room_flow.clone();
+        let fx = f.read_pressed(&CoreEnv(self));
+        self.room_flow = f;
+        self.room_flow_apply(fx);
+    }
+
+    /// "Fast room setup" / "Full room setup".
+    pub fn room_flow_choose(&mut self, full: bool) {
+        let mut f = self.room_flow.clone();
+        let fx = f.choose(full, &CoreEnv(self));
+        self.room_flow = f;
+        self.room_flow_apply(fx);
+    }
+
+    /// Back to the first step.
+    pub fn room_flow_restart(&mut self) {
+        let mut f = self.room_flow.clone();
+        f.restart(&CoreEnv(self));
+        self.room_flow = f;
+    }
+
+    fn room_flow_apply(&mut self, fx: crate::roomflow::Effect) {
+        use crate::roomflow::Effect;
+        match fx {
+            Effect::None => {}
+            Effect::ReadCalibration => {
+                let spec = JobSpec {
+                    kind: JobKind::Other(crate::calibration::READ_KIND.into()),
+                    label: "Reading the headset calibration".into(),
+                    steps: vec![
+                        Step::Note("Reading the factory calibration from the headset (about 10 seconds). It only reads; nothing is changed on the headset.".into()),
+                        Step::Run(crate::calibration::read_cmd(&self.launcher_bin())),
+                    ],
+                };
+                if !self.spawn(spec) {
+                    self.room_flow_restart();
+                }
+            }
+            Effect::StartRoomSetup { full } => {
+                if !self.start_room_setup(full) {
+                    // the plain reason is in `message`; stay on the choice
+                    self.room_flow.stage = crate::roomflow::Stage::Choose;
+                }
+            }
+        }
+    }
+
+    pub(crate) fn calib_read_done(&mut self, ok: bool) {
+        let mut f = self.room_flow.clone();
+        f.read_done(ok, &CoreEnv(self));
+        self.room_flow = f;
+    }
+
+    pub(crate) fn room_flow_room_done(&mut self, ok: bool) {
+        self.room_flow.room_done(ok);
+    }
+
+    /// Feeds the flow from the live USB facts while the headset sleeps (the wake guide), and asks for fresh facts.
+    pub(crate) fn room_flow_poll(&mut self) {
+        let mut f = self.room_flow.clone();
+        let fx = f.tick(&CoreEnv(self));
+        self.room_flow = f;
+        self.room_flow_apply(fx);
+    }
+
+    /// The tile under Play and Work: (done, words). Done = the calibration is in place and a room setup is saved.
+    pub fn room_tile(&self) -> (bool, String) {
+        if self.demo_reference || (!self.demo && !self.calibration_ok() && crate::calibration::reference_in_use(&self.paths.home)) {
+            return (false, "Using the reference calibration".into());
+        }
+        let cal = self.calibration_ok();
+        let when = self.room.state.setups.iter().map(|(_, s)| s.when).max().filter(|w| *w > 0);
+        match (cal, when) {
+            (true, Some(w)) => (true, format!("Done {}", ymd(w))),
+            (true, None) if !self.room.state.setups.is_empty() => (true, "Done".into()),
+            (true, None) => (false, "Calibrated; room not mapped".into()),
+            (false, _) => (false, "Not done".into()),
+        }
+    }
+
+    /// Work and Play need the headset's calibration (Basalt/SLAM). Without it the start says so in plain words and
+    /// opens the Room setup, which reads it first. Returns true when the start must not go on.
+    pub(crate) fn calibration_blocks_start(&mut self) -> bool {
+        if (self.demo && self.demo_calibration.is_none()) || !self.facts.headset {
+            return false;
+        }
+        if !self.demo {
+            let _ = crate::calibration::migrate(&self.paths.home);
+        }
+        if self.calibration_ok() {
+            return false;
+        }
+        self.message = crate::calibration::MISSING.into();
+        self.open_room_flow();
+        true
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -215,5 +364,64 @@ mod tests {
         assert!((s.area_m2() - 4.0).abs() < 1e-9);
         assert!(s.describe().contains("2.0 x 1.5 m"));
         assert!(crate::room::parse_setup("centre = [0, 0]\n").is_none());
+    }
+
+    fn core(tag: &str) -> AppCore {
+        let d = std::env::temp_dir().join(format!("omarchyvr-roomflow-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        AppCore::demo(false, omarchyvr_config::Store::new(d.join("config"), d.join("cache")))
+    }
+
+    #[test]
+    fn dates_are_civil_days() {
+        assert_eq!(ymd(0), "1970-01-01");
+        assert_eq!(ymd(1_791_968_000), "2026-10-14");
+        assert_eq!(ymd(1_792_000_000), "2026-10-14");
+        assert_eq!(ymd(1_792_281_600), "2026-10-18");
+    }
+
+    #[test]
+    fn start_without_calibration_says_so_in_plain_words_and_opens_room_setup() {
+        for vr in [false, true] {
+            let mut a = core(if vr { "play" } else { "work" });
+            a.facts.headset = true;
+            a.demo_calibration = Some(false);
+            a.work_setup.record.done = true;
+            if vr { a.play() } else { a.work() }
+            assert_eq!(a.message, crate::calibration::MISSING);
+            assert!(!a.message.contains("omarchyvr-slam") && !a.message.contains("no calibration file found"));
+            assert_eq!(a.page, crate::app::Page::RoomSetup);
+            assert!(a.job.is_none(), "nothing started");
+            assert_eq!(a.room_flow.stage, crate::roomflow::Stage::NeedCalibration);
+        }
+    }
+
+    #[test]
+    fn start_with_calibration_is_not_blocked() {
+        let mut a = core("ok");
+        a.facts.headset = true;
+        a.demo_calibration = Some(true);
+        assert!(!a.calibration_blocks_start());
+    }
+
+    #[test]
+    fn the_tile_shows_not_done_then_the_date() {
+        let mut a = core("tile");
+        a.demo_calibration = Some(false);
+        assert_eq!(a.room_tile(), (false, "Not done".to_string()));
+        a.demo_calibration = Some(true);
+        assert_eq!(a.room_tile().1, "Calibrated; room not mapped");
+        a.room.state.setups = vec![("home".into(), crate::room::SetupInfo { when: 1_791_968_000, ..Default::default() })];
+        assert_eq!(a.room_tile(), (true, "Done 2026-10-14".to_string()));
+    }
+
+    #[test]
+    fn the_read_job_is_the_allowlisted_calib_command() {
+        let mut a = core("job");
+        a.demo_calibration = Some(false);
+        a.room_flow.stage = crate::roomflow::Stage::NeedCalibration;
+        let c = crate::calibration::read_cmd(&a.launcher_bin());
+        assert!(c.display().ends_with(" calib --save-config"));
+        assert_eq!(crate::safety::check(&c), Ok(()));
     }
 }

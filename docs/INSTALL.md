@@ -22,6 +22,12 @@ All green and no restart needed: the only press is Play. If an item fails, it sh
 IPD, controllers, eye calibration and the room map are optional ("Next, in the headset" on the Ready screen).
 **Run setup again** is on the Ready screen. How it works: [GUI.md](GUI.md#setting-up-your-pc-the-automatic-setup-was-onboarding).
 
+The headset's factory calibration (`~/.config/omarchyvr/headset-calibration.xml`, private, mode 600) comes with every
+reinstall: the uninstaller keeps it, and `install.sh` copies it once from an older place (`~/.config/pimax/`, the lab
+`analysis/` folder) when the new place has none. If none exists, Work and Play say "Headset calibration missing: press
+Room setup", and the **Room setup** button (third tile, under Play and Work) reads it from the headset, then maps your
+room (docs/ROOM-SETUP.md).
+
 Later Plays never ask for a password. The realtime permission (`cap_sys_nice`) sits on the installed
 `monado-service` at a fixed path (`~/.local/lib/omarchyvr/monado/...`). Builds in other directories never relink
 that file, so the permission stays. Only an update that rebuilds Monado asks again, inside that update's one

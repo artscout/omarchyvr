@@ -293,6 +293,9 @@ impl AppCore {
                 return;
             }
         }
+        if self.calibration_blocks_start() {
+            return;
+        }
         if let SteamDecision::AskRestart = self.steam_decision(vr) {
             if let Some(steam) = self.live.steam_tainted.clone() {
                 // nothing is closed without the user's yes (the dialog in the app)

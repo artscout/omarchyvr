@@ -3,6 +3,34 @@
 Goal (user, 2026-10-15): "all this ready in our GUI: quick setup and fast setup, then make SteamVR know that too."
 The room setup is the same on every start, for Monado games, WayVR (Work) and SteamVR.
 
+## Room setup, the third big button (calibration + room, one flow)
+
+Home and the "Your PC is ready" screen have a third big button under Play and Work: **Room setup** ("Calibrate and map
+your room"). Its tile shows **Not done**, **Calibrated; room not mapped** or **Done <date>**. It opens one guided
+flow (`omarchyvr-gui-core` `roomflow.rs`, page `pages/roomsetup.rs`):
+
+1. **Headset calibration.** The headset's factory calibration (cameras, IMU, lenses; private per-device data, never
+   committed) must be in `~/.config/omarchyvr/headset-calibration.xml` (mode 600). Present: this step is ticked.
+   Older places (`~/.config/pimax/`, the lab `analysis/` folder) are copied there once. Missing: **Read it from the
+   headset** runs `omarchyvr calib --save-config` (progress, plain words). If the headset is asleep (USB shows
+   `34a4:0043` without `34a4:0044`), the page shows the wake guide (press the power button; the power-cable cycle as the
+   last resort) and reads the calibration by itself when `0044` appears; nothing is sent to a sleeping headset. A
+   failed read says what to do (wake the headset, free it) and offers Try again.
+2. **Your room.** **Fast setup** (30 s, the default) or **Full setup** (about 3 min): the existing guided room setup
+   described below, shown in the headset. Work starts first when it must (6DoF + room anchor).
+3. **Summary** with ticks: calibration, room mapped (Fast or Full), floor, play area, centre and forward saved. A failed
+   setup shows unticked and **Do it again**.
+
+What `omarchyvr calib --save-config` sends: only the 84 `read_calib_block` requests `58 07 0a 00 01 AL AH 10`
+(addresses 0 to 1343 step 16), the entry `read_calib_block` of the allowlist
+`rust/pimax-device/devices/dream-air/device.toml`. It opens the session passive: no wake, no keepalive, no other
+report. The blob is inflated and checked before the file is written (temporary file, mode 600, rename). No new HID
+commands exist for this flow.
+
+Work and Play need the calibration (the SLAM/Basalt export). Without it the press does not start anything: it says
+"Headset calibration missing: press Room setup (it reads it from the headset)." and opens this flow. The
+uninstaller keeps the calibration (it is device data, not a setting; see UNINSTALL.md), so a reinstall comes with it.
+
 ## What the user does (app only)
 
 The **Room** page > Room setup (also the Room setup button at the top of the window). Two buttons. Both are guided **in the headset**: a text panel in front of you, the
