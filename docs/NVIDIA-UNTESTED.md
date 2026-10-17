@@ -10,7 +10,7 @@ on one driver version. This page says what happens on any other version, and how
 - On another version nothing is patched. `nvidia-patch-reapply.sh` (run by the pacman hook before dkms builds) prints a
   banner, writes `untested-refused` to the status file and exits 0: pacman is not blocked, dkms builds the normal NVIDIA
   module, the desktop works. The headset picture does not (the left half shows in both eyes).
-- The app says so: Onboarding > System setup > **NVIDIA driver patch** (and Ready > Setup), with the installed driver,
+- The app says so: the setup screen (shown when the driver is not tested; always in Developer mode) > **NVIDIA driver patch** (and Ready > Setup), with the installed driver,
   "tested" or "NOT a tested version", and what the patch did, in plain words.
 
 ## Opt in

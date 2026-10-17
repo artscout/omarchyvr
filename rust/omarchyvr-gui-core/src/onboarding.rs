@@ -1,4 +1,8 @@
-//! Onboarding: the steps of the headset's module (`[onboarding] steps` of its descriptor: find the headset, check this
+//! Onboarding. Since 2026-10-17 the system part (find the headset, check this computer, fix, udev/NVIDIA/EDID/setcap)
+//! is the automatic setup ([`crate::autosetup`]); what is left here are the steps that need the person in the headset
+//! (IPD, controller pairing, eye calibration, room map): optional, each with one button, after Ready.
+//!
+//! Old text: the steps of the headset's module (`[onboarding] steps` of its descriptor: find the headset, check this
 //! computer, fix what the checks found, udev access, IPD, controller pairing, eye calibration, room map, done),
 //! resumable through `~/.local/state/omarchyvr/onboarding.state` (`pimax_device::onboarding::Progress`).
 //!
@@ -37,6 +41,12 @@ pub struct OnboardingView {
     pub paired: [bool; 2],
     /// The install of `./install.sh`: its one root job (System setup) and whether it ran.
     pub install: crate::install::InstallInfo,
+    /// The automatic first-run setup (see [`crate::autosetup`]).
+    pub setup: crate::autosetup::AutoSetup,
+    /// The setup asked for fresh checks at this unix time and waits for facts collected after it.
+    pub setup_wait_facts: Option<u64>,
+    /// The job the setup started (a user fix or the root job).
+    pub setup_job: Option<crate::autosetup::SetupJob>,
     /// The latest progress to write (the writer task takes it).
     slot: Arc<Mutex<Option<Progress>>>,
 }
@@ -73,9 +83,16 @@ pub fn run_label(s: Step) -> Option<&'static str> {
 
 /// The steps of a module (the descriptor lists them; unknown names are skipped).
 pub fn module_steps(m: &dyn HeadsetModule) -> Vec<Step> {
-    let v: Vec<Step> = m.descriptor().onboarding.iter().filter_map(|s| Step::from_id(s)).collect();
+    // find / check / fix / system setup are the automatic setup now: only the steps with the person in the headset stay
+    let v: Vec<Step> = m
+        .descriptor()
+        .onboarding
+        .iter()
+        .filter_map(|s| Step::from_id(s))
+        .filter(|s| !matches!(s, Step::Detect | Step::Checks | Step::Fixes | Step::Udev))
+        .collect();
     if v.is_empty() {
-        vec![Step::Detect, Step::Checks, Step::Fixes, Step::Done]
+        vec![Step::Done]
     } else {
         v
     }
@@ -388,27 +405,11 @@ mod tests {
         let file = a.onboarding_path();
         a.want_onboarding();
         assert!(a.onboarding.loaded);
-        // the connected Dream Air lists every step
-        assert_eq!(a.onboarding_steps().len(), 9);
-        assert_eq!(a.onboarding_step(), Step::Detect);
-        a.onboarding_next();
-        assert_eq!(a.onboarding_step(), Step::Detect, "Next needs a module");
-        a.onboarding_use_module("dream-air");
-        assert_eq!(a.onboarding_step(), Step::Checks);
-        assert!(file.is_file(), "the progress is written");
-        a.onboarding_run(Step::Checks);
-        a.onboarding_next();
-        assert_eq!(a.onboarding_step(), Step::Fixes);
-        if a.onboarding_blocker(Step::Fixes).is_some() {
-            a.onboarding_skip();
-        } else {
-            a.onboarding_next();
-        }
-        // the demo PC has the udev rule and an IPD
-        assert_eq!(a.onboarding_step(), Step::Udev);
-        assert_eq!(a.onboarding_blocker(Step::Udev), None);
-        a.onboarding_next();
+        // the connected Dream Air lists only the steps with the person in the headset
+        assert_eq!(a.onboarding_steps(), vec![Step::Ipd, Step::Pair, Step::EyeCal, Step::Room, Step::Done]);
         assert_eq!(a.onboarding_step(), Step::Ipd);
+        // the demo PC has an IPD
+        assert_eq!(a.onboarding_blocker(Step::Ipd), None);
         a.onboarding_next();
         // pairing: the demo only simulates it; one try per hand every 30 s
         assert_eq!(a.onboarding_step(), Step::Pair);
@@ -431,8 +432,7 @@ mod tests {
         assert_eq!(a.page, Page::Desk);
         // resumable: the file holds every decision
         let p = Progress::load(&file);
-        assert_eq!(p.module.as_deref(), Some("dream-air"));
-        assert_eq!(p.state(Step::Udev), State::Done);
+        assert_eq!(p.state(Step::Ipd), State::Done);
         assert_eq!(p.state(Step::EyeCal), State::Skipped);
         assert_eq!(p.state(Step::Room), State::Skipped);
         assert_eq!(p.state(Step::Done), State::Done);
@@ -447,18 +447,18 @@ mod tests {
         // start over deletes the file
         b.onboarding_restart();
         assert!(!file.exists());
-        assert_eq!(b.onboarding_step(), Step::Detect);
+        assert_eq!(b.onboarding_step(), Step::Ipd);
         let _ = std::fs::remove_dir_all(file.parent().unwrap().parent().unwrap());
         let _ = std::fs::remove_dir_all(std::env::temp_dir().join(format!("pimax-onb-run-again-{}", std::process::id())));
     }
 
     #[test]
-    fn a_mock_headset_only_has_the_generic_steps() {
+    fn a_mock_headset_has_no_steps_in_the_headset() {
         let mut a = demo("mock");
         a.want_onboarding();
         a.onboarding_use_module("8kx");
-        assert_eq!(a.onboarding_steps(), vec![Step::Detect, Step::Checks, Step::Fixes, Step::Udev, Step::Done]);
-        assert_eq!(a.onboarding_step(), Step::Checks);
+        assert_eq!(a.onboarding_steps(), vec![Step::Done]);
+        assert_eq!(a.onboarding_step(), Step::Done);
         let _ = std::fs::remove_dir_all(a.paths.state_dir.parent().unwrap());
     }
 }

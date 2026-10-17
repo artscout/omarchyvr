@@ -1,6 +1,6 @@
 //! End-to-end pass over the window in demo mode, as the app runs it: the monitor and task threads collect in the
 //! background from a machine whose every access is slowed down, while the test clicks every button, checkbox,
-//! radio button, tab and drop-down of every page (and every Logs and Setup tab and onboarding step), types into the filters,
+//! radio button, tab and drop-down of every page (and every Logs and Setup tab and every state of the automatic setup), types into the filters,
 //! answers the dialogs and resizes the window.
 //!
 //! Asserts: the UI thread never touched the machine; no frame took longer than the budget (50 ms in release builds);
@@ -17,9 +17,9 @@ use std::time::Duration;
 
 /// The sidebar's entries (never clicked by the sweep of a page: they leave it). "Developer" also keeps the sweep off
 /// the Developer mode switch, which would hide the advanced pages.
-const NAV: [&str; 16] = [
+const NAV: [&str; 17] = [
     "Home", "Display", "Tracking", "Room", "Desktop", "Backgrounds", "Recording", "Local AI", "AI", "Ready", "Developer", "Tools", "Logs", "Profiles", "System",
-    "Onboarding",
+    "Onboarding", "Set up this PC",
 ];
 
 fn nav_label(p: Page) -> &'static str {
@@ -103,18 +103,21 @@ fn all_pages(ui: &mut Ui) -> usize {
                 total += ui.click_everything(&skip);
             }
             Page::Onboarding => {
-                let steps = ui.h.state().core.onboarding_steps();
-                let titles: Vec<&str> = steps.iter().map(|s| s.title()).collect();
-                skip.extend(titles.iter().copied());
-                for s in steps {
-                    ui.h.state_mut().core.onboarding.view = Some(s);
-                    ui.step("onboarding step");
+                // the automatic setup in each of its states (demo: nothing runs; Restart now, Fix and Play only say what they would do)
+                for which in ["running", "restart", "problem", "stopped", "ready-after-reboot"] {
+                    {
+                        let a = ui.h.state_mut();
+                        a.core.want_onboarding();
+                        let plan = a.core.onboarding.install.plan_text.clone().unwrap_or_default();
+                        a.core.onboarding.setup = omarchyvr_gui_core::autosetup::demo_run(which, &plan);
+                        a.core.state.setup = if which == "ready-after-reboot" { omarchyvr_gui_core::guistate::SetupStage::Done } else { omarchyvr_gui_core::guistate::SetupStage::Todo };
+                    }
+                    ui.step("setup state");
                     total += ui.click_everything(&skip);
                     ui.h.state_mut().core.page = Page::Onboarding;
                 }
-                // the stepper itself
                 ui.h.state_mut().core.onboarding.view = None;
-                ui.step("onboarding start");
+                ui.step("setup done");
                 total += ui.click_everything(&NAV);
                 ui.h.state_mut().core.page = Page::Onboarding;
             }

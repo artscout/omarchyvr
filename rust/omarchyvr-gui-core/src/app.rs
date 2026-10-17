@@ -508,7 +508,7 @@ impl AppCore {
             live: Live::default(),
             facts: Facts::default(),
             items: Vec::new(),
-            page: if state.onboarded { state.page.unwrap_or(Page::Desk) } else { Page::Onboarding },
+            page: if state.onboarded && state.setup == crate::guistate::SetupStage::Done { state.page.unwrap_or(Page::Desk) } else { Page::Onboarding },
             toggles: state.toggles,
             consent_force: false,
             tool_opts: ToolOptions::default(),
@@ -690,6 +690,7 @@ impl AppCore {
         if self.session_tool.as_ref().is_some_and(|s| s.opened) && self.live.service.is_none() && self.job.is_none() {
             self.session_tool = None;
         }
+        self.setup_facts();
     }
 
     /// Drain the poller, the tasks and the job; true when something changed.
@@ -705,6 +706,7 @@ impl AppCore {
                 }
             }
         }
+        self.setup_poll();
         self.want_plan(self.effective_toggles());
         self.want_plan(self.effective_toggles().without_eye());
         self.want_plan(self.vr_toggles());
@@ -857,6 +859,7 @@ impl AppCore {
                 self.fix_logging = Some((l, run));
             }
         }
+        self.setup_job_finished(label, &r);
         self.onboarding_job_done(label, r.is_ok());
         self.refresh(true);
     }

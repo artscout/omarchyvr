@@ -69,6 +69,24 @@ if plan auto && grep -q "EDID override (connector found after the headset wakes,
 if plan "override.[0000:01:00.0].DP-0" && grep -q "EDID override for \[0000:01:00.0\].DP-0" "$T/out.txt" && ! grep -q "wakes" "$T/out.txt"; then ok "plan: an explicit key is unchanged"; else bad "plan explicit: $(cat "$T/out.txt")"; fi
 if plan "" && ! grep -q "EDID override" "$T/out.txt"; then ok "plan: empty = no EDID step (headset not on USB)"; else bad "plan empty"; fi
 
+# the `edid` mode (the app's one-click Fix): headset display not seen -> exit 3, says so, writes nothing, REBOOT=no
+rm -rf "$T/drm/card1-DP-1" "$T/drm/card1-DP-2" "$T/drm/card1-HDMI-A-1"
+cat >"$T/plan-edid.env" <<EOP
+OVR_USER=nobody
+OVR_HOME=$T/home
+OVR_DATA=$DATA
+OVR_EDID=
+EOP
+out=$(OVR_TEST_NO_ROOT=1 OVR_EDID_WAIT=1 "$ROOT_SH" edid "$T/plan-edid.env" 2>&1)
+rc=$?
+if [ $rc -eq 3 ] && echo "$out" | grep -q "EDID override (connector found after the headset wakes" && echo "$out" | grep -q "headset display not seen" && echo "$out" | grep -q "^REBOOT=no"; then
+	ok "edid mode: no headset display -> exit 3, plain message, nothing written"
+else bad "edid not found: rc=$rc out=$out"; fi
+# without the test switch a normal user is refused (the mode needs root)
+out=$("$ROOT_SH" edid "$T/plan-edid.env" 2>&1)
+rc=$?
+if [ $rc -ne 0 ] && echo "$out" | grep -q "must run as root"; then ok "edid mode: refuses to run as a normal user"; else bad "edid as user: rc=$rc out=$out"; fi
+
 echo
 if [ "$fails" = 0 ]; then echo "all checks passed"; else echo "$fails check(s) FAILED"; fi
 [ "$fails" = 0 ]

@@ -165,6 +165,38 @@ pub fn refresh_plan(i: &Install, allow: bool) -> Result<(), String> {
     std::fs::write(i.plan_txt(), &out.stdout).map_err(|e| e.to_string())
 }
 
+/// The plan with the EDID step switched to "find the headset's display during the job" (`OVR_EDID=auto`), when the plan
+/// patches NVIDIA and has no EDID key (the headset was not visible when `./install.sh` ran, but it is on USB now).
+pub fn set_plan_edid_auto(text: &str) -> String {
+    let patches = text.lines().any(|l| l.trim() == "OVR_NVIDIA=patch");
+    let empty = text.lines().any(|l| l.trim() == "OVR_EDID=" || l.trim() == "OVR_EDID=\"\"");
+    if !patches || !empty {
+        return text.to_string();
+    }
+    let mut out: String = text.lines().map(|l| if l.trim() == "OVR_EDID=" || l.trim() == "OVR_EDID=\"\"" { "OVR_EDID=auto" } else { l }).collect::<Vec<_>>().join("\n");
+    out.push('\n');
+    out
+}
+
+/// Before the automatic setup runs the root job: the NVIDIA choice and the EDID step go into the plan, and the plan
+/// text is made again with the job's own `plan` mode. Returns the new plan text (None: no plan on this PC).
+pub fn prepare_plan(i: &Install, allow: bool, headset_on_usb: bool) -> Result<Option<String>, String> {
+    if !i.plan_env().is_file() {
+        return Ok(None);
+    }
+    if headset_on_usb {
+        let text = std::fs::read_to_string(i.plan_env()).map_err(|e| e.to_string())?;
+        let new = set_plan_edid_auto(&text);
+        if new != text {
+            let tmp = i.plan_env().with_extension("env.tmp");
+            std::fs::write(&tmp, new).map_err(|e| e.to_string())?;
+            std::fs::rename(&tmp, i.plan_env()).map_err(|e| e.to_string())?;
+        }
+    }
+    refresh_plan(i, allow)?;
+    Ok(std::fs::read_to_string(i.plan_txt()).ok().filter(|t| !t.trim().is_empty()))
+}
+
 /// The label of the uninstaller's root job (the job runner's label of a confirmed root fix).
 pub const UNINSTALL_TITLE: &str = "Uninstall omarchyvr";
 
@@ -314,6 +346,16 @@ mod tests {
         let c = uninstall_user_cmd(&i, Path::new("/home/u"), "20261016T200000Z");
         crate::safety::check(&c).expect("the user part passes the user rules");
         assert!(c.text().contains("uninstall.sh --no-root --yes > /home/u/omarchyvr-uninstall-20261016T200000Z.log"), "{}", c.text());
+    }
+
+    #[test]
+    fn the_edid_step_becomes_auto_only_when_the_plan_patches_nvidia_and_has_no_key() {
+        let base = "OVR_USER=u\nOVR_NVIDIA=patch\nOVR_EDID=\nOVR_SNAPSHOT=yes\n";
+        assert_eq!(set_plan_edid_auto(base), "OVR_USER=u\nOVR_NVIDIA=patch\nOVR_EDID=auto\nOVR_SNAPSHOT=yes\n");
+        let keyed = "OVR_NVIDIA=patch\nOVR_EDID=override.[0000:01:00.0].DP-0\n";
+        assert_eq!(set_plan_edid_auto(keyed), keyed, "a detected key stays");
+        let skip = "OVR_NVIDIA=skip\nOVR_EDID=\n";
+        assert_eq!(set_plan_edid_auto(skip), skip, "no NVIDIA patch: no EDID step");
     }
 
     #[test]

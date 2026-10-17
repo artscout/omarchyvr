@@ -170,9 +170,10 @@ pub fn page_label(p: Page) -> &'static str {
 }
 
 /// The help page: one short paragraph per feature (the "?" next to each setting says the same where it is).
-const HELP: [(&str, &str); 24] = [
-    ("Install and uninstall", "Install: ./install.sh in the omarchyvr clone builds and installs everything and opens this app; the Onboarding step System setup lists every system change and asks for your password once (a reboot only when the NVIDIA module or the boot image changed). Later Plays never ask. Uninstall: Ready > Uninstall omarchyvr (Show what would be removed first); downloads and recordings are kept, settings go into one backup file in your home. docs/INSTALL.md, docs/UNINSTALL.md."),
-    ("NVIDIA driver patch", "The Dream Air needs three small fixes in the NVIDIA open kernel module. They are applied to the tested driver versions (patches/nvidia/tested-versions.txt) and again after every driver update. On any other version nothing is patched unless you turn on Allow the patch on untested NVIDIA drivers (Onboarding > System setup, or Ready): the headset picture may break or the patched build may fail, but the desktop keeps working (the normal NVIDIA module is built as a fallback, and a restore snapshot is taken first). Changing the switch needs Apply (one password) so driver updates follow it. docs/NVIDIA-UNTESTED.md."),
+const HELP: [(&str, &str); 25] = [
+    ("Setting up your PC", "The first time the app opens it sets up this PC without any button: it looks at the PC, fixes what needs no password, runs the system part with ONE password prompt (steps shown as a list, Show details has the exact text), and checks everything again. All green: Play. A restart needed: Restart now (the app continues by itself afterwards). Something failed: each item says why and has one Fix button; several root fixes become Fix all (one password). A closed password window or a wrong password: Try again. Run setup again is on the Ready screen. IPD, controllers, eye calibration and the room map are optional (Next, in the headset)."),
+    ("Install and uninstall", "Install: ./install.sh in the omarchyvr clone builds and installs everything and opens this app; the app then sets up this PC by itself: it checks, fixes what needs no password, asks for your password once for the system part (the list of steps shows live) and checks again. A restart only when the NVIDIA module or the boot image changed; the app then continues after the restart. Later Plays never ask. Uninstall: Ready > Uninstall omarchyvr (Show what would be removed first); downloads and recordings are kept, settings go into one backup file in your home. docs/INSTALL.md, docs/UNINSTALL.md."),
+    ("NVIDIA driver patch", "The Dream Air needs three small fixes in the NVIDIA open kernel module. They are applied to the tested driver versions (patches/nvidia/tested-versions.txt) and again after every driver update. On any other version nothing is patched unless you turn on Allow the patch on untested NVIDIA drivers (shown on the setup screen, then Run setup again, or Ready): the headset picture may break or the patched build may fail, but the desktop keeps working (the normal NVIDIA module is built as a fallback, and a restore snapshot is taken first). Changing the switch needs Apply (one password) so driver updates follow it. docs/NVIDIA-UNTESTED.md."),
     ("The \"?\" marks", "Point at a \"?\" or click it (in the headset, click): a small box says what the setting does. Click it again, click anywhere else or press Esc to close it."),
     ("Ready", "Ready checks the PC and the headset; Fix does what is needed. Fixes that need root show their lines and ask for your password first."),
     ("Play and Work", "Play starts VR for Steam and OpenXR games. Work starts the desk (screens over passthrough). Stop ends what runs. The headset card on Home has the buttons."),
@@ -664,7 +665,7 @@ impl PimaxApp {
                     self.ui.report_open = true;
                     close = true;
                 }
-                if widgets::ibutton(ui, icon::SPARKLE, "Onboarding", true).on_hover_text("The headset setup steps again").clicked() {
+                if widgets::ibutton(ui, icon::SPARKLE, "Set up this PC", true).on_hover_text("Open the setup screen (run the setup again, next steps in the headset)").clicked() {
                     self.core.page = Page::Onboarding;
                     close = true;
                 }

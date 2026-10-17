@@ -183,6 +183,10 @@ move.
 
 ## 4. Onboarding flow
 
+> Since 2026-10-17 the first four steps (detect, checks, fixes, udev and the rest of the root job) are one automatic run in the
+> app (`omarchyvr_gui_core::autosetup`, see [GUI.md](GUI.md#setting-up-your-pc-the-automatic-setup-was-onboarding)). The app filters
+> them out of the module's step list: only IPD, pairing, eye calibration and the room map stay as optional steps after Ready.
+
 ```
 detect → match module → checks → fixes → udev → IPD → controller pairing → eye calibration* → room map → done
                                                                           (* if eye_tracking works)
