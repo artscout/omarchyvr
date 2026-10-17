@@ -360,6 +360,29 @@ fn shots() -> Vec<Shot> {
             },
         },
         Shot {
+            name: "onboarding-nvidia-untested",
+            running: false,
+            page: Page::Onboarding,
+            height: 1300.0,
+            dark: true,
+            setup: |a| {
+                a.core.want_onboarding();
+                a.core.onboarding_use_module("dream-air");
+                for s in [Step::Checks, Step::Fixes] {
+                    a.core.onboarding_set(s, State::Done);
+                }
+                // an untested driver, patched because the user allowed it (relaxed matching), the switch just turned off
+                a.core.onboarding.install.nvidia = omarchyvr_gui_core::nvidia_patch::NvidiaInfo {
+                    driver: Some("610.58.01".into()),
+                    tested: Some(false),
+                    tested_list: vec!["610.57.04".into()],
+                    status: omarchyvr_gui_core::nvidia_patch::PatchStatus::parse("driver=610.58.01\nresult=untested-allowed\nfuzz=2\ntime=2026-10-17T08:00:00Z\n"),
+                    conf_allow: Some(true),
+                };
+                a.core.state.nvidia_untested = false;
+            },
+        },
+        Shot {
             name: "uninstall",
             running: false,
             page: Page::Setup,

@@ -74,6 +74,13 @@ and checks `modinfo nvidia-modeset | grep merged_head_sync`
 Install (copies to a root-owned directory because pacman runs the hook as root; one command, see also the header of
 nvidia-pimax-patch.hook):
   sudo env L="$HOME/omarchyvr/linux" bash -c 'install -Dm755 $L/nvidia-patch-reapply.sh /usr/local/lib/omarchyvr/nvidia-patch-reapply.sh && for p in nvidia-2h1or-viewport nvidia-2h1or-flip-fix nvidia-evo-makeroom-bounded-wait; do install -Dm644 $L/$p.patch /usr/local/lib/omarchyvr/$p.patch; done && install -Dm644 $L/nvidia-pimax-patch.hook /etc/pacman.d/hooks/65-nvidia-pimax-patch.hook && install -Dm644 $L/nvidia-pimax-verify.hook /etc/pacman.d/hooks/75-nvidia-pimax-verify.hook'
+Untested drivers (2026-10-17): the hook patches only the versions in `patches/nvidia/tested-versions.txt` (`610.57.04`). On any
+other version it prints a banner, exits 0 (pacman is not blocked, dkms builds the stock module) and writes
+`/var/lib/omarchyvr/nvidia-patch-status` (`driver`, `result` = tested | untested-allowed | untested-refused | failed,
+`fuzz`). The app's switch "Allow the patch on untested NVIDIA drivers" (off by default) writes `allow_untested=1` to
+`/etc/omarchyvr/nvidia.conf` (or run the script with `--allow-untested`): then it prints a loud WARNING, tries `--fuzz=0`,
+then `--fuzz=2`, still requires `merged_head_sync`, and `--fallback` still ends with a working stock module. Details:
+docs/NVIDIA-UNTESTED.md.
 Check without changing anything (also works as a normal user): `linux/nvidia-patch-reapply.sh --check`
 (exit 0 = patched, 2 = needs a patch). Verify the built module: `linux/nvidia-patch-reapply.sh --verify`.
 Manual one-shot incl. rebuild: `sudo linux/nvidia-patch-reapply.sh --rebuild`

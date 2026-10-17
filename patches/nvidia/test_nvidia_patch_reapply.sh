@@ -26,6 +26,9 @@ expect_rc() { # expect_rc WANT DESC cmd...
 
 T=$(mktemp -d "${TMPDIR:-/tmp}/nvpatch-test.XXXXXX")
 trap 'chmod -R u+w "$T" 2>/dev/null; rm -rf "$T"' EXIT
+# never touch the real conf / status files (the test may run as root)
+export NVIDIA_PATCH_CONF=$T/nvidia.conf NVIDIA_PATCH_STATUS=$T/status/nvidia-patch-status
+unset NVIDIA_PATCH_TESTED
 
 # the pristine files: only the files the three patches touch are needed ($PRISTINE_TREE holds just those)
 PATCHES=("$HERE/nvidia-2h1or-viewport.patch" "$HERE/nvidia-2h1or-flip-fix.patch" "$HERE/nvidia-evo-makeroom-bounded-wait.patch")
@@ -58,6 +61,10 @@ for n in dkms limine mkinitcpio; do
 done
 export SHIM_LOG=$T/shim.log
 export NVIDIA_PATCH_DKMS=$T/shims/dkms NVIDIA_PATCH_LIMINE=$T/shims/limine NVIDIA_PATCH_MKINITCPIO=$T/shims/mkinitcpio
+# the real modinfo of the machine running the test must not decide the --rebuild tests
+printf '#!/bin/bash\necho "parm: merged_head_sync:x (uint)"\n' >"$T/shims/modinfo-default"
+chmod +x "$T/shims/modinfo-default"
+export NVIDIA_PATCH_MODINFO=$T/shims/modinfo-default
 
 mk() { # mk NAME: scratch tree nvidia-610.57.04 under $T/NAME with the pristine file
 	mkdir -p "$T/$1"
@@ -74,7 +81,7 @@ expect_rc 0 "patch a pristine tree" "$SCRIPT" --src-root "$R"
 grep -q "originals kept" "$T/out.txt" && ok "run output says patched" || bad "run output"
 cmp -s "$R/nvidia-610.57.04/$F.pimax-orig" "$PRISTINE_FILE" && ok "backup equals the pristine file" || bad "backup differs"
 [ "$(diff -rq -x "*.pimax-orig" "$R/nvidia-610.57.04" "$PRISTINE_TREE" | grep -c "^Files")" = "$(echo "$TOUCHED" | wc -w)" ] && ok "every file the patches touch changed" || bad "unexpected number of patched files"
-if [ -d "$INSTALLED" ]; then
+if [ -d "$INSTALLED" ] && grep -q merged_head_sync "$INSTALLED/kernel-open/nvidia-modeset/nvidia-modeset-linux.c" 2>/dev/null; then # only when the installed tree is patched
 	diffs=0
 	for f in $TOUCHED; do cmp -s "$R/nvidia-610.57.04/$f" "$INSTALLED/$f" || diffs=$((diffs + 1)); done
 	[ $diffs = 0 ] && ok "all touched files are byte-identical to the installed, hand-patched source" || bad "$diffs file(s) differ from $INSTALLED"
@@ -112,8 +119,10 @@ cp -a "$T/d/nvidia-610.57.04" "$T/d/nvidia-999.0"
 expect_rc 0 "several trees" "$SCRIPT" --src-root "$T/d" --version 610.57.04
 cmp -s "$T/d/nvidia-610.57.04.orig/$F" "$PRISTINE_FILE" && ok ".orig copy untouched" || bad ".orig copy was modified"
 cmp -s "$T/d/nvidia-999.0/$F" "$PRISTINE_FILE" && ok "other version untouched with --version" || bad "other version modified"
-expect_rc 0 "all versions" "$SCRIPT" --src-root "$T/d"
-cmp -s "$T/d/nvidia-999.0/$F" "$PRISTINE_FILE" && bad "other version not patched without --version" || ok "other version patched without --version"
+expect_rc 0 "all versions (999.0 is untested: refused without the opt-in)" "$SCRIPT" --src-root "$T/d"
+cmp -s "$T/d/nvidia-999.0/$F" "$PRISTINE_FILE" && ok "untested other version left alone without the opt-in" || bad "untested version was patched without the opt-in"
+expect_rc 0 "all versions with --allow-untested" "$SCRIPT" --allow-untested --src-root "$T/d"
+cmp -s "$T/d/nvidia-999.0/$F" "$PRISTINE_FILE" && bad "other version not patched without --version" || ok "other version patched without --version (opted in)"
 cmp -s "$T/d/nvidia-610.57.04.orig/$F" "$PRISTINE_FILE" && ok ".orig copy still untouched" || bad ".orig copy modified by the all-versions run"
 
 # 5b. a relative --patch path works although patch(1) changes into the tree first
@@ -225,6 +234,110 @@ chmod +x "$T/shims/dkms-none"
 : >"$SHIM_LOG"
 NVIDIA_SRC_ROOT=$T/r4 NVIDIA_PATCH_NO_SYSLOG=1 NVIDIA_PATCH_DKMS=$T/shims/dkms-none "$SCRIPT" --verify --fallback >"$T/out.txt" 2>&1 && bad "verify fallback should exit 1" || ok "verify fallback exits 1"
 cmp -s "$T/r4/nvidia-610.57.04/$F" "$PRISTINE_FILE" && ok "verify fallback: stock file back" || bad "verify fallback: not restored"
+
+
+# 12. untested drivers: refused by default, allowed by flag or conf file, fuzz fallback, status file
+st() { sed -n "s/^$1=//p" "$NVIDIA_PATCH_STATUS" | head -n1; }
+mkv() { # mkv NAME VERSION: scratch tree nvidia-VERSION under $T/NAME
+	mkdir -p "$T/$1"
+	cp -a "$PRISTINE_TREE" "$T/$1/nvidia-$2"
+}
+FLIPF=kernel-open/nvidia-modeset/nvidia-modeset-linux.c
+grep -qx 610.57.04 "$HERE/tested-versions.txt" && ok "tested-versions.txt lists 610.57.04" || bad "tested-versions.txt"
+
+# 12a. refused by default: nothing patched, non-fatal (pacman hook), banner, status
+rm -f "$NVIDIA_PATCH_CONF" "$NVIDIA_PATCH_STATUS"
+mkv u1 999.1
+expect_rc 0 "untested driver: refused, exit 0" "$SCRIPT" --src-root "$T/u1"
+grep -q "NVIDIA driver 999.1 is not tested" "$T/out.txt" && grep -q "Allow the patch on untested NVIDIA drivers" "$T/out.txt" && ok "refusal banner names the app switch" || bad "refusal banner"
+cmp -s "$T/u1/nvidia-999.1/$F" "$PRISTINE_FILE" && [ -z "$(find "$T/u1" -name '*.pimax-orig')" ] && ok "refused: tree untouched, no backups" || bad "refused tree was changed"
+[ "$(st driver)" = 999.1 ] && [ "$(st result)" = untested-refused ] && [ "$(st fuzz)" = - ] && ok "status: driver 999.1, untested-refused, fuzz -" || bad "status after refusal: $(cat "$NVIDIA_PATCH_STATUS" 2>&1)"
+expect_rc 0 "untested driver in hook mode: exit 0 (pacman is not blocked)" "$SCRIPT" --hook --src-root "$T/u1"
+expect_rc 0 "untested driver, --check: nothing to do" "$SCRIPT" --check --src-root "$T/u1"
+: >"$SHIM_LOG"
+expect_rc 0 "untested driver with --rebuild --fallback builds nothing" "$SCRIPT" --hook --rebuild --fallback --src-root "$T/u1"
+[ ! -s "$SHIM_LOG" ] && ok "refused: no dkms / boot image command ran (the stock module is dkms's own job)" || bad "refused run called: $(cat "$SHIM_LOG")"
+NVIDIA_SRC_ROOT=$T/u1 expect_rc 0 "--verify after a refusal is calm (exit 0)" "$SCRIPT" --verify --hook --fallback
+printf '#!/bin/bash\necho "parm: other:x (uint)"\n' >"$T/shims/modinfo-bad2"
+chmod +x "$T/shims/modinfo-bad2"
+NVIDIA_PATCH_MODINFO=$T/shims/modinfo-bad2 expect_rc 0 "--verify after a refusal does not complain about the stock module" "$SCRIPT" --verify
+grep -q "untested" "$T/out.txt" && ok "verify says why" || bad "verify refusal text"
+
+# 12b. allowed by the flag: loud warning, patched, status untested-allowed with fuzz 0
+mkv u2 999.2
+expect_rc 0 "untested driver with --allow-untested" "$SCRIPT" --allow-untested --src-root "$T/u2"
+grep -q "WARNING: NVIDIA driver 999.2 is NOT tested" "$T/out.txt" && ok "loud WARNING printed" || bad "warning missing"
+! cmp -s "$T/u2/nvidia-999.2/$F" "$PRISTINE_FILE" && grep -q merged_head_sync "$T/u2/nvidia-999.2/$FLIPF" && ok "allowed: patched, merged_head_sync present" || bad "allowed tree not patched"
+[ "$(st driver)" = 999.2 ] && [ "$(st result)" = untested-allowed ] && [ "$(st fuzz)" = 0 ] && ok "status: untested-allowed, fuzz 0" || bad "status after allowed run: $(cat "$NVIDIA_PATCH_STATUS")"
+expect_rc 0 "second allowed run" "$SCRIPT" --allow-untested --src-root "$T/u2"
+[ "$(st result)" = untested-allowed ] && [ "$(st fuzz)" = 0 ] && ok "status keeps fuzz 0 when nothing was applied" || bad "status after second run"
+
+# 12c. allowed by the conf file (what the app's switch writes); off by "allow_untested=0"
+mkv u3 999.3
+printf '# omarchyvr\nallow_untested=0\n' >"$NVIDIA_PATCH_CONF"
+expect_rc 0 "conf allow_untested=0: refused" "$SCRIPT" --src-root "$T/u3"
+[ "$(st result)" = untested-refused ] && cmp -s "$T/u3/nvidia-999.3/$F" "$PRISTINE_FILE" && ok "conf off: refused" || bad "conf off"
+printf '# omarchyvr\nallow_untested=1\n' >"$NVIDIA_PATCH_CONF"
+expect_rc 0 "conf allow_untested=1: patched" "$SCRIPT" --hook --src-root "$T/u3"
+[ "$(st result)" = untested-allowed ] && grep -q merged_head_sync "$T/u3/nvidia-999.3/$FLIPF" && ok "conf on: patched" || bad "conf on"
+printf 'allow_untested=1; touch %s/pwned\n' "$T" >"$NVIDIA_PATCH_CONF"
+mkv u3b 999.31
+expect_rc 0 "a malicious conf line is not executed and not honoured" "$SCRIPT" --src-root "$T/u3b"
+[ ! -e "$T/pwned" ] && cmp -s "$T/u3b/nvidia-999.31/$F" "$PRISTINE_FILE" && ok "conf is parsed, never sourced" || bad "conf line was executed or honoured"
+rm -f "$NVIDIA_PATCH_CONF"
+
+# 12d. fuzz fallback: a context line at the edge of a hunk differs
+fuzzed() { sed -i 's|^\(    pDevEvo->hal->SetOutputScaler(pDispEvo, head, updateState);\)$|\1 /* vendor tweak */|' "$1/$F"; grep -q 'vendor tweak' "$1/$F"; }
+mkv u4 999.4
+fuzzed "$T/u4/nvidia-999.4" && ok "test setup: edge context line changed" || bad "fuzz test setup failed"
+expect_rc 0 "untested + opted in, fuzz 0 fails: fuzz 2 patches it" "$SCRIPT" --allow-untested --src-root "$T/u4"
+grep -q "trying --fuzz=2" "$T/out.txt" && grep -q "apply only with --fuzz=2" "$T/out.txt" && ok "says fuzz 2 was needed" || bad "fuzz 2 not announced"
+[ "$(st result)" = untested-allowed ] && [ "$(st fuzz)" = 2 ] && ok "status: fuzz 2" || bad "status after fuzz: $(cat "$NVIDIA_PATCH_STATUS")"
+grep -q merged_head_sync "$T/u4/nvidia-999.4/$FLIPF" && grep -q "mergeHeadSection" "$T/u4/nvidia-999.4/$F" && ok "fuzz 2: all patches in" || bad "fuzz 2 result incomplete"
+expect_rc 0 "second run on the fuzz-patched tree" "$SCRIPT" --allow-untested --src-root "$T/u4"
+grep -q "already patched" "$T/out.txt" && [ "$(st fuzz)" = 2 ] && ok "already patched, fuzz 2 remembered" || bad "second run on fuzz tree: $(cat "$T/out.txt")"
+mkv u4b 999.41
+fuzzed "$T/u4b/nvidia-999.41"
+expect_rc 2 "check with the opt-in says it needs fuzz 2" "$SCRIPT" --allow-untested --check --src-root "$T/u4b"
+grep -q "only with --fuzz=2" "$T/out.txt" && ok "check names fuzz 2" || bad "check text"
+mkv u4c 999.42
+fuzzed "$T/u4c/nvidia-999.42"
+expect_rc 0 "fuzzed untested tree without the opt-in: refused" "$SCRIPT" --src-root "$T/u4c"
+cmp -s "$T/u4c/nvidia-999.42/$F" "$PRISTINE_FILE" || [ "$(grep -c 'vendor tweak' "$T/u4c/nvidia-999.42/$F")" = 1 ] && ok "not patched without the opt-in" || bad "patched without opt-in"
+[ -z "$(find "$T/u4c" -name '*.pimax-orig')" ] || bad "backups made without the opt-in"
+# a TESTED version never gets the fuzz retry
+mkv u4d 610.57.04
+fuzzed "$T/u4d/nvidia-610.57.04"
+expect_rc 1 "tested version with a changed context line: conflict, no fuzz" "$SCRIPT" --src-root "$T/u4d"
+! grep -q "fuzz=2" "$T/out.txt" && [ "$(st result)" = failed ] && ok "tested version: no fuzz retry, status failed" || bad "tested version took the fuzz path"
+# conflict even with fuzz 2
+mkv u4e 999.43
+sed -i 's|EvoSetViewportPointIn(pDispEvo, head, 0 /\* x \*/, 0 /\* y \*/, updateState);|EvoSetViewportPointIn(pDispEvo, head, 0, 0, updateState);|' "$T/u4e/nvidia-999.43/$F"
+expect_rc 1 "opted in, but the code changed too much: conflict" "$SCRIPT" --allow-untested --src-root "$T/u4e"
+grep -q "could NOT be applied" "$T/out.txt" && grep -q "also tried --fuzz=2" "$T/out.txt" && [ "$(st result)" = failed ] && ok "conflict: banner, status failed" || bad "conflict handling: $(cat "$T/out.txt")"
+[ -z "$(find "$T/u4e" -name '*.pimax-orig')" ] && ok "conflict: tree untouched" || bad "conflict left backups"
+
+# 12e. the tested list can be overridden (a version added to the list needs no opt-in)
+mkv u5 999.5
+printf '# test\n610.57.04\n999.5  # added\n' >"$T/tested.txt"
+NVIDIA_PATCH_TESTED=$T/tested.txt expect_rc 0 "version in the tested list: patched without the opt-in" "$SCRIPT" --src-root "$T/u5"
+[ "$(st result)" = tested ] && [ "$(st fuzz)" = 0 ] && grep -q merged_head_sync "$T/u5/nvidia-999.5/$FLIPF" && ok "listed version: status tested" || bad "listed version"
+! grep -q "WARNING" "$T/out.txt" && ok "no warning for a tested version" || bad "tested version warned"
+mkv u5b 610.57.04
+NVIDIA_PATCH_TESTED=$T/none.txt expect_rc 0 "a missing list falls back to 610.57.04" "$SCRIPT" --src-root "$T/u5b"
+[ "$(st result)" = tested ] && ok "built-in default lists 610.57.04" || bad "built-in default"
+
+# 12f. opted in, the patched build fails: stock module comes back, status failed
+mkv u6 999.6
+: >"$SHIM_LOG"
+: >"$FAIL_FLAG"
+NVIDIA_PATCH_DKMS=$T/shims/dkms-fail "$SCRIPT" --allow-untested --hook --rebuild --fallback --src-root "$T/u6" >"$T/out.txt" 2>&1 && bad "failed untested build should exit 1" || ok "failed untested build exits 1"
+cmp -s "$T/u6/nvidia-999.6/$F" "$PRISTINE_FILE" && [ "$(grep -c '^dkms build' "$SHIM_LOG")" = 2 ] && ok "untested: stock source back and stock module built" || bad "untested fallback"
+[ "$(st result)" = failed ] && [ "$(st driver)" = 999.6 ] && ok "status: failed" || bad "status after failed build: $(cat "$NVIDIA_PATCH_STATUS")"
+
+# 12g. without write access to the status file nothing breaks
+mkv u7 999.7
+NVIDIA_PATCH_STATUS=/proc/none/status expect_rc 0 "unwritable status file is not an error" "$SCRIPT" --allow-untested --src-root "$T/u7"
 
 echo
 [ "$fails" = 0 ] && echo "all checks passed" || echo "$fails check(s) FAILED"

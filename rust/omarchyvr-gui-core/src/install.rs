@@ -109,6 +109,8 @@ pub struct InstallInfo {
     pub root_done: bool,
     /// An install manifest exists (an install by `./install.sh`).
     pub manifest: bool,
+    /// The NVIDIA driver and the patch on it (see [`crate::nvidia_patch`]).
+    pub nvidia: crate::nvidia_patch::NvidiaInfo,
 }
 
 /// Read the install state (files only; cheap).
@@ -118,6 +120,7 @@ pub fn read_info(i: &Install) -> InstallInfo {
         plan_text: std::fs::read_to_string(i.plan_txt()).ok().filter(|t| !t.trim().is_empty()),
         root_done: root_done(&|p| p.exists()),
         manifest: i.manifest().is_file(),
+        nvidia: crate::nvidia_patch::read_info(i),
     }
 }
 
@@ -131,7 +134,35 @@ pub fn demo_info() -> InstallInfo {
         ),
         root_done: true,
         manifest: true,
+        nvidia: crate::nvidia_patch::demo_info(),
     }
+}
+
+/// Write the NVIDIA choice into `root-plan.env` (no plan file yet: nothing to do).
+pub fn write_plan_allow(i: &Install, allow: bool) -> std::io::Result<()> {
+    let p = i.plan_env();
+    let Ok(text) = std::fs::read_to_string(&p) else { return Ok(()) };
+    let new = crate::nvidia_patch::set_plan_allow(&text, allow);
+    if new == text {
+        return Ok(());
+    }
+    let tmp = p.with_extension("env.tmp");
+    std::fs::write(&tmp, new)?;
+    std::fs::rename(&tmp, &p)
+}
+
+/// Write the choice into the plan and make `root-plan.txt` again with the root job's own `plan` mode (any user,
+/// changes nothing).
+pub fn refresh_plan(i: &Install, allow: bool) -> Result<(), String> {
+    write_plan_allow(i, allow).map_err(|e| e.to_string())?;
+    if !i.plan_env().is_file() || !i.root_script().is_file() {
+        return Ok(());
+    }
+    let out = std::process::Command::new(i.root_script()).arg("plan").arg(i.plan_env()).output().map_err(|e| e.to_string())?;
+    if !out.status.success() {
+        return Err(String::from_utf8_lossy(&out.stderr).lines().last().unwrap_or("the plan failed").to_string());
+    }
+    std::fs::write(i.plan_txt(), &out.stdout).map_err(|e| e.to_string())
 }
 
 /// The label of the uninstaller's root job (the job runner's label of a confirmed root fix).
@@ -169,9 +200,38 @@ impl crate::app::AppCore {
     /// The wizard's System setup: the root job of `./install.sh` (one pkexec prompt), shown first.
     pub fn ask_system_setup(&mut self) -> bool {
         let Some(text) = self.onboarding.install.plan_text.clone() else { return false };
+        // the switch "Allow the patch on untested NVIDIA drivers" goes into the plan the root job reads
+        if !self.demo {
+            if let Err(e) = write_plan_allow(&self.install(), self.state.nvidia_untested) {
+                self.message = format!("cannot save the NVIDIA choice in {}: {e}", self.install().plan_env().display());
+                return false;
+            }
+        }
         let fix = setup_fix(&self.install(), &text);
         self.pending = Some(crate::app::Pending::Root { title: "Set up this PC".into(), fix, catalogue: None });
         true
+    }
+
+    /// The switch "Allow the patch on untested NVIDIA drivers": saved in the app state (shared with the CLI through
+    /// `gui-state.toml`), written into the setup plan, and the plan text the wizard shows is made again. The system
+    /// copy (`/etc/omarchyvr/nvidia.conf`) changes only when the setup runs (Apply, one password).
+    pub fn set_nvidia_untested(&mut self, on: bool) {
+        self.state.nvidia_untested = on;
+        self.write_state();
+        if self.demo || self.task_busy("nvidia-plan") {
+            return;
+        }
+        let i = self.install();
+        self.task(Some("nvidia-plan"), move || {
+            let err = refresh_plan(&i, on).err();
+            let info = read_info(&i);
+            Box::new(move |c: &mut crate::app::AppCore| {
+                c.onboarding.install = info;
+                if let Some(e) = err {
+                    c.message = format!("The NVIDIA choice is saved, but the setup plan could not be updated: {e}");
+                }
+            })
+        });
     }
 
     /// Ready > Uninstall omarchyvr: first the root part (one pkexec prompt, shown first), then the user part.
@@ -254,6 +314,26 @@ mod tests {
         let c = uninstall_user_cmd(&i, Path::new("/home/u"), "20261016T200000Z");
         crate::safety::check(&c).expect("the user part passes the user rules");
         assert!(c.text().contains("uninstall.sh --no-root --yes > /home/u/omarchyvr-uninstall-20261016T200000Z.log"), "{}", c.text());
+    }
+
+    #[test]
+    fn the_nvidia_choice_goes_into_the_plan_the_root_job_reads() {
+        let d = std::env::temp_dir().join(format!("omarchyvr-plan-allow-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        let i = Install { share: d.clone() };
+        write_plan_allow(&i, true).expect("no plan yet: nothing to do");
+        assert!(!i.plan_env().exists(), "a missing plan is not created");
+        std::fs::create_dir_all(&d).unwrap();
+        std::fs::write(i.plan_env(), "OVR_USER=u\nOVR_NVIDIA=patch\nOVR_NVIDIA_VERSION=999.1\n").unwrap();
+        write_plan_allow(&i, true).unwrap();
+        let t = std::fs::read_to_string(i.plan_env()).unwrap();
+        assert!(t.contains("OVR_NVIDIA_ALLOW_UNTESTED=yes\n") && t.contains("OVR_USER=u\n"), "{t}");
+        write_plan_allow(&i, false).unwrap();
+        let t = std::fs::read_to_string(i.plan_env()).unwrap();
+        assert!(t.contains("OVR_NVIDIA_ALLOW_UNTESTED=no\n") && !t.contains("=yes"), "{t}");
+        // the values the root job accepts: only safe characters
+        assert!(t.lines().all(|l| l.chars().all(|c| c.is_ascii_alphanumeric() || "_=./:@+ -".contains(c))), "{t}");
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]

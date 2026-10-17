@@ -182,6 +182,7 @@ fn body(ui: &mut Ui, app: &mut PimaxApp, step: Step) {
                 widgets::code_box(ui, &t.lines().map(str::to_string).collect::<Vec<_>>());
             }
             note(ui, "Undo: Ready > Uninstall omarchyvr (or ./uninstall.sh). When the list says reboot, reboot once afterwards.");
+            crate::pages::setup::nvidia_card(ui, app);
         }
         Step::Udev => {
             let (text, c) = match app.core.facts.udev_rule {

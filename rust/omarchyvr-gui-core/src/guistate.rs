@@ -31,6 +31,8 @@ pub struct GuiState {
     pub argv_at: u64,
     /// Developer mode: shows the advanced pages and rows (tools, logs, tests, experimental switches). Off = the simple flow.
     pub dev_mode: bool,
+    /// "Allow the patch on untested NVIDIA drivers" (off by default; handed to the root job, see `nvidia_patch`).
+    pub nvidia_untested: bool,
 }
 
 impl Default for GuiState {
@@ -47,6 +49,7 @@ impl Default for GuiState {
             last_at: 0,
             argv_at: 0,
             dev_mode: false,
+            nvidia_untested: false,
         }
     }
 }
@@ -74,6 +77,7 @@ impl GuiState {
                 "last_at" => s.last_at = v.trim().parse().unwrap_or(0),
                 "argv_at" => s.argv_at = v.trim().parse().unwrap_or(0),
                 "dev_mode" => s.dev_mode = on,
+                "nvidia_allow_untested" => s.nvidia_untested = on,
                 "passthrough" => s.toggles.passthrough = on,
                 "voice" => s.toggles.voice = on,
                 "hz" => s.toggles.hz90 = v.trim() != "72",
@@ -106,7 +110,7 @@ impl GuiState {
     pub fn render(&self) -> String {
         let t = &self.toggles;
         format!(
-            "# Pimax app state (written by omarchyvr-app)\nonboarded = {}\neye_visual = true\neye = {}\nsixdof = {}\nctrl_track = {}\nhands = {}\nhands_roles = {}\nhands_chosen = {}\npassthrough = {}\nvoice = {}\nhz = {}\nperf = {}\nanchor = {}\npreset = {}\ncontrollers_work = {}\ncontrollers_play = {}\nscreens = {}\nscale_pct = {}\nautostart = {}\nlast_mode = {}\nlast_result = {}\nlast_at = {}\nargv_at = {}\ndev_mode = {}\n{}",
+            "# Pimax app state (written by omarchyvr-app)\nonboarded = {}\neye_visual = true\neye = {}\nsixdof = {}\nctrl_track = {}\nhands = {}\nhands_roles = {}\nhands_chosen = {}\npassthrough = {}\nvoice = {}\nhz = {}\nperf = {}\nanchor = {}\npreset = {}\ncontrollers_work = {}\ncontrollers_play = {}\nscreens = {}\nscale_pct = {}\nautostart = {}\nlast_mode = {}\nlast_result = {}\nlast_at = {}\nargv_at = {}\ndev_mode = {}\nnvidia_allow_untested = {}\n{}",
             self.onboarded,
             t.eye,
             t.sixdof,
@@ -134,6 +138,7 @@ impl GuiState {
             self.last_at,
             self.argv_at,
             self.dev_mode,
+            self.nvidia_untested,
             self.page.map(|p| format!("page = {}\n", p.name())).unwrap_or_default()
         )
     }
@@ -183,11 +188,15 @@ mod tests {
             last_at: 1_791_968_155,
             argv_at: 1_791_968_100,
             dev_mode: true,
+            nvidia_untested: true,
         };
         assert_eq!(GuiState::parse(&s.render()), s);
         assert_eq!(GuiState::parse(""), GuiState::default());
         assert!(!GuiState::default().autostart, "start at login is off by default");
         assert!(!GuiState::default().dev_mode, "developer mode is off by default");
+        assert!(!GuiState::default().nvidia_untested, "the patch on untested NVIDIA drivers is off by default");
+        assert!(!GuiState::parse("onboarded = true\n").nvidia_untested, "an older file: off");
+        assert!(GuiState::parse("nvidia_allow_untested = true\n").nvidia_untested);
         assert!(GuiState::default().toggles.eye, "eye tracking (visual only) is on by default");
         assert!(GuiState::parse("onboarded = true\neye = false\n").toggles.eye, "an older file with the dev-only value is switched on once");
         assert!(!GuiState::parse("eye_visual = true\neye = false\n").toggles.eye, "a later off is kept");

@@ -9,7 +9,7 @@ In the app: **Ready > Uninstall omarchyvr** (it runs the same script). Without t
 | 3 | reverses the install manifest, newest entry first: every file it lists is removed, every original it replaced is put back | no |
 | 4 | removes what installs from before the manifest left behind (`installer/legacy-inventory.tsv`: the old `pimax-*` names, units, links) | no |
 | 5 | settings and calibration: saved into `~/omarchyvr-settings-backup-<date>.tar.gz` (mode 600), then removed. `ai.toml` (your cloud AI keys) is kept | no |
-| 6 | the root job: udev rule, pacman hooks and patch set, stock NVIDIA source (`*.pimax-orig` restored, dkms rebuilt stock, a hand-made `/usr/src/nvidia-<v>.orig` copy removed only if it equals the stock source), EDID override and initramfs entries, file capabilities, `/usr/local/lib/omarchyvr`, `/var/lib/omarchyvr` | **one** |
+| 6 | the root job: udev rule, pacman hooks and patch set, stock NVIDIA source (`*.pimax-orig` restored, then any patch still in a file without a backup is reversed with `patch -R --fuzz=0` and `/usr/src/nvidia-<v>.orig` is used as the reference, then no patch marker may remain, else the job says so loudly; dkms rebuilt stock; `/etc/omarchyvr/nvidia.conf` and the patch status file removed, a hand-made `/usr/src/nvidia-<v>.orig` copy removed only if it equals the stock source), EDID override and initramfs entries, file capabilities, `/usr/local/lib/omarchyvr`, `/var/lib/omarchyvr` | **one** |
 | 7 | says "reboot needed" when the NVIDIA module or the boot image changed | no |
 
 Kept by default: downloads (`~/.local/share/omarchyvr/{ai,backgrounds}`, `~/models`, the Mercury hand models) and
