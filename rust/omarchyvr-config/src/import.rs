@@ -5,7 +5,7 @@
 //! After a clean uninstall and reinstall the user's own per-device data and settings are still on this PC, in older
 //! places: the names before the rename (`~/.config/pimax`, `~/.cache/pimax`, `~/.local/share/pimax`), the lab tree
 //! (`~/pimax-re`) with its copy of Pimax's Windows data (`pimax-data/ProgramData-Pimax`), a mounted shared Windows
-//! drive (`/mnt/shared`), and the uninstaller's own backups (`~/omarchyvr-settings-backup-*.tar.gz`,
+//! drive (`/mnt/shared` or a udisks mount in `/run/media/$USER`), and the uninstaller's own backups (`~/omarchyvr-settings-backup-*.tar.gz`,
 //! `~/omarchyvr-home-backup-*.tar.gz`, newest first). This copies what is missing into the current places.
 //!
 //! Rules: a file that is there is never overwritten (the seeded reference gyro bias is not the user's: a measured one
@@ -134,8 +134,9 @@ pub struct Places {
     pub lab: PathBuf,
     /// Clones that may hold a copy of Pimax's Windows data (`<clone>/pimax-data/ProgramData-Pimax`).
     pub clones: Vec<PathBuf>,
-    /// A mounted shared Windows drive (searched for `ProgramData-Pimax` / `ProgramData/Pimax`), if any.
-    pub shared: Option<PathBuf>,
+    /// Mounted shared Windows drives (`/mnt/shared`, and every udisks mount under `/run/media/$USER/`), searched for
+    /// an `omarchyvr-windows` folder or `ProgramData-Pimax` / `ProgramData/Pimax`.
+    pub shared: Vec<PathBuf>,
     /// Backup archives, newest first.
     pub backups: Vec<PathBuf>,
     /// `$XDG_CACHE_HOME` when it is set (the driver's gyro-bias cache follows it); never read from the process
@@ -161,11 +162,27 @@ impl Places {
             home: home.to_path_buf(),
             lab: home.join("pimax-re"),
             clones: vec![home.join("omarchyvr"), crate::paths::repo_dir(home)],
-            shared: mounted.then(|| shared.to_path_buf()),
+            shared: shared_roots(mounted.then(|| shared.to_path_buf()), &run_media_dir(home)),
             backups: list_backups(home),
             xdg_cache: std::env::var_os("XDG_CACHE_HOME").filter(|v| !v.is_empty()).map(PathBuf::from),
         }
     }
+}
+
+/// `/run/media/<login>` (where udisks mounts a drive the user plugged in), the login being the home's name.
+fn run_media_dir(home: &Path) -> PathBuf {
+    Path::new("/run/media").join(home.file_name().unwrap_or_default())
+}
+
+/// The shared-drive roots: the `/mnt/shared` mount (when mounted) and every directory under `run_media`.
+pub fn shared_roots(mnt: Option<PathBuf>, run_media: &Path) -> Vec<PathBuf> {
+    let mut v: Vec<PathBuf> = mnt.into_iter().collect();
+    if let Ok(rd) = std::fs::read_dir(run_media) {
+        let mut m: Vec<PathBuf> = rd.filter_map(Result::ok).filter(|e| e.path().is_dir()).map(|e| e.path()).collect();
+        m.sort();
+        v.extend(m);
+    }
+    v
 }
 
 /// `~/omarchyvr-settings-backup-*.tar.gz` and `~/omarchyvr-home-backup-*.tar.gz`, newest first (by modification time).
@@ -386,6 +403,10 @@ fn find_pimax_slam(root: &Path) -> Vec<PathBuf> {
         }
         let name = d.file_name().map(|n| n.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
         let parent = d.parent().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+        if name == "omarchyvr-windows" && d.join("slam").is_dir() {
+            out.push(d.join("slam"));
+            continue;
+        }
         if name == "programdata-pimax" || (name == "pimax" && parent == "programdata") {
             let slam = d.join("slam");
             if slam.is_dir() {
@@ -417,7 +438,7 @@ fn slam_dirs(p: &Places) -> Vec<PathBuf> {
             v.push(s);
         }
     }
-    if let Some(s) = &p.shared {
+    for s in &p.shared {
         for d in find_pimax_slam(s) {
             if !v.contains(&d) {
                 v.push(d);
@@ -671,7 +692,7 @@ pub fn pending(p: &Places) -> Vec<String> {
     }
     if devicedata::own_controller_models(home).is_none()
         && (devicedata::has_controller_pair(&home.join(".config/pimax/controllers"))
-            || slam_dirs(&Places { shared: None, ..p.clone() }).iter().any(|s| pimax_controller_dirs(&s.join("H1")).len() >= 2))
+            || slam_dirs(&Places { shared: Vec::new(), ..p.clone() }).iter().any(|s| pimax_controller_dirs(&s.join("H1")).len() >= 2))
     {
         v.push("your controller models (Pimax's Windows data on this PC)".into());
     }
@@ -749,7 +770,7 @@ mod tests {
     }
 
     fn places(h: &Path) -> Places {
-        Places { home: h.to_path_buf(), lab: h.join("pimax-re"), clones: vec![h.join("omarchyvr")], shared: None, backups: list_backups(h), xdg_cache: None }
+        Places { home: h.to_path_buf(), lab: h.join("pimax-re"), clones: vec![h.join("omarchyvr")], shared: Vec::new(), backups: list_backups(h), xdg_cache: None }
     }
 
     fn put(p: &Path, data: &str) {
@@ -840,6 +861,25 @@ mod tests {
         let (_, last) = last_run(&h).unwrap();
         assert!(last.iter().any(|l| l.starts_with("IPD: already there")));
         let _ = std::fs::remove_dir_all(&h);
+    }
+
+    #[test]
+    fn udisks_mounts_are_searched_for_the_windows_copy() {
+        let h = home("udisks");
+        let media = h.join("run-media-user");
+        put(&media.join("DISK1/omarchyvr-windows/slam/H1/x/controller_params.json"), "{}");
+        put(&media.join("DISK2/ProgramData/Pimax/slam/6DOF.txt"), "x");
+        put(&media.join("DISK3/unrelated/file.txt"), "x");
+        let roots = shared_roots(None, &media);
+        assert_eq!(roots.len(), 3);
+        let mut found: Vec<PathBuf> = roots.iter().flat_map(|r| find_pimax_slam(r)).collect();
+        found.sort();
+        assert_eq!(found.len(), 2);
+        assert!(found[0].ends_with("DISK1/omarchyvr-windows/slam"));
+        assert!(found[1].ends_with("DISK2/ProgramData/Pimax/slam"));
+        // /mnt/shared stays first; a missing /run/media is fine
+        assert_eq!(shared_roots(Some(PathBuf::from("/mnt/shared")), &h.join("none")), vec![PathBuf::from("/mnt/shared")]);
+        assert_eq!(run_media_dir(Path::new("/home/someone")), PathBuf::from("/run/media/someone"));
     }
 
     #[test]

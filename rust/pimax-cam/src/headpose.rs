@@ -620,6 +620,24 @@ pub struct HeadParams {
     /// ... and the mean gyro must be within this (rad/s) of the learned gyro bias (a slow steady head turn is
     /// flat but not still; LESSONS row 36). Used once the bias has been learned for a while; 0 = off.
     pub still_bias_tol: f64,
+    /// Exact pose freeze (`PIMAX_SLAM_FREEZE`, 0 = off): while the headset lies still (the still state above) and
+    /// the bias-corrected gyro stays under `freeze_gyro_on`, the output pose (position AND orientation) is one
+    /// fixed value with zero velocities, like a stopped clock; Pimax's Windows desk-still log shows the same
+    /// (0.2 mm span, angular velocity exactly 0 in 26 s). It ends when the gyro passes `freeze_gyro_off` (hysteresis)
+    /// or the still state ends, and the pose then slides on through the normal correction (no jump).
+    pub freeze: bool,
+    /// Freeze engages when the largest bias-corrected gyro rate in `freeze_window_ns` is under this (rad/s) ...
+    pub freeze_gyro_on: f64,
+    /// ... and ends when it is over this one (rad/s).
+    pub freeze_gyro_off: f64,
+    /// Window (ns) of the freeze test.
+    pub freeze_window_ns: i64,
+    /// The frozen pose re-latches to the live one when it differs by more than this angle (rad) or distance (m):
+    /// slow real corrections (the gravity tilt, a re-zero) still arrive, in steps too small to see, and sensor
+    /// shimmer under it never gets through.
+    pub freeze_deadband_rad: f64,
+    /// See `freeze_deadband_rad`.
+    pub freeze_deadband_m: f64,
     /// Gravity tilt correction (`PIMAX_HEAD_TILT`): pitch and roll of the output are pulled slowly towards the
     /// accelerometer's gravity (yaw and position stay the tracker's), with this time constant (s; 0 = off) ...
     pub tilt_tau_s: f64,
@@ -671,6 +689,12 @@ impl Default for HeadParams {
             still_exit_gyro_std: 0.012,
             still_exit_accel_std: 0.15,
             still_bias_tol: 0.005,
+            freeze: true,
+            freeze_gyro_on: 0.006,
+            freeze_gyro_off: 0.02,
+            freeze_window_ns: 200_000_000,
+            freeze_deadband_rad: 0.04 * std::f64::consts::PI / 180.0,
+            freeze_deadband_m: 0.001,
             tilt_tau_s: 1.5,
             tilt_rate: 0.5f64.to_radians(),
             tilt_g_tol: 0.3,
@@ -733,6 +757,9 @@ impl HeadParams {
         }
         if let Some(v) = env_f64("PIMAX_SLAM_BIG_CORR_MM") {
             p.big_corr_m = v.clamp(1.0, 1000.0) / 1000.0;
+        }
+        if let Some(v) = env_f64("PIMAX_SLAM_FREEZE") {
+            p.freeze = v != 0.0;
         }
         if let Some(v) = env_f64("PIMAX_SLAM_STILL_REZERO") {
             p.still.rezero = v != 0.0;
@@ -856,6 +883,12 @@ pub struct HeadTracker {
     speed: f64,
     ang_speed: f64,
     still: bool,
+    /// Exact freeze engaged, and the pose it holds.
+    freeze_on: bool,
+    frozen: Option<Rel>,
+    noise_sel: crate::slam::NoiseSelector,
+    /// Head queries answered with the frozen pose.
+    pub freeze_frames: u64,
     /// Gravity tilt correction (world frame, horizontal axis: pitch/roll only), applied to the tracked output.
     tilt: Quat,
     tilt_ns: Option<i64>,
@@ -907,6 +940,10 @@ impl HeadTracker {
             speed: 0.0,
             ang_speed: 0.0,
             still: false,
+            freeze_on: false,
+            frozen: None,
+            noise_sel: crate::slam::NoiseSelector::default(),
+            freeze_frames: 0,
             tilt: QUAT_ID,
             tilt_ns: None,
             tilt_reset: false,
@@ -949,6 +986,9 @@ impl HeadTracker {
         }
         self.sup.set_still(still);
         self.pred.lying = still;
+        if let Some(w) = self.pred.imu_window(100_000_000) {
+            self.noise_sel.update(w.gyro_max);
+        }
         let ts = s.map(|v| TrackSample {
             ts_ns: v.ts_ns.max(0) as u64,
             pos: v.pos,
@@ -1250,10 +1290,68 @@ impl HeadTracker {
         raw.pos = geom::add(raw.pos, self.corr_p);
         raw.q = qnorm(qmul(qexp(self.corr_r), raw.q));
         if current_query {
+            self.freeze_step(&mut raw);
+        } else if let Some(f) = self.frozen {
+            raw = f;
+        }
+        if current_query {
             self.speed = geom::norm(raw.lin_vel);
             self.ang_speed = geom::norm(raw.ang_vel);
         }
         raw
+    }
+
+    /// Exact freeze (see [`HeadParams::freeze`]): called with the corrected output of a current query; replaces it
+    /// by the frozen pose while engaged, and on release starts the correction from the frozen pose.
+    fn freeze_step(&mut self, raw: &mut Rel) {
+        let was = self.freeze_on;
+        if !self.p.freeze || !self.still {
+            self.freeze_on = false;
+        } else if let Some(w) = self.pred.imu_window(self.p.freeze_window_ns) {
+            let lim = if was { self.p.freeze_gyro_off } else { self.p.freeze_gyro_on };
+            self.freeze_on = w.gyro_max < lim;
+        }
+        if self.freeze_on {
+            let live = Rel {
+                lin_vel: [0.0; 3],
+                ang_vel: [0.0; 3],
+                ..*raw
+            };
+            let f = match self.frozen {
+                Some(f)
+                    if geom::norm(qlog(qmul(raw.q, qconj(f.q)))) <= self.p.freeze_deadband_rad
+                        && geom::norm(geom::sub(raw.pos, f.pos)) <= self.p.freeze_deadband_m =>
+                {
+                    f
+                }
+                _ => live,
+            };
+            self.frozen = Some(f);
+            *raw = f;
+            self.freeze_frames += 1;
+        } else if let Some(f) = self.frozen.take() {
+            // Released: the frozen pose stays this query's output; the correction carries the difference.
+            let uncorr_p = geom::sub(raw.pos, self.corr_p);
+            let uncorr_q = qmul(qexp(geom::scale(self.corr_r, -1.0)), raw.q);
+            self.corr_p = geom::sub(f.pos, uncorr_p);
+            self.corr_r = qlog(qmul(f.q, qconj(uncorr_q)));
+            if geom::norm(self.corr_p) > self.p.snap_pos || geom::norm(self.corr_r) > self.p.snap_rot {
+                self.corr_p = [0.0; 3];
+                self.corr_r = [0.0; 3];
+            } else {
+                *raw = f;
+            }
+        }
+    }
+
+    /// IMU noise regime now (still or moving, with hysteresis; see [`crate::slam::NoiseRegime`]).
+    pub fn noise_regime(&self) -> crate::slam::NoiseRegime {
+        self.noise_sel.regime()
+    }
+
+    /// True while the exact pose freeze holds the output.
+    pub fn is_frozen(&self) -> bool {
+        self.freeze_on
     }
 
     /// Oldest not yet taken correction step of at least `HeadParams::big_corr_m` (the last 64 are kept).
@@ -2355,5 +2453,71 @@ mod tests {
                 h.pred.vel_noise_ms.sqrt(),
             );
         }
+    }
+
+    /// Desk-still run: 3DoF orientation that shimmers by `shim` rad, then a pickup at `pick_s`.
+    fn freeze_run(p: HeadParams, shim: f64, pick_s: f64, secs: f64) -> (HeadTracker, Vec<(f64, Rel)>) {
+        let mut h = HeadTracker::new(SupervisorParams::default(), p, [0.0; 3]);
+        let mut seed = 5u64;
+        let mut out = Vec::new();
+        for i in 0..(secs * 1000.0) as i64 {
+            let t = i as f64 * 0.001;
+            let w = if t >= pick_s { 0.5 } else { 0.0 };
+            h.push_imu(ImuSample {
+                ts_ns: i * 1_000_000,
+                gyro: [0.0004 * gauss(&mut seed) + w, 0.0004 * gauss(&mut seed), 0.0004 * gauss(&mut seed)],
+                accel: [0.005 * gauss(&mut seed), GRAVITY + 0.005 * gauss(&mut seed), 0.005 * gauss(&mut seed)],
+            });
+            h.update(i * 1_000_000, None);
+            if i % 5 == 0 {
+                let a = shim * (t * 40.0).sin();
+                let mut r = rel3([0.0, (a / 2.0).sin(), 0.0, (a / 2.0).cos()]);
+                r.ang_vel = [0.0, shim * 40.0 * (t * 40.0).cos(), 0.0];
+                out.push((t, h.head(i * 1_000_000, i * 1_000_000, &r)));
+            }
+        }
+        (h, out)
+    }
+
+    fn angle_between(a: Quat, b: Quat) -> f64 {
+        geom::norm(qlog(qmul(a, qconj(b)))).to_degrees()
+    }
+
+    #[test]
+    fn exact_freeze_holds_position_and_orientation_while_still() {
+        let (h, out) = freeze_run(HeadParams::default(), 0.0003, 99.0, 3.0);
+        assert!(h.is_frozen() && h.freeze_frames > 100);
+        let late: Vec<_> = out.iter().filter(|(t, _)| *t > 1.5).collect();
+        let first = late[0].1;
+        for (_, r) in &late {
+            assert_eq!(r.q, first.q, "orientation is one fixed value");
+            assert_eq!(r.pos, first.pos);
+            assert_eq!(r.ang_vel, [0.0; 3]);
+            assert_eq!(r.lin_vel, [0.0; 3]);
+        }
+        // Switched off, the same input shimmers.
+        let (h2, out2) = freeze_run(HeadParams { freeze: false, ..HeadParams::default() }, 0.0003, 99.0, 3.0);
+        assert!(!h2.is_frozen());
+        let late2: Vec<_> = out2.iter().filter(|(t, _)| *t > 1.5).collect();
+        assert!(late2.iter().any(|(_, r)| r.q != late2[0].1.q));
+    }
+
+    #[test]
+    fn exact_freeze_ends_on_pickup_without_a_jump() {
+        let (h, out) = freeze_run(HeadParams::default(), 0.0003, 2.0, 2.6);
+        assert!(!h.is_frozen(), "a pickup (0.5 rad/s) ends the freeze");
+        for w in out.windows(2).filter(|w| w[0].0 > 1.9) {
+            let d = angle_between(w[1].1.q, w[0].1.q);
+            assert!(d < 1.0, "no orientation jump at release: {d} deg");
+            assert!(geom::norm(geom::sub(w[1].1.pos, w[0].1.pos)) < 0.01);
+        }
+    }
+
+    #[test]
+    fn noise_regime_follows_the_gyro_rate() {
+        let (h, _) = freeze_run(HeadParams::default(), 0.0, 99.0, 1.0);
+        assert_eq!(h.noise_regime(), crate::slam::NoiseRegime::Still);
+        let (h, _) = freeze_run(HeadParams::default(), 0.0, 0.5, 1.0);
+        assert_eq!(h.noise_regime(), crate::slam::NoiseRegime::Moving);
     }
 }
