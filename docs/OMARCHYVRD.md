@@ -33,7 +33,7 @@ omarchyvrd sim rust/omarchyvr-autod/sim/*.sim                 # auto-mode simula
 | `~/.config/omarchyvr/safe-mode` | Flag file. While it exists, nothing runs automatically. |
 | `$XDG_RUNTIME_DIR/omarchyvrd/state.json` | The snapshot, rewritten every round (about every 2 s). Treat it as stale when it is older than 10 s. |
 | `$XDG_RUNTIME_DIR/omarchyvrd/intent` | Lines: `session=on\|off\|unset`, `by=`, `mode=`, `at=`, `override.<id>=on\|off`. |
-| `$XDG_RUNTIME_DIR/omarchyvrd/gpu-gate` | The launcher's format (`boot_id=`, `level=`, `why=`) plus `acked=` and `evidence=`. It is latched per boot. |
+| `$XDG_RUNTIME_DIR/omarchyvrd/gpu-gate` | The launcher's format (`boot_id=`, `level=`, `why=`) plus `acked=`, `evidence=` and `cause=process-kill|gpu-fault`. It is latched per boot. A file without `cause=` is read as `gpu-fault` (strict). |
 | `$XDG_RUNTIME_DIR/omarchyvrd/safe-mode-auto` | The reason omarchyvrd put itself into safe mode. It is removed by `safe-mode off` or `fix omarchyvrd`. |
 
 `$PIMAXD_DIR` replaces `$XDG_RUNTIME_DIR/omarchyvrd`, and `$PIMAX_AUTOD_SOCKET` replaces the socket path (used for tests and
@@ -140,6 +140,16 @@ The plan is the spec; the user decisions of 2026-10-15 apply.
   - It never sends SIGKILL. A Monado still alive after `--no-kill`, or in D state for 10 s, latches needs-reboot.
     The user is told the choices (kill it themselves, or reboot), and nothing around Monado is stopped or restarted
     any more; voice on the CPU keeps going.
+  - **Release of a kill-only needs-reboot (evidence based).** The gate remembers why it is at needs-reboot.
+    Process-kill causes (Monado SIGKILLed, Monado still alive after its stop grace) write `cause=process-kill`;
+    everything else (any Xid, "Idling display engine", "Stuck layer", a display acquire failure, a flip stuck, D state,
+    Monado surviving SIGKILL) is a GPU fault and writes `cause=gpu-fault`. Any GPU-fault evidence in the level makes
+    it strict: only a reboot clears it. When the level is needs-reboot and ALL its evidence is process-kill, and
+    monado-service is up and ready for `CLEAN_SESSION_S` (300 s, `omarchyvr-components/src/gpu.rs`) with no new
+    GPU-fault evidence, the level drops to caution (not acknowledged) with the evidence "a clean 5-minute session
+    after the kill: lowered to caution". The user acknowledges it on the System page (`ack-gpu`). A Monado restart
+    restarts the 5 minutes, the Monado that was alive when the kill was latched never counts, and a later GPU fault
+    raises needs-reboot again as usual. Old gate files without `cause=` stay strict until the next reboot.
   - `set session=on force=1` passes needs-reboot once (user decision 9). The plain request is refused with an
     explanation.
 - **Leaves (wayvr, passthrough, ctrltrack, perf, voice.\*, voicehud, floor.follow).** omarchyvrd respawns the argv, env

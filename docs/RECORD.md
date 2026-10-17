@@ -124,8 +124,13 @@ EuRoC SLAM recording (`PIMAX_SLAM_RECORD`) is set when Monado starts, so it cann
 
 - **Startup:**
   - It sets nice 10 and the lowest best-effort I/O priority.
-  - It refuses to start when Monado is not running, when the GPU gate says reboot, when there is no ffmpeg, or when
-    less than 2 GiB is free.
+  - It refuses to start when Monado is not running, when the GPU safety check says reboot, when there is no ffmpeg, or
+    when less than 2 GiB is free. The refusal reads "Recording is off: the GPU safety check wants a reboot (<why>)..."
+    and the Recording page then shows an "Open System page" button. If the only cause was a killed or hung Monado,
+    the check drops to caution after a clean 5-minute session (docs/OMARCHYVRD.md) and can be acknowledged on the
+    System page; a GPU error needs a reboot.
+  - At caution (not acknowledged) it records, but on the CPU encoder (no NVENC), and says so in the events; after
+    the acknowledgement NVENC is used again.
   - It creates the ring and waits up to 6 s for the tap. Without a tap it reports "this monado-service has no
     recorder tap" and exits 0.
 - **Encoding:**

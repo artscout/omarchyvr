@@ -115,24 +115,48 @@ pub fn boot_id(env: &dyn Fn(&str) -> Option<String>) -> Option<String> {
 
 /// The latch of this boot, if any.
 pub fn read_latch(path: &Path, boot_id: &str) -> Option<(Level, String)> {
+    read_latch_cause(path, boot_id).map(|(l, w, _)| (l, w))
+}
+
+/// The latch of this boot with its cause: true = process-kill only (`cause=process-kill`); a file without the key
+/// is unknown, therefore a GPU fault (strict).
+fn read_latch_cause(path: &Path, boot_id: &str) -> Option<(Level, String, bool)> {
     let s = std::fs::read_to_string(path).ok()?;
-    let (mut b, mut lv, mut why) = (None, None, String::new());
+    let (mut b, mut lv, mut why, mut kill) = (None, None, String::new(), false);
     for l in s.lines() {
         match l.split_once('=') {
             Some(("boot_id", v)) => b = Some(v.trim()),
             Some(("level", v)) => lv = Level::parse(v.trim()),
             Some(("why", v)) => why = v.trim().to_string(),
+            Some(("cause", v)) => kill = v.trim() == "process-kill",
             _ => {}
         }
     }
     (b == Some(boot_id)).then_some(())?;
-    lv.filter(|l| *l > Level::Ok).map(|l| (l, why))
+    lv.filter(|l| *l > Level::Ok).map(|l| (l, why, kill))
 }
 
 /// Raise the latch to `level` (never lowers it). Best effort: the file is a record for the next automatic action.
+/// The cause is a GPU fault.
 pub fn latch(path: &Path, boot_id: &str, level: Level, why: &str) -> bool {
-    if level == Level::Ok || read_latch(path, boot_id).is_some_and(|(l, _)| l >= level) {
+    latch_cause(path, boot_id, level, why, false)
+}
+
+/// Like `latch`, for process-kill evidence only (Monado SIGKILLed / hung after its stop grace): omarchyvrd may lower
+/// it after a clean 5-minute session. A GPU-fault latch at the same level replaces a kill-only one.
+pub fn latch_kill(path: &Path, boot_id: &str, level: Level, why: &str) -> bool {
+    latch_cause(path, boot_id, level, why, true)
+}
+
+fn latch_cause(path: &Path, boot_id: &str, level: Level, why: &str, kill: bool) -> bool {
+    if level == Level::Ok {
         return false;
+    }
+    if let Some((l, _, was_kill)) = read_latch_cause(path, boot_id) {
+        // never lowers; only a fault over a kill-only latch of the same level rewrites it
+        if l > level || (l == level && (kill || !was_kill)) {
+            return false;
+        }
     }
     if let Some(dir) = path.parent() {
         if std::fs::create_dir_all(dir).is_err() {
@@ -141,8 +165,17 @@ pub fn latch(path: &Path, boot_id: &str, level: Level, why: &str) -> bool {
     }
     let why = why.replace(['\n', '\r'], " ");
     let tmp = path.with_extension("tmp");
-    let body = format!("boot_id={boot_id}\nlevel={}\nwhy={why}\n", level.as_str());
+    let cause = if kill { "process-kill" } else { "gpu-fault" };
+    let body = format!("boot_id={boot_id}\nlevel={}\nwhy={why}\ncause={cause}\n", level.as_str());
     std::fs::write(&tmp, body).is_ok() && std::fs::rename(&tmp, path).is_ok()
+}
+
+/// `latch_env` for process-kill evidence only.
+pub fn latch_kill_env(env: &dyn Fn(&str) -> Option<String>, level: Level, why: &str) -> bool {
+    match (gate_path(env), boot_id(env)) {
+        (Some(p), Some(b)) => latch_kill(&p, &b, level, why),
+        _ => false,
+    }
 }
 
 /// Latch through the caller's environment (`XDG_RUNTIME_DIR`, `PIMAX_PROC_ROOT`); no-op when either is unknown.
@@ -195,6 +228,14 @@ mod tests {
         assert!(latch(&p, "b1", Level::NeedsReboot, "monado\nhung"));
         assert_eq!(read_latch(&p, "b1"), Some((Level::NeedsReboot, "monado hung".into())));
         assert!(!latch(&p, "b1", Level::Caution, "lower"));
+        // kill-only latch: replaced by a fault of the same level, not the other way round
+        let k = d.join("omarchyvrd/kill-gate");
+        assert!(latch_kill(&k, "b1", Level::NeedsReboot, "monado-service was SIGKILLed"));
+        assert!(std::fs::read_to_string(&k).unwrap().contains("cause=process-kill"));
+        assert!(!latch_kill(&k, "b1", Level::NeedsReboot, "again"));
+        assert!(latch(&k, "b1", Level::NeedsReboot, "Xid 79"));
+        assert!(std::fs::read_to_string(&k).unwrap().contains("cause=gpu-fault"));
+        assert!(!latch_kill(&k, "b1", Level::NeedsReboot, "kill again"));
         assert_eq!(read_latch(&p, "b1").unwrap().0, Level::NeedsReboot);
         // another boot: the old latch means nothing, and a new one replaces it
         assert_eq!(read_latch(&p, "b2"), None);

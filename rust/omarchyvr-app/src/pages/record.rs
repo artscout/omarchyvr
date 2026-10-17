@@ -87,7 +87,10 @@ pub fn card_ui(ui: &mut Ui, app: &mut PimaxApp) {
                 });
             }
             Indicator::Error { note } => {
-                ui.label(RichText::new(note).color(p.fail));
+                ui.add(egui::Label::new(RichText::new(note).color(p.fail)).wrap());
+                if record::gate_blocked(note) && widgets::ghost(ui, icon::PULSE, "Open System page", true).on_hover_text("The System page shows the GPU safety check and lets you acknowledge it").clicked() {
+                    app.core.page = omarchyvr_gui_core::app::Page::System;
+                }
             }
             Indicator::Idle { last } => {
                 if let Some(f) = last {

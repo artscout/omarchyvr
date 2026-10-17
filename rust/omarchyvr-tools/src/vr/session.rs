@@ -847,14 +847,20 @@ pub fn stop(
             ),
             StopOutcome::CannotSignal(m) => verr!("omarchyvr vr: cannot stop pid {pid}: {m}"),
         }
+        // Killed / Hung are process-kill evidence (a clean session may release them); Stuck (D state) is a GPU fault
         let why = match &out {
-            StopOutcome::Killed => Some("monado-service was SIGKILLed"),
-            StopOutcome::Stuck => Some("monado-service survived SIGKILL (uninterruptible)"),
-            StopOutcome::Hung => Some("monado-service hung after SIGINT"),
+            StopOutcome::Killed => Some(("monado-service was SIGKILLed", true)),
+            StopOutcome::Stuck => Some(("monado-service survived SIGKILL (uninterruptible)", false)),
+            StopOutcome::Hung => Some(("monado-service hung after SIGINT", true)),
             _ => None,
         };
-        if let Some(why) = why {
-            gate::latch_env(d.env, gate::Level::NeedsReboot, &format!("{why} (pid {pid})"));
+        if let Some((why, kill)) = why {
+            let text = format!("{why} (pid {pid})");
+            if kill {
+                gate::latch_kill_env(d.env, gate::Level::NeedsReboot, &text);
+            } else {
+                gate::latch_env(d.env, gate::Level::NeedsReboot, &text);
+            }
         }
         let rank = |o: &StopOutcome| match o {
             StopOutcome::Graceful(_) => 0,

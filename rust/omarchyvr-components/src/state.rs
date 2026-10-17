@@ -252,6 +252,7 @@ impl World {
                 self.observe_one(now, s, o, log_crash);
             }
         }
+        self.gate_clean_check(now);
         // adoption: a Monado we have not seen
         let mo = self.c("monado").clone();
         if mo.up == Some(true) {
@@ -502,6 +503,26 @@ impl World {
 
     pub fn raise_gate(&mut self, level: GateLevel, evidence: &str) -> bool {
         let up = self.gate.raise(level, evidence);
+        self.gate_notice(up, evidence)
+    }
+
+    /// Raise by process-kill evidence only (Monado SIGKILLed / alive after its stop grace): a clean session releases it.
+    pub fn raise_gate_kill(&mut self, level: GateLevel, evidence: &str) -> bool {
+        let up = self.gate.raise_kill(level, evidence);
+        self.gate_notice(up, evidence)
+    }
+
+    /// The evidence-based release (called every observe): Monado up and healthy for `CLEAN_SESSION_S` with no new
+    /// GPU-fault evidence lowers a kill-only needs-reboot to caution.
+    fn gate_clean_check(&mut self, now: f64) {
+        let mo = self.c("monado");
+        let key = (mo.up == Some(true) && mo.ready != Some(false)).then(|| (mo.pid.unwrap_or(0), mo.start_ticks.unwrap_or(0)));
+        if self.gate.clean_tick(now, key) {
+            self.notices.push(Notice::tell("gpu.gate", "The GPU safety check is lowered from reboot to caution: a clean 5-minute VR session ran after the kill. Acknowledge it on the System page."));
+        }
+    }
+
+    fn gate_notice(&mut self, up: bool, evidence: &str) -> bool {
         if up {
             let n = match self.gate.effective() {
                 GateLevel::NeedsReboot => Notice::critical(
@@ -606,7 +627,7 @@ impl World {
             }
             Outcome::Hung(why) => {
                 // never SIGKILL Monado automatically: the display would likely need a reboot anyway
-                self.raise_gate(GateLevel::NeedsReboot, &format!("{} still alive after its stop grace: {why}", st.id));
+                self.raise_gate_kill(GateLevel::NeedsReboot, &format!("{} still alive after its stop grace: {why}", st.id));
                 if st.id == "monado" || matches!(st.act, crate::reconcile::Act::StopSubtree | crate::reconcile::Act::ResetHeadset) {
                     self.notices.push(Notice::critical(
                         "monado",
@@ -900,5 +921,23 @@ mod tests {
         assert_eq!(w.overall(&w.health()), Overall::NeedsReboot);
         assert!(!w.kernel_line(3.0, "usb 2-4: USB disconnect, device number 7"));
         assert_eq!(w.usb_disconnects.len(), 1);
+    }
+
+    #[test]
+    fn a_kill_latch_is_lowered_after_a_clean_five_minute_session() {
+        let mut w = world();
+        assert!(w.raise_gate_kill(GateLevel::NeedsReboot, "monado-service was SIGKILLed (pid 1)"));
+        let o = obs_all(&desk_up());
+        w.observe(0.0, &o, &facts_desk(), &|_| false);
+        w.observe(crate::gpu::CLEAN_SESSION_S - 1.0, &o, &facts_desk(), &|_| false);
+        assert_eq!(w.gate.effective(), GateLevel::NeedsReboot);
+        w.observe(crate::gpu::CLEAN_SESSION_S + 1.0, &o, &facts_desk(), &|_| false);
+        assert_eq!(w.gate.level, GateLevel::Caution);
+        assert!(w.notices.iter().any(|n| n.text.contains("lowered")));
+        assert!(w.gate.ack());
+        assert_eq!(w.gate.effective(), GateLevel::Ok);
+        // a new GPU fault raises again
+        assert!(w.kernel_line(400.0, "NVRM: Xid (PCI:0000:01:00): 79, GPU has fallen off the bus."));
+        assert_eq!(w.gate.effective(), GateLevel::NeedsReboot);
     }
 }
