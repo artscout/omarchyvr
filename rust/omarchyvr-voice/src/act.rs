@@ -876,7 +876,7 @@ impl Actor {
             }
             // "close the door" names nothing open: the model decides (and a close it picks is guarded)
             // "screen {screen} {how}" for "move the screen up a bit" took "up" as the screen and "bit" as how
-            "win.screen.adjust" => matches!(v("how").as_str(), "left" | "right" | "up" | "down" | "closer" | "farther" | "further" | "bigger" | "smaller" | "larger"),
+            "win.screen.adjust" => matches!(v("how").as_str(), "left" | "right" | "up" | "down" | "closer" | "farther" | "further" | "bigger" | "smaller" | "larger" | "here"),
             "win.close.named" => {
                 let app = v("app");
                 let cs = titles(r);

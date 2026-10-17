@@ -2,12 +2,17 @@
 //!
 //! ```text
 //! dot=on          # the small gaze dot in Work (WayVR): visual only. on (default) | off
-//! targeting=off   # developer: gaze may target windows for voice ("close this"). off (default) | on
+//! gaze_mouse=off  # the ONE gaze input switch: on = your eyes move the pointer and can click (and voice "this"
+//!                 # may use the window you look at). off (default) = the gaze is only a visual point.
 //! calibration=auto  # which eye calibration: auto (default: yours once you calibrated, else the built-in one) |
 //!                   # builtin (the developer's test calibration) | own (your own; none until you calibrate)
 //! ```
-//! Eye tracking itself (running or not) is the app's "Eye tracking" switch. It is never an input: no pointer, no
-//! selection, no scrolling. Unknown lines are ignored.
+//! Eye tracking itself (running or not) is the app's "Eye tracking" switch. By default it is never an input: no
+//! pointer, no click, no focus, no cursor movement (user decision 2026-10-17). Unknown lines are ignored.
+//!
+//! Migration: the old developer key `targeting=` (and WayVR's `gaze_pointer` in wayvr-desk.conf, whose code default
+//! was `true`) are NOT read: a saved value cannot be told apart from the old default, so every old file reads as
+//! `gaze_mouse=off`. Only the new key, written by the new switch, turns the gaze mouse on.
 use std::path::{Path, PathBuf};
 
 /// Which eye calibration the setting asks for.
@@ -58,15 +63,16 @@ impl CalMode {
 pub struct EyeSettings {
     /// Show the dot where you look (visual effect).
     pub dot: bool,
-    /// Developer: let the gaze target windows for voice commands.
-    pub targeting: bool,
+    /// The one gaze input switch (default off): the eyes move the pointer and can click; voice "this" may use the
+    /// window looked at. Off: the gaze is only a visual point.
+    pub mouse: bool,
     /// Which eye calibration to use.
     pub calibration: CalMode,
 }
 
 impl Default for EyeSettings {
     fn default() -> Self {
-        EyeSettings { dot: true, targeting: false, calibration: CalMode::Auto }
+        EyeSettings { dot: true, mouse: false, calibration: CalMode::Auto }
     }
 }
 
@@ -80,7 +86,8 @@ impl EyeSettings {
             let on = matches!(v, "on" | "true" | "1" | "yes");
             match k.trim() {
                 "dot" => s.dot = on || !matches!(v, "off" | "false" | "0" | "no"),
-                "targeting" => s.targeting = on,
+                "gaze_mouse" => s.mouse = on,
+                // "targeting" (the old developer key) is ignored on purpose: migrated to off
                 "calibration" => {
                     s.calibration = match v {
                         "builtin" => CalMode::Builtin,
@@ -98,9 +105,9 @@ impl EyeSettings {
     pub fn render(&self) -> String {
         let f = |b: bool| if b { "on" } else { "off" };
         format!(
-            "# written by the Pimax app (Eye tracking); visual only\ndot={}\ntargeting={}\ncalibration={}\n",
+            "# written by the Pimax app (Eye tracking); gaze_mouse=off: the gaze is only a visual point\ndot={}\ngaze_mouse={}\ncalibration={}\n",
             f(self.dot),
-            f(self.targeting),
+            f(self.mouse),
             self.calibration.word()
         )
     }
@@ -140,15 +147,24 @@ mod tests {
     use super::*;
 
     #[test]
-    fn defaults_are_dot_on_and_no_targeting() {
-        assert_eq!(EyeSettings::parse(""), EyeSettings { dot: true, targeting: false, calibration: CalMode::Auto });
+    fn defaults_are_dot_on_and_no_gaze_mouse() {
+        assert_eq!(EyeSettings::parse(""), EyeSettings { dot: true, mouse: false, calibration: CalMode::Auto });
         assert_eq!(EyeSettings::parse("junk\ndot=off\n"), EyeSettings { dot: false, ..EyeSettings::default() });
-        assert_eq!(EyeSettings::parse("targeting = on # dev\n"), EyeSettings { targeting: true, ..EyeSettings::default() });
+        assert_eq!(EyeSettings::parse("gaze_mouse = on # explicit\n"), EyeSettings { mouse: true, ..EyeSettings::default() });
+    }
+
+    #[test]
+    fn old_targeting_key_migrates_to_off() {
+        // written by the old app (developer "Gaze targets windows"): never turns gaze input on any more
+        let old = "# written by the Pimax app (Eye tracking); visual only\ndot=on\ntargeting=on\ncalibration=auto\n";
+        let s = EyeSettings::parse(old);
+        assert!(!s.mouse);
+        assert!(s.render().contains("gaze_mouse=off\n") && !s.render().contains("targeting"));
     }
 
     #[test]
     fn render_round_trips_and_saves() {
-        let s = EyeSettings { dot: false, targeting: true, calibration: CalMode::Builtin };
+        let s = EyeSettings { dot: false, mouse: true, calibration: CalMode::Builtin };
         assert_eq!(EyeSettings::parse(&s.render()), s);
         let d = std::env::temp_dir().join(format!("pimax-eye-conf-{}", std::process::id()));
         let p = d.join("omarchyvr/eye.conf");

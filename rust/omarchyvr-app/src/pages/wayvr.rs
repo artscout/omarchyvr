@@ -10,7 +10,6 @@ use omarchyvr_gui_core::wayvr::{Ctl, LintLevel, ScreenNumbers};
 
 /// The WayVR cards of the Desktop page (developer mode).
 pub fn body(ui: &mut Ui, app: &mut PimaxApp) {
-    let dev = app.core.state.dev_mode;
     app.core.want_wayvr();
     let p = theme::pal(ui);
     let running = app.core.live.alive("wayvr") || (app.core.demo && app.core.live.service.is_some());
@@ -45,7 +44,7 @@ pub fn body(ui: &mut Ui, app: &mut PimaxApp) {
                         _ => icon::SQUARES_FOUR,
                     };
                     let tip = match c {
-                        Ctl::ResetScreens => "wayvrctl reset-screens: every active screen 2.5 m in front of you (same as double-click B)",
+                        Ctl::ResetScreens => "wayvrctl reset-screens: the screens back in the default layout around you (2 rows of 3, none overlapping from where you are; same as double-click B)",
                         Ctl::SwitchSet(0) => "wayvrctl switch-set 0",
                         Ctl::SwitchSet(_) => "wayvrctl switch-set 1",
                         _ => "wayvrctl show-hide",
@@ -113,10 +112,7 @@ pub fn body(ui: &mut Ui, app: &mut PimaxApp) {
         switch_row(ui, &mut s.world_lock_pin, "A / X pins a screen", None, s.world_lock_grab);
         switch_row(ui, &mut s.grab_keep_apparent_size, "Keep apparent size", Some("A screen keeps its apparent size when you push it away."), true);
         switch_row(ui, &mut s.enable_keyboard, "Keyboard", Some("The WayVR keyboard."), true);
-        // eyes are visual only: the gaze pointer is a developer option (also overridden by the eye settings at desk start)
-        if dev {
-            switch_row(ui, &mut s.gaze_pointer, "Gaze pointer", Some("Developer: the eyes as a mouse; only with desk start --eye."), true);
-        }
+        // gaze input lives in ONE place: Tracking > Eyes > "Eyes as a mouse" (eye.conf gaze_mouse, default off)
         switch_row(ui, &mut s.hide_grab_help, "Hide grab hint", None, true);
         switch_row(ui, &mut s.controllers_in_work, "Controllers in Work", Some("Off = hands only."), true);
         switch_row(ui, &mut s.controller_models, "Controller models", Some("A 3D controller in each hand in Work, like SteamVR shows; the pointer ray leaves its front tip."), true);

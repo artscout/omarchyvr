@@ -3809,7 +3809,7 @@ mod tests {
         // stage 2: the screens/apps tools only, and the whole state
         let names: Vec<&str> = bodies[1].2["tools"].as_array().unwrap().iter().map(|t| t["function"]["name"].as_str().unwrap()).collect();
         assert!(names.contains(&"move_window") && names.contains(&"win_ws_goto") && names.contains(&"voice_undo"), "{names:?}");
-        assert!(!names.contains(&"vr_preset_cinema") && !names.contains(&"key_enter") && names.len() < 56, "{names:?}"); // +3 hide / hide others / scale (2026-10-16 b) // +13 screen-number, layout tools and move_apps / list_screens (2026-10-16)
+        assert!(!names.contains(&"vr_preset_cinema") && !names.contains(&"key_enter") && names.len() < 58, "{names:?}"); // +2 screen place / here (2026-10-17) // +3 hide / hide others / scale (2026-10-16 b) // +13 screen-number, layout tools and move_apps / list_screens (2026-10-16)
         let st: Value = serde_json::from_str(bodies[1].2["messages"][1]["content"].as_str().unwrap()).unwrap();
         assert_eq!(st["category"], json!(["screens"]));
         assert_eq!(st["this"]["app"], "0xc3", "the gaze is sent even without \"this\"");

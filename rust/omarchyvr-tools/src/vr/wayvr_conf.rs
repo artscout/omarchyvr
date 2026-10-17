@@ -73,8 +73,6 @@ pub struct WayvrSettings {
     pub grab_dist_max: f32,
     /// The WayVR keyboard overlay (`enable_keyboard`; off in desk mode).
     pub enable_keyboard: bool,
-    /// The eye gaze pointer (`gaze_pointer`; needs `desk start --eye`).
-    pub gaze_pointer: bool,
     /// No grab hint popup (`hide_grab_help`).
     pub hide_grab_help: bool,
     /// Controllers work in Work (`controllers_in_work`, default false = hands only: controller rays, buttons, sticks
@@ -106,7 +104,6 @@ impl Default for WayvrSettings {
             grab_dist_min: 0.4,
             grab_dist_max: 8.0,
             enable_keyboard: false,
-            gaze_pointer: true,
             hide_grab_help: false,
             controllers_in_work: false,
             controller_models: true,
@@ -167,7 +164,9 @@ impl WayvrSettings {
                 "world_lock_pin" => s.world_lock_pin = b(&mut warn).unwrap_or(s.world_lock_pin),
                 "grab_keep_apparent_size" => s.grab_keep_apparent_size = b(&mut warn).unwrap_or(s.grab_keep_apparent_size),
                 "enable_keyboard" => s.enable_keyboard = b(&mut warn).unwrap_or(s.enable_keyboard),
-                "gaze_pointer" => s.gaze_pointer = b(&mut warn).unwrap_or(s.gaze_pointer),
+                // migrated (2026-10-17): the old app wrote `gaze_pointer = true` (its code default) into every saved
+                // file, so a saved value says nothing about the user's wish; gaze input is only `gaze_mouse` in eye.conf
+                "gaze_pointer" => {}
                 "hide_grab_help" => s.hide_grab_help = b(&mut warn).unwrap_or(s.hide_grab_help),
                 "controllers_in_work" => s.controllers_in_work = b(&mut warn).unwrap_or(s.controllers_in_work),
                 "controller_models" => s.controller_models = b(&mut warn).unwrap_or(s.controller_models),
@@ -202,7 +201,6 @@ impl WayvrSettings {
         o += &format!("grab_dist_min = {:.2}\n", self.grab_dist_min);
         o += &format!("grab_dist_max = {:.2}\n", self.grab_dist_max);
         o += &format!("enable_keyboard = {}\n", self.enable_keyboard);
-        o += &format!("gaze_pointer = {}\n", self.gaze_pointer);
         o += &format!("hide_grab_help = {}\n", self.hide_grab_help);
         o += &format!("controllers_in_work = {}\n", self.controllers_in_work);
         o += &format!("controller_models = {}\n", self.controller_models);
@@ -252,7 +250,7 @@ impl WayvrSettings {
             "# written by `omarchyvr desk start` from ~/.config/omarchyvr/wayvr-desk.conf (the Pimax app); do not edit\n\
              world_lock_grab: {}\nworld_lock_pin: {}\ngrab_keep_apparent_size: {}\ngrab_dist_rate: {:.3}\n\
              grab_size_min: {:.3}\ngrab_size_max: {:.3}\ngrab_dist_min: {:.3}\ngrab_dist_max: {:.3}\n\
-             enable_keyboard: {}\ngaze_pointer: {}\nhide_grab_help: {}\ncontrollers_in_work: {}\n\
+             enable_keyboard: {}\nhide_grab_help: {}\ncontrollers_in_work: {}\n\
              show_controller_models: {}\ncontroller_axes: {}\nscreen_numbers: {}\n",
             self.world_lock_grab,
             self.world_lock_pin,
@@ -263,7 +261,6 @@ impl WayvrSettings {
             self.grab_dist_min,
             self.grab_dist_max,
             self.enable_keyboard,
-            self.gaze_pointer,
             self.hide_grab_help,
             self.controllers_in_work,
             self.controller_models,
@@ -337,9 +334,18 @@ mod tests {
         assert_eq!(WayvrSettings::parse(&m.render()).0, m);
         assert_eq!(ScreenNumbers::parse("On demand"), Some(ScreenNumbers::OnDemand));
         assert_eq!(WayvrSettings::parse("screen_numbers = maybe\n").1.len(), 1);
-        let (_, w) = WayvrSettings::parse("bogus = 1\ngaze_pointer = maybe\ngrab_dist_max = nan\nnoequals\n");
+        let (_, w) = WayvrSettings::parse("bogus = 1\nenable_keyboard = maybe\ngrab_dist_max = nan\nnoequals\n");
         assert_eq!(w.len(), 4, "{w:?}");
         assert_eq!(settings_path(&|k| (k == "HOME").then(|| "/home/u".to_string())), PathBuf::from("/home/u/.config/omarchyvr/wayvr-desk.conf"));
+    }
+
+    #[test]
+    fn a_saved_gaze_pointer_is_migrated_away() {
+        // every file the old app saved had `gaze_pointer = true` (the old code default): read without a warning,
+        // never written again, never reaches WayVR (gaze input is eye.conf `gaze_mouse`, written to 55-eye.yaml)
+        let (s, w) = WayvrSettings::parse("gaze_pointer = true\nenable_keyboard = false\n");
+        assert!(w.is_empty(), "{w:?}");
+        assert!(!s.render().contains("gaze") && !s.yaml().contains("gaze"));
     }
 
     #[test]
