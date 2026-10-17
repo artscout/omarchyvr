@@ -224,6 +224,69 @@ impl ImuNoise {
     }
 }
 
+/// Pimax's two IMU noise regimes: the headset at rest or moving.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NoiseRegime {
+    /// At rest (the densities in [`ImuNoise::default`]).
+    Still,
+    /// In motion: the same densities scaled by [`MOVING_GYRO_RATIO`] / [`MOVING_ACCEL_RATIO`].
+    Moving,
+}
+
+/// Moving / stationary gyro noise ratio (Pimax Windows `IMUNoise`: 0.0225 / 0.001974).
+pub const MOVING_GYRO_RATIO: f64 = 0.0225 / 0.001974;
+/// Moving / stationary accelerometer noise ratio (1.296 / 0.081686).
+pub const MOVING_ACCEL_RATIO: f64 = 1.296 / 0.081686;
+
+impl ImuNoise {
+    /// The noise model for a regime. `Still` is `self`; `Moving` scales the white-noise densities by the Pimax
+    /// ratios (so a measured still model from `slam-imu.json` keeps its own scale); bias walks are unchanged.
+    pub fn for_regime(&self, r: NoiseRegime) -> ImuNoise {
+        match r {
+            NoiseRegime::Still => self.clone(),
+            NoiseRegime::Moving => ImuNoise {
+                accel_noise_std: self.accel_noise_std.map(|x| x * MOVING_ACCEL_RATIO),
+                gyro_noise_std: self.gyro_noise_std.map(|x| x * MOVING_GYRO_RATIO),
+                ..self.clone()
+            },
+        }
+    }
+}
+
+/// Picks the [`NoiseRegime`] from the largest bias-corrected gyro rate of a short window, with hysteresis
+/// (Moving above `on`, back to Still under `off`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NoiseSelector {
+    /// Enter Moving above this rate (rad/s).
+    pub on: f64,
+    /// Return to Still under this rate (rad/s).
+    pub off: f64,
+    regime: NoiseRegime,
+}
+
+impl Default for NoiseSelector {
+    fn default() -> Self {
+        NoiseSelector { on: 0.05, off: 0.02, regime: NoiseRegime::Still }
+    }
+}
+
+impl NoiseSelector {
+    /// Feed the newest window's largest bias-corrected gyro rate (rad/s); returns the regime.
+    pub fn update(&mut self, gyro_max: f64) -> NoiseRegime {
+        self.regime = match self.regime {
+            NoiseRegime::Still if gyro_max > self.on => NoiseRegime::Moving,
+            NoiseRegime::Moving if gyro_max < self.off => NoiseRegime::Still,
+            r => r,
+        };
+        self.regime
+    }
+
+    /// Current regime.
+    pub fn regime(&self) -> NoiseRegime {
+        self.regime
+    }
+}
+
 /// Which cameras feed the tracker and how.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SlamSetup {
@@ -1016,6 +1079,21 @@ mod tests {
             }
         }
         assert_eq!(v0.get("imu_update_rate").unwrap().as_f64(), Some(1000.0));
+    }
+
+    #[test]
+    fn two_noise_regimes_scale_the_densities_and_switch_with_hysteresis() {
+        let n = ImuNoise::default();
+        assert_eq!(n.for_regime(NoiseRegime::Still), n);
+        let m = n.for_regime(NoiseRegime::Moving);
+        assert!((m.gyro_noise_std[0] - 0.0225).abs() < 1e-9);
+        assert!((m.accel_noise_std[2] - 1.296).abs() < 1e-9);
+        assert_eq!(m.gyro_bias_std, n.gyro_bias_std);
+        let mut s = NoiseSelector::default();
+        assert_eq!(s.update(0.03), NoiseRegime::Still);
+        assert_eq!(s.update(0.06), NoiseRegime::Moving);
+        assert_eq!(s.update(0.03), NoiseRegime::Moving, "between the limits it stays");
+        assert_eq!(s.update(0.01), NoiseRegime::Still);
     }
 
     #[test]

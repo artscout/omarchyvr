@@ -29,6 +29,44 @@ pub struct TrackCfg {
     pub rot_w: f64,
     /// Body model (reach, side, continuity, collapse); off = `--no-body`.
     pub body: bool,
+    /// Loss state machine: a slot whose prior fails this many LED frames in a row goes back to init (prior and
+    /// continuity memory dropped, cold start next); 0 = off.
+    pub fail_limit: u32,
+    /// A cold start (init slot) farther than this from the head (m) needs `far_leds` LEDs; infinite = off.
+    pub far_m: f64,
+    /// See `far_m`.
+    pub far_leds: usize,
+}
+
+/// The cold-start rule: from init, a controller farther than `far_m` from the head must show `far_leds` LEDs
+/// (few LEDs far away are mostly reflections and give wild poses).
+pub fn cold_start_ok(cfg: &TrackCfg, dist_m: f64, leds: usize) -> bool {
+    dist_m <= cfg.far_m || leds >= cfg.far_leds
+}
+
+/// Consecutive failed frames per slot ([`TrackCfg::fail_limit`]).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct FailCount([u32; 2]);
+
+impl FailCount {
+    /// Record one frame's result for a slot with a prior; true = the slot must go back to init now.
+    pub fn frame(&mut self, slot: usize, ok: bool, limit: u32) -> bool {
+        if ok || limit == 0 {
+            self.0[slot] = 0;
+            return false;
+        }
+        self.0[slot] += 1;
+        if self.0[slot] >= limit {
+            self.0[slot] = 0;
+            return true;
+        }
+        false
+    }
+
+    /// Forget a slot (it has no prior any more).
+    pub fn clear(&mut self, slot: usize) {
+        self.0[slot] = 0;
+    }
 }
 
 impl TrackCfg {
@@ -41,6 +79,9 @@ impl TrackCfg {
             few_streak_max: 0,
             rot_w: 0.0,
             body: true,
+            fail_limit: 0,
+            far_m: f64::INFINITY,
+            far_leds: 4,
         }
     }
 }
@@ -54,6 +95,9 @@ impl Default for TrackCfg {
             few_streak_max: 12,
             rot_w: 300.0,
             body: true,
+            fail_limit: 30,
+            far_m: 1.8,
+            far_leds: 4,
         }
     }
 }
@@ -77,6 +121,10 @@ pub struct Stats {
     pub searches: u64,
     pub unassigned: u64,
     pub collapsed: u64,
+    /// Slots sent back to init after `fail_limit` failed frames.
+    pub init_resets: u64,
+    /// Far cold starts refused for having fewer than `far_leds` LEDs.
+    pub far_refused: u64,
 }
 
 pub struct Tracker {
@@ -87,6 +135,10 @@ pub struct Tracker {
     frame_no: u64,
     body: Body,
     pub stats: Stats,
+    fails: FailCount,
+    /// Rotation (body_from_model) and time of the last fix of each slot, kept through init so a consumer can carry
+    /// the orientation on the controller's gyro while it is out of view ([`Tracker::carried_rotation`]).
+    last_rot: [Option<(geom::Mat3, u64)>; 2],
     /// Slots to look for (left, right). A controller put down (Monado's PIMAX_CTRL_INHAND status) is neither tracked
     /// nor searched, and fixes assigned to it are dropped: less CPU, and its LEDs on the desk are never published.
     pub wanted: [bool; 2],
@@ -124,8 +176,17 @@ impl Tracker {
             frame_no: 0,
             body: Body::default(),
             stats: Stats::default(),
+            fails: FailCount::default(),
+            last_rot: [None, None],
             wanted: [true, true],
         }
+    }
+
+    /// The rotation of the slot's last fix and its frame time, kept while the slot is lost or back in init: the
+    /// orientation the gyro carries on from (Monado's controller fusion) until a new fix replaces it.
+    #[allow(dead_code)]
+    pub fn carried_rotation(&self, slot: usize) -> Option<(geom::Mat3, u64)> {
+        self.last_rot[slot]
     }
 
     /// Last fix of a slot (body_from_model, frame ns).
@@ -274,7 +335,14 @@ impl Tracker {
             }
             let Some(st) = self.prev[slot] else { continue };
             self.stats.tries += 1;
-            if let Some((f, few)) = self.track_slot(rig, &obs, &used, &st, frame_ns) {
+            let r = self.track_slot(rig, &obs, &used, &st, frame_ns);
+            if self.fails.frame(slot, r.is_some(), self.cfg.fail_limit) {
+                // lost for good: back to init (cold start; the rotation stays for the gyro to carry)
+                self.prev[slot] = None;
+                self.last_seen[slot] = None;
+                self.stats.init_resets += 1;
+            }
+            if let Some((f, few)) = r {
                 claim(&mut used, &f.joint);
                 tracked.push((slot, f, few));
             }
@@ -353,8 +421,15 @@ impl Tracker {
                 if !self.wanted[slot] {
                     continue;
                 }
+                let g = &got[ci];
+                if self.prev[slot].is_none()
+                    && !cold_start_ok(&self.cfg, geom::norm(g.joint.body_from_model.t), g.joint.total())
+                {
+                    self.stats.far_refused += 1;
+                    continue;
+                }
                 searched.push(slot);
-                tracked.push((slot, got[ci].clone(), false));
+                tracked.push((slot, g.clone(), false));
             }
         }
         let mut out = Vec::new();
@@ -396,6 +471,8 @@ impl Tracker {
                 few_streak,
             });
             self.last_seen[slot] = Some((p.t, frame_ns));
+            self.last_rot[slot] = Some((p.r, frame_ns));
+            self.fails.clear(slot);
             self.stats.hand[slot] += 1;
             if few {
                 self.stats.few[slot] += 1;
@@ -521,4 +598,39 @@ fn legacy_assign(cands: &[Cand], slots: &[Slot; 2]) -> Vec<(usize, usize)> {
         out.push((c, slot));
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn thirty_failed_frames_send_a_slot_back_to_init() {
+        let mut f = FailCount::default();
+        for _ in 0..29 {
+            assert!(!f.frame(0, false, 30));
+        }
+        assert!(f.frame(0, false, 30), "the 30th failure resets");
+        assert!(!f.frame(0, false, 30), "the count starts over");
+        // a good frame clears it; the other slot is independent
+        for _ in 0..29 {
+            f.frame(1, false, 30);
+        }
+        assert!(!f.frame(1, true, 30));
+        assert!(!f.frame(1, false, 30));
+        // limit 0 = off
+        for _ in 0..100 {
+            assert!(!f.frame(0, false, 0));
+        }
+    }
+
+    #[test]
+    fn far_cold_starts_need_four_leds() {
+        let c = TrackCfg::default();
+        assert!(cold_start_ok(&c, 0.6, 3), "near: 3 LEDs are fine");
+        assert!(cold_start_ok(&c, 1.8, 3), "exactly 1.8 m is near");
+        assert!(!cold_start_ok(&c, 1.81, 3));
+        assert!(cold_start_ok(&c, 2.5, 4));
+        assert!(cold_start_ok(&TrackCfg::baseline(), 5.0, 3), "baseline has the rule off");
+    }
 }
