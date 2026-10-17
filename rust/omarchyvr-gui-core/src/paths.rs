@@ -162,7 +162,10 @@ impl Paths {
     pub fn new_with(home: &Path, repo: &Path, session_dir: &Path, runtime_dir: &Path, exists: &dyn Fn(&Path) -> bool) -> Paths {
         use omarchyvr_config::paths as cp;
         let rust = repo.join("rust");
-        let release = rust.join("target/release");
+        // the tools of an installed set (install.sh puts every binary in ~/.local/bin) win over a repo build:
+        // after a clean install there is no rust/target/release and the room setup said "not built" (2026-10-17)
+        let installed = home.join(".local/bin");
+        let release = if exists(&installed.join("omarchyvr")) { installed } else { rust.join("target/release") };
         let src = home.join("src");
         Paths {
             src: src.clone(),
@@ -174,9 +177,9 @@ impl Paths {
             config: home.join(".config/omarchyvr"),
             slam_recordings: home.join(".local/share/omarchyvr/slam-recordings"),
             launcher_installed: home.join(".local/bin/omarchyvr"),
-            launcher_built: release.join("omarchyvr"),
+            launcher_built: rust.join("target/release/omarchyvr"),
             app_installed: home.join(".local/bin/omarchyvr-app"),
-            app_built: release.join("omarchyvr-app"),
+            app_built: rust.join("target/release/omarchyvr-app"),
             desktop_entry: home.join(".local/share/applications/omarchyvr.desktop"),
             icon: home.join(".local/share/icons/hicolor/scalable/apps/omarchyvr.svg"),
             builds: vec![
@@ -362,5 +365,17 @@ mod tests {
         assert_eq!(p.doc("LESSONS.md"), PathBuf::from("/usr/share/omarchyvr/docs/LESSONS.md"));
         assert_eq!(p.desk_build().dir, PathBuf::from("/home/u/.local/lib/omarchyvr/monado"), "builds stay in ~/src");
         assert!(!is_system_install(Path::new("/home/u/.local/bin/omarchyvr-app")));
+    }
+
+    #[test]
+    fn an_installed_set_finds_its_tools_in_local_bin() {
+        let home = Path::new("/home/u");
+        let repo = Path::new("/home/u/omarchyvr");
+        let installed = |p: &Path| p == Path::new("/home/u/.local/bin/omarchyvr");
+        let p = Paths::new_with(home, repo, Path::new("/s"), Path::new("/r"), &installed);
+        assert_eq!(p.bin("omarchyvr-roommap"), PathBuf::from("/home/u/.local/bin/omarchyvr-roommap"));
+        assert_eq!(p.launcher_built, PathBuf::from("/home/u/omarchyvr/rust/target/release/omarchyvr"), "the repo build stays the install source");
+        let p = Paths::new_with(home, repo, Path::new("/s"), Path::new("/r"), &|_| false);
+        assert_eq!(p.bin("omarchyvr-roommap"), PathBuf::from("/home/u/omarchyvr/rust/target/release/omarchyvr-roommap"));
     }
 }
