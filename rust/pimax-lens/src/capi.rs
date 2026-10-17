@@ -220,7 +220,8 @@ mod tests {
             assert!(log.iter().all(|(lv, _)| *lv == 0));
             let mut fov = [0.0f32; 4];
             assert_eq!(pimax_lens_rs_get_fov(l, 0, fov.as_mut_ptr()), 0);
-            assert_eq!(fov, [50.0, 50.0, 44.5, 44.5]);
+            // no file: the shipped Dream Air Windows fit (left eye), not the old angle table (2026-10-17)
+            assert_eq!(fov, [52.58, 47.54, 44.55, 44.55]);
             let mut uv = [0.0f32; 6];
             assert_eq!(pimax_lens_rs_compute(l, 1, 0.5, 0.5, uv.as_mut_ptr()), 0);
             let want = (*l).lens.compute(1, 0.5, 0.5);

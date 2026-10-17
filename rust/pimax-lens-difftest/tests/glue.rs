@@ -106,7 +106,7 @@ fn glue_matches_the_old_c_model_bit_for_bit_for_the_current_lens_conf() {
     let conf = example();
     let (old, glue) = with_env(
         &[
-            ("PIMAX_LENS_CONF", conf.to_str()),
+            ("PIMAX_NO_REFERENCE", Some("1")), ("PIMAX_LENS_CONF", conf.to_str()),
             ("PIMAX_LENS_OFF", None),
             ("PIMAX_LENS_DEBUG_GRID", None),
         ],
@@ -139,7 +139,7 @@ fn glue_with_distortion_off_and_random_old_style_configs() {
         let f = tmp(&format!("c{i}.conf"));
         std::fs::write(&f, text).unwrap();
         let (old, glue) = with_env(
-            &[("PIMAX_LENS_CONF", f.to_str()), ("PIMAX_LENS_OFF", None)],
+            &[("PIMAX_NO_REFERENCE", Some("1")), ("PIMAX_LENS_CONF", f.to_str()), ("PIMAX_LENS_OFF", None)],
             || (COldLens::load(ASPECT), Glue::load()),
         );
         for view in 0..2u32 {
@@ -164,7 +164,7 @@ fn glue_with_distortion_off_and_random_old_style_configs() {
 fn glue_returns_no_custom_mask_by_default_and_a_valid_one_when_configured() {
     let none = with_env(
         &[
-            ("PIMAX_LENS_CONF", Some("/nonexistent/x.conf")),
+            ("PIMAX_NO_REFERENCE", Some("1")), ("PIMAX_LENS_CONF", Some("/nonexistent/x.conf")),
             ("PIMAX_LENS_OFF", None),
         ],
         Glue::load,
@@ -180,7 +180,7 @@ fn glue_returns_no_custom_mask_by_default_and_a_valid_one_when_configured() {
     let text = "mask = ellipse 1.0 0.9\nblackout = 0.02\n";
     std::fs::write(&f, text).unwrap();
     let glue = with_env(
-        &[("PIMAX_LENS_CONF", f.to_str()), ("PIMAX_LENS_OFF", None)],
+        &[("PIMAX_NO_REFERENCE", Some("1")), ("PIMAX_LENS_CONF", f.to_str()), ("PIMAX_LENS_OFF", None)],
         Glue::load,
     );
     let (cfg, w) = pimax_lens::config::parse(text, ASPECT);

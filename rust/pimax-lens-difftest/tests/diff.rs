@@ -133,14 +133,9 @@ fn the_original_c_file_is_unmodified() {
 
 #[test]
 fn current_lens_conf_matches_the_c_model_bit_for_bit_on_the_compositor_grid() {
-    let mut files = vec![repo_example()];
-    // the user's installed file, if there is one (it is a copy of the example today, but may be tuned later)
-    if let Ok(home) = std::env::var("HOME") {
-        let p = PathBuf::from(home).join(".config/omarchyvr/lens.conf");
-        if p.exists() {
-            files.push(p);
-        }
-    }
+    // Only the repo example: the user's own lens.conf is the Windows (PVR) fit since 2026-10-17, whose keys
+    // (fit_range, 5 terms, shifts) the frozen C loader ignores, and a test must not depend on the real HOME.
+    let files = vec![repo_example()];
     let pts = compositor_points();
     assert_eq!(pts.len(), 4 * 128 * 128);
     for f in files {
