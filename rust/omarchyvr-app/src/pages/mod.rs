@@ -1,5 +1,6 @@
 //! The pages. Each `show` draws one page of [`crate::app::PimaxApp`].
 pub mod ai;
+pub mod appearance;
 pub mod autofix;
 pub mod backgrounds;
 pub mod checks;

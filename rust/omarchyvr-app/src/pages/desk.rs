@@ -142,7 +142,7 @@ pub fn status(ui: &mut Ui, app: &mut PimaxApp) {
                         six.correction.map(|(mm, deg)| format!("; correction {mm:.1} mm / {deg:.2} deg")).unwrap_or_default()
                     ));
                     if !six.reason.is_empty() && six.state != TrackState::Tracking {
-                        ui.label(RichText::new(format!("({})", six.reason)).color(p.warn));
+                        ui.label(RichText::new(format!("({})", six.reason)).color(p.warn_text));
                     }
                 }
             });
@@ -166,7 +166,7 @@ pub fn status(ui: &mut Ui, app: &mut PimaxApp) {
             };
             kv(ui, "Eye gaze", eye_text);
             if eye.chip_busy {
-                kv(ui, "", RichText::new("The eye chip was held by another process when Monado opened it (LESSONS row 3): quit pimax-eye watch / ipd.").color(p.warn));
+                kv(ui, "", RichText::new("The eye chip was held by another process when Monado opened it (LESSONS row 3): quit pimax-eye watch / ipd.").color(p.warn_text));
             }
             let c = &l.ctrl;
             let hands = |h: Option<bool>| match h {
@@ -207,14 +207,14 @@ pub fn status(ui: &mut Ui, app: &mut PimaxApp) {
                 kv(ui, "Camera light", format!("dim room: exposure range extended ({})", if cam.ae_stage == 1 { "more gain" } else { "more gain and longer exposure" }));
             }
             if cam.light_low {
-                kv(ui, "Camera light", RichText::new(omarchyvr_gui_core::monlog::LIGHT_LOW_TEXT).color(p.warn));
+                kv(ui, "Camera light", RichText::new(omarchyvr_gui_core::monlog::LIGHT_LOW_TEXT).color(p.warn_text));
             }
             for e in &cam.errors {
                 kv(ui, "", RichText::new(e).color(p.fail));
             }
             kv(ui, "Clients", format!("{} connected: {}", l.clients.max(0), l.apps.join(", ")));
             let rate = match (l.video_hz, live.service.as_ref().and_then(|s| s.hz)) {
-                (Some(v), Some(h)) if v != h => RichText::new(format!("headset told {v} Hz, service asked {h} Hz")).color(p.warn),
+                (Some(v), Some(h)) if v != h => RichText::new(format!("headset told {v} Hz, service asked {h} Hz")).color(p.warn_text),
                 (Some(v), _) => RichText::new(format!("{v} Hz announced to the headset{}", if l.gyro_ready { ", gyro calibration done" } else { "" })),
                 _ => RichText::new("-"),
             };

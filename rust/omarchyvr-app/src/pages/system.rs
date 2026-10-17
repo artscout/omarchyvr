@@ -75,16 +75,16 @@ fn header(ui: &mut Ui, app: &mut PimaxApp, s: Option<&Snapshot>, source: Option<
         });
         match (s, source) {
             (None, Some(Source::None)) => {
-                ui.label(RichText::new("omarchyvrd not running. docs/PIMAXD.md says how to run it (packaging/systemd/omarchyvrd.service).").color(p.warn));
+                ui.label(RichText::new("omarchyvrd not running. docs/PIMAXD.md says how to run it (packaging/systemd/omarchyvrd.service).").color(p.warn_text));
                 if let Some(e) = &app.core.system.error {
                     ui.label(RichText::new(e).size(11.5).color(p.faint));
                 }
             }
             (Some(_), Some(Source::Health)) => {
-                ui.label(RichText::new("omarchyvrd not running: this is a one-shot read-only probe (omarchyvr-health). The switches need omarchyvrd.").size(12.0).color(p.warn));
+                ui.label(RichText::new("omarchyvrd not running: this is a one-shot read-only probe (omarchyvr-health). The switches need omarchyvrd.").size(12.0).color(p.warn_text));
             }
             (Some(_), Some(Source::Mirror(_))) => {
-                ui.label(RichText::new("From the state file omarchyvrd writes: the socket did not answer, so the switches wait for it.").size(12.0).color(p.warn));
+                ui.label(RichText::new("From the state file omarchyvrd writes: the socket did not answer, so the switches wait for it.").size(12.0).color(p.warn_text));
             }
             _ => {}
         }
@@ -97,7 +97,7 @@ fn header(ui: &mut Ui, app: &mut PimaxApp, s: Option<&Snapshot>, source: Option<
                     app.core.system_safe_mode(safe);
                 }
                 if let Some(why) = &s.safe_reason {
-                    ui.label(RichText::new(format!("omarchyvrd went into safe mode: {why}")).size(12.0).color(p.warn));
+                    ui.label(RichText::new(format!("omarchyvrd went into safe mode: {why}")).size(12.0).color(p.warn_text));
                     if widgets::ismall(ui, icon::WRENCH, "Fix omarchyvrd").on_hover_text("Leave the automatic safe mode (fix omarchyvrd)").clicked() {
                         app.core.system_fix("omarchyvrd");
                     }

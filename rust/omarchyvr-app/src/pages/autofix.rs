@@ -49,7 +49,7 @@ fn backend(ui: &mut Ui, app: &mut PimaxApp) {
                 });
             }
             Err(e) => {
-                ui.label(RichText::new(e).color(p.warn));
+                ui.label(RichText::new(e).color(p.warn_text));
             }
         }
         if widgets::ibutton(ui, icon::ROBOT, "Change in the AI tab", true).on_hover_text("Providers, keys and which one Autofix uses").clicked() {
@@ -146,10 +146,10 @@ fn send(ui: &mut Ui, app: &mut PimaxApp) {
         };
         ui.label(RichText::new(format!("Answer from {} in {:.0} s", a.model, a.secs)).size(12.0).color(p.dim));
         if let Some(n) = &a.note {
-            ui.label(RichText::new(n).size(12.0).color(p.warn));
+            ui.label(RichText::new(n).size(12.0).color(p.warn_text));
         }
         if a.proposals.is_empty() {
-            ui.label(RichText::new("The answer was empty.").color(p.warn));
+            ui.label(RichText::new("The answer was empty.").color(p.warn_text));
         }
         for (i, pr) in a.proposals.iter().enumerate() {
             match pr {

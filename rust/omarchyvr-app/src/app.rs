@@ -128,6 +128,8 @@ pub struct PimaxApp {
     pub core: AppCore,
     /// UI state.
     pub ui: UiState,
+    /// The colours choice applied to the window (Appearance setting).
+    pub appearance: crate::appearance::Appearance,
 }
 
 /// The widest a page gets (points); wider windows centre it.
@@ -170,7 +172,7 @@ pub fn page_label(p: Page) -> &'static str {
 }
 
 /// The help page: one short paragraph per feature (the "?" next to each setting says the same where it is).
-const HELP: [(&str, &str); 24] = [
+const HELP: [(&str, &str); 25] = [
     ("Install and uninstall", "Install: ./install.sh in the omarchyvr clone builds and installs everything and opens this app; the Onboarding step System setup lists every system change and asks for your password once (a reboot only when the NVIDIA module or the boot image changed). Later Plays never ask. Uninstall: Ready > Uninstall omarchyvr (Show what would be removed first); downloads and recordings are kept, settings go into one backup file in your home. docs/INSTALL.md, docs/UNINSTALL.md."),
     ("NVIDIA driver patch", "The Dream Air needs three small fixes in the NVIDIA open kernel module. They are applied to the tested driver versions (patches/nvidia/tested-versions.txt) and again after every driver update. On any other version nothing is patched unless you turn on Allow the patch on untested NVIDIA drivers (Onboarding > System setup, or Ready): the headset picture may break or the patched build may fail, but the desktop keeps working (the normal NVIDIA module is built as a fallback, and a restore snapshot is taken first). Changing the switch needs Apply (one password) so driver updates follow it. docs/NVIDIA-UNTESTED.md."),
     ("The \"?\" marks", "Point at a \"?\" or click it (in the headset, click): a small box says what the setting does. Click it again, click anywhere else or press Esc to close it."),
@@ -179,6 +181,7 @@ const HELP: [(&str, &str); 24] = [
     ("Restarts", "Restart service (top bar) restarts the running session with the same settings. Restart headset sends the headset its restart command (stop VR first; back in about 30 seconds)."),
     ("Games run with", "Top bar: Monado (xrizer), or SteamVR (experimental: Play starts SteamVR with the Pimax driver, Stop closes it; Play starts Steam first the normal way; if a Steam that SteamVR once started is still open, Play asks \"Restart Steam now?\" and only closes it on your yes). Steam set up once: Ready > \"Steam set up for VR games\" > Fix, then quit and start Steam once; no game needs launch options. docs/STEAMVR.md."),
     ("Display", "Refresh rate 90 Hz (default) or 72 Hz, applied when VR starts with the commands Pimax Play sends on Windows. Render quality: Quality = the panel's own 3840x3552 per eye, Balanced = 85 %, Performance = 70 % (about half the pixels) for games that stutter. Applies at the next Play. docs/RENDER-QUALITY.md."),
+    ("Colours", "Display page, Appearance: the app follows your Omarchy theme (default) and changes with it within a couple of seconds, or uses its own omarchyvr colours, or one installed Omarchy theme you pick from the list. Light and dark themes both work; text that would be hard to read in a theme keeps a readable colour."),
     ("Brightness", "Image (Display page): Standard / Bright (default) / Brighter lifts the mid tones of games at the next start without burning out whites. Panel backlight (20 to 100 %) changes the headset right away; it is already at its maximum on Linux."),
     ("Game mode", "Display page: Play pauses the local AI to free the graphics card and Stop starts it again; Sunshine is never paused or stopped. Compositor budget (Auto / 6 ms / 8 ms): compare the late % and game fps of the session line on Home."),
     ("IPD", "Display page: set your eye distance (58-72 mm). Apply moves the lenses when VR is stopped and saves it for the next start."),
@@ -200,7 +203,8 @@ const HELP: [(&str, &str); 24] = [
 impl PimaxApp {
     /// Wrap a core.
     pub fn new(core: AppCore) -> Self {
-        PimaxApp { core, ui: UiState::default() }
+        let appearance = crate::appearance::Appearance::new(!core.demo);
+        PimaxApp { core, ui: UiState::default(), appearance }
     }
 
     /// The preflight, recomputed at most every 300 ms (it runs the launcher's option parser and the rules).
@@ -231,6 +235,7 @@ impl PimaxApp {
             theme::install(ctx, true);
             ctx.request_repaint();
         }
+        self.appearance.tick(ctx, self.core.state.colours);
         if !self.ui.min_frame.is_zero() {
             // no vsync: never draw more than about 60 frames per second (animations, mouse moves)
             if let Some(t) = self.ui.last_frame {
@@ -809,7 +814,7 @@ impl PimaxApp {
         let resp = egui::Modal::new(egui::Id::new("pimax-recovery")).show(ui.ctx(), |ui| {
             ui.set_max_width(760.0);
             let p = pal(ui);
-            ui.label(RichText::new(rec.report.kind.title()).size(20.0).strong().color(p.warn));
+            ui.label(RichText::new(rec.report.kind.title()).size(20.0).strong().color(p.warn_text));
             ui.label(RichText::new(format!("{}  ({})", rec.report.summary, rec.report.when)).color(p.muted));
             ui.add_space(6.0);
             widgets::note(ui, "The app started again. Nothing was stopped: a desk or VR session keeps running without the app.");

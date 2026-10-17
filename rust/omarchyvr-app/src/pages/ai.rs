@@ -134,7 +134,7 @@ pub fn show(ui: &mut Ui, app: &mut PimaxApp) {
             ui.label(RichText::new(format!("{e}: fix or remove the file; the app does not overwrite it.")).color(p.fail));
         }
         for w in &app.core.ai.config.warnings {
-            ui.label(RichText::new(w).size(12.0).color(p.warn));
+            ui.label(RichText::new(w).size(12.0).color(p.warn_text));
         }
         if !app.core.ai.saved.is_empty() {
             ui.label(RichText::new(&app.core.ai.saved).size(11.5).color(p.faint));
@@ -225,7 +225,7 @@ fn brain_card(ui: &mut Ui, app: &mut PimaxApp, brain: VoiceBrain) {
             note(ui, "Online needs a provider with a key: add one under Online providers.");
         }
         if brain == VoiceBrain::Claude && app.core.ai.claude_status.as_ref().is_some_and(|s| !s.ok()) {
-            ui.add(egui::Label::new(RichText::new("The Claude CLI is not working: voice commands the offline matcher does not know will not be answered. See the Claude (CLI) card.").size(12.0).color(p.warn)).wrap());
+            ui.add(egui::Label::new(RichText::new("The Claude CLI is not working: voice commands the offline matcher does not know will not be answered. See the Claude (CLI) card.").size(12.0).color(p.warn_text)).wrap());
         }
     });
     ui.add_space(8.0);
@@ -361,7 +361,7 @@ fn voice_provider(ui: &mut Ui, app: &mut PimaxApp) {
     }
     let Ok(r) = app.core.ai_resolve(Feature::Voice) else {
         if let Err(e) = app.core.ai_resolve(Feature::Voice) {
-            ui.label(RichText::new(e).size(12.0).color(p.warn));
+            ui.label(RichText::new(e).size(12.0).color(p.warn_text));
         }
         return;
     };
@@ -471,7 +471,7 @@ fn local_model(ui: &mut Ui, app: &mut PimaxApp) {
         widgets::status(ui, "omarchyvr-ai: Qwen3.5 with llama.cpp on 127.0.0.1:8080, on this PC.", p.faint);
         match &status {
             Some(Err(e)) => {
-                ui.label(RichText::new(e).size(12.0).color(p.warn));
+                ui.label(RichText::new(e).size(12.0).color(p.warn_text));
                 if !built && widgets::ibutton(ui, icon::CODE, "Build omarchyvr-ai", !busy).on_hover_text("cargo build --release -p omarchyvr-ai").clicked() {
                     act = Some("build");
                 }
@@ -508,7 +508,7 @@ fn local_model(ui: &mut Ui, app: &mut PimaxApp) {
                         }
                     });
                     if let Some(w) = warn {
-                        ui.label(RichText::new(w).size(12.0).color(p.warn));
+                        ui.label(RichText::new(w).size(12.0).color(p.warn_text));
                     }
                 }
                 match app.core.localai_provider() {

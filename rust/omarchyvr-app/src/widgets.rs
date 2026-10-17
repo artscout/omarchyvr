@@ -16,6 +16,8 @@ pub struct Pal {
     pub info: Color32,
     /// Warning / needs attention.
     pub warn: Color32,
+    /// Warning as text.
+    pub warn_text: Color32,
     /// Failure / blocked.
     pub fail: Color32,
     /// Secondary text.
@@ -31,6 +33,7 @@ pub fn pal(ui: &Ui) -> Pal {
         ok: p.ok,
         info: p.info,
         warn: p.warn,
+        warn_text: p.warn_text,
         fail: p.fail,
         muted: p.dim,
         accent: p.accent,
@@ -309,9 +312,9 @@ pub fn switch(ui: &mut Ui, on: &mut bool, label: &str, enabled: bool) -> egui::R
     let t = theme::ease(ui, resp.id.with("knob"), *on, 0.16);
     if ui.is_rect_visible(rect) {
         let track = Rect::from_center_size(rect.center(), egui::vec2(w, h));
-        let off_c = if p.dark { Color32::from_rgb(44, 48, 62) } else { Color32::from_rgb(205, 210, 222) };
+        let off_c = p.switch_off;
         let mut fill = theme::mix(off_c, p.accent, t);
-        let mut knob = theme::mix(if p.dark { Color32::from_rgb(150, 156, 172) } else { Color32::WHITE }, Color32::WHITE, t);
+        let mut knob = theme::mix(if p.dark { Color32::from_rgb(150, 156, 172) } else { Color32::WHITE }, p.on_accent, t);
         if !enabled {
             fill = fill.gamma_multiply(0.45);
             knob = knob.gamma_multiply(0.55);
@@ -348,9 +351,9 @@ pub fn toggle(ui: &mut Ui, on: &mut bool, label: &str, enabled: bool) -> egui::R
     let t = theme::ease(ui, resp.id.with("knob"), *on, 0.16);
     if ui.is_rect_visible(rect) {
         let track = Rect::from_min_size(egui::pos2(rect.left(), rect.center().y - h / 2.0), egui::vec2(w, h));
-        let off_c = if p.dark { Color32::from_rgb(44, 48, 62) } else { Color32::from_rgb(205, 210, 222) };
+        let off_c = p.switch_off;
         let mut fill = theme::mix(off_c, p.accent, t);
-        let mut knob = theme::mix(if p.dark { Color32::from_rgb(150, 156, 172) } else { Color32::WHITE }, Color32::WHITE, t);
+        let mut knob = theme::mix(if p.dark { Color32::from_rgb(150, 156, 172) } else { Color32::WHITE }, p.on_accent, t);
         let mut text_c = p.text;
         if !enabled {
             fill = fill.gamma_multiply(0.45);
@@ -415,7 +418,7 @@ fn seg_inner(ui: &mut Ui, id: &str, options: &[&str], selected: usize, enabled: 
                     let col = if !enabled {
                         p.faint
                     } else {
-                        theme::mix(p.dim, if p.dark { Color32::WHITE } else { p.text }, t.max(hover))
+                        theme::mix(p.dim, p.text, t.max(hover))
                     };
                     ui.painter().galley(rect.center() - galley.size() / 2.0, galley, col);
                 }
@@ -509,7 +512,7 @@ pub fn action(ui: &mut Ui, ic: &str, text: &str, kind: Kind, enabled: bool, widt
     let hover = theme::ease(ui, resp.id.with("hover"), enabled && resp.hovered(), T_HOVER);
     let (fill, fg, stroke) = match (kind, enabled) {
         (_, false) => (Color32::TRANSPARENT, p.faint, p.stroke),
-        (Kind::Primary, true) => (theme::mix(p.accent, p.accent_hover, hover), Color32::WHITE, p.accent_hover),
+        (Kind::Primary, true) => (theme::mix(p.accent, p.accent_hover, hover), p.on_accent, p.accent_hover),
         (Kind::Danger, true) => (theme::mix(p.fail, p.fail.gamma_multiply(1.15), hover), Color32::WHITE, p.fail),
         (Kind::Secondary, true) => (theme::mix(Color32::TRANSPARENT, p.card_hover, hover), p.text, theme::mix(p.stroke_strong, p.accent, hover * 0.8)),
     };
@@ -529,7 +532,7 @@ pub fn action(ui: &mut Ui, ic: &str, text: &str, kind: Kind, enabled: bool, widt
 /// A primary (accent) button.
 pub fn primary(ui: &mut Ui, text: &str, enabled: bool) -> egui::Response {
     let p = theme::pal(ui);
-    let (fill, fg) = if enabled { (p.accent, Color32::WHITE) } else { (Color32::TRANSPARENT, p.faint) };
+    let (fill, fg) = if enabled { (p.accent, p.on_accent) } else { (Color32::TRANSPARENT, p.faint) };
     ui.add_enabled(
         enabled,
         egui::Button::new(RichText::new(text).color(fg).strong())
@@ -693,7 +696,7 @@ pub fn nav_item(ui: &mut Ui, selected: bool, ic: &str, label: &str, badge: Optio
         let fill = theme::mix(theme::mix(Color32::TRANSPARENT, p.card_hover, hover), p.accent.gamma_multiply(0.16), t);
         let stroke = theme::mix(Color32::TRANSPARENT, p.accent.gamma_multiply(0.85), t);
         painter.rect(rect, CornerRadius::same(R_SMALL), fill, Stroke::new(1.0, stroke), egui::StrokeKind::Inside);
-        let fg = theme::mix(p.dim, if p.dark { Color32::WHITE } else { p.text }, t.max(hover));
+        let fg = theme::mix(p.dim, p.text, t.max(hover));
         painter.text(rect.left_center() + egui::vec2(18.0, 0.0), egui::Align2::CENTER_CENTER, ic, egui::FontId::proportional(14.5), theme::mix(fg, p.accent_hover, t * 0.5));
         let job = egui::text::LayoutJob::single_section(
             label.to_uppercase(),
