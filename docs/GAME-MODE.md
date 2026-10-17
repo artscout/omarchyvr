@@ -52,3 +52,15 @@ xrizer aborts a game that calls an OpenVR function it lacks (Half-Life: Alyx: `G
   choice is per session: Ready check > "Games that run with SteamVR", tick "Next Play is for this game" (set
   automatically after a crash); Play then runs `vr start --game APPID`, which starts that session with SteamVR for this
   start only (global "Games run with" unchanged). The next normal Play puts xrizer back (`ensure_xrizer`).
+* **Why Alyx still ran with xrizer (2026-10-17 14:50)**: the list is only read by `vr start --game APPID`, and Play passed
+  `--game` only when "Next Play is for this game" was ticked, which the app sets after a crash. The user switched "Games
+  run with" to Monado (job at 14:48:44, openvrpaths -> xrizer) and pressed Play (`vr start ...` without `--game`), then
+  started Alyx from Steam: Steam, not the app, launches games, and a running Monado session cannot be re-routed per game
+  (SteamVR and Monado cannot share the headset; pointing openvrpaths at SteamVR would make every other game start
+  vrserver against the running Monado). The seed list alone therefore never helped.
+* Fix: (1) Play now passes `--game` by itself when a listed game is already running (`AppCore::start_game`: the picked
+  game, else the running listed game). (2) When a listed game runs under Monado + xrizer, Home shows a warning with the
+  button "Switch Play to SteamVR for this game": one job stops the session (by pid), waits for Monado to go and runs
+  `vr start --game APPID` (SteamVR for this start only). Then close the game if it is still open and start it again
+  from Steam. Limit: the game that was already launched cannot be saved (xrizer is loaded by the game itself); the
+  offer saves the next launch. Safest habit: press Play for a listed game first, or tick "Next Play is for this game".

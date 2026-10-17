@@ -295,3 +295,22 @@ game then started (10:53:43) without VR and quit. Not the cause: `LD_PRELOAD` (t
 - Not covered: SteamVR's own "Restart SteamVR" goes through Steam (`steam://run/250820`), which starts SteamVR in
   its container without the Pimax driver's libraries; use Stop Play / Play instead.
 
+## 8. "(monado_hmd) has no configured binding" and Steam's webhelper crashes (2026-10-17)
+* The vrserver line `[Input] steam.app.N (monado_hmd) has no configured binding. Input will not be available` is about
+  the HEADSET, not the controllers. In the log of 14:46 the same game's controllers loaded their own file
+  (`steam.app.546560 (oculus_touch) ... Successfully loaded binding file '.../bindings_touch.json'`), and Valve's own tool
+  logs the same line. Our controllers are `oculus_touch` (SteamVR's `{oculus}/input/touch_profile.json` and the game's
+  own touch bindings), so no per-game binding has to be shipped.
+* The headset had no input profile (SteamVR derived the type `monado_hmd`). Monado commit "steamvr_drv: the headset gets
+  its own input profile": `resources/input/monado_hmd_profile.json` (controller type `monado_hmd`, pose and system) with
+  the dashboard binding `vrcompositor_bindings_monado_hmd.json`, set as the HMD's `Prop_InputProfilePath`/`Prop_ControllerType`.
+  Not run yet (needs a Monado rebuild between sessions); judge by the vrserver log: the compositor line should come from
+  `{monado}/input/` and the HMD error should be gone for apps that have no HMD binding.
+* steamwebhelper SIGSEGV/SIGABRT at 14:43-14:47 (3 core dumps): not ours. Steam's own environment holds only
+  `PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1` (our `90-omarchyvr-steam-vr.conf`; it only tells pressure-vessel to import
+  the OpenXR runtime into game containers); no `LD_PRELOAD`, `XR_RUNTIME_JSON` or `XRT_*` reaches Steam or the webhelper
+  (checked in `/proc/PID/environ`); the `pimax_rttime_preload.so` goes only to SteamVR's own processes. The webhelper runs
+  inside Steam's pressure-vessel runtime (`/run/host/usr/lib/libc.so.6` frames). Dump 1 (14:43:51) crashed in Valve's
+  `vrclient.so` (the webhelper's SteamVR background client, "VRApplication_Background", legacy-app check of
+  `/user/head/proximity`) while SteamVR ran; dump 3 came 1 s after Alyx exited. No frame is in Monado, xrizer or omarchyvr.
+  The headset profile above may remove the proximity warning that sits right before dump 1; unproven.

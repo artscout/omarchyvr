@@ -1207,7 +1207,7 @@ impl AppCore {
         }
         let force = force && matches!(pf.gate, Gate::NeedsConsent(_));
         let t = self.vr_toggles();
-        let mut c = Cmd::with_args(self.launcher_bin().display().to_string(), launcher::vr_game_args(&t, force, self.light_game(), self.facts.next_game.as_deref()));
+        let mut c = Cmd::with_args(self.launcher_bin().display().to_string(), launcher::vr_game_args(&t, force, self.light_game(), self.start_game().as_deref()));
         for (k, v) in self.launcher_env() {
             c = c.env(&k, v);
         }
@@ -1222,7 +1222,7 @@ impl AppCore {
         steps.push(Step::Run(self.own_scope(c, "vr")));
         Ok(JobSpec {
             kind: JobKind::DeskStart,
-            label: format!("Start VR ({})", launcher::vr_game_args(&t, false, self.light_game(), self.facts.next_game.as_deref())[2..].join(" ")),
+            label: format!("Start VR ({})", launcher::vr_game_args(&t, false, self.light_game(), self.start_game().as_deref())[2..].join(" ")),
             steps,
         })
     }
