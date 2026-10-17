@@ -34,6 +34,7 @@ pub mod protocol;
 pub mod remote;
 pub mod router;
 pub mod rules;
+pub mod screenstate;
 pub mod segment;
 pub mod statetest;
 pub mod server;

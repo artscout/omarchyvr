@@ -42,6 +42,11 @@ pub trait Runner {
     /// A voice command that sends something to VR screen `n` (1-6) or goes there shows it: `n` leaves the hidden
     /// list (`hidden =` in the same state file). Nothing in dry runs and tests.
     fn screen_unhide(&mut self, _n: usize) {}
+    /// The screens state file's text (`$XDG_RUNTIME_DIR/omarchyvr-screens.state`: limit, pinned, hidden), which
+    /// decides which screens VR shows ([`crate::screenstate`]). Empty in dry runs and tests (the defaults).
+    fn screens_state(&mut self) -> String {
+        String::new()
+    }
     /// "Put everything in its own window" (true) / "put everything back together" (false): whether the screens
     /// watcher keeps apps of different kinds on separate screens (`sort = on|off` in the same state file).
     fn screens_sort(&mut self, _on: bool) {}
@@ -91,6 +96,9 @@ impl Runner for Recorder<'_> {
     }
     fn screen_unhide(&mut self, n: usize) {
         self.inner.screen_unhide(n)
+    }
+    fn screens_state(&mut self) -> String {
+        self.inner.screens_state()
     }
     fn screens_sort(&mut self, on: bool) {
         self.inner.screens_sort(on)
@@ -746,7 +754,7 @@ impl Actor {
             let lead = words.iter().position(|x| !command::FILLERS.contains(&x.as_str()));
             let opener = lead.is_some_and(|i| matches!(words[i].as_str(), "open" | "launch" | "start") || (words[i] == "bring" && words.get(i + 1).is_some_and(|n| n == "up")));
             if opener && !crate::nlu::wants_plan(&words.join(" ")) {
-                let m = Match { id: "win.app.open".into(), slots: [("app".to_string(), words.join(" "))].into_iter().collect(), score: 0 };
+                let m = Match { id: "win.app.open".into(), slots: [("app".to_string(), open_slot(&words))].into_iter().collect(), score: 0 };
                 if self.cat.get(&m.id).is_some() && self.plausible(&m, r) {
                     matched = Some(m);
                 }
@@ -1348,6 +1356,24 @@ pub fn screens_state_path() -> PathBuf {
 
 /// The state text with the limit lifted to at least 4 (every screen on demand), the other lines kept. A higher
 /// limit stays: lowering 6 to 4 would hide screens 5 and 6.
+/// The `app` slot of "open X [on screen N]" heard as a whole sentence: the app words and the screen only
+/// ("can you open the browser in in 4" -> "browser on screen 4", live 2026-10-17), so the log, the debug line and
+/// the model see what was understood. The whole sentence when no app words are left.
+pub fn open_slot(words: &[String]) -> String {
+    let (q, t) = crate::windows::open_target(&words.join(" "));
+    if q.is_empty() {
+        return words.join(" ");
+    }
+    match t.as_deref() {
+        None => q,
+        Some("here") => format!("{q} here"),
+        Some(t) => match t.parse::<usize>().ok().or_else(|| crate::windows::screen_number(t)) {
+            Some(n) => format!("{q} on screen {n}"),
+            None => q,
+        },
+    }
+}
+
 pub fn screens_unlimited(old: &str) -> String {
     let now = old.lines().find_map(|l| l.split_once('=').filter(|(k, _)| k.trim() == "limit").and_then(|(_, v)| v.trim().parse::<u8>().ok()));
     match now {
@@ -1618,6 +1644,10 @@ impl Runner for Real {
 
     fn screen_unhide(&mut self, n: usize) {
         write_screens_state(|old| screens_unhidden(old, n));
+    }
+
+    fn screens_state(&mut self) -> String {
+        std::fs::read_to_string(screens_state_path()).unwrap_or_default()
     }
 
     fn screens_sort(&mut self, on: bool) {

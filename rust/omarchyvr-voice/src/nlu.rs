@@ -83,6 +83,9 @@ pub fn system_prompt(cat: &Catalogue) -> String {
          Screen numbers (shown on each screen): 1 main, 2 left, 3 right, 4 up, 5 up-left, 6 up-right; \"here\" = the \
          screen looked at. screen=N|side|here. \"from here / from screen 2 to screen 5\" = win.screen.put_from (an app) \
          or win.screen.move_all (everything); \"swap screens A and B\" = win.screen.swap.\n\
+         State lines: apps `on N side` = the screen the app is on NOW, `wsN off-screen` = no screen shows it; \
+         screens `N side shown|hidden|missing [apps]`: missing = not in this session (never send apps there). An app \
+         on screen 1 is NOT on screen 3: move requests are about what is not there yet.\n\
          Movies: \"watch a movie\" / \"movie time\" = vr.preset.cinema; \"play <a title>\" = media.play (a file); \
          vr.preset.exit_cinema only to LEAVE cinema (exit, out of).\n\
          Intents (id: what it does / example phrases):\n",
@@ -234,7 +237,7 @@ fn user_message_inner(ctx: &Context, cands: &[Cand], heard: &str, strip_titles: 
                 let t: String = windows::clean_title(&c.title).trim_start_matches(|ch: char| !ch.is_alphanumeric()).chars().take(TITLE_CHARS).collect();
                 w += &format!(" \"{}\"", t.replace('"', "'"));
             }
-            w += &format!(" ws{}", c.workspace);
+            w += &format!(" {}", where_label(ctx, c));
             w
         })
         .collect();
@@ -242,9 +245,28 @@ fn user_message_inner(ctx: &Context, cands: &[Cand], heard: &str, strip_titles: 
     if !wins.is_empty() {
         s += &format!("apps: {}\n", wins.join("; "));
     }
-    // the VR screens by number with their apps (live 2026-10-16: "screen 3" had nothing to point at)
-    if ctx.screens.len() > 1 {
+    // the VR screens by number with their apps (live 2026-10-16: "screen 3" had nothing to point at); which exist
+    // and show (live 2026-10-17: "6 screens" in the settings, 4 in the session)
+    if let Some(d) = &ctx.desk {
+        if d.existing().len() > 1 {
+            let name = |w: &crate::screenstate::Win| match ids.iter().position(|a| *a == w.address) {
+                Some(p) => format!("w{} {}", p + 1, windows::clean_title(&w.class)),
+                None => windows::clean_title(&w.class),
+            };
+            s += &format!("screens: {}\n", d.screens_line(&name));
+        }
+    } else if ctx.screens.len() > 1 {
         s += &format!("screens: {}\n", screens_line(ctx, &ids));
+    }
+    // the VR look only when the words are about it (the small model copied an always-there state line into
+    // unrelated answers, audit 2026-10-15)
+    if about_look(heard) {
+        let d = ctx.desk.as_ref();
+        let preset = d.and_then(|d| d.preset.clone()).or_else(|| ctx.session.preset.clone());
+        let back = d.and_then(|d| d.backdrop.clone()).or_else(|| ctx.session.backdrop.clone());
+        if preset.is_some() || back.is_some() {
+            s += &format!("vr now: preset {}, background {}\n", preset.as_deref().unwrap_or("?"), back.as_deref().unwrap_or("?"));
+        }
     }
     // no VR state line: the small model copied it ("vr now: assistant preset" turned "dark" and "necks
     // background" into vr.preset.assistant, audit 2026-10-15); no intent needs it to decide
@@ -265,6 +287,32 @@ fn user_message_inner(ctx: &Context, cands: &[Cand], heard: &str, strip_titles: 
     }
     s += &format!("heard: \"{}\"", windows::clean_title(heard).replace('"', "'"));
     (s, ids)
+}
+
+/// Where a window is, for the apps line: `on 1 main` (its screen number and position), `ws7 off-screen` (a
+/// workspace no screen shows), from the same fresh state as the screens line. Never a bare workspace number next to
+/// screen numbers (live 2026-10-17: "ws3" was read as screen 3).
+fn where_label(ctx: &Context, c: &windows::Client) -> String {
+    if let Some(d) = ctx.desk.as_ref().filter(|d| d.existing().len() > 1) {
+        return match d.screen_of(&c.address) {
+            Some(n) => format!("on {n} {}", windows::SCREEN_ORDER[usize::from(n) - 1]),
+            None => format!("ws{} off-screen", c.workspace),
+        };
+    }
+    match ctx.screens.iter().find(|s| s.ws == c.workspace) {
+        Some(s) if ctx.screens.len() > 1 => format!("on {} {}", windows::screen_number(s.slot).unwrap_or(0), s.slot),
+        _ => format!("ws{}", c.workspace),
+    }
+}
+
+/// Words about the VR look (background, preset): only then the model sees the current ones.
+pub fn about_look(heard: &str) -> bool {
+    crate::command::words(heard).iter().any(|w| {
+        matches!(
+            w.as_str(),
+            "background" | "backgrounds" | "backdrop" | "wallpaper" | "sky" | "skybox" | "ocean" | "sea" | "beach" | "waves" | "animated" | "passthrough" | "preset" | "cinema" | "theme" | "scenery"
+        )
+    })
 }
 
 /// `1 main [w1 foot, w2 foot] ; 2 left [] ; 3 right hidden [w3 pimax]`: each VR screen by number (docs/SCREENS.md),
@@ -429,7 +477,7 @@ mod tests {
         assert!(!p.contains("win.ai.switch"));
         // about 4 characters per token: about 2,300 tokens, cached by the server (was ~5,650 with the tool schemas;
         // +9 VR screen intents on 2026-10-15; +6 screen intents and the 2026-10-16 live mishearings)
-        assert!(p.len() < 15600, "{} chars", p.len()); // +2 screen placement intents (2026-10-17) // +4 intents: hide screens, hide others, scale, stop session (2026-10-16 b) // +13 screen-number, layout and volume intents (2026-10-16 evening): ~4,100 tokens of 8,192
+        assert!(p.len() < 16000, "{} chars", p.len()); // +the state lines legend (2026-10-17 b) // +2 screen placement intents (2026-10-17) // +4 intents: hide screens, hide others, scale, stop session (2026-10-16 b) // +13 screen-number, layout and volume intents (2026-10-16 evening): ~4,100 tokens of 8,192
     }
 
     /// Every rule a GBNF grammar uses is defined (an undefined one makes llama-server answer HTTP 400 to every
