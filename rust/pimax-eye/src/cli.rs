@@ -1035,7 +1035,7 @@ fn cmd_power_on(a: &mut Args, out: &mut dyn Write) -> Result<i32, Fail> {
 }
 
 fn cmd_replay(a: &mut Args, out: &mut dyn Write) -> Result<i32, Fail> {
-    use crate::frames::{parse, select, Action, Skips, DATA};
+    use crate::frames::{parse, select, Action, Skips};
     use crate::replaycmd::{run_session, Opts};
     let skips = Skips {
         auth: a.flag("--skip-auth"),
@@ -1048,7 +1048,7 @@ fn cmd_replay(a: &mut Args, out: &mut dyn Write) -> Result<i32, Fail> {
     let raw_log = a.value("--raw-log")?;
     let usb_device = a.value("--usb-device")?;
     a.finish()?;
-    let steps = parse(DATA).map_err(|e| Fail::with(3, e))?;
+    let steps = parse(crate::frames::list().0).map_err(|e| Fail::with(3, e))?;
     let sel = select(&steps, skips);
     writeln!(out, "replay plan ({} of {} steps; step 1 enumeration is never sent):", sel.len(), steps.len())?;
     for s in &sel {

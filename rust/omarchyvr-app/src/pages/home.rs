@@ -447,7 +447,7 @@ fn quick_settings(ui: &mut Ui, app: &mut PimaxApp) {
     let caps = app.core.facts.caps.clone();
     let t = app.core.toggles;
     let busy = app.core.busy();
-    switch_row(ui, &mut app.core.toggles.eye, "Eye tracking", Some("Visual only: a dot where you look in Work. Starts with every session once calibrated (Tracking page)."), ed && (caps.eye || caps.no_eye || t.eye));
+    switch_row(ui, &mut app.core.toggles.eye, "Eye tracking", Some("Visual only: a dot where you look in Work. Starts with every session; until you calibrate your own eyes it uses the built-in test calibration of the developer (rough aim). Details on the Tracking page."), ed && (caps.eye || caps.no_eye || t.eye));
     switch_row(ui, &mut app.core.toggles.passthrough, "Passthrough", Some("The room behind the screens in Work (camera view)."), ed && (caps.no_passthrough || !t.passthrough));
     subtitles_row(ui, app);
     let mut gm = app.core.facts.game_mode;

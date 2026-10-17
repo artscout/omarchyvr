@@ -10,12 +10,16 @@
 //! * **off** (`--no-eye`, or no eye build / no calibration): no `PIMAX_EYE`, 55-eye.yaml removed.
 //!
 //! WayVR ignores keys it does not know, so an older WayVR simply has no laser (and, in silent mode, no pointer).
-//! No headset bytes are involved: the device-side calibration (`PIMAX_EYE_CAL`) is never set here.
+//! Calibration (`calibration=` in `eye.conf`, docs/EYE.md): with the user's own `eye-calibration.toml` (or `own`) the
+//! host-side calibration is applied and nothing extra is sent. Otherwise (`builtin`, or `auto` without an own file)
+//! the BASE start list's built-in test calibration (the developer's eyes) is sent to the chip: `PIMAX_EYE_CAL=1`, and
+//! `PIMAX_EYE_CALIBRATION=none` so no host-side file is mixed in.
 use std::io;
 use std::path::{Path, PathBuf};
 
 use super::config::StartOptions;
 pub use omarchyvr_config::eye::EyeSettings;
+use omarchyvr_config::eye::CalSource;
 
 /// The conf.d file (sorts after the app's `50-pimax-app.yaml`, so silent mode wins over its `gaze_pointer`).
 pub const CONF_NAME: &str = "55-eye.yaml";
@@ -40,6 +44,7 @@ pub fn calibration_path(env: &dyn Fn(&str) -> Option<String>) -> PathBuf {
 
 /// The mode, from the flags and what exists. `default_is_eye_build`: the Monado build in use is the eye build
 /// (`~/.local/lib/omarchyvr/monado`, the default when built) and its monado-service exists.
+/// `calibrated`: a calibration is available (the user's own file, or the built-in one is the one in use).
 pub fn decide(eye: bool, no_eye: bool, default_is_eye_build: bool, calibrated: bool) -> (EyeMode, Option<String>) {
     if no_eye {
         return (EyeMode::Off, None);
@@ -58,7 +63,7 @@ pub fn decide(eye: bool, no_eye: bool, default_is_eye_build: bool, calibrated: b
 }
 
 /// Apply the mode to the Monado options (`PIMAX_EYE=1`, and for `--eye` the eye build unless one was given).
-pub fn configure(mode: EyeMode, vr: &mut StartOptions, eye_build: &Path, build_given: bool) {
+pub fn configure(mode: EyeMode, vr: &mut StartOptions, eye_build: &Path, build_given: bool, source: CalSource) {
     if mode == EyeMode::Off {
         return;
     }
@@ -67,6 +72,13 @@ pub fn configure(mode: EyeMode, vr: &mut StartOptions, eye_build: &Path, build_g
     }
     if !vr.extra_env.iter().any(|(k, _)| k == "PIMAX_EYE") {
         vr.extra_env.push(("PIMAX_EYE".into(), "1".into()));
+    }
+    if source == CalSource::Builtin {
+        for (k, v) in [("PIMAX_EYE_CAL", "1"), ("PIMAX_EYE_CALIBRATION", "none")] {
+            if !vr.extra_env.iter().any(|(e, _)| e == k) {
+                vr.extra_env.push((k.into(), v.into()));
+            }
+        }
     }
 }
 
@@ -80,9 +92,12 @@ pub fn parse(
     env: &dyn Fn(&str) -> Option<String>,
 ) -> (EyeMode, Option<String>) {
     let default_is_eye_build = vr.monado_build == eye_build && vr.service_path().exists();
-    let calibrated = calibration_path(env).is_file();
+    let own = calibration_path(env).is_file();
+    let set = EyeSettings::load(&omarchyvr_config::eye::path_from(env));
+    let source = set.calibration.source(own);
+    let calibrated = own || source == CalSource::Builtin;
     let (mode, note) = decide(eye, no_eye, default_is_eye_build, calibrated);
-    configure(mode, vr, eye_build, build_given);
+    configure(mode, vr, eye_build, build_given, source);
     (mode, note)
 }
 
@@ -150,25 +165,36 @@ mod tests {
     fn configure_sets_the_variable_once_and_the_build_only_for_eye() {
         let mut vr = opts();
         vr.monado_build = PathBuf::from("/other");
-        configure(EyeMode::Silent, &mut vr, Path::new("/eye"), false);
-        configure(EyeMode::Silent, &mut vr, Path::new("/eye"), false);
+        configure(EyeMode::Silent, &mut vr, Path::new("/eye"), false, CalSource::Own);
+        configure(EyeMode::Silent, &mut vr, Path::new("/eye"), false, CalSource::Own);
         assert_eq!(vr.extra_env.iter().filter(|(k, v)| k == "PIMAX_EYE" && v == "1").count(), 1);
         assert_eq!(vr.monado_build, PathBuf::from("/other"));
-        configure(EyeMode::Pointer, &mut vr, Path::new("/eye"), true);
+        configure(EyeMode::Pointer, &mut vr, Path::new("/eye"), true, CalSource::Own);
         assert_eq!(vr.monado_build, PathBuf::from("/other"), "a given build is kept");
-        configure(EyeMode::Pointer, &mut vr, Path::new("/eye"), false);
+        configure(EyeMode::Pointer, &mut vr, Path::new("/eye"), false, CalSource::Own);
         assert_eq!(vr.monado_build, PathBuf::from("/eye"));
         let mut off = opts();
-        configure(EyeMode::Off, &mut off, Path::new("/eye"), false);
+        configure(EyeMode::Off, &mut off, Path::new("/eye"), false, CalSource::Builtin);
         assert!(!off.extra_env.iter().any(|(k, _)| k == "PIMAX_EYE"));
-        assert!(!format!("{:?}", vr.extra_env).contains("PIMAX_EYE_CAL"), "no device-side calibration");
+        assert!(!format!("{:?}", vr.extra_env).contains("PIMAX_EYE_CAL"), "own calibration: no device-side calibration");
+        assert!(!format!("{:?}", off.extra_env).contains("PIMAX_EYE_CAL"), "off sets nothing");
+    }
+
+    #[test]
+    fn builtin_calibration_sets_the_device_side_variables_once() {
+        let mut vr = opts();
+        configure(EyeMode::Silent, &mut vr, Path::new("/eye"), false, CalSource::Builtin);
+        configure(EyeMode::Silent, &mut vr, Path::new("/eye"), false, CalSource::Builtin);
+        for (k, v) in [("PIMAX_EYE", "1"), ("PIMAX_EYE_CAL", "1"), ("PIMAX_EYE_CALIBRATION", "none")] {
+            assert_eq!(vr.extra_env.iter().filter(|(a, b)| a == k && b == v).count(), 1, "{k}");
+        }
     }
 
     #[test]
     fn conf_files_have_unique_keys_and_silent_has_no_pointer() {
         let s = conf_yaml(EyeMode::Silent, &EyeSettings::default()).unwrap();
         assert!(s.contains("gaze_pointer: false\n") && s.contains("gaze_laser: true\n") && s.contains("gaze_target: false\n"), "visual only: no targeting by default");
-        let dev = conf_yaml(EyeMode::Silent, &EyeSettings { dot: false, targeting: true }).unwrap();
+        let dev = conf_yaml(EyeMode::Silent, &EyeSettings { dot: false, targeting: true, ..EyeSettings::default() }).unwrap();
         assert!(dev.contains("gaze_target: true\n") && dev.contains("gaze_laser: false\n") && dev.contains("gaze_pointer: false\n"));
         for y in [s, conf_yaml(EyeMode::Pointer, &EyeSettings::default()).unwrap()] {
             let keys: Vec<&str> = y.lines().filter(|l| !l.starts_with('#')).map(|l| l.split(':').next().unwrap()).collect();

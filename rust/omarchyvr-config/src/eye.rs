@@ -3,10 +3,55 @@
 //! ```text
 //! dot=on          # the small gaze dot in Work (WayVR): visual only. on (default) | off
 //! targeting=off   # developer: gaze may target windows for voice ("close this"). off (default) | on
+//! calibration=auto  # which eye calibration: auto (default: yours once you calibrated, else the built-in one) |
+//!                   # builtin (the developer's test calibration) | own (your own; none until you calibrate)
 //! ```
 //! Eye tracking itself (running or not) is the app's "Eye tracking" switch. It is never an input: no pointer, no
 //! selection, no scrolling. Unknown lines are ignored.
 use std::path::{Path, PathBuf};
+
+/// Which eye calibration the setting asks for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CalMode {
+    /// Your own once it exists, else the built-in one (default).
+    #[default]
+    Auto,
+    /// Always the built-in test calibration (the developer's eyes).
+    Builtin,
+    /// Always your own calibration.
+    Own,
+}
+
+/// The calibration that is really used.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CalSource {
+    /// The built-in test calibration (someone else's eyes): sent to the chip with the start list.
+    Builtin,
+    /// The user's own calibration (`eye-calibration.toml`, applied on the host).
+    Own,
+}
+
+impl CalMode {
+    /// The file word.
+    pub fn word(self) -> &'static str {
+        match self {
+            CalMode::Auto => "auto",
+            CalMode::Builtin => "builtin",
+            CalMode::Own => "own",
+        }
+    }
+
+    /// What is used, given whether the user's own calibration file exists. `Own` without a file still means "own":
+    /// the eye then does not start (calibrate first), as before.
+    pub fn source(self, own_exists: bool) -> CalSource {
+        match self {
+            CalMode::Builtin => CalSource::Builtin,
+            CalMode::Own => CalSource::Own,
+            CalMode::Auto if own_exists => CalSource::Own,
+            CalMode::Auto => CalSource::Builtin,
+        }
+    }
+}
 
 /// The settings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -15,11 +60,13 @@ pub struct EyeSettings {
     pub dot: bool,
     /// Developer: let the gaze target windows for voice commands.
     pub targeting: bool,
+    /// Which eye calibration to use.
+    pub calibration: CalMode,
 }
 
 impl Default for EyeSettings {
     fn default() -> Self {
-        EyeSettings { dot: true, targeting: false }
+        EyeSettings { dot: true, targeting: false, calibration: CalMode::Auto }
     }
 }
 
@@ -34,6 +81,13 @@ impl EyeSettings {
             match k.trim() {
                 "dot" => s.dot = on || !matches!(v, "off" | "false" | "0" | "no"),
                 "targeting" => s.targeting = on,
+                "calibration" => {
+                    s.calibration = match v {
+                        "builtin" => CalMode::Builtin,
+                        "own" => CalMode::Own,
+                        _ => CalMode::Auto,
+                    }
+                }
                 _ => {}
             }
         }
@@ -43,7 +97,12 @@ impl EyeSettings {
     /// The file text.
     pub fn render(&self) -> String {
         let f = |b: bool| if b { "on" } else { "off" };
-        format!("# written by the Pimax app (Eye tracking); visual only\ndot={}\ntargeting={}\n", f(self.dot), f(self.targeting))
+        format!(
+            "# written by the Pimax app (Eye tracking); visual only\ndot={}\ntargeting={}\ncalibration={}\n",
+            f(self.dot),
+            f(self.targeting),
+            self.calibration.word()
+        )
     }
 
     /// Load (defaults when the file is missing or unreadable).
@@ -82,14 +141,14 @@ mod tests {
 
     #[test]
     fn defaults_are_dot_on_and_no_targeting() {
-        assert_eq!(EyeSettings::parse(""), EyeSettings { dot: true, targeting: false });
-        assert_eq!(EyeSettings::parse("junk\ndot=off\n"), EyeSettings { dot: false, targeting: false });
-        assert_eq!(EyeSettings::parse("targeting = on # dev\n"), EyeSettings { dot: true, targeting: true });
+        assert_eq!(EyeSettings::parse(""), EyeSettings { dot: true, targeting: false, calibration: CalMode::Auto });
+        assert_eq!(EyeSettings::parse("junk\ndot=off\n"), EyeSettings { dot: false, ..EyeSettings::default() });
+        assert_eq!(EyeSettings::parse("targeting = on # dev\n"), EyeSettings { targeting: true, ..EyeSettings::default() });
     }
 
     #[test]
     fn render_round_trips_and_saves() {
-        let s = EyeSettings { dot: false, targeting: true };
+        let s = EyeSettings { dot: false, targeting: true, calibration: CalMode::Builtin };
         assert_eq!(EyeSettings::parse(&s.render()), s);
         let d = std::env::temp_dir().join(format!("pimax-eye-conf-{}", std::process::id()));
         let p = d.join("omarchyvr/eye.conf");
@@ -98,5 +157,18 @@ mod tests {
         assert_eq!(EyeSettings::load(&d.join("none")), EyeSettings::default());
         let _ = std::fs::remove_dir_all(d);
         assert_eq!(path_from(&|k| (k == "HOME").then(|| "/h".to_string())), PathBuf::from("/h/.config/omarchyvr/eye.conf"));
+    }
+
+    #[test]
+    fn calibration_setting_round_trips_and_picks_the_source() {
+        for m in [CalMode::Auto, CalMode::Builtin, CalMode::Own] {
+            let s = EyeSettings { calibration: m, ..EyeSettings::default() };
+            assert_eq!(EyeSettings::parse(&s.render()).calibration, m);
+        }
+        assert_eq!(EyeSettings::parse("calibration=nonsense\n").calibration, CalMode::Auto);
+        assert_eq!(CalMode::Auto.source(false), CalSource::Builtin, "default: the built-in test calibration");
+        assert_eq!(CalMode::Auto.source(true), CalSource::Own, "after the user's own calibration");
+        assert_eq!(CalMode::Builtin.source(true), CalSource::Builtin);
+        assert_eq!(CalMode::Own.source(false), CalSource::Own);
     }
 }
