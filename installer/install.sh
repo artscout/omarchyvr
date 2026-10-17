@@ -303,7 +303,15 @@ fetch_file "$ORT_URL" "$ORT_SHA256" "$CACHE/dl/onnxruntime-$ORT_VERSION.tgz" "$H
 # ==== 3. build (nice 19, -j8) ========================================================================================
 say "3/7 Building (nice 19, $JOBS jobs; log: $LOG)"
 : >"$LOG"
-build() { local what=$1; shift; note "$what"; if ! heavy "$@" >>"$LOG" 2>&1; then tail -30 "$LOG" >&2; die "$what failed (full log: $LOG)"; fi; }
+# Nothing is built while a VR session runs (builds take the CPU and the graphics card from the compositor and made VR
+# drop frames: docs/research/perf-2026-10-17.md); checked before every step, a session may start during the build.
+vr_free() {
+	[[ ${OMARCHYVR_ALLOW_DURING_VR:-0} == 1 ]] && return 0
+	local what
+	what=$("$REPO/tools/vr-busy.sh") && return 0
+	die "a VR session is running (${what#busy: }): nothing is built during a session (it makes VR drop frames). Stop VR in the app and run ./install.sh again (the finished parts of the build are reused)."
+}
+build() { local what=$1; shift; vr_free; note "$what"; if ! heavy "$@" >>"$LOG" 2>&1; then tail -30 "$LOG" >&2; die "$what failed (full log: $LOG)"; fi; }
 export CARGO_TARGET_DIR="$CARGO_TARGET"
 HASH=$(git -C "$REPO" rev-parse --short=9 HEAD)
 build "Rust workspace (every binary, and the static libraries Monado links)" \

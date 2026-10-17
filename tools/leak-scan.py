@@ -42,10 +42,12 @@ CALIB_REFERENCE = {
     "rust/pimax-device/devices/dream-air/reference/controllers/left.json": "e3042bfebd2023406e4a5bb15aece981feb0dae456d4a008c126aa1e22852690",
     "rust/pimax-device/devices/dream-air/reference/controllers/right.json": "0f5754de452b1c80c220f991732bc9c468743cb5e97165a0bc6aa3ad95a55c67",
     "rust/pimax-device/devices/dream-air/reference/lens.conf": "d5a89a40f3f0bf207e81ffb28e62a4bec1975f60cfebd496065f30627c139bc0",
+    "rust/pimax-device/devices/dream-air/reference/ctrl-cam-extrinsics.json": "563ae75bac1280ceda8ceeb13ff00b12532c64614aa7a55fa67701d455931878",
 }
 CALIB_XML = re.compile(rb'<DeviceConfiguration\b[^>]*\bdeviceUID="([^"]*)"')
 CALIB_JSON = re.compile(rb'"ModelPoints"\s*:')
 CALIB_LENS = re.compile(rb"pimax-lens fit-pvr")
+CALIB_EXTR = re.compile(rb'"format"\s*:\s*"pimax-ctrltrack-extrinsics"')
 
 
 def git(*a, text=False):
@@ -75,11 +77,13 @@ def fake_serial(g):
 
 def calib_like(p, x):
     """per-device calibration content: a factory XML (a synthetic fixture with a fake deviceUID is fine), Pimax's
-    controller LED models, a lens profile fitted from Pimax's distortion"""
+    controller LED models, a camera extrinsics fit (pimax-ctrltrack), a lens profile fitted from Pimax's distortion"""
     m = CALIB_XML.search(x)
     if m and not fake_serial(m.group(1)):
         return True
     if p.endswith(".json") and CALIB_JSON.search(x) and b'"ImuToDevice"' in x:
+        return True
+    if p.endswith(".json") and CALIB_EXTR.search(x):
         return True
     return p.endswith(".conf") and bool(CALIB_LENS.search(x))
 

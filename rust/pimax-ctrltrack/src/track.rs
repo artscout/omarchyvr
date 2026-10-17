@@ -9,7 +9,7 @@ use pimax_ctrltrack::extrinsics;
 use pimax_ctrltrack::model::LedModel;
 use pimax_ctrltrack::solve::{self, Cam, CamObs, CamSolve, JointSolve, Params};
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 pub struct LedFrame {
     pub rec: usize,
@@ -77,31 +77,15 @@ impl Rig {
         }
         let mut ext_note = "factory extrinsics".to_string();
         if !a.iter().any(|s| s == "--factory") {
-            let p = arg(a, "--extrinsics")
-                .map(PathBuf::from)
-                .unwrap_or_else(extrinsics::default_path);
-            if p.exists() {
-                match extrinsics::load(&p) {
-                    Ok((uid, v)) if uid.is_empty() || uid == calib.uid => {
-                        for (id, pose) in &v {
-                            if *id < cams.len() {
-                                cams[*id].cam_from_body = *pose;
-                            }
-                        }
-                        ext_note = format!(
-                            "extrinsics of cams {:?} from {}",
-                            v.iter().map(|x| x.0).collect::<Vec<_>>(),
-                            p.display()
-                        );
-                    }
-                    Ok((uid, _)) => eprintln!(
-                        "{}: for headset {uid}, not {}: ignored",
-                        p.display(),
-                        calib.uid
-                    ),
-                    Err(e) => eprintln!("extrinsics not loaded: {e}"),
+            // the user's own fit, else the shipped fit for the reference headset (its factory extrinsics of cams 1-3
+            // are off by up to 3.2 deg, which tilts the controllers; lost once by a clean reinstall, 2026-10-17)
+            let (v, note) = extrinsics::resolve(&calib, arg(a, "--extrinsics").map(Path::new), &env);
+            for (id, pose) in &v {
+                if *id < cams.len() {
+                    cams[*id].cam_from_body = *pose;
                 }
             }
+            ext_note = note;
         }
         let triples: Vec<Vec<[usize; 3]>> = models
             .iter()
