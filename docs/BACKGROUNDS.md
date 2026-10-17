@@ -33,8 +33,10 @@ CLI (for agents): `omarchyvr-backgrounds list|download|verify|set NAME|next|prev
 A live sea and sky drawn by WayVR behind your screens in Work (research and measurements: docs/research/web-ocean.md;
 inspired by github.com/Noniv/web-ocean, MIT, no code taken).
 - **App**: Backgrounds page > Animated > "Ocean (animated)" (a switch like any picture: tap it, tap another picture or
-  Off to leave it) with **Quality: Low / Medium / High**. **Voice**: the library side understands the name "animated ocean" (`backdrop_plan` -> `ocean:<quality>`, the word
-  "ocean" alone keeps meaning the photos), but the voice command grammar was not extended or tested yet (open item). CLI: `omarchyvr-backgrounds ocean [low|medium|high] --apply`.
+  Off to leave it) with **Quality: Low / Medium / High**. **Voice** (2026-10-17): "Max, animated ocean background", "moving ocean", "live sea", "ocean animated high", and
+  plain "ocean", "the sea" or "waves" (they prefer the animated ocean; "beach" and the picture names stay photos). It is
+  in the voice's background list as `ocean:<quality>` (the quality in use, else the saved one), runs `wayvrctl skybox
+  ocean:<quality>`, is saved to `background.toml` (`id = "ocean/animated"`, `ocean_quality`) and shows in the voice state. CLI: `omarchyvr-backgrounds ocean [low|medium|high] --apply`.
 - **Saved**: `background.toml` gets `id = "ocean/animated"` and `ocean_quality = "low|medium|high"`; the Work start applies
   it like a picture (`wayvrctl skybox ocean:<quality>`; no file needed, nothing to download).
 - **Only in Work**: it is a WayVR skybox, and WayVR runs only in Work (Play is SteamVR; the setting is not applied there).

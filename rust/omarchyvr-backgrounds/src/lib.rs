@@ -143,13 +143,14 @@ impl OceanQuality {
     }
 }
 
-/// Is this spoken or typed name the animated ocean? ("ocean animated", "animated ocean", "ocean:high", "ocean-animated")
+/// Is this spoken or typed name the animated ocean? ("ocean animated", "animated ocean", "ocean:high", "ocean-animated",
+/// "moving ocean", "live sea", "ocean animation")
 /// Returns the quality it names (the medium one when it names none).
 pub fn parse_ocean(name: &str) -> Option<Option<OceanQuality>> {
     let n = name.trim().to_ascii_lowercase().replace(['_', '-', '/'], " ");
     let words: Vec<&str> = n.split([' ', ':']).filter(|w| !w.is_empty()).collect();
     let quality = words.iter().find(|w| ["low", "medium", "med", "high"].contains(w)).and_then(|w| OceanQuality::parse(w));
-    let animated = words.iter().any(|w| matches!(*w, "animated" | "live"));
+    let animated = words.iter().any(|w| matches!(*w, "animated" | "animation" | "live" | "moving"));
     let sea = words.iter().any(|w| matches!(*w, "ocean" | "sea" | "waves"));
     // "ocean:high" (the skybox spelling): the word, a colon and a quality
     let spelled = name.trim().to_ascii_lowercase().starts_with("ocean:") && words.len() == 2 && quality.is_some();
@@ -599,6 +600,9 @@ mod tests {
         assert_eq!(parse_ocean("ocean-animated"), Some(None));
         assert_eq!(parse_ocean("ocean:high"), Some(Some(OceanQuality::High)));
         assert_eq!(parse_ocean("animated ocean low"), Some(Some(OceanQuality::Low)));
+        assert_eq!(parse_ocean("moving ocean"), Some(None));
+        assert_eq!(parse_ocean("live sea"), Some(None));
+        assert_eq!(parse_ocean("ocean animation high"), Some(Some(OceanQuality::High)));
         assert_eq!(parse_ocean("ocean"), None, "the theme word keeps meaning the photos");
         assert_eq!(parse_ocean("ocean_umhlanga_sunrise"), None);
         assert_eq!(parse_ocean("flowers"), None);

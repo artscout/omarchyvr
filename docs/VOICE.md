@@ -119,6 +119,7 @@ With one VR screen, work-3 makes up its side screens from **WayVR app panels**:
 | dimmed | the room, darker | passthrough gain 0.35 |
 | black | black | passthrough off (it submits no layer) |
 | sky | WayVR's built-in sky | `wayvrctl skybox default` drawn over the main app, then passthrough off |
+| ocean:medium | the animated ocean (WayVR draws it live; low / medium / high) | `wayvrctl skybox ocean:<quality>`, then passthrough off. "Max, animated ocean", "moving ocean", "live sea", "ocean high"; plain "ocean" / "the sea" / "waves" pick it too ("beach" stays the photo) |
 | *your images* | equirectangular skybox images | `.dds` files in `~/src/desk-out/wayvr-home-am/config/wayvr/skybox/`, named by file name |
 
 Other ways to set it:

@@ -14,6 +14,9 @@ use std::time::{Duration, Instant};
 
 /// The built-in backdrops, in "next background" order; skybox images (`*.dds`) follow.
 pub const BUILTIN_BACKDROPS: &[&str] = &["passthrough", "dimmed", "black", "sky"];
+/// The animated ocean in the backdrop list and in the state: `ocean:<low|medium|high>`, the same spelling as the
+/// `wayvrctl skybox` argument (omarchyvr-backgrounds `OCEAN_ID`, WayVR draws it live; docs/BACKGROUNDS.md).
+pub const OCEAN_PREFIX: &str = "ocean:";
 
 /// Side effects.
 pub trait Runner {
@@ -270,6 +273,8 @@ pub fn backdrop_plan(name: &str, skybox_dir: &str) -> (&'static str, String) {
         "dimmed" => ("dim", "off".into()),
         "black" => ("off", "off".into()),
         "sky" => ("off", "default".into()),
+        // the animated ocean: WayVR draws it, no file
+        ocean if ocean.starts_with(OCEAN_PREFIX) => ("off", ocean.to_string()),
         // a picture of the background library (`omarchyvr-backgrounds`: ~/.local/share/omarchyvr/backgrounds), by its saved size
         file => match omarchyvr_backgrounds::voice_path(&omarchyvr_backgrounds::Dirs::from_env(), file) {
             Some(abs) => ("off", abs),
@@ -304,6 +309,18 @@ fn theme_words(spoken: &str) -> String {
 pub fn find_backdrop(list: &[String], spoken: &str) -> Option<String> {
     let norm = |s: &str| command::words(&s.replace(['_', '-'], " ")).join(" ");
     let want = norm(spoken);
+    // the animated ocean (in the list when WayVR can draw it): its names ("animated ocean", "moving ocean", "live
+    // sea", "ocean:high", with low / medium / high), and plain "ocean" / "sea" / "waves", which prefer it over the
+    // library's pictures ("beach", "ocean beach" and the other picture names stay pictures)
+    if let Some(have) = list.iter().find(|n| n.starts_with(OCEAN_PREFIX)) {
+        let plain = matches!(want.as_str(), "ocean" | "the ocean" | "sea" | "the sea" | "waves" | "the waves" | "ocean waves" | "ocean wave" | "sea waves");
+        if let Some(q) = omarchyvr_backgrounds::parse_ocean(spoken).or_else(|| plain.then_some(None)) {
+            return Some(match q {
+                Some(q) => format!("{OCEAN_PREFIX}{}", q.name()),
+                None => have.clone(),
+            });
+        }
+    }
     // the first of these that exists (the downloaded skyboxes first, docs/VOICE.md "Background")
     let alias: &[&str] = match want.as_str() {
         "room" | "camera" | "normal" | "passthrough on" => &["passthrough"],
@@ -1195,6 +1212,13 @@ impl Actor {
     /// All backdrops: the built-in ones, then the skybox images.
     pub fn backdrops(&self, r: &mut dyn Runner) -> Vec<String> {
         let mut v: Vec<String> = BUILTIN_BACKDROPS.iter().map(|s| s.to_string()).collect();
+        // the animated ocean, at the quality in use (the state's, else the saved one, else medium)
+        let ocean = match self.state.backdrop.as_deref() {
+            Some(b) if b.starts_with(OCEAN_PREFIX) => b.to_string(),
+            _ if r.live() => format!("{OCEAN_PREFIX}{}", omarchyvr_backgrounds::Setting::load(&omarchyvr_backgrounds::Dirs::from_env()).ocean_quality.name()),
+            _ => format!("{OCEAN_PREFIX}medium"),
+        };
+        v.push(ocean);
         for s in r.skyboxes() {
             if !v.contains(&s) {
                 v.push(s);
@@ -2141,6 +2165,40 @@ mod tests {
         assert_eq!(j["content"], "hi \"x\"");
         assert_eq!(find_backdrop(&["passthrough".into(), "sky".into(), "mountain_lake".into()], "space"), Some("sky".into()));
         assert_eq!(find_backdrop(&["passthrough".into(), "mountain_lake".into()], "lake"), Some("mountain_lake".into()));
+    }
+
+    /// The animated ocean (omarchyvr-backgrounds OCEAN_ID, WayVR draws it live: `wayvrctl skybox ocean:<quality>`)
+    /// by voice, with its spoken names and quality words; plain "ocean" prefers it, "beach" stays a picture.
+    #[test]
+    fn the_animated_ocean_is_a_background_by_voice() {
+        let mut a = actor();
+        let mut r = dry();
+        let t = Instant::now();
+        assert!(a.backdrops(&mut r).iter().any(|b| b == "ocean:medium"), "{:?}", a.backdrops(&mut r));
+        for (i, (said, arg)) in [
+            ("Pimax animated ocean background", "ocean:medium"),
+            ("Pimax set the background to ocean", "ocean:medium"),
+            ("Pimax set the background to ocean animated high", "ocean:high"),
+            ("Pimax set the background to moving ocean", "ocean:medium"),
+            ("Pimax set the background to live sea", "ocean:medium"),
+            ("Pimax set the background to ocean animation low", "ocean:low"),
+            ("Pimax set background to the sea", "ocean:medium"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            a.state.backdrop = Some("passthrough".into());
+            r.lines.clear();
+            a.hear(said, t + Duration::from_secs(10 * i as u64), &mut r);
+            assert!(r.lines.iter().any(|l| *l == format!("would run: wayvrctl skybox {arg}")), "{said}: {:?}", r.lines);
+            assert_eq!(a.state.backdrop.as_deref(), Some(arg), "{said}: the state shows it");
+        }
+        // the plan of the state's name is the same wayvrctl argument
+        assert_eq!(backdrop_plan("ocean:high", "skybox"), ("off", "ocean:high".into()));
+        let list: Vec<String> = ["passthrough", "sky", "ocean:medium", "ocean_beach"].iter().map(|s| s.to_string()).collect();
+        assert_eq!(find_backdrop(&list, "beach").as_deref(), Some("ocean_beach"), "beach stays the picture");
+        assert_eq!(find_backdrop(&list, "ocean").as_deref(), Some("ocean:medium"), "plain ocean prefers the animated one");
+        assert_eq!(find_backdrop(&list, "animated ocean high").as_deref(), Some("ocean:high"));
     }
 
     #[test]

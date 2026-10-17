@@ -156,7 +156,7 @@ source = "vr"
 [[intent]]
 id = "vr.backdrop.set"
 phrases = ["background {name}", "set background to {name}", "set background {name}", "set the background to {name}", "set the background {name}", "put on {name} background", "show me {name} background", "change background to {name}", "switch background to {name}", "{name} background", "environment {name}", "fondo {name}"]
-gloss = "pick a VR background by name"
+gloss = "pick a VR background by name: passthrough, dimmed, black, sky, a picture, or the animated ocean (\"animated/moving ocean\", \"live sea\", plain \"ocean\"; name=\"ocean:high\", low/medium/high)"
 run = ["@backdrop", "{name}"]
 slots = { name = "name" }
 safety = "safe"
