@@ -173,10 +173,13 @@ fn anchor_round_trip_between_sessions() {
     let w_from_tag_b = measure(&sb, 21, &hr_b);
     let off = world::compute_offset(&reference, &w_from_tag_b, true);
     // offset file round trip
-    let f = std::env::temp_dir().join(format!("omarchyvr-anchor-test-{}.offset", std::process::id()));
+    let fd = std::env::temp_dir().join(format!("omarchyvr-anchor-test-{}", std::process::id()));
+    std::fs::create_dir_all(&fd).unwrap();
+    let f = fd.join("pimax-anchor.offset");
+    world::take_lease(&f, 42, world::Role::Tag).unwrap();
     world::write_offset(&f, 42, &off).unwrap();
     let (pid, off2) = world::read_offset(&f).unwrap();
-    let _ = std::fs::remove_file(&f);
+    let _ = std::fs::remove_dir_all(&fd);
     assert_eq!(pid, 42);
     // where does the app see a head held at head_real in session B, vs. in session A?
     let app_a = sa.compose(&head_real);

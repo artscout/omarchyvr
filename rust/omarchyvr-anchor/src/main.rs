@@ -311,6 +311,12 @@ fn cmd_apply(a: &[String]) {
         return;
     }
     let pid = c.ring_pid.unwrap_or(0);
+    // one writer of the room offset per Monado session (world.rs, the writer lease)
+    match world::take_lease(&world::offset_path(), pid, world::Role::Tag) {
+        Ok(Some(note)) => println!("{note}"),
+        Ok(None) => {}
+        Err(e) => die(format!("{e}; offset unchanged")),
+    }
     world::write_offset(&world::offset_path(), pid, &off).unwrap_or_else(|e| die(format!("write: {e}")));
     println!("wrote {} (Monado picks it up within a second)", world::offset_path().display());
 }

@@ -179,6 +179,7 @@ fn result_roundtrip_compose_and_offset_file() {
     let dir = std::env::temp_dir().join(format!("omarchyvr-roommap-test-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let p = dir.join("pimax-anchor.offset");
+    omarchyvr_anchor::world::take_lease(&p, 4242, omarchyvr_anchor::world::Role::Apply).unwrap();
     omarchyvr_anchor::world::write_offset(&p, 4242, &store::offset_pose(&r.align)).unwrap();
     let (pid, o) = omarchyvr_anchor::world::read_offset(&p).unwrap();
     assert_eq!(pid, 4242);
@@ -352,4 +353,101 @@ fn export_json_and_viewer_page() {
     let page = crate::export::html_page(&j, "t");
     assert!(page.contains("const DATA = {") && !page.contains("/*__DATA__*/") && !page.contains("__TITLE__"));
     assert!(!page.contains("https://") && !page.contains("http://"), "no network");
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Replay of the 2026-10-17 16:16-16:17 floor jump (Monado pid 1092498): Fast room setup mapped the room anew and
+// placed it; the detached `auto` (started at the session start) recognised the new map 73 s later and wrote a second
+// offset 32 cm away. Numbers from that session's map directory and room-auto.log.
+
+const JUMP_SETUP_TOML: &str = "label = \"home\"\nmode = \"fast\"\ncentre = [0.8017, -0.5628]\nyaw_deg = 19.1557\nplay_area = [0.800, 0.800]\nhead_m = 1.7573\nwhen = 1792225029\nboundary = [[0.2926, -0.8094], [1.0483, -1.0720], [1.3272, -0.2690], [0.5715, -0.0065]]\n";
+const JUMP_FLOOR_Y: f64 = -0.63519;
+/// The last correction.csv row of the new map: room_new_from_room_old at the end of the 30 s mapping walk.
+const JUMP_CORRECTION: Alignment = Alignment { yaw: -0.003655764, t: [-0.192141, -0.067361, 0.043380] };
+/// auto's relocalisation 73 s later (last-reloc.toml).
+const JUMP_RELOC: Alignment = Alignment { yaw: -0.971515 * std::f64::consts::PI / 180.0, t: [-0.284277, -0.069415, 0.139813] };
+
+/// What `write_offset` writes for a room fix: the floor onto Monado's STAGE floor (origin height 1.6 m), the play
+/// area's centre at the origin.
+fn jump_offset(fix: &Alignment) -> Alignment {
+    let st = crate::setup::RoomSetup::parse(JUMP_SETUP_TOML).unwrap();
+    let d = crate::floor::floor_shift(JUMP_FLOOR_Y, crate::floor::MONADO_ORIGIN_HEIGHT);
+    store::compose(&st.setup_from_room(), &Alignment { yaw: fix.yaw, t: [fix.t[0], fix.t[1] + d, fix.t[2]] })
+}
+
+#[test]
+fn floor_jump_replay_setup_includes_the_loop_closure() {
+    let id = Alignment { yaw: 0.0, t: [0.0; 3] };
+    // the chain reproduces both logged offsets
+    let raw = jump_offset(&id);
+    assert!((raw.yaw.to_degrees() + 19.156).abs() < 0.01 && geom::norm(geom::sub(raw.t, [-0.9420, -0.9648, 0.2686])) < 0.001, "{raw:?}");
+    let auto = jump_offset(&JUMP_RELOC);
+    assert!((auto.yaw.to_degrees() + 20.127).abs() < 0.01 && geom::norm(geom::sub(auto.t, [-1.2564, -1.0342, 0.3074])) < 0.001, "{auto:?}");
+    // the setup now includes the map's loop closure (the offset at mapping was none: Monado deleted it at start)
+    let fixed = jump_offset(&store::fix_after_mapping(&id, Some(&JUMP_CORRECTION)));
+    let (d_raw, d_fixed) = (geom::norm(geom::sub(raw.t, auto.t)), geom::norm(geom::sub(fixed.t, auto.t)));
+    let (v_raw, v_fixed) = ((raw.t[1] - auto.t[1]).abs(), (fixed.t[1] - auto.t[1]).abs());
+    println!(
+        "TEST NUMBERS floor jump: setup vs relocalisation 73 s later: raw {:.1} cm ({:.1} cm vertical), with the loop closure {:.1} cm ({:.1} cm vertical; the rest is 73 s more of the walk's drift)",
+        d_raw * 100.0,
+        v_raw * 100.0,
+        d_fixed * 100.0,
+        v_fixed * 100.0
+    );
+    assert!(v_fixed < 0.01, "the floor height agrees within 1 cm: {v_fixed}");
+    assert!(v_raw > 0.05 && d_fixed < d_raw / 2.0);
+    // the stale-file guard: a correction.csv older than map.bin is not used
+    let dir = std::env::temp_dir().join(format!("omarchyvr-jump-corr-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    store::save_corrections(&dir, &[Correction { ts_ns: 1, c: JUMP_CORRECTION }]).unwrap();
+    std::fs::write(dir.join("map.bin"), b"x").unwrap();
+    let c = store::last_correction(&dir).unwrap();
+    assert!((c.t[1] - JUMP_CORRECTION.t[1]).abs() < 1e-6);
+    let old = std::fs::File::options().write(true).open(dir.join("correction.csv")).unwrap();
+    old.set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(600)).unwrap();
+    assert!(store::last_correction(&dir).is_none());
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn floor_jump_replay_one_offset_only() {
+    use omarchyvr_anchor::world::{self, Role};
+    let dir = std::env::temp_dir().join(format!("omarchyvr-jump-lease-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let off = dir.join("pimax-anchor.offset");
+    let (monado, auto, setup) = (1092498u32, 1092600u32, 1093007u32);
+    // the session start: auto takes the lease and searches (the old map does not match)
+    world::take_lease_as(&off, monado, auto, Role::Auto, |_| false, |_| Ok(())).unwrap();
+    // Fast setup starts: it takes the lease and ends auto (here the end "fails": auto keeps running)
+    let ended = std::cell::Cell::new(0);
+    world::take_lease_as(&off, monado, setup, Role::Setup, |p| p == auto, |p| {
+        ended.set(p);
+        Ok(())
+    })
+    .unwrap();
+    assert_eq!(ended.get(), auto);
+    let id = Alignment { yaw: 0.0, t: [0.0; 3] };
+    let placed = jump_offset(&store::fix_after_mapping(&id, Some(&JUMP_CORRECTION)));
+    let mut writes = 0;
+    if world::write_offset_as(&off, monado, setup, &store::offset_pose(&placed)).is_ok() {
+        writes += 1;
+    }
+    let setup_text = std::fs::read_to_string(&off).unwrap();
+    // 73 s later the still running auto recognised the new map: its write is refused, and so is a new lease (the
+    // setup has ended by now)
+    let second = jump_offset(&JUMP_RELOC);
+    let e = world::write_offset_as(&off, monado, auto, &store::offset_pose(&second)).unwrap_err();
+    assert!(e.to_string().contains("room setup"), "{e}");
+    if world::write_offset_as(&off, monado, auto, &store::offset_pose(&second)).is_ok() {
+        writes += 1;
+    }
+    let e = world::take_lease_as(&off, monado, auto, Role::Auto, |p| p == auto, |_| Ok(())).unwrap_err();
+    assert!(e.contains("already placed"), "{e}");
+    // a new auto of the same session, too
+    assert!(world::take_lease_as(&off, monado, 1099999, Role::Auto, |_| false, |_| Ok(())).is_err());
+    assert_eq!(writes, 1, "exactly one offset in the session");
+    assert_eq!(std::fs::read_to_string(&off).unwrap(), setup_text);
+    let _ = std::fs::remove_dir_all(dir);
 }

@@ -74,19 +74,9 @@ fn write_status(path: &Path, state: &str, room: &str, pid: u32, text: &str) {
     println!("room: {text}");
 }
 
-/// The app's owner file next to the offset (`roommap <pid>`): the Room page shows who placed the world.
-fn write_owner(pid: u32) {
-    let p = world::offset_path().with_file_name("omarchyvr-anchor.offset.owner");
-    let _ = std::fs::write(p, format!("roommap {pid}\n"));
-}
-
 /// The AprilTag holds this Monado session's offset (the app's one-writer rule): the room map must not overwrite it.
 fn tag_holds(pid: u32) -> bool {
-    let p = world::offset_path().with_file_name("omarchyvr-anchor.offset.owner");
-    std::fs::read_to_string(p).ok().is_some_and(|t| {
-        let mut w = t.split_whitespace();
-        w.next() == Some("anchor") && w.next().and_then(|x| x.parse::<u32>().ok()) == Some(pid)
-    }) && world::read_offset(&world::offset_path()).is_some_and(|(p, _)| p == pid)
+    world::read_lease(&world::lease_path()).is_some_and(|l| l.kind == "anchor" && l.session == pid) && world::read_offset(&world::offset_path()).is_some_and(|(p, _)| p == pid)
 }
 
 fn alive(pid: u32) -> bool {
@@ -422,8 +412,20 @@ fn backup_map(dir: &Path) {
 }
 
 fn save_fix_from_current(dir: &Path, pid: u32, what: &str) -> R<RelocResult> {
-    // a map built in this session: its room frame is the app world when it was built (the offset then)
-    let a = omarchyvr_roommap::live::current_offset(pid);
+    // a map built in this session: its room frame is the app world when it was built (the offset then; nobody else
+    // wrote it since: this setup holds the writer lease), moved by the map's loop closure (the last correction.csv
+    // row). The raw live tracker frame is off by the drift of the mapping walk (2026-10-17: 19 cm / 6.7 cm).
+    let at_mapping = omarchyvr_roommap::live::current_offset(pid);
+    let corr = omarchyvr_roommap::store::last_correction(dir);
+    if let Some(c) = &corr {
+        println!(
+            "loop closure of the mapping walk: the tracker ended {:.1} cm ({:.1} cm vertically) and {:.2} deg from the map frame; included in the room fix",
+            geom::norm(c.t) * 100.0,
+            c.t[1].abs() * 100.0,
+            c.yaw.to_degrees().abs()
+        );
+    }
+    let a = omarchyvr_roommap::store::fix_after_mapping(&at_mapping, corr.as_ref());
     let r = RelocResult {
         map: dir.display().to_string(),
         source: what.into(),
@@ -494,8 +496,7 @@ fn finish(g: &mut HudGuide, dir: &Path, name: &str, mode: SetupMode, label: &str
     }
     st.save(dir).map_err(|e| e.to_string())?;
     println!("saved {}: {}", dir.join(setup::FILE).display(), st.describe());
-    crate::write_offset(dir, res, Some(res.pid), false, false)?;
-    write_owner(res.pid);
+    crate::write_offset(dir, res, Some(res.pid), false, false, world::Role::Setup)?;
     write_status(&status_path(), "ok", name, res.pid, &format!("Room \"{name}\" set up and in place: {}", st.describe()));
     Ok(st)
 }
@@ -511,6 +512,12 @@ fn cmd_setup_run(mode: SetupMode, mut v: Vec<String>) -> R<()> {
     let pid = feed.live_pid().ok_or_else(|| format!("cannot start the room setup: {}", feed.plain()))?;
     if tag_holds(pid) {
         return Err("the AprilTag placed the world in this session: press Clear offset on the Room page first".into());
+    }
+    // the one writer of the room offset in this session from now on: a running `auto` or floor follow is ended
+    // (2026-10-17: auto wrote a second offset 73 s after the setup, 32 cm away, and the world snapped)
+    if let Err(e) = crate::take_lease(pid, world::Role::Setup) {
+        write_status(&status_path(), "failed", &name, pid, &format!("Room setup stopped: {e}"));
+        return Err(e);
     }
     if !no_hud {
         // the panel goes to the running Monado, never to the system runtime (SteamVR) (omarchyvr_hud::runtime)
@@ -668,6 +675,18 @@ pub fn cmd_auto(mut v: Vec<String>) -> R<()> {
         }
         std::thread::sleep(Duration::from_secs(1));
     };
+    if tag_holds(pid) {
+        write_status(&status, "skipped", &name, pid, "The AprilTag placed the world in this session: the room map leaves it alone.");
+        return Ok(());
+    }
+    // the writer lease: auto never takes the room offset from a running writer, never writes after anyone placed
+    // the room in this session, and stops when a room setup takes the lease (world::decide_lease)
+    if let Err(e) = crate::take_lease(pid, world::Role::Auto) {
+        write_status(&status, "skipped", &name, pid, &format!("Room left as it is: {e}."));
+        return Ok(());
+    }
+    // the map this auto started with: a map built later in this session (a room setup) is the setup's to place
+    let map_id = map_identity(&dir);
     write_status(&status, "searching", &name, pid, &format!("Looking for the room \"{name}\": look around for a few seconds."));
     let mut tries = 0;
     loop {
@@ -675,14 +694,13 @@ pub fn cmd_auto(mut v: Vec<String>) -> R<()> {
             write_status(&status, "off", &name, pid, "The session ended before the room was recognised.");
             return Ok(());
         }
-        if tag_holds(pid) {
-            write_status(&status, "skipped", &name, pid, "The AprilTag placed the world in this session: the room map leaves it alone.");
+        if let Some(why) = auto_must_stop(&world::offset_path(), pid, std::process::id(), &map_id, &map_identity(&dir)) {
+            write_status(&status, "skipped", &name, pid, &why);
             return Ok(());
         }
         tries += 1;
         match crate::cmd_relocalize(s(&["--source", "broker", "--seconds", "15", "--name", &name, "--apply"])) {
             Ok(()) => {
-                write_owner(pid);
                 let extra = match RoomSetup::load(&dir) {
                     Ok(st) => format!(" (floor, centre and forward; {})", st.describe()),
                     Err(_) => " (floor only: no room setup yet, run Fast setup for the play area and forward)".into(),
@@ -709,9 +727,46 @@ pub fn cmd_auto(mut v: Vec<String>) -> R<()> {
     }
 }
 
+/// What identifies a map file version (size and modification time of map.bin).
+fn map_identity(dir: &Path) -> Option<(u64, std::time::SystemTime)> {
+    std::fs::metadata(dir.join("map.bin")).ok().and_then(|m| Some((m.len(), m.modified().ok()?)))
+}
+
+/// Why `auto` (writer `me`) must stop before its next try, if it must: it lost the lease (a room setup or another
+/// user action took it), or the map changed since it started (a map built in this session belongs to its setup).
+fn auto_must_stop(offset: &Path, pid: u32, me: u32, started: &Option<(u64, std::time::SystemTime)>, now: &Option<(u64, std::time::SystemTime)>) -> Option<String> {
+    if !world::holds_lease_as(offset, pid, me) {
+        let who = world::read_lease(&world::lease_path_for(offset)).and_then(|l| l.role).map(|r| r.title()).unwrap_or("another writer");
+        return Some(format!("Room placement left to {who} in this session."));
+    }
+    if started != now {
+        return Some("The room map was made again in this session: the room setup places it.".into());
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn auto_stops_when_setup_takes_the_lease_or_the_map_changes() {
+        let d = std::env::temp_dir().join(format!("omarchyvr-auto-stop-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        let off = d.join("pimax-anchor.offset");
+        let t = std::time::SystemTime::UNIX_EPOCH;
+        let m0 = Some((173287u64, t));
+        world::take_lease_as(&off, 7, 11, world::Role::Auto, |_| false, |_| Ok(())).unwrap();
+        assert_eq!(auto_must_stop(&off, 7, 11, &m0, &m0), None);
+        // a new map (the setup's 44 keyframes) under the same name: auto does not reload it
+        let m1 = Some((99u64, t + Duration::from_secs(60)));
+        assert!(auto_must_stop(&off, 7, 11, &m0, &m1).unwrap().contains("made again"));
+        // the setup takes the lease: auto stops
+        world::take_lease_as(&off, 7, 22, world::Role::Setup, |p| p == 11, |_| Ok(())).unwrap();
+        assert!(auto_must_stop(&off, 7, 11, &m0, &m0).unwrap().contains("room setup"));
+        let _ = std::fs::remove_dir_all(d);
+    }
 
     #[test]
     fn wrap_and_files() {

@@ -56,6 +56,28 @@ mod setupcmd;
 
 type R<T> = Result<T, String>;
 
+/// Who this process writes the room offset as (the writer lease, omarchyvr_anchor::world): set once by `setup`,
+/// `auto` and `floor follow`; `relocalize --apply` and `apply` on their own are user actions.
+static WRITER_ROLE: std::sync::OnceLock<omarchyvr_anchor::world::Role> = std::sync::OnceLock::new();
+
+fn writer_role(default: omarchyvr_anchor::world::Role) -> omarchyvr_anchor::world::Role {
+    *WRITER_ROLE.get().unwrap_or(&default)
+}
+
+/// Take (or keep) this process's writer lease of Monado session `pid`; Err in plain words when another writer has
+/// it. The first role taken stays this process's role.
+fn take_lease(pid: u32, role: omarchyvr_anchor::world::Role) -> R<()> {
+    let role = *WRITER_ROLE.get_or_init(|| role);
+    match omarchyvr_anchor::world::take_lease(&omarchyvr_anchor::world::offset_path(), pid, role) {
+        Ok(Some(note)) => {
+            println!("{note}");
+            Ok(())
+        }
+        Ok(None) => Ok(()),
+        Err(e) => Err(format!("{e}; offset unchanged")),
+    }
+}
+
 fn opt(v: &mut Vec<String>, name: &str) -> R<Option<String>> {
     match v.iter().position(|a| a == name) {
         Some(i) if i + 1 < v.len() => {
@@ -480,12 +502,12 @@ fn cmd_relocalize(mut v: Vec<String>) -> R<()> {
     res.save(&dir.join("last-reloc.toml")).map_err(|e| e.to_string())?;
     println!("saved {} (and last-reloc.toml)", out.display());
     if apply {
-        write_offset(&dir, &res, None, false, no_floor)?;
+        write_offset(&dir, &res, None, false, no_floor, omarchyvr_anchor::world::Role::Reloc)?;
     }
     Ok(())
 }
 
-fn write_offset(dir: &Path, res: &RelocResult, pid: Option<u32>, dry: bool, no_floor: bool) -> R<()> {
+fn write_offset(dir: &Path, res: &RelocResult, pid: Option<u32>, dry: bool, no_floor: bool, role: omarchyvr_anchor::world::Role) -> R<()> {
     let ring = omarchyvr_anchor::world::HeadRing::read(&omarchyvr_anchor::world::ring_path());
     let pid = pid.or((res.pid != 0).then_some(res.pid)).or(ring.as_ref().map(|r| r.pid)).unwrap_or(0);
     if let (Some(r), true) = (&ring, res.pid != 0) {
@@ -528,6 +550,8 @@ fn write_offset(dir: &Path, res: &RelocResult, pid: Option<u32>, dry: bool, no_f
     if pid == 0 {
         println!("note: no Monado pid known (Monado not running with PIMAX_ANCHOR=1?): Monado ignores the file until a matching pid is written");
     }
+    // one writer per Monado session: a process that set its role (setup, auto, follow) keeps it
+    take_lease(pid, writer_role(role))?;
     let p = store::write_offset(&align, pid).map_err(|e| e.to_string())?;
     println!("wrote {} for Monado pid {pid}", p.display());
     if let (Some(st), true) = (&room_setup, pid != 0) {
@@ -556,7 +580,7 @@ fn cmd_apply(mut v: Vec<String>) -> R<()> {
         res.inliers,
         res.rms_deg
     );
-    write_offset(&dir, &res, pid, dry, no_floor)
+    write_offset(&dir, &res, pid, dry, no_floor, omarchyvr_anchor::world::Role::Apply)
 }
 
 fn cmd_info(mut v: Vec<String>) -> R<()> {

@@ -110,11 +110,35 @@ A room without `room-setup.toml` keeps the old offset: floor only, map origin.
   `room-auto.log`. It:
   1. waits for Monado's head ring (the hook recreates it at every start);
   2. leaves the session alone if the AprilTag owns this session's offset;
-  3. relocalises in 15 s windows for up to 120 s;
-  4. applies floor + centre + forward, writes the STAGE bounds and the owner file (`roommap <pid>`);
-  5. writes the status file.
+  3. takes the writer lease (below) and keeps the map it started with: it stops when a room setup takes the lease
+     or the map is made again in this session (it never reloads a map it did not start with);
+  4. relocalises in 15 s windows for up to 120 s;
+  5. applies floor + centre + forward and writes the STAGE bounds;
+  6. writes the status file.
 - Stop ends it by pid (SIGTERM, only if its name is `omarchyvr-roommap`) if it is still running.
 - Failure is a status line. VR keeps going.
+
+**One writer of the room offset per session** (tracking plan phase 1b; live failure 2026-10-17 16:17: Fast setup
+placed the room, then the still running `auto` recognised the brand-new map 73 s later and wrote a second offset
+32 cm away, and Monado snapped the world, the "floor jump"):
+
+- The owner file next to the offset (`$XDG_RUNTIME_DIR/omarchyvr-anchor.offset.owner`) is a lease: first line
+  `roommap <monado pid>` / `anchor <monado pid>` (what the app reads), then `lease 2`, `writer <pid>`,
+  `role setup|auto|follow|reloc|apply|tag`. `omarchyvr_anchor::world::write_offset` refuses without the lease of
+  that Monado session; the check and the write run under one `flock` (`omarchyvr-anchor.offset.lock`).
+- All five writers take it: room setup, `auto`, floor follow, `relocalize --apply` / `apply` (Recognise room, the
+  anchor.relocalize job) and the AprilTag (`omarchyvr-anchor apply`). A user action (setup, recognise, apply, tag)
+  takes the lease from a running `auto` or floor follow and ends it by pid (SIGTERM, only if its name is one of our
+  offset writers). `auto` and floor follow never take it from a live writer, and `auto` never writes after anyone
+  placed the room in this session. The room map vs AprilTag rule (one of them per session) stays.
+- The setup's room fix includes the map's loop closure: a map built in the setup is placed with the last
+  `correction.csv` row (where the live tracker ended relative to the corrected map frame), not the raw live
+  tracker frame. On 2026-10-17 that was 19 cm horizontal and 6.7 cm vertical; the floor now agrees with the later
+  relocalisation within 0.2 cm.
+- Monado (marker `PIMAX_ANCHOR_GLIDE`): only the first offset of a session is placed at once; every later change,
+  however large, glides at 5 cm/s and 2 deg/s, up to 3x while the head turns faster than 60 deg/s, with one
+  `PIMAX_ANCHOR_GLIDE` log line per glide. Kill switch: `PIMAX_ANCHOR_GLIDE=0` in Monado's environment brings back
+  the old rule (changes above 0.25 m or 5 deg placed at once). The lease has no switch (a bug fix).
 
 **The head-pose feed** (`$XDG_RUNTIME_DIR/pimax-anchor.head`, live failure 2026-10-16):
 
