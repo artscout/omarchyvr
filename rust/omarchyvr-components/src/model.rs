@@ -301,7 +301,7 @@ pub struct Desired {
     /// Camera hands (Mercury, `--hands`); needs 6DoF and the hands Monado build. Off by default.
     pub hands: bool,
     pub preset: String,
-    /// VR screens (Hyprland outputs, `--screens N`, 1 to 4; desk only). Above 1 the screens watcher runs.
+    /// VR screens (Hyprland outputs, `--screens N`, 1 to 6, default 6; desk only). Above 1 the screens watcher runs.
     pub screens: u8,
 }
 
@@ -322,7 +322,7 @@ impl Default for Desired {
             floor_follow: false,
             hands: false,
             preset: "cinema".into(),
-            screens: 4,
+            screens: 6,
         }
     }
 }

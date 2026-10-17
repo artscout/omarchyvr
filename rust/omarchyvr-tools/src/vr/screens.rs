@@ -1,4 +1,4 @@
-//! VR screens as Hyprland outputs (user design, 2026-10-15): `omarchyvr desk start --screens N` (1 to 4, default 4).
+//! VR screens as Hyprland outputs (user design, 2026-10-15): `omarchyvr desk start --screens N` (1 to 6, default 6).
 //!
 //! * **Displays before VR.** Each extra VR screen is a Hyprland *headless* output (`PIMAX-LEFT`, `PIMAX-RIGHT`,
 //!   `PIMAX-UP`, `PIMAX-UPLEFT`, `PIMAX-UPRIGHT`), created by `desk start` BEFORE Monado and WayVR start, and removed
@@ -32,7 +32,7 @@ pub const PREFIX: &str = "PIMAX-";
 /// Most VR screens (main + left + right + up + up-left + up-right).
 pub const MAX: u8 = 6;
 /// `--screens` default: every screen, shown on demand.
-pub const DEFAULT: u8 = 4;
+pub const DEFAULT: u8 = 6;
 /// The report of the last `desk start` in the session dir (read by the app's readiness line).
 pub const REPORT_FILE: &str = "screens.txt";
 /// pid file stem / ProcSpec name of the watcher.
@@ -2080,8 +2080,8 @@ mod tests {
         assert_eq!(argv_with_screens(&v(&["--6dof", "--screens", "2"]), 4), v(&["--6dof", "--screens", "4"]));
         assert_eq!(argv_with_screens(&v(&["--screens", "6"]), 3), v(&["--screens", "6"]));
         assert_eq!(argv_with_screens(&v(&["--screens=3", "--voice"]), 5), v(&["--screens=5", "--voice"]));
-        assert_eq!(argv_with_screens(&v(&["--voice"]), 6), v(&["--voice", "--screens", "6"]));
-        assert_eq!(argv_with_screens(&v(&["--voice"]), 3), v(&["--voice"]), "absent = the default 4");
+        assert_eq!(argv_with_screens(&v(&["--voice"]), 6), v(&["--voice"]), "absent = the default 6");
+        assert_eq!(argv_with_screens(&v(&["--voice"]), 3), v(&["--voice"]), "never lowered");
         assert_eq!(argv_with_screens(&v(&["--voice"]), 9), v(&["--voice", "--screens", "6"]));
     }
 

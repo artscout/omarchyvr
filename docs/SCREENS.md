@@ -37,17 +37,18 @@ Every VR screen has a fixed number. It is the same everywhere: the number badge 
 Each extra screen is a real Hyprland desktop. You can open apps on it, move apps to it, and focus it.
 
 ## In the app
-**Desktop > Screens** (developer mode): choose 1 to 6 screens. The default is 4 (the desktop + left, right and up).
+**Desktop > Screens** (developer mode): choose 1 to 6 screens. The default is 6 (the desktop + left, right, up, up-left and up-right); a value you saved is kept.
 - The choice is saved in `~/.config/omarchyvr/gui-state.toml` as `screens = N`.
-- It reaches the Work start as `omarchyvr desk start --screens N`. The flag is only written when N is not 4, because 4 is
+- It reaches the Work start as `omarchyvr desk start --screens N`. The flag is only written when N is not 6, because 6 is
   the launcher's default.
 - The start records it in `start-argv.txt`, so restarts and omarchyvrd keep it. The app also reads `--screens` back from
   the record, so a change made during the session (see "Showing more screens") becomes the app's setting.
 
 Under the selector, a readiness line shows the state of the screens:
-- before the session: "VR screens: 4 at the next Work start";
+- before the session: "VR screens: 6 at the next Work start";
 - during the session: the virtual outputs that exist, for example "VR screens: 4 (SUNSHINE in the centre; virtual
   outputs left PIMAX-LEFT, right PIMAX-RIGHT, up PIMAX-UP)" (up-left is `PIMAX-UPLEFT`, up-right `PIMAX-UPRIGHT`);
+- if you change Screens while Work runs: yellow, "You chose N: restart Work to get the new screens" (the outputs are made when Work starts; the voice says the same);
 - if creating them failed: the reason, shown in yellow. The session still starts, with one screen.
 
 ## How it works
@@ -315,7 +316,7 @@ voice process (see [VOICE.md](VOICE.md)).
 
 ## CLI (for agents and tests)
 ```
-omarchyvr desk start --screens 1|2|3|4|5|6     # default 4
+omarchyvr desk start --screens 1|2|3|4|5|6     # default 6
 omarchyvr desk screens status                  # last start's report, the outputs, what VR shows
 omarchyvr desk screens sync [--dry-run]        # send the visibility to WayVR once
 omarchyvr desk screens create|remove [--screens N] [--dry-run]   # refused while a monado-service runs

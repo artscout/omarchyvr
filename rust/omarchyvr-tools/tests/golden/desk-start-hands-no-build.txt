@@ -4,7 +4,7 @@ exit Some(0)
 omarchyvr desk: headset data: calibration = the shipped Dream Air reference, controller models = the shipped Dream Air reference, lens = the shipped Dream Air profile, gyro = the Dream Air default until the headset rests once
 omarchyvr desk: would start, in this order:
   0. $ROOT/home/.local/bin/omarchyvr-slam export --out $ROOT/session/basalt, then $ROOT/home/.local/bin/pimax-cam broker (socket $ROOT/run/omarchyvr-cam-broker.sock)
-  1a. VR screens: 4 (the main desktop output + PIMAX-LEFT, PIMAX-RIGHT, PIMAX-UP as headless outputs of its size, created before Monado; hyprctl eval 'hl.monitor(...)', hyprctl output create headless)
+  1a. VR screens: 6 (the main desktop output + PIMAX-LEFT, PIMAX-RIGHT, PIMAX-UP, PIMAX-UPLEFT, PIMAX-UPRIGHT as headless outputs of its size, created before Monado; hyprctl eval 'hl.monitor(...)', hyprctl output create headless)
   1. monado-service ($ROOT/home/.local/lib/omarchyvr/monado/src/xrt/targets/service/monado-service)
   2. $ROOT/home/.local/bin/pimax-ctrltrack live --source broker:$ROOT/run/omarchyvr-cam-broker.sock  (log $ROOT/session/ctrltrack.log)
   3. $ROOT/home/.local/bin/omarchyvr-passthrough run --gain 0.35 --source broker  (log $ROOT/session/passthrough.log)

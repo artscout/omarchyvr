@@ -44,6 +44,11 @@ pub fn readiness_from(text: Option<String>, wanted: u8, running: bool) -> (Level
             };
             match r.error {
                 Some(e) => (Level::Warn, format!("{line}. Fewer screens than asked: {e}")),
+                // the setting changed while Work runs: the outputs are made at the start, so say it plainly
+                None if usize::from(wanted) != r.screens() => (
+                    Level::Warn,
+                    format!("{line}. You chose {wanted}: restart Work to get the new screens (the screens are made when Work starts)."),
+                ),
                 None => (Level::Ok, line),
             }
         }
@@ -109,13 +114,16 @@ mod tests {
         std::fs::write(d.join(REPORT_FILE), "screens: 4 (SUNSHINE, left = PIMAX-LEFT, right = PIMAX-RIGHT, up = PIMAX-UP)\ncreated: PIMAX-LEFT\n").unwrap();
         let (l, t) = readiness(&d, 4, true);
         assert_eq!(l, Level::Ok);
+        let (l, t) = readiness(&d, 6, true);
+        assert_eq!(l, Level::Warn);
+        assert!(t.contains("restart Work to get the new screens"), "{t}");
         assert!(t.contains("VR screens: 4 (SUNSHINE in the centre; virtual outputs left PIMAX-LEFT"), "{t}");
         std::fs::write(d.join(REPORT_FILE), "screens: 1 (SUNSHINE)\nerror: 1 of 4 screens (cannot create PIMAX-LEFT: no headless backend)\n").unwrap();
         let (l, t) = readiness(&d, 4, true);
         assert_eq!(l, Level::Warn);
         assert!(t.contains("Fewer screens than asked: 1 of 4"), "{t}");
-        assert_eq!(clamp(0), 4);
-        assert_eq!((clamp(6), clamp(7)), (6, 4));
+        assert_eq!(clamp(0), 6);
+        assert_eq!((clamp(6), clamp(7)), (6, 6));
         assert_eq!(arrange_phrase(false), "put everything in its own window");
         assert_eq!(clamp(2), 2);
         let _ = std::fs::remove_dir_all(d);
