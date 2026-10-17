@@ -84,6 +84,7 @@ pub mod subtitles;
 pub mod system;
 pub mod term;
 pub mod tools;
+pub mod trackset;
 pub mod upload;
 pub mod vram;
 pub mod vrhome;

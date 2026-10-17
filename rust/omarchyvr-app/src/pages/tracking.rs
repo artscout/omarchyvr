@@ -27,6 +27,7 @@ pub fn show(ui: &mut Ui, app: &mut PimaxApp) {
         if i == 0 {
             head(ui, app);
             controllers(ui, app);
+            stability(ui, app);
             if app.core.state.dev_mode {
                 hands(ui, app);
             }
@@ -83,6 +84,58 @@ fn controllers(ui: &mut Ui, app: &mut PimaxApp) {
         );
         if r.changed() {
             app.core.set_controllers_in_work(use_ctrl);
+        }
+        ctrl_angle(ui, app);
+    });
+}
+
+/// The controller angle slider (-20..+70 deg, default 30): saved for the next start and applied live to a running
+/// session (docs/CONTROLLERS-INHAND.md).
+fn ctrl_angle(ui: &mut Ui, app: &mut PimaxApp) {
+    use omarchyvr_config::ctrl_angle::{DEFAULT_DEG, MAX_DEG, MIN_DEG};
+    let p = theme::pal(ui);
+    let can = !app.core.busy() && (app.core.facts.caps.tracking || app.core.demo);
+    let mut deg = app.core.toggles.ctrl_angle;
+    let r = widgets::setting(
+        ui,
+        "Controller angle",
+        Some("How far the controller pointer (and the hand on it) is tilted up from the controller's body, in degrees. Raise it if the ray points lower than you aim, lower it if it points higher. Default 30. Changes a running session within a second and is kept for the next start."),
+        |ui| {
+            ui.horizontal(|ui| {
+                let r = ui.add_enabled(can, eframe::egui::Slider::new(&mut deg, MIN_DEG..=MAX_DEG).suffix(" deg"));
+                if deg != DEFAULT_DEG && widgets::tbutton(ui, "Default", can).clicked() {
+                    deg = DEFAULT_DEG;
+                    return (true, true);
+                }
+                (r.changed(), r.drag_stopped() || (r.changed() && !r.dragged()))
+            })
+            .inner
+        },
+    );
+    let (changed, done) = r;
+    if changed || done {
+        app.core.set_ctrl_angle(deg, done);
+    }
+    let (text, warn) = app.core.ctrl_angle_status();
+    widgets::status(ui, &text, if warn { p.warn } else { p.dim });
+}
+
+/// The tracking switches of plan phase 1 (docs/TRACKING-STABILITY.md), all on by default; each with its status.
+fn stability(ui: &mut Ui, app: &mut PimaxApp) {
+    use omarchyvr_gui_core::trackset::Switch;
+    let can = !app.core.busy() && (app.core.facts.caps.tracking || app.core.demo);
+    section(ui, "Tracking stability", Some("Improvements of 2026-10-17, all on by default. Switch one off only if tracking got worse with it; it takes effect at the next start."), |ui| {
+        let p = theme::pal(ui);
+        for sw in Switch::ALL {
+            let mut on = sw.get(&app.core.toggles);
+            if switch_row(ui, &mut on, sw.label(), Some(sw.help()), can).changed() {
+                app.core.set_tracking_switch(sw, on);
+            }
+            let (text, warn) = app.core.tracking_status(sw);
+            widgets::status(ui, &text, if warn { p.warn } else { p.dim });
+        }
+        if !app.core.facts.caps.tracking && !app.core.demo {
+            widgets::status(ui, "The installed omarchyvr launcher does not know these settings yet: install the new build.", p.warn);
         }
     });
 }

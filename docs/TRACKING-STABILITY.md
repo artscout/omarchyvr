@@ -39,3 +39,21 @@ and applying (1 - k) per axis, with both sign conventions, then A/B the still dr
   Replay of the 2026-10-17 16:24 logs: flips 77 and 79 per min -> 8 and 12 (what remains are real occlusions
   longer than 220 ms), still step p95 1.0 mm (unchanged), fast moves in continuous tracking differ by under 7 mm
   (under 6 ms) from the old fuser. Kill switch: `PIMAX_CTRL_TRACK_HYST=0` (`fusereplay ... --legacy` in replays).
+
+## App switches (Phase 1e)
+
+The Phase 1 changes are switches on the app's **Tracking** page, all on by default; each shows its status in plain
+words ("On in this session", "Off from the next start (this session: on)", or a warning when the installed Monado
+build lacks it). The app passes the flag of a switch that is off at every Work and Play start, so `start-argv.txt`
+keeps it and restarts repeat it; the launcher turns the flag into Monado's environment unless that variable is
+already set:
+
+| Switch | Off = launcher flag | Monado environment | Marker (status) |
+|---|---|---|---|
+| New camera exposure (1a) | `--old-exposure` | `PIMAX_CAM_AE_LAW=old` | `PIMAX_CAM_AE_LAW` |
+| Smooth room corrections (1b) | `--no-room-glide` | `PIMAX_ANCHOR_GLIDE=0` | `PIMAX_ANCHOR_GLIDE` (required) |
+| Steadier controllers (1d) | `--no-ctrl-steady` | `PIMAX_CTRL_TRACK_HYST=0` | `PIMAX_CTRL_TRACK_HYST` |
+| Controller angle slider (1c) | `--ctrl-angle DEG` (always passed) | `PIMAX_CTRL_ANGLE=DEG` | `PIMAX_CTRL_ANGLE` (required) |
+
+The app's preflight (`omarchyvr-gui-core` `builds.rs`) and `installer/lib.sh` refuse a Monado build without
+`PIMAX_CTRL_ANGLE` or `PIMAX_ANCHOR_GLIDE`. The angle is described in docs/CONTROLLERS-INHAND.md.

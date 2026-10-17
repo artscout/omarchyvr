@@ -138,7 +138,8 @@ placed the room, then the still running `auto` recognised the brand-new map 73 s
 - Monado (marker `PIMAX_ANCHOR_GLIDE`): only the first offset of a session is placed at once; every later change,
   however large, glides at 5 cm/s and 2 deg/s, up to 3x while the head turns faster than 60 deg/s, with one
   `PIMAX_ANCHOR_GLIDE` log line per glide. Kill switch: `PIMAX_ANCHOR_GLIDE=0` in Monado's environment brings back
-  the old rule (changes above 0.25 m or 5 deg placed at once). The lease has no switch (a bug fix).
+  the old rule (changes above 0.25 m or 5 deg placed at once): the app's switch **Tracking > Tracking stability >
+  Smooth room corrections** (on by default; off = `--no-room-glide`). The lease has no switch (a bug fix).
 
 **The head-pose feed** (`$XDG_RUNTIME_DIR/pimax-anchor.head`, live failure 2026-10-16):
 

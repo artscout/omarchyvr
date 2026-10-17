@@ -34,6 +34,48 @@ pub fn write_live(runtime_dir: &Path, deg: i32) -> Result<(), String> {
     std::fs::rename(&tmp, &p).map_err(|e| format!("cannot write {}: {e}", p.display()))
 }
 
+/// The saved setting: `ctrl_angle` in the active profile's setup.toml (None: no active profile or not set).
+pub fn saved(store: &crate::Store) -> Option<i32> {
+    let id = store.active()?;
+    store.read_setup(&id).ok()?.ctrl_angle
+}
+
+/// Save the setting in the active profile's setup.toml. Ok(false): no active profile (nothing written; the app keeps
+/// the value in its own state and passes `--ctrl-angle` at every start anyway).
+pub fn save(store: &crate::Store, deg: i32) -> Result<bool, String> {
+    let Some(id) = store.active() else { return Ok(false) };
+    let mut s = store.read_setup(&id).map_err(|e| format!("cannot read setup.toml: {e}"))?;
+    let deg = deg.clamp(MIN_DEG, MAX_DEG);
+    if s.ctrl_angle == Some(deg) {
+        return Ok(true);
+    }
+    s.ctrl_angle = Some(deg);
+    store.write_setup(&id, &s).map_err(|e| format!("cannot write setup.toml: {e}"))?;
+    Ok(true)
+}
+
+/// The start arguments with `--ctrl-angle` set to `deg` (replaced in place, or added): a live change is kept by the
+/// recorded start (start-argv.txt), so a restart uses the new value.
+pub fn argv_with_angle(args: &[String], deg: i32) -> Vec<String> {
+    let deg = deg.clamp(MIN_DEG, MAX_DEG).to_string();
+    let mut v = args.to_vec();
+    match v.iter().position(|a| a == "--ctrl-angle" || a.starts_with("--ctrl-angle=")) {
+        Some(i) if v[i] == "--ctrl-angle" => {
+            if i + 1 < v.len() {
+                v[i + 1] = deg;
+            } else {
+                v.push(deg);
+            }
+        }
+        Some(i) => v[i] = format!("--ctrl-angle={deg}"),
+        None => {
+            v.push("--ctrl-angle".into());
+            v.push(deg);
+        }
+    }
+    v
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -48,6 +90,29 @@ mod tests {
         assert!(parse("-21").is_err());
         assert!(parse("up").is_err());
         assert!(parse("NaN").is_err());
+    }
+
+    #[test]
+    fn argv_angle_replaced_or_added() {
+        let sv = |x: &[&str]| x.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(argv_with_angle(&sv(&["--6dof"]), 40), sv(&["--6dof", "--ctrl-angle", "40"]));
+        assert_eq!(argv_with_angle(&sv(&["--ctrl-angle", "30", "--6dof"]), -5), sv(&["--ctrl-angle", "-5", "--6dof"]));
+        assert_eq!(argv_with_angle(&sv(&["--ctrl-angle=30"]), 99), sv(&["--ctrl-angle=70"]));
+    }
+
+    #[test]
+    fn saved_in_the_active_profile() {
+        let d = std::env::temp_dir().join(format!("ctrl-angle-store-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        let store = crate::Store::new(d.join("cfg"), d.join("cache"));
+        assert_eq!(saved(&store), None);
+        assert_eq!(save(&store, 45), Ok(false), "no active profile: nothing written");
+        let id = crate::store::ProfileId::new("TESTSERIAL", "default").unwrap();
+        store.create_profile(&id, "cant_deg = 2.0\n").unwrap();
+        std::os::unix::fs::symlink(store.profile_dir(&id), d.join("cfg").join("active")).unwrap();
+        assert_eq!(save(&store, 45), Ok(true));
+        assert_eq!(saved(&store), Some(45));
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]

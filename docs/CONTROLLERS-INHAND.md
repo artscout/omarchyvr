@@ -122,6 +122,12 @@ the grip, so they follow without any per-runtime offset. `pimax-ctrltrack live` 
 * Saved setting: `ctrl_angle` in setup.toml (default 30). Launcher: `--ctrl-angle DEG` on `omarchyvr vr start` and
   `omarchyvr desk start` (recorded in `start-argv.txt`); the launcher sets `PIMAX_CTRL_ANGLE` for Monado unless the
   environment already has it.
-* Live (no restart): write the degrees to `$XDG_RUNTIME_DIR/pimax-ctrl-angle` (`omarchyvr_config::ctrl_angle::write_live`);
-  the driver re-reads it within 100 ms. The app slider (lane 1e) uses this.
+* App: **Tracking page > Controllers > Controller angle** (slider -20..+70, Default button). Every move goes to a
+  running session at once; letting go saves it (the app state and `ctrl_angle` in the active profile's setup.toml).
+  The app passes `--ctrl-angle DEG` at every Work and Play start. CLI: `omarchyvr controllers angle [DEG]` (shows or
+  sets it, saved and live). Without the flag the launcher uses the saved setting, else 30.
+* Live (no restart): the degrees in `$XDG_RUNTIME_DIR/pimax-ctrl-angle` (`omarchyvr_config::ctrl_angle::write_live`);
+  the driver re-reads it within 100 ms. A live change also rewrites `--ctrl-angle` in `start-argv.txt`, so a watchdog
+  restart keeps it. Every real start writes its start value into that file first: the driver polls it all session, so
+  a file left by an earlier session would otherwise override the new start's `PIMAX_CTRL_ANGLE`.
 * Marker in `monado-service`: `PIMAX_CTRL_ANGLE`.

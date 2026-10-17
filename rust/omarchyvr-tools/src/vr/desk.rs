@@ -30,7 +30,7 @@ pub const DESK_CTRL_AIM: &str = "head";
 
 /// Usage of `omarchyvr desk`.
 pub const USAGE: &str = "usage: omarchyvr desk <command> [options]
-  start [--no-passthrough] [--eye|--no-eye] [--6dof [--ctrl-track] [--hands [--hands-roles]]] [--controllers when-held|always|off] [--voice [--voice-hud]] [--no-perf] [--preset cinema|work-3|work-1|assistant|none] [--screens 1-6] [--anchor] [--no-auto-recover] [--settle SECS] [--passthrough-bin P] [--wayvr-bin P] [--wayvr-home DIR]
+  start [--no-passthrough] [--eye|--no-eye] [--6dof [--ctrl-track] [--hands [--hands-roles]]] [--controllers when-held|always|off] [--ctrl-angle DEG] [--old-exposure] [--no-room-glide] [--no-ctrl-steady] [--voice [--voice-hud]] [--no-perf] [--preset cinema|work-3|work-1|assistant|none] [--screens 1-6] [--anchor] [--no-auto-recover] [--settle SECS] [--passthrough-bin P] [--wayvr-bin P] [--wayvr-home DIR]
         [--voice-bin P] [--voice-hud-bin P] [--wayvrctl-bin P] [--perf-bin P] [--pimax-bin P]
         [+ the options of `omarchyvr vr start`: --fps, --monado-build, --connector, --dry-run, --force, --no-notify, ...]
       monado-service (like `omarchyvr vr start`), then omarchyvr-passthrough run (the main OpenXR app), then WayVR as an
@@ -54,6 +54,11 @@ pub const USAGE: &str = "usage: omarchyvr desk <command> [options]
       shown (pose, model, ray, buttons) only while it is in the hand: moved, tilted or a button touched picks it up,
       5 s still or no reports for 1.5 s puts it down (PIMAX_CTRL_INHAND=auto for Monado, docs/CONTROLLERS-INHAND.md);
       always = as before; off = never. Change it live with `omarchyvr controllers use when-held|always|off`.
+      --ctrl-angle DEG (-20..70; default the saved setting, ctrl_angle in setup.toml, else 30): how far the
+      controller pointer is tilted up (PIMAX_CTRL_ANGLE for Monado; live: `omarchyvr controllers angle DEG`).
+      Tracking switches (all on by default, docs/TRACKING-STABILITY.md): --old-exposure = the previous camera exposure
+      law (PIMAX_CAM_AE_LAW=old); --no-room-glide = room corrections snap instead of gliding (PIMAX_ANCHOR_GLIDE=0);
+      --no-ctrl-steady = the controller fuser's old 80 ms optical window (PIMAX_CTRL_TRACK_HYST=0).
       Controller rays aim where you look (PIMAX_CTRL_AIM=head for Monado; set PIMAX_CTRL_AIM=level to keep the old
       straight-ahead rays); hand placement: PIMAX_CTRL_REST (desk default, legacy), see analysis/hands-desk.md.
       --hands (with --6dof): camera hand tracking (Mercury) on the one Monado build, when it has the hands code and the models
@@ -303,6 +308,8 @@ pub fn parse_desk(
     // Work: a controller is shown only while it is in the hand (PIMAX_CTRL_INHAND=auto) unless --controllers says
     let _controllers = sixdof::parse_controllers(a, env, &mut vr, omarchyvr_config::ctrl_inhand::CtrlMode::WhenHeld)?;
     sixdof::parse_ctrl_angle(a, env, &mut vr)?;
+    // the phase 1 tracking switches (exposure law, room glide, steadier controllers): on unless their flag says off
+    sixdof::parse_tracking_switches(a, env, &mut vr);
     let ctrltrack_bin = ctrl_track_bin.unwrap_or_else(|| sixdof::default_ctrltrack_bin(&home));
     let (eye_mode, eye_note) = super::eye_desk::parse(eye, no_eye, &mut vr, &eye_build, build_given, env);
     // --hands after eye and 6DoF: it may move the build to the hands build (a superset of the desk build)
@@ -1298,6 +1305,9 @@ fn supervise_before(first: &str, o: &DeskOptions, argv: &[String]) {
         "start" if !o.vr.dry_run => {
             if let Err(e) = super::supervise::record_argv(&o.vr.session_dir, "desk", argv) {
                 verr!("omarchyvr desk: WARNING: cannot record the start arguments for restart: {e}");
+            }
+            if let Some(e) = sixdof::sync_ctrl_angle_live(&o.vr, &real_env) {
+                verr!("omarchyvr desk: WARNING: controller angle: {e}");
             }
         }
         "stop" if !o.vr.dry_run => super::supervise::mark_user_stop(&o.vr.session_dir),

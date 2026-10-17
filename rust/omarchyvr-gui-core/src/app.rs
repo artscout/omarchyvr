@@ -523,6 +523,11 @@ impl AppCore {
         let paths_for_rows = paths.clone();
         let env_for_rows = env.clone();
         let docs_dir = paths.repo.join("docs");
+        // the controller angle is shared with the CLI through the active profile's setup.toml: that one wins
+        let mut toggles = state.toggles;
+        if let Some(d) = omarchyvr_config::ctrl_angle::saved(&store) {
+            toggles.ctrl_angle = d;
+        }
         let a = AppCore {
             follower: LogFollower::new(&paths.session_dir.join("monado.log")),
             paths,
@@ -535,7 +540,7 @@ impl AppCore {
             facts: Facts::default(),
             items: Vec::new(),
             page: if state.onboarded && state.setup == crate::guistate::SetupStage::Done { state.page.unwrap_or(Page::Desk) } else { Page::Onboarding },
-            toggles: state.toggles,
+            toggles,
             consent_force: false,
             tool_opts: ToolOptions::default(),
             job: None,
@@ -708,6 +713,8 @@ impl AppCore {
         self.items = checklist::build(&self.facts, &self.live, &self.paths);
         // a newer launcher starts eye tracking unless --no-eye
         self.toggles.eye_default_on = self.facts.caps.no_eye;
+        // a launcher that knows --ctrl-angle and the tracking switches gets them at every start
+        self.toggles.tracking_flags = self.facts.caps.tracking;
         self.adopt_start_argv();
         // a build may have appeared: the plans are worked out again (the old ones stay in use meanwhile)
         self.plans_fresh.clear();

@@ -79,6 +79,25 @@ pub fn run(mut a: Args) -> CliResult {
         println!("controllers: {} (until the session ends; the app's switch sets the default)", m.label().to_lowercase());
         return Ok(());
     }
+    if a.pos::<String>(0)?.as_deref() == Some("angle") {
+        // `omarchyvr controllers angle [DEG]`: the controller angle (PIMAX_CTRL_ANGLE): saved, and live in a running session
+        let v = a.pos::<String>(1)?;
+        a.no_unknown_flags()?;
+        let env = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());
+        let store = omarchyvr_config::Store::from_env(&env);
+        let Some(v) = v else {
+            let deg = omarchyvr_config::ctrl_angle::saved(&store).unwrap_or(omarchyvr_config::ctrl_angle::DEFAULT_DEG);
+            println!("controller angle: {deg} deg (saved setting; -20..70, default 30)");
+            return Ok(());
+        };
+        let deg = omarchyvr_config::ctrl_angle::parse(&v).map_err(|e| CliError::usage(format!("usage: omarchyvr controllers angle DEG: {e}")))?;
+        let saved = omarchyvr_config::ctrl_angle::save(&store, deg).map_err(CliError::new)?;
+        let rt = std::path::PathBuf::from(env("XDG_RUNTIME_DIR").ok_or_else(|| CliError::new("XDG_RUNTIME_DIR is not set"))?);
+        let session = std::path::PathBuf::from(env("PIMAX_VR_SESSION_DIR").unwrap_or_else(|| crate::vr::config::SESSION_DIR.to_string()));
+        crate::vr::sixdof::apply_ctrl_angle_live(&rt, &session, deg).map_err(CliError::new)?;
+        println!("controller angle: {deg} deg (now in a running session{})", if saved { " and saved" } else { "; no profile to save it in" });
+        return Ok(());
+    }
     if a.pos::<String>(0)?.as_deref() == Some("status") {
         a.no_unknown_flags()?;
         match ctrl_inhand::read_status(&ctrl_inhand::status_path(), ctrl_inhand::pid_alive) {

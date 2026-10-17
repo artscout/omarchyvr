@@ -77,7 +77,7 @@ use std::time::Duration;
 /// Usage text of the `vr` subcommands.
 pub const USAGE: &str = "usage: omarchyvr vr <command> [options]
   hand-models status|download --yes   fetch the Mercury hand models from Monado's public server (no licence, personal use; docs/HANDS.md)
-  start [--fps 72|90] [--6dof [--ctrl-track] [--hands [--hands-roles]]] [--controllers always|when-held|off] [--eye|--no-eye] [--perf] [--anchor] [--light|--no-light] [--game APPID] [--home] [--dump DIR [--dump-frames 100,300]] [--wait] [--dry-run] [--force] [--debug] [--no-set-runtime]
+  start [--fps 72|90] [--6dof [--ctrl-track] [--hands [--hands-roles]]] [--controllers always|when-held|off] [--ctrl-angle DEG] [--old-exposure] [--no-room-glide] [--no-ctrl-steady] [--eye|--no-eye] [--perf] [--anchor] [--light|--no-light] [--game APPID] [--home] [--dump DIR [--dump-frames 100,300]] [--wait] [--dry-run] [--force] [--debug] [--no-set-runtime]
         [--no-notify] [--monado-build DIR] [--connector NAME] [--mode N] [--timeout SECS]
       the connector is found by the headset's EDID (PVR 0xD242 / product 0x1019) unless --connector is given; the
       preflight also warns when monado-service lacks cap_sys_nice and prints the setcap line for its path.
@@ -106,6 +106,7 @@ pub const USAGE: &str = "usage: omarchyvr vr <command> [options]
       for Monado; [--ctrltrack-bin P]. Ignored with --wait. See `omarchyvr desk` help for the details.
       --controllers (default always for games): when-held = controllers shown only while in the hand
       (PIMAX_CTRL_INHAND=auto, docs/CONTROLLERS-INHAND.md), always, off.
+      --ctrl-angle DEG, --old-exposure, --no-room-glide, --no-ctrl-steady: as for `desk start` (see `omarchyvr desk help`).
       --hands (with --6dof; also `desk start --hands`): camera hand tracking (Monado's Mercury, XR_EXT_hand_tracking +
       XR_EXT_hand_interaction), off by default. Sets PIMAX_HANDS=mercury on the one Monado build (another build only
       with --hands-build DIR / PIMAX_HANDS_BUILD; an explicit --monado-build is used as given).
@@ -417,6 +418,7 @@ pub fn run(mut a: Args) -> CliResult {
             // --controllers: games keep the controllers always shown unless the user switched it (Play's own switch)
             let _controllers = sixdof::parse_controllers(&mut a, &real_env, &mut opts, omarchyvr_config::ctrl_inhand::CtrlMode::Always)?;
             sixdof::parse_ctrl_angle(&mut a, &real_env, &mut opts)?;
+            sixdof::parse_tracking_switches(&mut a, &real_env, &mut opts);
             // eye tracking in games, visual only (the "Eye tracking in games" switch, default off): PIMAX_EYE=1 when on and
             // the eye build and a calibration exist
             let eye_build = omarchyvr_config::paths::monado_build(&home);
@@ -474,6 +476,9 @@ pub fn run(mut a: Args) -> CliResult {
                 }
                 if let Err(e) = supervise::record_argv(&opts.session_dir, "vr", &daemon::argv_for_record(&argv0)) {
                     verr!("omarchyvr vr: WARNING: cannot record the start arguments for restart: {e}");
+                }
+                if let Some(e) = sixdof::sync_ctrl_angle_live(&opts, &real_env) {
+                    verr!("omarchyvr vr: WARNING: controller angle: {e}");
                 }
             }
             // SteamVR: SteamVR's vrserver runs the Pimax driver (driver_monado.so); no monado-service, no watchdog

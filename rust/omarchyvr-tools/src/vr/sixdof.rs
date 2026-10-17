@@ -267,12 +267,75 @@ pub fn parse_ctrl_angle(
     use omarchyvr_config::ctrl_angle;
     let deg = match a.opt("--ctrl-angle")? {
         Some(v) => ctrl_angle::parse(&v).map_err(|e| CliError::usage(format!("--ctrl-angle: {e}")))?,
-        None => ctrl_angle::DEFAULT_DEG,
+        // no flag: the saved setting (setup.toml of the active profile, the app's slider), else the default
+        None => ctrl_angle::saved(&omarchyvr_config::Store::from_env(env)).unwrap_or(ctrl_angle::DEFAULT_DEG),
     };
     if env("PIMAX_CTRL_ANGLE").is_none() {
         vr.extra_env.push(("PIMAX_CTRL_ANGLE".into(), deg.to_string()));
     }
     Ok(deg)
+}
+
+/// The start value of the controller angle as Monado gets it (the launcher's `PIMAX_CTRL_ANGLE`, else the caller's).
+pub fn start_ctrl_angle(vr: &StartOptions, env: &dyn Fn(&str) -> Option<String>) -> Option<i32> {
+    let v = vr.extra_env.iter().find(|(k, _)| k == "PIMAX_CTRL_ANGLE").map(|(_, v)| v.clone()).or_else(|| env("PIMAX_CTRL_ANGLE"))?;
+    omarchyvr_config::ctrl_angle::parse(&v).ok()
+}
+
+/// At a real start (never in a dry run): the live file `$XDG_RUNTIME_DIR/pimax-ctrl-angle` gets the start value. The
+/// driver polls that file all session, so a file left by an earlier session would otherwise override this start's
+/// `PIMAX_CTRL_ANGLE` within 100 ms.
+pub fn sync_ctrl_angle_live(vr: &StartOptions, env: &dyn Fn(&str) -> Option<String>) -> Option<String> {
+    let deg = start_ctrl_angle(vr, env)?;
+    let rt = env("XDG_RUNTIME_DIR").filter(|v| !v.is_empty())?;
+    omarchyvr_config::ctrl_angle::write_live(Path::new(&rt), deg).err()
+}
+
+/// A live change of the controller angle (the app's slider, `omarchyvr controllers angle DEG`): the driver's live file
+/// and the recorded start (start-argv.txt, so a restart keeps it). Works without a session too (then only the files).
+pub fn apply_ctrl_angle_live(runtime_dir: &Path, session_dir: &Path, deg: i32) -> Result<(), String> {
+    use omarchyvr_config::ctrl_angle;
+    ctrl_angle::write_live(runtime_dir, deg)?;
+    if let Some((kind, args)) = super::supervise::read_argv(session_dir) {
+        let new = ctrl_angle::argv_with_angle(&args, deg);
+        if new != args {
+            super::supervise::rewrite_argv(session_dir, &kind, &new).map_err(|e| format!("cannot update the recorded start: {e}"))?;
+        }
+    }
+    Ok(())
+}
+
+/// The tracking kill switches of plan phase 1 (docs/TRACKING-STABILITY.md), all ON by default; the app passes the
+/// flag of a switch that is off, and start-argv keeps it:
+/// * `--old-exposure`: `PIMAX_CAM_AE_LAW=old`, the previous camera exposure law (1a).
+/// * `--no-room-glide`: `PIMAX_ANCHOR_GLIDE=0`, room corrections snap again instead of gliding (1b).
+/// * `--no-ctrl-steady`: `PIMAX_CTRL_TRACK_HYST=0`, the controller fuser's old 80 ms optical window (1d).
+///
+/// The caller's own environment wins (a variable already set is left alone).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TrackingSwitches {
+    pub new_exposure: bool,
+    pub room_glide: bool,
+    pub ctrl_steady: bool,
+}
+
+/// The three switches' flags, with their Monado environment variable and the value that turns the feature off.
+pub const TRACKING_FLAGS: [(&str, &str, &str); 3] = [
+    ("--old-exposure", "PIMAX_CAM_AE_LAW", "old"),
+    ("--no-room-glide", "PIMAX_ANCHOR_GLIDE", "0"),
+    ("--no-ctrl-steady", "PIMAX_CTRL_TRACK_HYST", "0"),
+];
+
+/// Parse [`TRACKING_FLAGS`] and push the kill-switch variables onto `vr.extra_env`.
+pub fn parse_tracking_switches(a: &mut Args, env: &dyn Fn(&str) -> Option<String>, vr: &mut StartOptions) -> TrackingSwitches {
+    let mut off = [false; 3];
+    for (i, (flag, var, val)) in TRACKING_FLAGS.iter().enumerate() {
+        off[i] = a.flag(flag);
+        if off[i] && env(var).is_none() {
+            vr.extra_env.push((var.to_string(), val.to_string()));
+        }
+    }
+    TrackingSwitches { new_exposure: !off[0], room_glide: !off[1], ctrl_steady: !off[2] }
 }
 
 /// The controller tracker as a process to spawn (not an XR client: reads the broker, writes the pose file Monado reads).
@@ -383,6 +446,52 @@ mod tests {
         let (vr, _) = run(&["--ctrl-angle", "10"], &[("PIMAX_CTRL_ANGLE", "5")]);
         assert_eq!(get(&vr, "PIMAX_CTRL_ANGLE"), None, "the caller's own wins");
         assert!(run(&["--ctrl-angle", "90"], &[]).1.is_err());
+    }
+
+    #[test]
+    fn tracking_switches_default_on() {
+        let run = |args: &[&str], env: &[(&str, &str)]| {
+            let env: Vec<(String, String)> = env.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+            let lookup = move |k: &str| env.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
+            let mut a = Args(args.iter().map(|s| s.to_string()).collect());
+            let mut vr = parse_options(&mut a, &lookup).unwrap();
+            let t = parse_tracking_switches(&mut a, &lookup, &mut vr);
+            assert!(a.0.is_empty(), "every flag taken: {:?}", a.0);
+            (vr, t)
+        };
+        let (vr, t) = run(&[], &[]);
+        assert_eq!(t, TrackingSwitches { new_exposure: true, room_glide: true, ctrl_steady: true });
+        for (_, var, _) in TRACKING_FLAGS {
+            assert_eq!(get(&vr, var), None, "{var}: on by default, nothing pushed");
+        }
+        let (vr, t) = run(&["--old-exposure", "--no-room-glide", "--no-ctrl-steady"], &[]);
+        assert_eq!(t, TrackingSwitches { new_exposure: false, room_glide: false, ctrl_steady: false });
+        assert_eq!(get(&vr, "PIMAX_CAM_AE_LAW"), Some("old"));
+        assert_eq!(get(&vr, "PIMAX_ANCHOR_GLIDE"), Some("0"));
+        assert_eq!(get(&vr, "PIMAX_CTRL_TRACK_HYST"), Some("0"));
+        let (vr, _) = run(&["--no-room-glide"], &[("PIMAX_ANCHOR_GLIDE", "1")]);
+        assert_eq!(get(&vr, "PIMAX_ANCHOR_GLIDE"), None, "the caller's own wins");
+    }
+
+    #[test]
+    fn ctrl_angle_live_change_keeps_the_restart() {
+        let d = std::env::temp_dir().join(format!("ctrl-angle-live-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        super::super::supervise::record_argv(&d, "desk", &["--6dof".to_string(), "--ctrl-angle".into(), "30".into()]).unwrap();
+        apply_ctrl_angle_live(&d, &d, 45).unwrap();
+        assert_eq!(std::fs::read_to_string(d.join("pimax-ctrl-angle")).unwrap(), "45\n");
+        let (kind, args) = super::super::supervise::read_argv(&d).unwrap();
+        assert_eq!((kind.as_str(), args), ("desk", vec!["--6dof".to_string(), "--ctrl-angle".into(), "45".into()]));
+        // a real start writes its own start value over a file left by an earlier session
+        let rt = d.display().to_string();
+        let lookup = move |k: &str| (k == "XDG_RUNTIME_DIR").then(|| rt.clone());
+        let mut a = Args(vec!["--ctrl-angle".into(), "10".into()]);
+        let mut vr = parse_options(&mut a, &lookup).unwrap();
+        parse_ctrl_angle(&mut a, &lookup, &mut vr).unwrap();
+        assert_eq!(sync_ctrl_angle_live(&vr, &lookup), None);
+        assert_eq!(std::fs::read_to_string(d.join("pimax-ctrl-angle")).unwrap(), "10\n");
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]

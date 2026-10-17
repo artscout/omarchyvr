@@ -17,6 +17,7 @@ usage: omarchyvr <subcommand> [options]
                                            running VR session if one runs
   controllers use when-held|always|off     when the running session shows the controllers (PIMAX_CTRL_INHAND)
   controllers status                       in hand / put down, per controller (running session)
+  controllers angle [DEG]                  controller pointer tilt -20..70 (default 30): saved, and live (PIMAX_CTRL_ANGLE)
   calib [out.xml] [--blob F] [--save-blob F]   read the factory calibration (84 reads), inflate, diff
   video-on [fps=72] [seconds=40]           switch the panel on (changes headset state!) and tail logs
   logtail [seconds=30] [regex]             passive firmware + bridge log tail

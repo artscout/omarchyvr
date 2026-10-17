@@ -43,6 +43,9 @@ pub struct LauncherCaps {
     pub screens: bool,
     /// `--controllers when-held|always|off` (PIMAX_CTRL_INHAND, docs/CONTROLLERS-INHAND.md).
     pub controllers: bool,
+    /// `--ctrl-angle DEG` and the tracking switches `--old-exposure`, `--no-room-glide`, `--no-ctrl-steady`
+    /// (tracking plan phase 1, docs/TRACKING-STABILITY.md).
+    pub tracking: bool,
 }
 
 /// Parse the `omarchyvr desk help` text.
@@ -64,6 +67,7 @@ pub fn parse_caps(usage: &str) -> LauncherCaps {
         hands: has("--hands"),
         screens: has("--screens"),
         controllers: has("--controllers"),
+        tracking: has("--ctrl-angle") && has("--no-ctrl-steady"),
     }
 }
 
@@ -135,6 +139,17 @@ pub struct DeskToggles {
     pub ctrl_work: CtrlMode,
     /// Controllers in Play (`vr start --controllers`, default always: games expect them).
     pub ctrl_play: CtrlMode,
+    /// Controller angle in degrees, -20..70 (`--ctrl-angle`, PIMAX_CTRL_ANGLE; default 30, saved in setup.toml too).
+    pub ctrl_angle: i32,
+    /// "New camera exposure" (off = `--old-exposure`, PIMAX_CAM_AE_LAW=old).
+    pub new_exposure: bool,
+    /// "Smooth room corrections" (off = `--no-room-glide`, PIMAX_ANCHOR_GLIDE=0).
+    pub room_glide: bool,
+    /// "Steadier controllers" (off = `--no-ctrl-steady`, PIMAX_CTRL_TRACK_HYST=0).
+    pub ctrl_steady: bool,
+    /// The launcher knows `--ctrl-angle` and the tracking switches (from `omarchyvr desk help`, not saved): only then
+    /// are they passed.
+    pub tracking_flags: bool,
 }
 
 impl Default for DeskToggles {
@@ -158,6 +173,11 @@ impl Default for DeskToggles {
             screens: crate::screens::DEFAULT_SCREENS,
             ctrl_work: CtrlMode::WhenHeld,
             ctrl_play: CtrlMode::Always,
+            ctrl_angle: omarchyvr_config::ctrl_angle::DEFAULT_DEG,
+            new_exposure: true,
+            room_glide: true,
+            ctrl_steady: true,
+            tracking_flags: false,
         }
     }
 }
@@ -199,6 +219,13 @@ pub fn toggles_from_argv(text: &str, base: DeskToggles) -> Option<(DeskToggles, 
         // an absent flag is the launcher's default; `omarchyvr desk screens show|add` raises it in the record
         t.screens = crate::screens::clamp(value("--screens").and_then(|v| v.parse().ok()).unwrap_or(crate::screens::DEFAULT_SCREENS));
     }
+    // the tracking switches: an absent flag is on (the launcher's default); an absent angle keeps the saved one
+    if let Some(d) = value("--ctrl-angle").and_then(|v| omarchyvr_config::ctrl_angle::parse(v).ok()) {
+        t.ctrl_angle = d;
+    }
+    t.new_exposure = !has("--old-exposure");
+    t.room_glide = !has("--no-room-glide");
+    t.ctrl_steady = !has("--no-ctrl-steady");
     if vr && has("--home") {
         // the VR home (docs/VR-HOME.md) decides its own readout and room anchor: Play's switches stay as they are
     } else if vr {
@@ -276,6 +303,7 @@ impl DeskToggles {
             // an older launcher has no readout at all: nothing to switch off, and no --no-perf to pass
             self.perf = true;
         }
+        self.tracking_flags &= caps.tracking;
         self
     }
 }
@@ -325,7 +353,22 @@ pub fn desk_flags(t: &DeskToggles) -> Vec<String> {
         v.push("--screens".into());
         v.push(crate::screens::clamp(t.screens).to_string());
     }
+    tracking_flags(t, &mut v);
     v
+}
+
+/// `--ctrl-angle DEG` and the flags of the tracking switches that are off (a launcher that knows them; Work and Play).
+fn tracking_flags(t: &DeskToggles, v: &mut Vec<String>) {
+    if !t.tracking_flags {
+        return;
+    }
+    v.push("--ctrl-angle".into());
+    v.push(t.ctrl_angle.clamp(omarchyvr_config::ctrl_angle::MIN_DEG, omarchyvr_config::ctrl_angle::MAX_DEG).to_string());
+    for (on, flag) in [(t.new_exposure, "--old-exposure"), (t.room_glide, "--no-room-glide"), (t.ctrl_steady, "--no-ctrl-steady")] {
+        if !on {
+            v.push(flag.into());
+        }
+    }
 }
 
 /// `omarchyvr vr start` arguments for a game session (Monado alone): refresh rate, 6DoF, controller tracking, the wrist
@@ -357,6 +400,7 @@ pub fn vr_game_args(t: &DeskToggles, force: bool, light: bool, game: Option<&str
         v.push("--controllers".into());
         v.push(t.ctrl_play.name().into());
     }
+    tracking_flags(t, &mut v);
     // eye tracking in games: its own Play switch (off by default), passed explicitly so start-argv keeps it; a launcher
     // that only knows --no-eye (eye on by default) gets that when the switch is off
     if t.eye {
@@ -636,7 +680,7 @@ mod tests {
     fn command_lines() {
         let t = DeskToggles::with_eye();
         assert_eq!(desk_start_args(&t, false).join(" "), "desk start --fps 90 --eye --6dof");
-        let all = DeskToggles { eye: true, sixdof: true, ctrl_track: true, hands: false, hands_roles: false, passthrough: false, voice: true, hz90: true, perf: false, anchor: false, preset: Preset::None, eye_default_on: false, screens: 4, ctrl_work: CtrlMode::WhenHeld, ctrl_play: CtrlMode::Always };
+        let all = DeskToggles { eye: true, sixdof: true, ctrl_track: true, hands: false, hands_roles: false, passthrough: false, voice: true, hz90: true, perf: false, anchor: false, preset: Preset::None, eye_default_on: false, screens: 4, ctrl_work: CtrlMode::WhenHeld, ctrl_play: CtrlMode::Always, ..DeskToggles::default() };
         // a newer launcher: eye on by default, --no-eye to turn it off
         let newer = DeskToggles { eye_default_on: true, ..all };
         assert!(!desk_flags(&newer).contains(&"--eye".to_string()));

@@ -13,7 +13,7 @@ OVR_BINS=(
 )
 # Monado feature markers the build must carry (ai/CLAUDE.md section 3; the app's preflight refuses builds without them)
 OVR_MARKERS=(PIMAX_SLAM PIMAX_ANCHOR PIMAX_EYE PIMAX_CTRL_TRACK "held from the tracker" PIMAX_TOUCH_GRIP
-	PIMAX_ANCHOR_OWNER PIMAX_CTRL_INHAND PIMAX_HANDS PIMAX_AE_EXTENDED)
+	PIMAX_ANCHOR_OWNER PIMAX_CTRL_INHAND PIMAX_HANDS PIMAX_AE_EXTENDED PIMAX_CTRL_ANGLE PIMAX_ANCHOR_GLIDE)
 # user units (installed as copies; see enable policy in install.sh)
 OVR_UNITS=(omarchyvr-keepalived.service omarchyvrd.service omarchyvr-autod.service omarchyvr-ai.service)
 
