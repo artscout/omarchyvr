@@ -117,11 +117,16 @@ pub const USAGE: &str = "usage: omarchyvr vr <command> [options]
   status [--log FILE] [--notify]
       service, headset, display, kernel state and a summary of the log (exit code 3 if not running).
   (start with --6dof also takes --no-auto-recover: if the camera 34a4:0014 is missing but the headset HID is present, start
-      first runs the reset-headset exit path and waits up to 150 s for the camera; refuses while monado-service runs.)
-  reset-headset [--mode sys|exit|dp] [--wait SECS] [--session-dir DIR]     (GUI: 'Restart headset')
+      first restarts the headset ONCE (its own restart command, the keepalive back as soon as it leaves USB) and waits up
+      to 60 s for the camera; no second reset. If the camera stays away the start stops and points to the app's
+      'Get the headset ready' guide (a power cycle, the power button first). Refuses while monado-service runs.)
+  reset-headset [--mode sys|exit|dp] [--once] [--wait SECS] [--session-dir DIR]     (GUI: 'Restart headset')
+      --once (sys only; the setup's step for missing cameras): exactly one restart command, up to 60 s for the camera,
+      no slow fallback and no dp retry; the verdict then says the headset needs a power cycle (the app's guide).
       sys (default): the headset's own restart command, 58 04 28 00 00 (eSpiCmdSysReset, captured from Pimax Play):
-      stops omarchyvr-keepalived, sends it once, watches USB (HID back after ~8 s, camera ~17 s) and waits until 22 s after
-      the command for the picture; plain progress lines starting with restart:. If nothing leaves USB within 15 s the headset
+      stops omarchyvr-keepalived, sends it once, starts the keepalive again as soon as the headset leaves USB (without a host
+      heartbeat it re-enumerates every ~6 s and the camera does not return), watches USB (HID back after ~8 s, camera
+      ~17 s) and waits until 22 s after the command for the picture; plain progress lines starting with restart:. If nothing leaves USB within 15 s the headset
       ignored it and the exit sequence below follows. Then the dp retry if the camera is still missing.
       exit: make the headset power-cycle itself like after Pimax Play exits: stops omarchyvr-keepalived, sends the
       captured exit frames (0x1a/5 [04], 0x39 rate 0 twice), watches USB for --wait seconds (default 150; HID 34a4:0044,
@@ -498,7 +503,7 @@ pub fn run(mut a: Args) -> CliResult {
             }
             // camera missing but headset present: restart the headset and wait for the camera (needs --6dof)
             if sixdof.is_some() && !opts.dry_run && !no_auto_recover {
-                reset::real::auto_recover_real(&opts.session_dir, reset::WATCH).map_err(CliError::new)?;
+                reset::real::auto_recover_real(&opts.session_dir, reset::AUTO_WAIT).map_err(CliError::new)?;
             }
             // Ctrl-C / SIGTERM while the service starts (or, with --wait, runs) must stop it, not leave it behind
             let flag = pimax::sys::install_term_flag();
@@ -649,9 +654,15 @@ pub fn run(mut a: Args) -> CliResult {
                 Some(m) => reset::Mode::parse(&m).map_err(CliError::usage)?,
                 None => reset::Mode::Sys,
             };
+            // --once: one restart command and no fallback (the setup's step for missing cameras)
+            let once = a.flag("--once");
+            if once && mode != reset::Mode::Sys {
+                return Err(CliError::usage("--once goes with --mode sys (the default)"));
+            }
             let wait = match a.opt_parse::<f64>("--wait")? {
                 Some(w) if w.is_finite() && w >= 1.0 => Duration::from_secs_f64(w.min(900.0)),
                 Some(_) => return Err(CliError::usage("--wait must be a number of seconds (1..900)")),
+                None if once => reset::AUTO_WAIT,
                 None => reset::WATCH,
             };
             reject_leftovers(&a)?;
@@ -665,6 +676,7 @@ pub fn run(mut a: Args) -> CliResult {
             };
             let clock = RealClock::new();
             let verdict = match mode {
+                reset::Mode::Sys if once => reset::reset_once(&mut host, &clock, wait).map_err(CliError::new)?.0,
                 reset::Mode::Sys => reset::sys_then_exit_then_dp(&mut host, &clock, wait, true)
                     .map_err(CliError::new)?
                     .0,

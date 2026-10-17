@@ -262,7 +262,13 @@ pub fn evaluate(
 
     // Row 3: the eye chip has one owner.
     if t.eye {
-        if !facts.tobii {
+        if !facts.tobii && facts.headset {
+            // normal after the headset restarted: the session's eye tracker sends the captured eye-module enable itself
+            // (once per enumeration) and the chip appears ~2 s later. The old yellow line with "start without eye
+            // tracking" made the person turn eye tracking off for nothing (2026-10-17 13:18).
+            o.add(Some(3), "eye-busy", Sev::Info, "Eye tracker off: switched on at the start",
+                "The eye module is off after a headset restart (normal). The start switches it on (the captured enable, once).", vec![]);
+        } else if !facts.tobii {
             o.add(Some(3), "eye-busy", Sev::Warn, "Eye tracker (2104:0561) not enumerated",
                 "Tools > Power on eye module (`pimax-eye power-on`), or start without eye tracking.", vec![Action::WithoutEye]);
         } else if !facts.eye_holders.is_empty() {
@@ -505,7 +511,13 @@ mod tests {
     use crate::monlog::LogFollower;
 
     fn eval_on(m: &FakeMachine, p: &Paths, t: DeskToggles) -> Preflight {
-        let facts = collect_facts(m, p, &demo::opts(p), &MarkerCache::default(), None, true, true);
+        eval_with(m, p, t, |_| {})
+    }
+
+    /// [`eval_on`] with the collected facts changed first.
+    fn eval_with(m: &FakeMachine, p: &Paths, t: DeskToggles, tweak: impl Fn(&mut crate::facts::Facts)) -> Preflight {
+        let mut facts = collect_facts(m, p, &demo::opts(p), &MarkerCache::default(), None, true, true);
+        tweak(&mut facts);
         let mut fl = LogFollower::new(&p.session_dir.join("monado.log"));
         let live = collect_live(m, p, &mut fl);
         let env = |k: &str| match k {
@@ -592,6 +604,28 @@ mod tests {
         let t = DeskToggles { eye: false, sixdof: false, passthrough: false, ..DeskToggles::with_eye() };
         let pf = eval_on(&m, &p, t);
         assert!(pf.get("eye-busy").is_none() && pf.get("camera-busy").is_none());
+    }
+
+    /// 2026-10-17 13:18: after a headset restart the eye chip was off (normal: the session powers it on), the yellow
+    /// line offered "start without eye tracking" and eye tracking was turned off for nothing.
+    #[test]
+    fn an_eye_module_switched_off_by_a_headset_restart_is_not_a_reason_to_drop_eye_tracking() {
+        let (m, p) = demo::idle_machine();
+        let pf = eval_with(&m, &p, DeskToggles::with_eye(), |f| {
+            f.tobii = false;
+            f.headset = true;
+        });
+        let eye = pf.get("eye-busy").unwrap();
+        assert_eq!(eye.sev, Sev::Info, "{eye:?}");
+        assert!(eye.actions.is_empty() && eye.title.contains("switched on at the start"), "{eye:?}");
+        // the headset itself absent: the old warning with its way out stays
+        let pf = eval_with(&m, &p, DeskToggles::with_eye(), |f| {
+            f.tobii = false;
+            f.headset = false;
+        });
+        let eye = pf.get("eye-busy").unwrap();
+        assert_eq!(eye.sev, Sev::Warn);
+        assert!(eye.actions.contains(&Action::WithoutEye));
     }
 
     #[test]

@@ -206,6 +206,13 @@ while IFS=$'\t' read -r class pat note; do
 		esac
 	done
 done <"$REPO/installer/legacy-inventory.tsv"
+# the installer's build cache (Basalt, the cargo and WayVR targets: tens of GB) is not a setting: it is removed here,
+# before the settings backup, so it never goes into that tar (2026-10-17 12:01: a 2.5 GB "settings" backup that took
+# three minutes and held no setting). The next ./install.sh builds again.
+BUILD_CACHE="$HOME/.cache/omarchyvr/build"
+if [[ -d $BUILD_CACHE && ! -L $BUILD_CACHE ]]; then
+	do_rm BUILD "$BUILD_CACHE" "the installer's build cache; not part of the settings backup"
+fi
 # the new-name settings, state and caches of a manifest install
 for p in "$CONF/omarchyvr" "$HOME/.local/state/omarchyvr" "$HOME/.cache/omarchyvr"; do
 	[[ -e $p ]] || continue

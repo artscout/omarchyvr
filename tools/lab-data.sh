@@ -43,23 +43,36 @@ files() {
     return 0
 }
 
+# link REL: point REL at the lab copy. A link that already points there is left alone (2026-10-17): re-creating it
+# changes the directory's mtime, the build scripts' rerun-if-changed (rust/lab_data_build.rs) then rebuild pimax-cam
+# and pimax-eye, libpimax_capi.a changes, Monado relinks monado-service and the kernel drops its cap_sys_nice: every
+# ./install.sh asked for the password again although nothing had changed.
+link_one() {
+    local rel=$1
+    if [[ -L "$rel" && "$(readlink "$rel")" == "$LAB/$rel" ]]; then
+        same=$((same + 1))
+        return 0
+    fi
+    mkdir -p "$(dirname "$rel")"
+    ln -sfn "$LAB/$rel" "$rel"
+}
+
 case "$cmd" in
 link)
     [[ -d "$LAB" ]] || { echo "no lab data at $LAB (tests that need it stay ignored)"; exit 0; }
-    n=0
+    n=0 same=0
     while IFS= read -r rel; do
         if git ls-files --error-unmatch "$rel" >/dev/null 2>&1; then
             echo "refuse: $rel is tracked" >&2; exit 1
         fi
-        mkdir -p "$(dirname "$rel")"
-        ln -sfn "$LAB/$rel" "$rel"; n=$((n + 1))
+        link_one "$rel"; n=$((n + 1))
     done < <(files)
     for rel in "${STANDINS[@]}"; do
         [[ -f "$LAB/$rel" ]] || continue
         git update-index --skip-worktree "$rel"
-        ln -sfn "$LAB/$rel" "$rel"; n=$((n + 1))
+        link_one "$rel"; n=$((n + 1))
     done
-    echo "linked $n private files from $LAB"
+    echo "linked $n private files from $LAB$([[ $same -gt 0 ]] && echo " ($same already linked, left alone)")"
     ;;
 unlink)
     n=0

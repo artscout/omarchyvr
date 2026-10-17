@@ -18,7 +18,12 @@ The terminal ends with "The app finishes the setup (one password)": it never ask
 | 4 | app, Ready | **Play**: SteamVR starts with the headset | **Play** | no |
 
 All green and no restart needed: the only press is Play. If an item fails, it shows why and has one **Fix** button
-(several root fixes: **Fix all (one password)**); a closed password window or a wrong password shows **Try again**.
+(several root fixes: only **Fix all (one password)**, so one password covers them); a closed password window or a
+wrong password shows **Try again**. The setup is not Ready while a part of the headset is missing: its control chip
+(`34a4:0044`, the headset sleeps), its cameras (`34a4:0014`: the setup restarts the headset once) or its eye tracker
+(`2104:0561`: switched on with the captured enable, once). "Get the headset ready" shows under the list and the checks
+run again by itself when the parts are back. The display-mode Fix waits (no password) while the headset sleeps. When
+the system part already asked for a restart, **Restart now** stays on that screen too.
 IPD, controllers, eye calibration and the room map are optional ("Next, in the headset" on the Ready screen).
 **Run setup again** is on the Ready screen. How it works: [GUI.md](GUI.md#setting-up-your-pc-the-automatic-setup-was-onboarding).
 
@@ -30,8 +35,17 @@ room (docs/ROOM-SETUP.md).
 
 Later Plays never ask for a password. The realtime permission (`cap_sys_nice`) sits on the installed
 `monado-service` at a fixed path (`~/.local/lib/omarchyvr/monado/...`). Builds in other directories never relink
-that file, so the permission stays. Only an update that rebuilds Monado asks again, inside that update's one
-root job.
+that file, so the permission stays. An update (`./install.sh` again) keeps it too when Monado's binary did not
+change: the installer keeps the old file when the rebuilt one has the same bytes (a relink alone used to drop the
+permission, 2026-10-17). Only an update that really changes Monado loses it. Then the app checks this PC once at its
+next start (install.sh leaves `~/.local/share/omarchyvr/post-install-check` for it) and shows the one-password Fix
+right away, before anyone presses Play. All green: nothing is shown. That check looks at the PC only; a headset that
+sleeps while you update is fine.
+
+**Do it in one sitting.** Between an uninstall and the setup's password step the headset has no keep-alive (the
+access rule comes with that step). Left like that for hours, its control chip restarts every few seconds and then
+switches itself off (2026-10-17: four hours, then only a power cycle helped). Run `./install.sh` and let the app
+finish the setup right after the uninstall; do not do other work in between.
 
 On a PC that does not have the build packages yet, `./install.sh --install-packages` asks once more, before the
 build, to install them with pacman. A build cannot start without them. Without the option, the installer lists
@@ -118,6 +132,17 @@ The app guides you and notices success by itself (green tick):
 1. Step A: press the power button on the headset (a short animation shows where). It waits up to 90 s.
 2. Step B, the last resort, only when no VR session runs: unplug the headset's POWER cable, wait 10 seconds, plug it back in. Leave the DisplayPort cable in. The animation counts the 10 s.
 3. If it still does not appear, the app warns and Start setup stays possible: the setup installs the permission rule and the keep-alive, which can wake it. If the display is not found afterwards, the result screen offers the one Fix for the display mode (it asks again every 5 s by itself).
+
+The cameras are missing (`34a4:0014` not on USB while the headset is on, the headset's USB3 side is off)? A Work or
+Play start with head tracking restarts the headset ONCE (its own restart command; the keep-alive is back the moment
+the headset leaves USB) and waits up to 60 s. If they stay off, the start stops and the app opens "Get the headset
+ready": the cameras need a power cycle of the headset (the power button first, the power cable as the last step). A PC
+restart does not bring them back. Real start 2026-10-17 13:07: the old recovery waited 150 s with the keep-alive
+stopped, the headset restarted itself every 6 s, a second reset followed, and only the power cable helped.
+
+The eye tracker (`2104:0561`) is not on USB after a headset restart: that is normal. The eye module is off until the
+captured enable, which the VR start sends itself; the start says "Eye tracker off: switched on at the start". Do not
+turn eye tracking off for it.
 
 The app window did not open at login? A second start of the app brings the window to the front; if the window process has no window or does not answer within 3 seconds, it is replaced by a new one. At login the app waits for the Wayland display first. Log: `~/.local/state/omarchyvr/logs/omarchyvr-app.log`.
 

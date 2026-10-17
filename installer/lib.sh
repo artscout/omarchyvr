@@ -87,6 +87,49 @@ put() {
 	record file "$dst" "$class" "$note" "$bk"
 }
 
+# ---- the realtime permission across a rebuild (2026-10-17) ----------------------------------------------------------
+# Monado is built in its installed place. A link writes a NEW monado-service and the kernel drops the file capability
+# (cap_sys_nice) that the one password set: every ./install.sh asked for the password again, even when the binary had
+# not changed (a relink caused only by touched inputs). cap_keep_begin keeps the old file under a second name (a hard
+# link: same inode, same capability); after the build cap_keep_end puts it back when the new binary has the same bytes.
+# No root is needed for either step.
+has_nice_cap() { getcap "$1" 2>/dev/null | grep -q cap_sys_nice; } # tests replace it (setcap needs root)
+cap_keep_begin() { # cap_keep_begin SERVICE
+	local s=$1
+	rm -f -- "$s.cap-keep"
+	# best effort: without the link the install goes on and the app asks for the permission once (never fatal)
+	if [[ -f $s ]] && has_nice_cap "$s"; then ln -- "$s" "$s.cap-keep" 2>/dev/null || true; fi
+	return 0
+}
+# cap_keep_end SERVICE: prints one word
+#   unchanged  not relinked: the same file, the permission as before
+#   kept       relinked to the same bytes: the old file (with its permission) is back in place
+#   changed    a real update: the permission is gone and must be set again (one password, in the app)
+#   none       the file had no permission before the build (first install, or it was lost earlier)
+cap_keep_end() {
+	local s=$1 k=$1.cap-keep
+	if [[ ! -e $k ]]; then
+		echo none
+		return 0
+	fi
+	if [[ ! -e $s ]]; then
+		mv -f -- "$k" "$s"
+		echo unchanged
+	elif [[ $(stat -c %i -- "$k") == "$(stat -c %i -- "$s")" ]]; then
+		rm -f -- "$k"
+		echo unchanged
+	elif cmp -s -- "$k" "$s"; then
+		# rename keeps the inode and its capability; the new mtime keeps ninja from relinking it next time (a time
+		# change does not drop a file capability, only a write or a chown does)
+		mv -f -- "$k" "$s"
+		touch -c -- "$s"
+		echo kept
+	else
+		rm -f -- "$k"
+		echo changed
+	fi
+}
+
 # ---- machine facts (read only) -------------------------------------------------------------------------------------
 os_id() { (. /etc/os-release 2>/dev/null; echo "${ID:-unknown} ${ID_LIKE:-}"); }
 is_arch() { [[ " $(os_id) " == *" arch "* ]]; }

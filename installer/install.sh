@@ -331,8 +331,14 @@ elif [[ ! -f "$BASALT_PREFIX/lib/libbasalt.so" ]] || [[ "$(cat "$BASALT_PREFIX/.
 fi
 [[ $SKIP_BASALT == 1 ]] || record dir "$BASALT_PREFIX" REBUILD "Basalt ${BASALT_COMMIT:0:9}"
 
-# Monado: built in its installed place, so the realtime permission set once stays (a rebuild without changes does
-# not relink; a relink happens only on an update, whose root job sets it again)
+# Monado: built in its installed place, so the realtime permission set once stays: a relink to the same bytes keeps
+# the old file and its permission (cap_keep_begin/cap_keep_end in lib.sh); only a real update loses it, and then the
+# app shows the one-password Fix at its next start ($SHARE/post-install-check, below).
+# Building in place replaces the installed monado-service: never while a VR session runs (checked again here, the
+# build before took minutes).
+if [[ $STAGING == 0 ]] && pgrep -x monado-service >/dev/null 2>&1; then
+	die "a VR session is running (monado-service): Monado is built in its installed place, so nothing more is built now. Stop VR in the app and run ./install.sh again (the finished parts of the build are reused)."
+fi
 build "Monado (forks/monado, configure)" cmake -S "$REPO/forks/monado" -B "$MONADO_BUILD" -G Ninja \
 	-DCMAKE_BUILD_TYPE=RelWithDebInfo \
 	-DXRT_BUILD_DRIVER_PIMAX=ON -DPIMAX_CAM=ON -DPIMAX_USE_RUST_LIBPIMAX=ON -DXRT_HAVE_SYSTEM_CJSON=OFF \
@@ -352,7 +358,14 @@ while IFS= read -r l; do
 	fi
 done <"$REPO/installer/monado-cache.expect"
 [[ $BAD == 0 ]] || die "the Monado configuration lacks a required feature (see above); missing package?"
+cap_keep_begin "$SERVICE"
 build "Monado (compile)" ninja -C "$MONADO_BUILD" -j "$JOBS"
+CAP_STATE=$(cap_keep_end "$SERVICE")
+case $CAP_STATE in
+unchanged) note "realtime permission (cap_sys_nice): kept (monado-service was not relinked)" ;;
+kept) note "realtime permission (cap_sys_nice): kept (monado-service was relinked to the same bytes; the old file is back)" ;;
+changed) note "Monado changed: its realtime permission is set again with one password (the app offers it at its next start)" ;;
+esac
 for m in "${OVR_MARKERS[@]}"; do
 	[[ $(grep -ac -- "$m" "$SERVICE" || true) -gt 0 ]] || die "Monado marker '$m' missing from $SERVICE: refusing this build"
 done
@@ -524,6 +537,19 @@ PLAN="$SHARE/root-plan.env"
 record file "$PLAN" RESET "root job plan"
 "$DATA/installer/omarchyvr-root.sh" plan "$PLAN" | tee "$SHARE/root-plan.txt" | sed 's/^/    /'
 record file "$SHARE/root-plan.txt" RESET "root job plan (text the wizard shows)"
+# The app's check after this install: at its next start the app runs the setup's checks once more and, when one is not
+# green (for example the realtime permission of a changed Monado), shows it at once with its one-password Fix instead
+# of a red item found later at Play (real install 2026-10-17 13:23: the password was asked by the start of Work).
+# All green: nothing is shown and the app removes this file.
+POST_CHECK="$SHARE/post-install-check"
+if [[ $STAGING == 0 ]]; then
+	{
+		echo "# written by install.sh $(date -u +%FT%TZ): the app checks this PC once at its next start"
+		echo "monado=$CAP_STATE"
+		echo "realtime_permission=$(has_nice_cap "$SERVICE" && echo yes || echo no)"
+	} >"$POST_CHECK"
+	record file "$POST_CHECK" RESET "the app's check after this install (removed by the app when all is green)"
+fi
 ROOT_CMD="/usr/bin/pkexec $DATA/installer/omarchyvr-root.sh apply $PLAN"
 if [[ $STAGING == 1 || $DRY_ROOT == 1 ]]; then
 	note "the root job is only printed ($([[ $STAGING == 1 ]] && echo staging || echo --dry-run-root)): $ROOT_CMD"

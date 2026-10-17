@@ -65,9 +65,10 @@ pub const USAGE: &str = "usage: omarchyvr desk <command> [options]
       HMD fps vs 72/90, main app fps, frames missed in the last 5 s, app CPU/GPU ms; green, yellow under 95 %,
       red under 85 %. Monado writes $XDG_RUNTIME_DIR/omarchyvr-perf.stats (PIMAX_PERF_FILE), `omarchyvr-perf run` shows it.
       --no-perf turns it off.
-      Camera (passthrough / --6dof) missing while the headset HID is present (USB3 side dropped): the start first runs the
-      `omarchyvr vr reset-headset` exit path and waits up to 150 s for the camera (progress lines), then continues; it refuses
-      while monado-service runs. --no-auto-recover skips this.
+      Camera (passthrough / --6dof) missing while the headset HID is present (USB3 side dropped): the start first restarts
+      the headset ONCE (`reset-headset` sys mode, the keepalive back as soon as it leaves USB) and waits up to 60 s for the
+      camera (progress lines), then continues; no second reset. If the camera stays away the start stops and points to the
+      app's 'Get the headset ready' guide. It refuses while monado-service runs. --no-auto-recover skips this.
       --preset (default cinema): cinema (one big curved screen, passthrough dimmed: --gain 0.35), work-3 (alias work:
       the desktop + 2 WayVR app panels from ~/.config/omarchyvr/work-panels.conf, flat), work-1 (one flat screen),
       assistant (= --voice captions), none; written to conf.d/60-preset.yaml every start (removed with none), the
@@ -1149,7 +1150,7 @@ pub fn run(mut a: Args) -> CliResult {
     }
     // camera needed (passthrough or 6DoF) but missing while the headset is there: restart the headset, wait for it
     if first == "start" && !no_auto_recover && !o.vr.dry_run && (o.passthrough || o.sixdof.is_some()) {
-        super::reset::real::auto_recover_real(&o.vr.session_dir, super::reset::WATCH).map_err(CliError::new)?;
+        super::reset::real::auto_recover_real(&o.vr.session_dir, super::reset::AUTO_WAIT).map_err(CliError::new)?;
     }
     let mut host = RealHost::from_env();
     host.service_comm = o.vr.service_comm();

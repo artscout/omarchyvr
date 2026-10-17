@@ -411,6 +411,39 @@ pub fn from_doctor(facts: &Facts, live: &Live, p: &Paths) -> Vec<Item> {
     out
 }
 
+/// The headset's parts behind its control chip (34a4:0044): the cameras (34a4:0014, the USB3 side) and the eye tracker
+/// (2104:0561). Judged only while the control chip is on USB (asleep, nothing can be told). Real setup 2026-10-17: the
+/// setup said "done" while the cameras were gone (USB3 side off) and the eye module was off after a headset restart;
+/// Work then failed. Each gets its one step: the cameras a single headset restart (`reset-headset --once`, the
+/// captured restart command; if they stay off the headset needs a power cycle: the "Get the headset ready" guide),
+/// the eye tracker the captured eye-module enable, once (`pimax-eye power-on`; the VR session sends the same by itself).
+pub fn headset_part_items(facts: &Facts, p: &Paths) -> Vec<Item> {
+    let has = |v: u16, pid: u16| facts.usb.contains(&(v, pid));
+    if facts.at == 0 || !has(0x34a4, 0x0044) {
+        return vec![];
+    }
+    let mut v = Vec::new();
+    v.push(if has(0x34a4, 0x0014) {
+        Item::new("headset-camera", Group::Headset, "Headset cameras", Level::Ok, "34a4:0014 on USB", Some(26), Fix::None)
+    } else {
+        let launcher = p.launcher(&|x| facts.has(x)).display().to_string();
+        Item::new("headset-camera", Group::Headset, "Headset cameras", Level::Fail,
+            "34a4:0014 not on USB while the headset's control chip is (its USB3 side is off)", Some(26),
+            user("Restart the headset once with its own restart command (captured from Pimax Play). If the cameras stay off, the headset needs a power cycle: Get the headset ready (the power button first).",
+                vec![Cmd::with_args(launcher, vec!["vr".into(), "reset-headset".into(), "--once".into()])]))
+    });
+    v.push(if has(0x2104, 0x0561) {
+        Item::new("eye-chip", Group::Headset, "Eye tracker", Level::Ok, "2104:0561 on USB", Some(11), Fix::None)
+    } else {
+        Item::new("eye-chip", Group::Headset, "Eye tracker", Level::Warn,
+            "2104:0561 not on USB: the eye module is off (normal after the headset restarted; a VR start switches it on)", Some(11),
+            user("Switch the eye module on: the captured enable command, sent once (approved), then wait for 2104:0561.",
+                vec![Cmd::with_args("flock", vec!["-o".into(), "-w".into(), "10".into(), p.headset_lock.display().to_string(),
+                    p.bin("pimax-eye").display().to_string(), "power-on".into()])]))
+    });
+    v
+}
+
 /// The whole checklist, grouped and in a stable order.
 pub fn build(facts: &Facts, live: &Live, p: &Paths) -> Vec<Item> {
     let mut v = from_doctor(facts, live, p);
@@ -431,6 +464,7 @@ pub fn build(facts: &Facts, live: &Live, p: &Paths) -> Vec<Item> {
         None => Item::new("udev-rule", Group::Headset, "udev rule file", Level::Fail, "/etc/udev/rules.d/70-pimax.rules is not installed", None,
             Fix::Root(RootFix::new(why, udev_lines, udev_undo, false))),
     });
+    v.extend(headset_part_items(facts, p));
     v.push(if facts.lock_holders.is_empty() {
         Item::new("headset-lock", Group::Headset, "Headset lock", Level::Ok, format!("{} is free", p.headset_lock.display()), None, Fix::None)
     } else {
@@ -643,6 +677,41 @@ mod tests {
 
     fn item<'a>(v: &'a [Item], id: &str) -> &'a Item {
         v.iter().find(|i| i.id == id).unwrap_or_else(|| panic!("no item {id}: {:?}", v.iter().map(|i| &i.id).collect::<Vec<_>>()))
+    }
+
+    /// 2026-10-17: the setup said "done" with the cameras gone and the eye module off. Both are items with one step.
+    #[test]
+    fn the_headset_parts_behind_the_control_chip() {
+        let (_, p) = demo::idle_machine();
+        let mut f = Facts { at: 1, ..Facts::default() };
+        // asleep (no control chip): nothing can be told about the parts
+        f.usb = vec![(0x34a4, 0x0043), (0x34a4, 0x0014)];
+        assert!(headset_part_items(&f, &p).is_empty());
+        // awake, everything there
+        f.usb = vec![(0x34a4, 0x0043), (0x34a4, 0x0044), (0x34a4, 0x0014), (0x2104, 0x0561)];
+        let v = headset_part_items(&f, &p);
+        assert_eq!((item(&v, "headset-camera").level, item(&v, "eye-chip").level), (Level::Ok, Level::Ok));
+        // awake, the cameras and the eye module off (real state after the 13:07 restart)
+        f.usb = vec![(0x34a4, 0x0043), (0x34a4, 0x0044)];
+        let v = headset_part_items(&f, &p);
+        let cam = item(&v, "headset-camera");
+        assert_eq!(cam.level, Level::Fail);
+        match &cam.fix {
+            Fix::User(u) => {
+                assert_eq!(u.steps.len(), 1);
+                assert_eq!(u.steps[0].args, ["vr", "reset-headset", "--once"], "ONE restart, never the retry chain");
+                assert!(u.why.contains("Get the headset ready"), "{}", u.why);
+            }
+            x => panic!("{x:?}"),
+        }
+        let eye = item(&v, "eye-chip");
+        assert_eq!(eye.level, Level::Warn);
+        match &eye.fix {
+            Fix::User(u) => assert_eq!(u.steps[0].args.last().map(String::as_str), Some("power-on")),
+            x => panic!("{x:?}"),
+        }
+        // not collected yet: nothing
+        assert!(headset_part_items(&Facts::default(), &p).is_empty());
     }
 
     #[test]

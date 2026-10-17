@@ -53,8 +53,29 @@ pub struct OnboardingView {
     pub wake_asked: f64,
     /// Screenshots and the demo: show this guidance step with the animation at this time.
     pub wake_demo: Option<(crate::wake::Wake, f64)>,
+    /// The guide opened on its own (a start or a headset restart found the headset asleep or its cameras gone).
+    pub wake_only: Option<WakeOnly>,
+    /// What the guide waits for now (`Some(need_camera)`): a change starts it over.
+    pub wake_for: Option<bool>,
+    /// The setup's problem list was checked again after the guide saw the headset's parts back.
+    pub wake_rechecked: bool,
+    /// The check after an update (`post-install-check`) was started in this run of the app.
+    pub post_install_started: bool,
+    /// Its problems were shown (the setup screen opened once).
+    pub post_install_shown: bool,
     /// The latest progress to write (the writer task takes it).
     slot: Arc<Mutex<Option<Progress>>>,
+}
+
+/// "Get the headset ready" on its own, outside the setup.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WakeOnly {
+    /// The page Back returns to.
+    pub back: Page,
+    /// Why it opened, in plain words.
+    pub reason: String,
+    /// The cameras are needed too (not only the control chip).
+    pub need_camera: bool,
 }
 
 /// What a step does, for people.

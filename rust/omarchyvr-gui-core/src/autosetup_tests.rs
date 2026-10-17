@@ -371,3 +371,253 @@ mod choose_headset {
         assert_eq!(s.phase, Phase::Looking);
     }
 }
+
+// ---- 2026-10-17 retro: the headset's parts, the check after an update ----------------------------------------------
+
+/// Real setup 2026-10-17 12:40: the system part ran (NVIDIA patched, a restart needed) while the headset's control chip
+/// was off. The setup must not say "ready" or "restart, all set" while a part is missing; the restart stays offered
+/// (`reboot`), so nobody has to edit the stage by hand.
+#[test]
+fn missing_headset_parts_keep_the_setup_from_ready_and_the_restart_stays_offered() {
+    let mut s = fresh();
+    s.start(RunKind::Fresh, true);
+    let parts_bad = || {
+        let mut c = all_green();
+        c.retain(|x| x.id != "headset");
+        c.push(bad("headset", CheckFix::None));
+        c
+    };
+    assert_eq!(s.checks_done(parts_bad()), Action::RunRoot(RootPlan::Setup));
+    s.root_output(APPLY_DONE);
+    assert_eq!(s.root_finished(RootOutcome::Ok { reboot: true }), Action::RunChecks);
+    assert_eq!(s.checks_done(parts_bad()), Action::None);
+    assert_eq!(s.phase, Phase::Problems, "not NeedsRestart, not Ready");
+    assert!(s.reboot, "the restart is still offered on the problem screen");
+    assert_eq!(s.stage(), None, "the saved stage is not touched");
+    assert_eq!(guide_for(&s.problems), Some(false), "the guide for the control chip shows");
+    // the headset woke up (the guide re-checks): now all set, one restart left
+    assert_eq!(s.check_again(), Action::RunChecks);
+    assert_eq!(s.checks_done(all_green()), Action::None);
+    assert_eq!(s.phase, Phase::NeedsRestart);
+}
+
+#[test]
+fn missing_cameras_get_one_restart_without_a_password_then_the_power_cycle_guide() {
+    let mut s = AutoSetup::default();
+    s.start(RunKind::Fresh, false);
+    let mut c = all_green();
+    c.push(bad("headset-camera", CheckFix::User));
+    c.push(bad("eye-chip", CheckFix::User));
+    // stage 2 runs the one restart first, then the eye module's enable
+    assert_eq!(s.checks_done(c), Action::RunUserFix("headset-camera".into()));
+    assert_eq!(s.user_fix_done(false), Action::RunUserFix("eye-chip".into()));
+    assert_eq!(s.user_fix_done(true), Action::RunChecks);
+    // the cameras are still off: a problem with the guide (a power cycle), not "ready"
+    let mut c = all_green();
+    c.push(bad("headset-camera", CheckFix::User));
+    c.push(ok("eye-chip"));
+    assert_eq!(s.checks_done(c), Action::None);
+    assert_eq!(s.phase, Phase::Problems);
+    assert_eq!(guide_for(&s.problems), Some(true));
+    assert_eq!(s.problems.len(), 1);
+}
+
+#[test]
+fn the_check_after_an_update_offers_the_lost_realtime_permission_with_one_password() {
+    // install.sh relinked monado-service (the kernel dropped cap_sys_nice): the app checks once, by itself
+    let mut s = fresh();
+    assert_eq!(s.start(RunKind::AfterUpdate, false), Action::RunChecks);
+    assert_eq!(s.phase, Phase::Verifying, "only the checks, no root job");
+    assert_eq!(s.headline(), "Checking after the update...");
+    let mut c = all_green();
+    c.retain(|x| x.id != "setcap-desk");
+    c.push(bad("setcap-desk", CheckFix::Root { reboot: false }));
+    assert_eq!(s.checks_done(c), Action::None);
+    assert_eq!(s.phase, Phase::Problems);
+    assert_eq!(s.fix_one("setcap-desk"), Action::RunRoot(RootPlan::Fixes(vec!["setcap-desk".into()])));
+    assert_eq!(s.root_finished(RootOutcome::Ok { reboot: false }), Action::RunChecks);
+    assert_eq!(s.checks_done(all_green()), Action::None);
+    assert_eq!(s.phase, Phase::Ready, "no restart for a permission");
+    assert_eq!(s.stage(), Some(SetupStage::Done));
+    // a stopped password step tries the check again, never the whole system setup
+    let mut s = fresh();
+    s.start(RunKind::AfterUpdate, false);
+    s.checks_done(vec![bad("setcap-desk", CheckFix::Root { reboot: false })]);
+    s.fix_one("setcap-desk");
+    s.root_finished(RootOutcome::Cancelled);
+    assert_eq!(s.retry(), Action::RunChecks);
+    assert_eq!((s.kind, s.phase.clone()), (RunKind::AfterUpdate, Phase::Verifying));
+    // all green right away: Ready without a word
+    let mut s = fresh();
+    s.start(RunKind::AfterUpdate, false);
+    assert_eq!(s.checks_done(all_green()), Action::None);
+    assert_eq!(s.phase, Phase::Ready);
+    assert!(RunKind::AfterUpdate.check_only() && RunKind::AfterReboot.check_only() && !RunKind::Again.check_only());
+}
+
+#[test]
+fn the_check_after_an_update_does_not_pull_the_setup_up_for_a_sleeping_headset() {
+    // updated while the headset sleeps (normal when VR is not in use): only what the update can change counts
+    let mut c = vec![bad("headset", CheckFix::None), bad("connector", CheckFix::None), bad("headset-camera", CheckFix::User), bad("eye-chip", CheckFix::User), ok("udev"), bad("setcap-desk", CheckFix::Root { reboot: false })];
+    update_checks(&mut c);
+    let ids: Vec<&str> = c.iter().map(|x| x.id.as_str()).collect();
+    assert_eq!(ids, ["udev", "setcap-desk"]);
+    let mut s = fresh();
+    s.start(RunKind::AfterUpdate, false);
+    let mut c = vec![bad("headset", CheckFix::None), ok("setcap-desk")];
+    update_checks(&mut c);
+    s.checks_done(c);
+    assert_eq!(s.phase, Phase::Ready, "nothing to show");
+}
+
+#[test]
+fn a_sleeping_headset_is_explained_as_asleep_not_unplugged() {
+    let mut c = vec![bad("headset", CheckFix::None), ok("udev")];
+    // only the bridge and the cameras: asleep
+    explain_headset(&mut c, &[(0x34a4, 0x43), (0x34a4, 0x14), (0x2104, 0x561)]);
+    assert_eq!(c[0].title, "Headset is awake");
+    assert!(c[0].reason.contains("asleep or off") && c[0].reason.contains("power button") && !c[0].reason.contains("Plug it in"), "{}", c[0].reason);
+    // nothing on USB: the plain "not seen" stays
+    let mut c = vec![bad("headset", CheckFix::None)];
+    explain_headset(&mut c, &[]);
+    assert_eq!(c[0].title, "headset");
+}
+
+#[test]
+fn the_display_mode_fix_waits_for_the_headset_instead_of_asking_for_a_password() {
+    let asleep = [(0x34a4, 0x43), (0x34a4, 0x14)];
+    let mut c = vec![bad("headset", CheckFix::None), bad("connector", CheckFix::Root { reboot: true })];
+    explain_headset(&mut c, &asleep);
+    assert_eq!(c[1].fix, CheckFix::None, "no password while the display cannot show");
+    assert!(c[1].reason.contains("once the headset is awake"), "{}", c[1].reason);
+    // awake: the one-password Fix stays
+    let mut c = vec![bad("connector", CheckFix::Root { reboot: true })];
+    explain_headset(&mut c, &[(0x34a4, 0x44)]);
+    assert_eq!(c[0].fix, CheckFix::Root { reboot: true });
+    // and the problem screen then has no root fix at all: no password prompt is offered
+    let mut s = AutoSetup::default();
+    s.start(RunKind::AfterReboot, false);
+    let mut c = all_green();
+    c.retain(|x| x.id != "connector" && x.id != "headset");
+    c.push(bad("headset", CheckFix::None));
+    c.push(bad("connector", CheckFix::Root { reboot: true }));
+    explain_headset(&mut c, &asleep);
+    s.checks_done(c);
+    assert_eq!(s.fix_all(), Action::None);
+}
+
+#[test]
+fn the_headset_parts_are_setup_checks() {
+    for id in ["headset", "headset-camera", "eye-chip"] {
+        assert!(SETUP_IDS.contains(&id), "{id}");
+        assert_ne!(plain(id).0, "Check", "{id} has a plain title");
+    }
+    assert_eq!(guide_for(&[bad("eye-chip", CheckFix::User)]), None, "the eye module is switched on, no power cycle");
+    assert_eq!(guide_for(&[bad("headset-camera", CheckFix::User), bad("headset", CheckFix::None)]), Some(false), "the control chip first");
+}
+
+fn demo_core(tag: &str) -> (AppCore, std::path::PathBuf) {
+    let d = std::env::temp_dir().join(format!("pimax-autosetup-{tag}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&d);
+    let a = AppCore::demo(false, omarchyvr_config::Store::new(d.join("a"), d.join("b")));
+    (a, d)
+}
+
+/// Real start 2026-10-17 13:10: Work failed with "camera recovery failed: ... only as the very last resort power-cycle
+/// the link box". The app now opens the guide itself, with the cameras as what it waits for, and Back returns.
+#[test]
+fn a_failed_start_or_restart_opens_the_guide_and_back_returns() {
+    let (mut a, d) = demo_core("guide");
+    a.page = crate::app::Page::Desk;
+    let e = format!("omarchyvr: camera recovery failed: the headset's camera (34a4:0014) did not come back 60 s after one restart; {}", omarchyvr_tools::vr::reset::POWER_CYCLE_HINT);
+    a.wake_after_failure(&e);
+    assert_eq!(a.page, crate::app::Page::Onboarding);
+    let w = a.onboarding.wake_only.clone().expect("the guide is open");
+    assert!(w.need_camera && w.back == crate::app::Page::Desk && w.reason.contains("power cycle"), "{w:?}");
+    assert_eq!(a.wake_target(), Some(true));
+    a.close_wake_guide();
+    assert_eq!((a.page, a.onboarding.wake_only.clone()), (crate::app::Page::Desk, None));
+    // Restart headset with the headset asleep (12:45:45): the guide for the control chip
+    a.wake_after_failure("omarchyvr: IF0 hidraw node of 34a4:0044 not found");
+    assert_eq!(a.wake_target(), Some(false));
+    a.close_wake_guide();
+    // any other failure: nothing opens
+    a.wake_after_failure("omarchyvr-slam export: no calibration file found");
+    assert!(a.onboarding.wake_only.is_none() && a.wake_target().is_none());
+    let _ = std::fs::remove_dir_all(d);
+}
+
+/// The guide under the problem list keeps its timers while the setup checks again (step A's 90 s must run out for step
+/// B to show), and is forgotten when the run is over.
+#[test]
+fn the_guide_keeps_its_timers_while_the_setup_checks_again() {
+    let (mut a, d) = demo_core("guide-timers");
+    a.facts.usb = vec![(0x34a4, 0x43), (0x34a4, 0x14)];
+    a.facts.at = 1;
+    a.onboarding.setup.start(RunKind::AfterReboot, false);
+    a.onboarding.setup.checks_done(vec![bad("headset", CheckFix::None), ok("udev")]);
+    assert_eq!(a.onboarding.setup.phase, Phase::Problems);
+    a.wake_poll();
+    assert_eq!(a.onboarding.wake_for, Some(false));
+    assert!(matches!(a.onboarding.wake.view(AppCore::wake_now()), crate::wake::Wake::PressPower { .. }));
+    let before = a.onboarding.wake;
+    // a check runs: the guide stays as it is
+    a.onboarding.setup.check_again();
+    a.wake_poll();
+    assert_eq!(a.onboarding.wake_for, Some(false));
+    assert_eq!(a.onboarding.wake, before, "not started over");
+    // the run is over: forgotten, the next guide starts fresh
+    a.onboarding.setup.checks_done(all_green());
+    a.wake_poll();
+    assert_eq!(a.onboarding.wake_for, None);
+    let _ = std::fs::remove_dir_all(d);
+}
+
+/// install.sh left `post-install-check`: the app runs the checks once by itself, after the update, without a click.
+#[test]
+fn the_check_after_an_update_runs_once_by_itself() {
+    let (mut a, d) = demo_core("post");
+    a.demo = false;
+    a.state.setup = SetupStage::Done;
+    a.onboarding.install = crate::install::InstallInfo { loaded: true, post_install: true, ..Default::default() };
+    a.page = crate::app::Page::Desk;
+    a.post_install_poll();
+    assert!(a.onboarding.post_install_started);
+    assert_eq!(a.onboarding.setup.kind, RunKind::AfterUpdate);
+    match a.onboarding.setup.phase {
+        // all green: nothing shown, the request is done
+        Phase::Ready => {
+            assert!(!a.onboarding.install.post_install);
+            assert_eq!(a.page, crate::app::Page::Desk);
+        }
+        // a problem: the setup screen opens with its Fix
+        Phase::Problems => assert_eq!(a.page, crate::app::Page::Onboarding),
+        // the checks run in the background
+        Phase::Verifying => {}
+        ref p => panic!("{p:?}"),
+    }
+    // never twice in one run of the app, never while the setup itself is not done
+    let before = a.onboarding.setup.clone();
+    a.post_install_poll();
+    assert_eq!(a.onboarding.setup.phase, before.phase);
+    let (mut b, d2) = demo_core("post2");
+    b.demo = false;
+    b.state.setup = SetupStage::Todo;
+    b.onboarding.install = crate::install::InstallInfo { loaded: true, post_install: true, ..Default::default() };
+    b.post_install_poll();
+    assert!(!b.onboarding.post_install_started, "a setup that is not done runs its own checks");
+    let _ = std::fs::remove_dir_all(d);
+    let _ = std::fs::remove_dir_all(d2);
+}
+
+#[test]
+fn the_post_install_request_is_read_from_the_install() {
+    let d = std::env::temp_dir().join(format!("pimax-postinst-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&d);
+    let i = crate::install::Install { share: d.clone() };
+    std::fs::create_dir_all(&d).unwrap();
+    assert!(!crate::install::read_info(&i).post_install);
+    std::fs::write(i.post_install_check(), "monado=changed\nrealtime_permission=no\n").unwrap();
+    assert!(crate::install::read_info(&i).post_install);
+    let _ = std::fs::remove_dir_all(d);
+}

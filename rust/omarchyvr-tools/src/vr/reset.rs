@@ -31,6 +31,17 @@ pub const PANEL_AFTER: Duration = Duration::from_secs(22);
 /// (the real one is off USB about 1 s after the command and back after 8 s).
 pub const SYS_NO_EFFECT: Duration = Duration::from_secs(15);
 
+/// How long a Work/Play start waits for the camera after its ONE restart. The Windows capture had the camera back 17 s
+/// after the command; 60 s is generous. Then the start stops and says what to do: no second restart, no retry loop
+/// (real start 2026-10-17 13:07: 150 s of waiting with the keepalive stopped, the HID chip re-enumerating every 6 s,
+/// then a second, display-chain reset; the camera came back only after a power cycle of the headset).
+pub const AUTO_WAIT: Duration = Duration::from_secs(60);
+
+/// What the person does when the camera stays away after that one restart: the app's guided steps (the power button
+/// first; the power-cable cycle is the guide's last step, never the first one, never during a session).
+pub const POWER_CYCLE_HINT: &str = "the headset needs a power cycle: open \"Get the headset ready\" in the app and follow \
+its steps (the power button first), then start again";
+
 /// The headset restart command, the only frame of [`Mode::Sys`]: eSpiCmdSysReset `58 04 28 00 00` (reply
 /// `4c 04 28 00 01 07`), captured from Pimax Play's "restart headset" on 2026-10-15 (take 2). The headset is back on
 /// USB (HID) after about 8 s and its panel works after about 22 s. Replaces the slow heartbeat timeout of [`exit_frames`].
@@ -108,6 +119,10 @@ pub struct Outcome {
     pub no_effect: bool,
     /// [`Mode::Sys`] only: the HID chip came back (seconds after the command), `None` if it never left.
     pub hid_back: Option<f64>,
+    /// [`Mode::Sys`] only: the keepalive was started again during the watch, right after the headset left USB (it
+    /// must not run without a host heartbeat: without one the HID chip re-enumerates every ~6 s and the camera never
+    /// returns, 2026-10-17 13:07). [`finish`] does not start it a second time.
+    pub keepalive_back: bool,
 }
 
 impl Outcome {
@@ -145,9 +160,8 @@ impl Outcome {
                     "camera on USB at {u:.0} s but /sys/class/video4linux has no 34a4:0014 node after {w} s (uvcvideo not bound?)"
                 );
             }
-            return format!(
-                "camera 34a4:0014 still missing after {w} s: run Restart headset (reset-headset) once more, or reboot; only as the very last resort power-cycle the link box"
-            );
+            // a PC restart did not bring it back on 2026-10-17; a power cycle of the headset did (the app's guide)
+            return format!("camera 34a4:0014 still missing after {w} s: {POWER_CYCLE_HINT}");
         }
         format!("only the HID chip re-enumerated; no full reset within {w} s")
     }
@@ -218,12 +232,14 @@ fn send_and_watch(h: &mut dyn ResetHost, clock: &dyn Clock, wait: Duration, sys:
         wait,
         no_effect: false,
         hid_back: None,
+        keepalive_back: false,
     };
     let mut hid = h.usb_present(PID_HID);
     let mut cam = o.cam_seen_at_start;
     // waiting for the camera to (re)appear: absent at the start, or gone since
     let mut awaiting = !cam;
     let mut last_progress = Duration::ZERO;
+    let mut ka_tried = false;
     if !cam {
         h.say("camera 34a4:0014 is not on the bus at the start: waiting for it to come back");
     }
@@ -250,6 +266,19 @@ fn send_and_watch(h: &mut dyn ResetHost, clock: &dyn Clock, wait: Duration, sys:
             h.say("restart: the headset left USB (it is restarting)");
         } else if sys && !hid && hid_now {
             h.say("restart: the headset is back on USB; waiting for the camera and the picture");
+        }
+        // the restart is under way (the headset left USB, or is already back): the keepalive goes back now, as Pimax
+        // Play's heartbeat does on Windows, so the headset finds a host the moment it is back and does not cycle on
+        // its own while the camera is awaited
+        if sys && !ka_tried && (!hid_now || o.hid_drops > 0) {
+            ka_tried = true;
+            match h.start_keepalived() {
+                Ok(()) => {
+                    o.keepalive_back = true;
+                    h.say("restart: keepalive running again (the headset gets its heartbeat as soon as it is back)");
+                }
+                Err(e) => h.say(&format!("restart: could not start the keepalive yet ({e}); trying again at the end")),
+            }
         }
         hid = hid_now;
         let cam_now = h.usb_present(PID_CAM);
@@ -334,6 +363,8 @@ fn reset_with(h: &mut dyn ResetHost, clock: &dyn Clock, wait: Duration, sys: boo
     });
     if result.is_ok() {
         match send_and_watch(h, clock, wait, sys) {
+            // started again during the watch already: not a second time
+            Ok(o) if o.keepalive_back => return Ok(o),
             Ok(o) => return finish(h, Ok(o)),
             Err(e) => result = Err(e),
         }
@@ -353,6 +384,7 @@ fn unreachable_outcome() -> Outcome {
         wait: WATCH,
         no_effect: false,
         hid_back: None,
+        keepalive_back: false,
     }
 }
 
@@ -619,6 +651,26 @@ pub fn sys_then_exit_then_dp(h: &mut dyn ResetHost, clock: &dyn Clock, wait: Dur
     Ok((format!("{}; the dp retry did not bring it back either", o.verdict()), false))
 }
 
+/// `reset-headset --once` (the setup's "Restart the headset once" step for missing cameras): exactly one restart
+/// command, the keepalive back as soon as the headset leaves USB, up to `wait` for the camera, no slow fallback and no
+/// display-chain retry. Returns the verdict line; when the camera stays away it carries [`POWER_CYCLE_HINT`].
+pub fn reset_once(h: &mut dyn ResetHost, clock: &dyn Clock, wait: Duration) -> Result<(String, bool), String> {
+    let o = reset_sys_wait(h, clock, wait)?;
+    if o.camera_recovered() {
+        return Ok((o.verdict(), true));
+    }
+    if o.no_effect && !o.interrupted {
+        return Ok((format!("the headset did not act on its restart command; {POWER_CYCLE_HINT}"), false));
+    }
+    let v = o.verdict();
+    // every "still missing" verdict ends with the one thing left to do
+    if o.interrupted || v.contains(POWER_CYCLE_HINT) {
+        Ok((v, false))
+    } else {
+        Ok((format!("{v}; {POWER_CYCLE_HINT}"), false))
+    }
+}
+
 /// How long to wait for the HID chip after the camera is back.
 pub const HID_SETTLE: Duration = Duration::from_secs(15);
 
@@ -631,9 +683,11 @@ pub enum Recovery {
     Recovered(String),
 }
 
-/// `desk start` / `vr start` with the camera needed: if the camera is missing but the HID chip is present, run the
-/// same exit-path reset as `reset-headset` (it refuses while monado-service runs or a session pid is live) and wait
-/// for the camera up to `wait`. `Err` carries the message that stops the start.
+/// `desk start` / `vr start` with the camera needed: if the camera is missing but the HID chip is present, restart the
+/// headset ONCE with its own restart command (it refuses while monado-service runs or a session pid is live; the
+/// keepalive is back as soon as the headset leaves USB) and wait for the camera up to `wait` ([`AUTO_WAIT`]). No
+/// second reset, no slow exit-sequence fallback, no display-chain retry: when the camera stays away the start stops
+/// with [`POWER_CYCLE_HINT`]. `Err` carries the message that stops the start.
 pub fn auto_recover(h: &mut dyn ResetHost, clock: &dyn Clock, wait: Duration) -> Result<Recovery, String> {
     if h.usb_present(PID_CAM) && h.camera_node() {
         return Ok(Recovery::NotNeeded);
@@ -641,14 +695,22 @@ pub fn auto_recover(h: &mut dyn ResetHost, clock: &dyn Clock, wait: Duration) ->
     if !h.usb_present(PID_HID) {
         return Ok(Recovery::NotNeeded);
     }
-    h.say("camera 34a4:0014 is missing but the headset is on the bus: restarting the headset (no unplugging needed, up to a few minutes; --no-auto-recover skips this)");
-    let (verdict, ok) = exit_then_dp_retry(h, clock, wait)?;
-    if verdict.starts_with("interrupted") {
+    h.say("camera 34a4:0014 is missing but the headset is on the bus: restarting the headset once (no unplugging needed, up to a minute; --no-auto-recover skips this)");
+    let o = reset_sys_wait(h, clock, wait)?;
+    if o.interrupted {
         return Err("interrupted while waiting for the camera".into());
     }
-    if !ok {
-        return Err(format!("camera recovery failed: {verdict}"));
+    if !o.camera_recovered() {
+        let what = if o.no_effect {
+            "the headset did not act on its restart command".to_string()
+        } else if o.cam_usb_back.is_some() {
+            format!("the headset's camera is on USB but has no video device {} s after one restart", wait.as_secs())
+        } else {
+            format!("the headset's camera (34a4:0014) did not come back {} s after one restart", wait.as_secs())
+        };
+        return Err(format!("camera recovery failed: {what}; {POWER_CYCLE_HINT}"));
     }
+    let verdict = o.verdict();
     // the HID chip drops and returns while the headset restarts: let it settle before the preflight looks
     let t0 = clock.now();
     while !h.usb_present(PID_HID) && clock.now() - t0 < HID_SETTLE {
@@ -859,6 +921,8 @@ mod tests {
         /// (seconds since start, line); emitted once the clock passes the time
         bridge: Vec<(f64, String)>,
         bridge_missing: bool,
+        /// fake-clock seconds of every keepalive start
+        started_at: RefCell<Vec<f64>>,
     }
     impl<'a> Fake<'a> {
         fn new(clock: &'a FakeClock) -> Self {
@@ -883,6 +947,7 @@ mod tests {
                 replied: false,
                 bridge: vec![],
                 bridge_missing: false,
+                started_at: RefCell::new(vec![]),
             }
         }
         fn t(&self) -> f64 {
@@ -910,6 +975,7 @@ mod tests {
         }
         fn start_keepalived(&mut self) -> Result<(), String> {
             self.events.push("start".into());
+            self.started_at.borrow_mut().push(self.t());
             self.active.set(true);
             Ok(())
         }
@@ -1164,6 +1230,12 @@ mod tests {
         let o = reset_sys_wait(&mut h, &c, WATCH).unwrap();
         assert_eq!(h.events, ["stop", "open", "send", "start"]);
         assert_eq!(h.sent, sys_frames().to_vec());
+        // 2026-10-17 13:07: the keepalive stayed stopped for the whole watch and the HID chip re-enumerated every 6 s;
+        // it now comes back as soon as the headset left USB (1.0 s here), once
+        let at = h.started_at.borrow().clone();
+        assert_eq!(at.len(), 1, "{at:?}");
+        assert!(at[0] >= 1.0 && at[0] < 1.5, "keepalive back right after the headset left USB: {at:?}");
+        assert!(o.keepalive_back);
         assert_eq!(o.hid_drops, 1);
         assert!(!o.no_effect && o.camera_recovered());
         assert!(o.hid_back.unwrap() >= 7.5, "{:?}", o.hid_back);
@@ -1175,6 +1247,7 @@ mod tests {
             "58 04 28 00 00",
             "restart: command sent",
             "restart: the headset left USB",
+            "restart: keepalive running again",
             "restart: the headset is back on USB",
             "restart: the camera is back",
             "restart: the headset is up",
@@ -1276,7 +1349,8 @@ mod tests {
         assert!(!ok);
         assert!(h.events.iter().filter(|e| *e == "bridge").count() == 1, "{:?}", h.events);
         assert!(v.contains("dp retry did not bring it back"), "{v}");
-        assert!(v.contains("power-cycle the link box") && !v.contains("junction") && !v.contains("unplug"), "{v}");
+        assert!(v.contains("Get the headset ready") && v.contains("power button first"), "{v}");
+        assert!(!v.contains("junction") && !v.contains("unplug") && !v.contains("reboot"), "{v}");
         assert_eq!(h.events.iter().filter(|e| *e == "start").count(), 3, "keepalived restarted after the sys, exit and dp steps");
 
         // the camera shows up after the dp retry
@@ -1340,36 +1414,127 @@ mod tests {
     }
 
     #[test]
-    fn auto_recover_runs_the_exit_reset_and_waits() {
+    fn auto_recover_restarts_the_headset_once_and_waits() {
+        // the restart command takes the headset off USB at 1 s, it is back at 8 s, the camera at 17 s
         let c = clk();
         let mut h = Fake::new(&c);
-        h.cam_absent_until = Some(60.0);
-        match auto_recover(&mut h, &c, WATCH).unwrap() {
+        h.cam_absent_until = Some(17.0);
+        h.hid_gone = Some((1.0, 8.0));
+        match auto_recover(&mut h, &c, AUTO_WAIT).unwrap() {
             Recovery::Recovered(v) => assert!(v.starts_with("camera back after"), "{v}"),
             r => panic!("{r:?}"),
         }
-        // the fake headset ignores the sys command (nothing leaves USB), so the exit sequence follows
-        assert_eq!(h.events, ["stop", "open", "send", "start", "stop", "open", "send", "send", "send", "start"]);
-        let [a, k, _] = exit_frames().unwrap();
-        assert_eq!(h.sent, vec![sys_frames()[0], a, k, k], "only captured frames: sys restart, then the exit frames");
+        assert_eq!(h.events, ["stop", "open", "send", "start"], "one stop, one restart command, one keepalive start");
+        assert_eq!(h.sent, sys_frames().to_vec(), "only the captured restart command, once");
+        assert!(h.started_at.borrow()[0] < 1.5, "keepalive back right after the headset left USB");
+        assert!(c.now() < Duration::from_secs(40), "{:?}", c.now());
+    }
+
+    /// Real start 2026-10-17 13:07: the camera stayed away. The start must not loop: one restart, the keepalive back at
+    /// once, at most AUTO_WAIT of waiting, no slow exit sequence, no display-chain retry, then the plain hint.
+    #[test]
+    fn auto_recover_never_loops_and_ends_with_the_power_cycle_hint() {
+        let c = clk();
+        let mut h = Fake::new(&c);
+        h.cam_absent_until = Some(1e9);
+        h.hid_gone = Some((1.0, 4.0));
+        let e = auto_recover(&mut h, &c, AUTO_WAIT).unwrap_err();
+        assert!(e.starts_with("camera recovery failed: the headset's camera (34a4:0014) did not come back 60 s after one restart"), "{e}");
+        assert!(e.contains(POWER_CYCLE_HINT), "{e}");
+        assert!(!e.contains("reboot") && !e.contains("unplug") && !e.contains("Restart headset"), "no retry advice: {e}");
+        assert_eq!(h.sent, sys_frames().to_vec(), "exactly one reset command");
+        assert!(!h.events.contains(&"bridge".to_string()), "no display-chain retry: {:?}", h.events);
+        assert_eq!(h.events.iter().filter(|e| *e == "stop").count(), 1);
+        assert_eq!(h.events.iter().filter(|e| *e == "start").count(), 1);
+        assert_eq!(h.events.last().unwrap(), "start", "the keepalive is never left stopped");
+        assert!(c.now() >= AUTO_WAIT && c.now() < AUTO_WAIT + Duration::from_secs(5), "{:?}", c.now());
+
+        // the headset ignores the command: no slow fallback either, the keepalive comes back, the hint follows
+        let c = clk();
+        let mut h = Fake::new(&c);
+        h.cam_absent_until = Some(1e9);
+        let e = auto_recover(&mut h, &c, AUTO_WAIT).unwrap_err();
+        assert!(e.contains("did not act on its restart command") && e.contains(POWER_CYCLE_HINT), "{e}");
+        assert_eq!(h.sent, sys_frames().to_vec());
+        assert_eq!(h.events, ["stop", "open", "send", "start"]);
+        assert!(c.now() < Duration::from_secs(20), "{:?}", c.now());
     }
 
     #[test]
-    fn auto_recover_refuses_while_monado_runs_and_fails_when_the_camera_stays_away() {
+    fn reset_once_is_one_command_and_ends_with_the_guide() {
+        // the camera comes back: recovered, one frame
+        let c = clk();
+        let mut h = Fake::new(&c);
+        h.cam_absent_until = Some(17.0);
+        h.hid_gone = Some((1.0, 8.0));
+        let (v, ok) = reset_once(&mut h, &c, AUTO_WAIT).unwrap();
+        assert!(ok && v.starts_with("camera back after"), "{v}");
+        assert_eq!(h.sent, sys_frames().to_vec());
+        // it stays away: one frame, no exit sequence, no dp retry, the hint
+        let c = clk();
+        let mut h = Fake::new(&c);
+        h.cam_absent_until = Some(1e9);
+        h.hid_gone = Some((1.0, 8.0));
+        let (v, ok) = reset_once(&mut h, &c, AUTO_WAIT).unwrap();
+        assert!(!ok && v.contains(POWER_CYCLE_HINT) && v.contains("still missing after 60 s"), "{v}");
+        assert_eq!(h.sent, sys_frames().to_vec());
+        assert!(!h.events.contains(&"bridge".to_string()));
+        assert_eq!(h.events.last().unwrap(), "start");
+        // ignored command: says so, still one frame
+        let c = clk();
+        let mut h = Fake::new(&c);
+        h.cam_absent_until = Some(1e9);
+        let (v, ok) = reset_once(&mut h, &c, AUTO_WAIT).unwrap();
+        assert!(!ok && v.starts_with("the headset did not act on its restart command") && v.contains(POWER_CYCLE_HINT), "{v}");
+        assert_eq!(h.sent, sys_frames().to_vec());
+    }
+
+    #[test]
+    fn auto_recover_refuses_while_monado_runs() {
         let c = clk();
         let mut h = Fake::new(&c);
         h.cam_absent_until = Some(1e9);
         h.monado = true;
-        let e = auto_recover(&mut h, &c, WATCH).unwrap_err();
+        let e = auto_recover(&mut h, &c, AUTO_WAIT).unwrap_err();
         assert!(e.starts_with("refusing"), "{e}");
         assert!(h.events.is_empty() && h.sent.is_empty());
+    }
 
+    #[test]
+    fn a_failed_keepalive_start_during_the_watch_is_tried_again_at_the_end() {
+        struct Flaky<'a>(Fake<'a>, u32);
+        impl ResetHost for Flaky<'_> {
+            fn monado_running(&self) -> bool { self.0.monado_running() }
+            fn session_active(&self) -> bool { self.0.session_active() }
+            fn stop_keepalived(&mut self) -> Result<(), String> { self.0.stop_keepalived() }
+            fn keepalived_active(&mut self) -> bool { self.0.keepalived_active() }
+            fn start_keepalived(&mut self) -> Result<(), String> {
+                self.1 += 1;
+                if self.1 == 1 {
+                    self.0.events.push("start-failed".into());
+                    return Err("busy".into());
+                }
+                self.0.start_keepalived()
+            }
+            fn open_if0(&mut self) -> Result<(), String> { self.0.open_if0() }
+            fn send(&mut self, f: &Report) -> Result<(), String> { self.0.send(f) }
+            fn drain(&mut self) -> Vec<Report> { self.0.drain() }
+            fn usb_present(&self, pid: u16) -> bool { self.0.usb_present(pid) }
+            fn camera_node(&self) -> bool { self.0.camera_node() }
+            fn interrupted(&self) -> bool { self.0.interrupted() }
+            fn say(&mut self, l: &str) { self.0.say(l) }
+            fn open_bridge_log(&mut self) -> Result<(), String> { self.0.open_bridge_log() }
+            fn bridge_lines(&mut self) -> Vec<String> { self.0.bridge_lines() }
+        }
         let c = clk();
-        let mut h = Fake::new(&c);
-        h.cam_absent_until = Some(1e9);
-        let e = auto_recover(&mut h, &c, Duration::from_secs(30)).unwrap_err();
-        assert!(e.starts_with("camera recovery failed") && e.contains("still missing"), "{e}");
-        assert_eq!(h.events.last().unwrap(), "start");
+        let mut f = Fake::new(&c);
+        f.hid_gone = Some((1.0, 8.0));
+        f.cam_gone_at = Some(1.5);
+        f.cam_back_at = Some(17.0);
+        let mut h = Flaky(f, 0);
+        let o = reset_sys_wait(&mut h, &c, WATCH).unwrap();
+        assert!(!o.keepalive_back);
+        assert_eq!(h.0.events, ["stop", "open", "send", "start-failed", "start"]);
     }
 
     /// A fake sysfs tree in a temp dir (never the real /sys).
