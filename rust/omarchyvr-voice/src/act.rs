@@ -207,6 +207,13 @@ pub struct State {
     pub backdrop: Option<String>,
     /// (kind, previous value): kind = "preset" | "backdrop".
     pub history: Vec<(String, String)>,
+    /// The backdrop from before the huge cinema (restored when it ends); None outside it.
+    pub before_huge: Option<String>,
+}
+
+/// The cinema presets: the normal one and the huge one.
+pub fn is_cinema(name: &str) -> bool {
+    matches!(name, "cinema" | "cinema-huge")
 }
 
 impl State {
@@ -218,6 +225,9 @@ impl State {
         }
         if let Some(b) = &self.backdrop {
             s += &format!("backdrop={b}\n");
+        }
+        if let Some(b) = &self.before_huge {
+            s += &format!("before_huge={b}\n");
         }
         for (k, v) in &self.history {
             s += &format!("undo={k}:{v}\n");
@@ -231,6 +241,7 @@ impl State {
             match l.split_once('=') {
                 Some(("preset", v)) => s.preset = Some(v.to_string()),
                 Some(("backdrop", v)) => s.backdrop = Some(v.to_string()),
+                Some(("before_huge", v)) => s.before_huge = Some(v.to_string()),
                 Some(("undo", kv)) => {
                     if let Some((k, v)) = kv.split_once(':') {
                         s.history.push((k.to_string(), v.to_string()));
@@ -1164,19 +1175,39 @@ impl Actor {
             return self.exit_cinema(r);
         }
         let prev = self.state.preset.clone().unwrap_or_else(|| DEFAULT_PRESET.into());
-        // cinema mode that is on already is reused (a goal "let's enter cinema mode" twice changes nothing)
+        // cinema mode that is on already is reused (a goal "let's enter cinema mode" twice changes nothing);
+        // the huge cinema is run again (it re-places the screen, which may have been moved)
         if name == "cinema" && self.state.preset.as_deref() == Some("cinema") {
             return r.toast("Cinema mode is on already");
         }
+        // the backdrop to bring back when the huge cinema ends (only the one from before the cinema modes)
+        let backdrop_before = self.state.backdrop.clone().unwrap_or_else(|| {
+            if prev == "cinema" { "dimmed" } else { "passthrough" }.into()
+        });
         let argv = vec![self.cat.paths.pimax.clone(), "desk".into(), "preset".into(), name.clone()];
         match r.run(&argv, true) {
             Ok(out) => {
+                let prev_was_cinema = is_cinema(&prev);
                 if record && prev != name {
                     self.state.push("preset", Some(prev));
                 }
+                if name == "cinema-huge" {
+                    // dark room: the CLI turned the passthrough and the skybox off; captions off by default
+                    if !prev_was_cinema {
+                        self.state.before_huge = Some(backdrop_before);
+                    }
+                    let _ = r.captions(false);
+                }
                 self.state.preset = Some(name.clone());
                 // the preset sets the passthrough too
-                self.state.backdrop = Some(if name == "cinema" { "dimmed" } else { "passthrough" }.into());
+                self.state.backdrop = Some(
+                    match name.as_str() {
+                        "cinema" => "dimmed",
+                        "cinema-huge" => "black",
+                        _ => "passthrough",
+                    }
+                    .into(),
+                );
                 let base = if say.is_empty() { name.as_str() } else { say };
                 r.toast(&preset_toast(base, &out));
             }
@@ -1198,7 +1229,12 @@ impl Actor {
     fn backdrop(&mut self, what: &str, record: bool, r: &mut dyn Runner) {
         let list = self.backdrops(r);
         let cur = self.state.backdrop.clone().unwrap_or_else(|| {
-            if self.state.preset.as_deref().unwrap_or(DEFAULT_PRESET) == "cinema" { "dimmed" } else { "passthrough" }.into()
+            match self.state.preset.as_deref().unwrap_or(DEFAULT_PRESET) {
+                "cinema" => "dimmed",
+                "cinema-huge" => "black",
+                _ => "passthrough",
+            }
+            .into()
         });
         let idx = list.iter().position(|n| *n == cur).unwrap_or(0);
         let target = match what {
@@ -1245,19 +1281,29 @@ impl Actor {
         r.toast(&msg);
     }
 
-    /// "Exit cinema mode": the preset from before cinema comes back (with its passthrough); the undo steps since
-    /// cinema are dropped.
+    /// "Exit cinema mode" (also leaves the huge cinema): the preset from before the cinema modes comes back (with
+    /// its passthrough, and the backdrop from before the huge cinema); the undo steps since cinema are dropped.
     fn exit_cinema(&mut self, r: &mut dyn Runner) {
-        if self.state.preset.as_deref() != Some("cinema") {
+        if !self.state.preset.as_deref().is_some_and(is_cinema) {
             return r.toast("Not in cinema mode");
         }
-        let Some(k) = self.state.history.iter().rposition(|(k, _)| k == "preset") else {
+        let was_huge = self.state.preset.as_deref() == Some("cinema-huge");
+        let saved = self.state.before_huge.take();
+        // the last preset step whose previous value is not itself a cinema mode (cinema -> huge -> exit = the mode before)
+        let Some(k) = self.state.history.iter().rposition(|(k, v)| k == "preset" && !is_cinema(v)) else {
+            self.state.history.retain(|(k, v)| !(k == "preset" && is_cinema(v)));
             return self.preset("work-3".into(), false, "Work mode", r);
         };
         let later: Vec<(String, String)> = self.state.history.split_off(k);
         // the preset sets its own passthrough again (cinema dimmed or turned it off)
         let prev = later[0].1.clone();
         self.preset(prev.clone(), false, &format!("Cinema off: back to {prev}"), r);
+        // the huge cinema turned the backdrop off: the one from before it comes back
+        if was_huge {
+            if let Some(b) = saved.filter(|b| *b != "passthrough") {
+                self.backdrop(&b, false, r);
+            }
+        }
     }
 
     fn undo(&mut self, r: &mut dyn Runner) {
@@ -1273,7 +1319,7 @@ impl Actor {
 
     /// The short help toast.
     pub fn help(&self) -> String {
-        "Say \"Max\" then: cinema / work 3 / work 1 / assistant, passthrough on/off, dim, brighter, next background, \
+        "Say \"Max\" then: cinema / huge cinema / exit cinema / work 3 / work 1 / assistant, passthrough on/off, dim, brighter, next background, \
          reset screens, recenter, show fps, captions off, undo, volume up, next song, open terminal, fullscreen, \
          take a screenshot, lock the screen (full list: docs/VOICE.md)"
             .into()
@@ -1743,6 +1789,39 @@ mod tests {
     }
 
     #[test]
+    fn huge_cinema_enters_dark_and_exit_brings_the_old_mode_and_backdrop_back() {
+        let mut a = actor();
+        let mut r = dry();
+        let t = Instant::now();
+        a.hear("Pimax, work three", t, &mut r);
+        a.hear("Pimax, background black", t, &mut r);
+        r.lines.clear();
+        assert_eq!(a.hear("Pimax, huge cinema", t, &mut r).as_deref(), Some("vr.preset.cinema_huge"));
+        assert_eq!(r.lines[0], "would run: omarchyvr desk preset cinema-huge");
+        assert!(r.lines.iter().any(|l| l.contains("Huge cinema")), "{:?}", r.lines);
+        assert_eq!(a.state.preset.as_deref(), Some("cinema-huge"));
+        assert_eq!(a.state.backdrop.as_deref(), Some("black"));
+        assert_eq!(a.state.before_huge.as_deref(), Some("black"), "the backdrop from before");
+        // saying it again re-places the screen (no "on already")
+        r.lines.clear();
+        a.hear("Pimax, imax", t, &mut r);
+        assert_eq!(r.lines[0], "would run: omarchyvr desk preset cinema-huge");
+        // normal cinema from the huge one, then exit: back to work-3, not to cinema
+        a.hear("Pimax, cinema mode", t, &mut r);
+        assert_eq!(a.state.preset.as_deref(), Some("cinema"));
+        a.hear("Pimax, huge cinema", t, &mut r);
+        r.lines.clear();
+        assert_eq!(a.hear("Pimax, exit cinema", t, &mut r).as_deref(), Some("vr.preset.exit_cinema"));
+        assert_eq!(r.lines[0], "would run: omarchyvr desk preset work-3");
+        assert_eq!(a.state.preset.as_deref(), Some("work-3"));
+        assert!(a.state.before_huge.is_none());
+        // exiting when no cinema is on
+        r.lines.clear();
+        a.hear("Pimax, exit cinema", t, &mut r);
+        assert_eq!(r.lines, ["toast: Not in cinema mode"]);
+    }
+
+    #[test]
     fn a_mode_says_which_apps_stay_open_on_hidden_screens() {
         let out = "omarchyvr desk: still open on hidden screens: left (google-chrome), right (pimax)\nomarchyvr desk: preset cinema\n";
         assert_eq!(
@@ -2104,7 +2183,7 @@ mod tests {
 
     #[test]
     fn state_file_round_trip_and_toast_format() {
-        let s = State { preset: Some("work-3".into()), backdrop: Some("sky".into()), history: vec![("preset".into(), "cinema".into())] };
+        let s = State { preset: Some("work-3".into()), backdrop: Some("sky".into()), history: vec![("preset".into(), "cinema".into())], before_huge: Some("sky".into()) };
         assert_eq!(State::from_text(&s.to_text()), s);
         let j: serde_json::Value = serde_json::from_str(&toast_json("Max", "hi \"x\"")).unwrap();
         assert_eq!(j["messageType"], 1);

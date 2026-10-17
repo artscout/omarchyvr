@@ -16,7 +16,7 @@
 //! * **Screens on demand.** [`watch`] (`omarchyvr desk screens watch`, a leaf process of the session) follows Hyprland's
 //!   event socket: a VR screen is shown while its workspace has an app or it has the focus ("new window" focuses the
 //!   next free screen), and hidden (still running) otherwise. Presets set a limit and pinned screens in the state file
-//!   (`$XDG_RUNTIME_DIR/omarchyvr-screens.state`): cinema and work-1 show the main screen only, work-3 the main screen plus
+//!   (`$XDG_RUNTIME_DIR/omarchyvr-screens.state`): cinema, cinema-huge and work-1 show the main screen only, work-3 the main screen plus
 //!   left and right, assistant and none every screen on demand. Voice ("new window", "move this left", "go to the
 //!   left screen") lifts the limit again. The focused screen always shows. A preset never closes, kills or moves
 //!   an app: a screen it hides keeps its apps.
@@ -544,7 +544,7 @@ impl ShowState {
     pub fn for_preset(p: super::preset::Preset) -> ShowState {
         use super::preset::Preset;
         match p {
-            Preset::Cinema | Preset::Work1 => ShowState { limit: 1, pinned: Vec::new(), sort: false, hidden: Vec::new() },
+            Preset::Cinema | Preset::CinemaHuge | Preset::Work1 => ShowState { limit: 1, pinned: Vec::new(), sort: false, hidden: Vec::new() },
             Preset::Work3 => ShowState { limit: 3, pinned: vec![Slot::Left, Slot::Right], sort: false, hidden: Vec::new() },
             Preset::Assistant => ShowState::default(),
         }
@@ -1656,6 +1656,7 @@ mod tests {
         assert_eq!(ShowState::parse(&off.render()), off);
         assert!(!ShowState::parse("limit = 1\n").sort, "off by default: apps hop screens only on a command");
         assert!(ShowState::parse("sort = on\n").sort);
+        assert_eq!(ShowState::for_preset(super::super::preset::Preset::CinemaHuge).limit, 1, "huge cinema: the main screen only");
         assert!(!off.switch_to(super::super::preset::Preset::Cinema).sort);
         assert_eq!(off.switch_to(super::super::preset::Preset::Cinema).limit, 1);
     }

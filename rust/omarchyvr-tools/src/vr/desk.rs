@@ -74,7 +74,8 @@ pub const USAGE: &str = "usage: omarchyvr desk <command> [options]
       the headset ONCE (`reset-headset` sys mode, the keepalive back as soon as it leaves USB) and waits up to 60 s for the
       camera (progress lines), then continues; no second reset. If the camera stays away the start stops and points to the
       app's 'Get the headset ready' guide. It refuses while monado-service runs. --no-auto-recover skips this.
-      --preset (default cinema): cinema (one big curved screen, passthrough dimmed: --gain 0.35), work-3 (alias work:
+      --preset (default cinema): cinema (one big curved screen, passthrough dimmed: --gain 0.35), cinema-huge (aliases imax,
+      huge-cinema, theater: one 6 m curved screen at 4.36 m = 68 degrees of view, the room black, backdrop off; docs/CINEMA.md), work-3 (alias work:
       the desktop + 2 WayVR app panels from ~/.config/omarchyvr/work-panels.conf, flat), work-1 (one flat screen),
       assistant (= --voice captions), none; written to conf.d/60-preset.yaml every start (removed with none), the
       layout is applied over wayvrctl once WayVR runs.
@@ -231,7 +232,7 @@ pub struct DeskOptions {
     pub ctrltrack_bin: PathBuf,
     /// The wrist performance readout (None with `--no-perf`).
     pub perf: Option<PerfOptions>,
-    /// `--preset`: cinema (default) / work-3 / work-1 / assistant, None = `--preset none` (see `preset`).
+    /// `--preset`: cinema (default) / cinema-huge / work-3 / work-1 / assistant, None = `--preset none` (see `preset`).
     pub preset: Option<super::preset::Preset>,
     /// `desk preset NAME --replace`: the command asks to re-place the screens (default: screens already placed stay).
     pub replace: bool,
@@ -721,7 +722,8 @@ pub fn start(o: &DeskOptions, d: &Deps, sp: &dyn Spawner) -> CliResult {
     // the VR background chosen in the app (Backgrounds page, `omarchyvr-backgrounds`, "Max, set background ..."): shown
     // once WayVR runs, over the preset's passthrough; best effort
     let bg = omarchyvr_backgrounds::Dirs::for_home(&home_of(d));
-    if !o.vr.dry_run && omarchyvr_backgrounds::Setting::load(&bg).enabled {
+    // (not under cinema-huge: its dark room wins; the choice stays saved for the next mode)
+    if !o.vr.dry_run && !o.preset.is_some_and(|p| p.skybox_off()) && omarchyvr_backgrounds::Setting::load(&bg).enabled {
         match omarchyvr_backgrounds::apply_to(&bg, &o.wayvrctl_bin, &super::preset::passthrough_socket(d.env)) {
             Ok(m) => vout!("omarchyvr desk: {m}"),
             Err(e) => verr!("omarchyvr desk: WARNING: background not applied: {e}"),
@@ -864,6 +866,9 @@ pub(crate) fn preset_switch(
     out: &mut dyn FnMut(&str),
 ) -> CliResult {
     use super::screens as sc;
+    // cinema-huge (and leaving it) re-places the screens: its size would otherwise stay on the next preset
+    let was_huge = super::preset::read_conf(&o.wayvr_home) == Some(super::preset::Preset::CinemaHuge);
+    let place = o.replace || was_huge || p.always_place();
     if o.vr.dry_run {
         out(&format!("would write {} ({})", o.wayvr_home.join("config/wayvr/conf.d").join(super::preset::CONF_NAME).display(), p.name()));
     } else if let Err(e) = super::preset::write_conf(&o.wayvr_home, Some(p)) {
@@ -882,7 +887,7 @@ pub(crate) fn preset_switch(
             out(&format!("still open on hidden screens: {}", hidden.join(", ")));
         }
     }
-    super::preset::apply_live(p, &o.wayvrctl_bin, pt_sock, panels, vis.as_deref(), o.replace, o.vr.dry_run, out).map_err(CliError::new)?;
+    super::preset::apply_live(p, &o.wayvrctl_bin, pt_sock, panels, vis.as_deref(), place, o.vr.dry_run, out).map_err(CliError::new)?;
     out(&format!("preset {}", p.name()));
     Ok(())
 }
@@ -1181,7 +1186,7 @@ pub fn run(mut a: Args) -> CliResult {
     let preset_name = if first == "preset" {
         match a.0.iter().position(|x| !x.starts_with("--")) {
             Some(i) => Some(a.0.remove(i)),
-            None => return Err(CliError::usage("usage: omarchyvr desk preset cinema|work-3|work-1|assistant [--dry-run]")),
+            None => return Err(CliError::usage("usage: omarchyvr desk preset cinema|cinema-huge|work-3|work-1|assistant [--dry-run]")),
         }
     } else {
         None
@@ -1961,22 +1966,27 @@ mod tests {
         let home = dir.join("wayvr-home");
         let o = parse(&["--wayvrctl-bin", ctl.to_str().unwrap(), "--wayvr-home", home.to_str().unwrap()], &[]).unwrap();
         let panels = crate::vr::preset::parse_panels(None);
-        for p in [Preset::Cinema, Preset::Work1, Preset::Work3, Preset::Assistant, Preset::Cinema] {
+        for p in [Preset::Cinema, Preset::CinemaHuge, Preset::Work1, Preset::Work3, Preset::Assistant, Preset::Cinema] {
             let _ = std::fs::remove_file(&log);
             let mut h = FakeHypr(Vec::new());
             let mut lines = Vec::new();
             preset_switch(&o, p, &mut h, &state, &dir.join("no-passthrough.sock"), &panels, &mut |l| lines.push(l.to_string())).unwrap();
             assert!(h.0.iter().all(|c| c.starts_with("-j ")), "{p:?}: only reads, no dispatch: {:?}", h.0);
             let calls = std::fs::read_to_string(&log).unwrap();
-            assert_eq!(calls.lines().count(), 1, "{p:?}: {calls}");
-            assert!(calls.starts_with("desk-screens ") && calls.contains("main=SUNSHINE"), "{p:?}: {calls}");
+            // cinema-huge also turns the backdrop off (a second wayvrctl call) and places the screen
+            let want = if p == Preset::CinemaHuge { 2 } else { 1 };
+            assert_eq!(calls.lines().count(), want, "{p:?}: {calls}");
+            assert!(calls.contains("desk-screens ") && calls.contains("main=SUNSHINE"), "{p:?}: {calls}");
+            if p == Preset::CinemaHuge {
+                assert!(calls.contains("skybox off") && calls.contains("--place --width 6 --distance 4.36"), "{calls}");
+            }
             for bad in ["process-stop", "process-launch", "kill", "close", "terminate", "desk-layout"] {
                 assert!(!calls.contains(bad), "{p:?} ran {bad}: {calls}");
             }
             assert!(!sc::read_state(&state).sort, "{p:?}: sort kept off");
             let hidden = lines.iter().find(|l| l.starts_with("still open on hidden screens: "));
             match p {
-                Preset::Cinema | Preset::Work1 => {
+                Preset::Cinema | Preset::CinemaHuge | Preset::Work1 => {
                     assert!(calls.contains("left=PIMAX-LEFT:hide") && calls.contains("right=PIMAX-RIGHT:hide"), "{calls}");
                     assert_eq!(hidden.map(String::as_str), Some("still open on hidden screens: left (google-chrome), right (pimax)"));
                 }

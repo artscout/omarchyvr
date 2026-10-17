@@ -321,7 +321,8 @@ then lists every step's result ("2 of 2 steps: 1. Showing 6 screens | 2. google-
 | show screen numbers / hide screen numbers / always show screen numbers | the number badge on each VR screen (`wayvrctl screen-numbers show|hide|always`). The numbers also flash by themselves for ~5 s when "Max" is heard alone or a command talks about screens, and after a move / send / go to / swap / open on screen N that screen's badge lights amber (`screen-numbers flash N`). An older WayVR without the command: nothing happens, nothing fails | vr.screens.numbers(_hide, _always) |
 | set the volume to 40 / volume 70 percent | the volume to N percent (`wpctl -l 1.0`: never above 100) | omarchy.volume.set |
 | play Dune / I want to watch Dune | the video whose file name has those words, in ~/Downloads, ~/Videos and the XDG videos folder only (3 folders deep, never the rest of home): the biggest match, then the newest ("Playing Dune.2021.mkv (the biggest of 2)"); fullscreen in mpv on the main screen (cinema mode shows that one). Not found: "No video called ..." and nothing else runs. Nothing is downloaded | media.play |
-| exit cinema mode / leave cinema mode | the mode from before cinema comes back, with its passthrough ("cinema mode" while it is on already changes nothing) | vr.preset.exit_cinema |
+| huge cinema / imax / big cinema / cinema mode huge / theater mode / make it a huge screen | `@preset cinema-huge`: one giant curved screen, room black, captions off (docs/CINEMA.md) | vr.preset.cinema_huge |
+| exit cinema mode / leave cinema mode / exit huge cinema / exit imax / normal screens | the mode from before cinema comes back, with its passthrough ("cinema mode" while it is on already changes nothing) | vr.preset.exit_cinema |
 | pause / play | mpv answers the media keys (mpv-mpris) | omarchy.media.play_pause |
 | cancel / cancel that / stop | stops a task of several steps (below); else a question waiting for "yes" | voice.cancel |
 
@@ -677,7 +678,7 @@ A **Voice** settings row could have:
     with `(off)` in front when disabled.
   - A toggle writes `[[intent]] id = "..." enabled = true|false` to the override file.
   - Do not offer toggles for rows that are not approved: they are not in the list at all.
-- **Preset picker**: cinema (default) / work-3 / work-1 / assistant / none.
+- **Preset picker**: cinema (default) / huge cinema / work-3 / work-1 / assistant / none.
   - The GUI today omits `--preset` for "none". That now means **cinema**, so pass `--preset none` explicitly for no
     preset.
   - While desk mode runs, "Apply now" runs `omarchyvr desk preset NAME`.

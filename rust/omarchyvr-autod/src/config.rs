@@ -53,7 +53,7 @@ impl Runtime {
 }
 
 /// Desk presets (implemented by `omarchyvr desk start --preset`).
-pub const PRESETS: [&str; 6] = ["none", "cinema", "work", "work-3", "work-1", "assistant"];
+pub const PRESETS: [&str; 7] = ["none", "cinema", "cinema-huge", "work", "work-3", "work-1", "assistant"];
 
 /// All settings. Times in seconds.
 #[derive(Debug, Clone, PartialEq)]
@@ -64,7 +64,7 @@ pub struct Config {
     pub auto_start: bool,
     pub mode: Mode,
     pub game_runtime: Runtime,
-    /// `none`, `cinema`, `work`, `assistant`.
+    /// `none`, `cinema`, `cinema-huge`, `work`, `assistant`.
     pub preset: String,
     /// Desk/vr start flags.
     pub sixdof: bool,
@@ -285,6 +285,9 @@ mod tests {
         assert_eq!(c.mode, Mode::Game);
         assert_eq!(c.game_runtime, Runtime::SteamVr);
         assert_eq!(c.preset, "cinema");
+        // the huge cinema is a valid preset of auto.toml and `auto set-mode`
+        let mut h = Config::defaults(Path::new("/h"));
+        assert!(h.set("preset", "cinema-huge", Path::new("/h")).is_ok() && h.preset == "cinema-huge");
         assert_eq!(c.dim_after_s, 30.0);
         assert_eq!(c.pimax_bin, PathBuf::from("/h/bin/omarchyvr"));
         assert_eq!(c.wear_on_s, 4.0, "bad value keeps the default");

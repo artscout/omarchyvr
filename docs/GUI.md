@@ -153,7 +153,7 @@ test, the controller gyro fit).
 
 **Room**: room setup (below), the saved rooms, the map preview; the by-hand steps in Developer mode.
 
-**Desktop** (the Work desk): Passthrough, Preset (None / Cinema / Work / Assistant), Screen numbers, Subtitles; in
+**Desktop** (the Work desk): Passthrough, Preset (None / Cinema / Huge cinema / Work / Assistant; docs/CINEMA.md), Screen numbers, Subtitles; in
 Developer mode the number of screens, WayVR (below) and Voice (live captions, the screen they sit under, Voice test,
 AI settings, the voice commands research page).
 

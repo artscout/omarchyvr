@@ -85,7 +85,7 @@ Under the selector, a readiness line shows the state of the screens:
 
      | preset | screens shown |
      |---|---|
-     | cinema, work-1 | the main screen only |
+     | cinema, cinema-huge, work-1 | the main screen only |
      | work-3 | main + left + right (shown even when empty) |
      | assistant, none | every screen, on demand |
 

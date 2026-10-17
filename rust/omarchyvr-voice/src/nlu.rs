@@ -429,7 +429,7 @@ mod tests {
         assert!(!p.contains("win.ai.switch"));
         // about 4 characters per token: about 2,300 tokens, cached by the server (was ~5,650 with the tool schemas;
         // +9 VR screen intents on 2026-10-15; +6 screen intents and the 2026-10-16 live mishearings)
-        assert!(p.len() < 15600, "{} chars", p.len()); // +2 screen placement intents (2026-10-17) // +4 intents: hide screens, hide others, scale, stop session (2026-10-16 b) // +13 screen-number, layout and volume intents (2026-10-16 evening): ~4,100 tokens of 8,192
+        assert!(p.len() < 15800, "{} chars", p.len()); // +1 intent: huge cinema (2026-10-17) // +2 screen placement intents (2026-10-17) // +4 intents: hide screens, hide others, scale, stop session (2026-10-16 b) // +13 screen-number, layout and volume intents (2026-10-16 evening): ~4,100 tokens of 8,192
     }
 
     /// Every rule a GBNF grammar uses is defined (an undefined one makes llama-server answer HTTP 400 to every

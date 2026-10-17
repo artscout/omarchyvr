@@ -17,13 +17,13 @@ pub fn show(ui: &mut Ui, app: &mut PimaxApp) {
     let dev = app.core.state.dev_mode;
     section(ui, "Desktop", None, |ui| {
         switch_row(ui, &mut app.core.toggles.passthrough, "Passthrough", Some("The room behind the screens (the headset's camera view)."), ed && (caps.no_passthrough || !t.passthrough));
-        const PRESETS: [(Preset, &str); 4] = [(Preset::None, "None"), (Preset::Cinema, "Cinema"), (Preset::Work, "Work"), (Preset::Assistant, "Assistant")];
+        const PRESETS: [(Preset, &str); 5] = [(Preset::None, "None"), (Preset::Cinema, "Cinema"), (Preset::CinemaHuge, "Huge cinema"), (Preset::Work, "Work"), (Preset::Assistant, "Assistant")];
         let names: Vec<&str> = PRESETS.iter().map(|x| x.1).collect();
         let cur = PRESETS.iter().position(|x| x.0 == app.core.toggles.preset).unwrap_or(0);
         if let Some(i) = seg_row(
             ui,
             "Preset",
-            Some("None: the screens as you placed them. Cinema: curved screens, passthrough dimmed. Work: flat, sharper screens. Assistant: voice captions on. Applies at the next desk start."),
+            Some("None: the screens as you placed them. Cinema: curved screens, passthrough dimmed. Huge cinema: one giant curved screen filling about 68 degrees, the room black, captions off (say \"Max, huge cinema\"). Work: flat, sharper screens. Assistant: voice captions on. Applies at the next desk start."),
             &names,
             cur,
             ed && caps.preset,

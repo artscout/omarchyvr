@@ -967,6 +967,7 @@ impl Sim {
         };
         let (limit, pinned, width, distance, curv, pt): (u8, Vec<u8>, f32, f32, f32, &str) = match p {
             "cinema" => (1, vec![], 3.2, 3.5, 0.35, "dim"),
+            "cinema-huge" => (1, vec![], 6.0, 4.36, 0.2, "off"),
             "work-3" => (3, vec![2, 3], 1.6, 2.0, 0.0, "normal"),
             "work-1" => (1, vec![], 2.0, 2.2, 0.0, "normal"),
             "assistant" => (6, vec![], 2.0, 2.5, 0.15, "normal"),
@@ -1387,7 +1388,7 @@ pub fn actor_state(w: &World) -> act::State {
         ("off", f) => f.rsplit('/').next().unwrap_or(f).trim_end_matches(".dds").to_string(),
         _ => "passthrough".into(),
     };
-    act::State { preset: Some(w.session.preset.clone()), backdrop: Some(backdrop), history: Vec::new() }
+    act::State { preset: Some(w.session.preset.clone()), backdrop: Some(backdrop), history: Vec::new(), before_huge: None }
 }
 
 /// Run one tool against a World: a catalogue intent id with its slot values, or a window tool (`focus_window
