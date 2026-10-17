@@ -108,6 +108,9 @@ pub struct Live {
     pub session: Vec<SessionProc>,
     /// Our service (pid file, alive, right name).
     pub service: Option<ServiceInfo>,
+    /// The running Monado's tracking kill switches (`PIMAX_CAM_AE_LAW=old`, `PIMAX_ANCHOR_GLIDE=0`,
+    /// `PIMAX_CTRL_TRACK_HYST=0`), in the order of `trackset::Switch::ALL`: true = that one is off.
+    pub tracking_off: [bool; 3],
     /// All monado-service pids.
     pub monado_pids: Vec<u32>,
     /// monado-service pids that are not the session's.
@@ -222,6 +225,11 @@ pub fn collect_live(m: &dyn Machine, p: &Paths, follower: &mut LogFollower) -> L
             ipd: ev("OXR_DEBUG_IPD_MM"),
             anchor: on("PIMAX_ANCHOR"),
         });
+        live.tracking_off = [
+            ev("PIMAX_CAM_AE_LAW").is_some_and(|v| matches!(v.trim(), "old" | "v1")),
+            ev("PIMAX_ANCHOR_GLIDE").is_some_and(|v| v == "0"),
+            ev("PIMAX_CTRL_TRACK_HYST").is_some_and(|v| matches!(v.trim(), "0" | "off" | "false")),
+        ];
         live.scale_pct = Some(ev("XRT_COMPOSITOR_SCALE_PERCENTAGE").and_then(|v| v.trim().parse().ok()).unwrap_or(140));
         let f = ev("PIMAX_PERF_FILE").map(PathBuf::from).unwrap_or_else(|| p.runtime_dir.join("omarchyvr-perf.stats"));
         let fresh = m.meta(&f).is_some_and(|x| m.now_unix().saturating_sub(x.mtime) <= 5);

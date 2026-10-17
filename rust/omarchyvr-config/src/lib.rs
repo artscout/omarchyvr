@@ -16,6 +16,7 @@
 pub mod ai;
 pub mod claude_cli;
 pub mod ctrl_angle;
+pub mod tracking;
 pub mod ctrl_inhand;
 pub mod devicedata;
 pub mod diff;

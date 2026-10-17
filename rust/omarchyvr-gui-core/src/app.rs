@@ -528,6 +528,13 @@ impl AppCore {
         if let Some(d) = omarchyvr_config::ctrl_angle::saved(&store) {
             toggles.ctrl_angle = d;
         }
+        // the same for the tracking switches (absent = the app's own value)
+        let saved = omarchyvr_config::tracking::saved(&store);
+        for sw in crate::trackset::Switch::ALL {
+            if let Some(on) = saved[sw.index()] {
+                *sw.get_mut(&mut toggles) = on;
+            }
+        }
         let a = AppCore {
             follower: LogFollower::new(&paths.session_dir.join("monado.log")),
             paths,

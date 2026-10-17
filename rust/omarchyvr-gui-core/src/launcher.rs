@@ -219,13 +219,14 @@ pub fn toggles_from_argv(text: &str, base: DeskToggles) -> Option<(DeskToggles, 
         // an absent flag is the launcher's default; `omarchyvr desk screens show|add` raises it in the record
         t.screens = crate::screens::clamp(value("--screens").and_then(|v| v.parse().ok()).unwrap_or(crate::screens::DEFAULT_SCREENS));
     }
-    // the tracking switches: an absent flag is on (the launcher's default); an absent angle keeps the saved one
+    // the tracking switches: a flag says off; an absent flag or angle means the saved setting (the launcher reads the
+    // same setup.toml), so the app's value stays
     if let Some(d) = value("--ctrl-angle").and_then(|v| omarchyvr_config::ctrl_angle::parse(v).ok()) {
         t.ctrl_angle = d;
     }
-    t.new_exposure = !has("--old-exposure");
-    t.room_glide = !has("--no-room-glide");
-    t.ctrl_steady = !has("--no-ctrl-steady");
+    t.new_exposure &= !has("--old-exposure");
+    t.room_glide &= !has("--no-room-glide");
+    t.ctrl_steady &= !has("--no-ctrl-steady");
     if vr && has("--home") {
         // the VR home (docs/VR-HOME.md) decides its own readout and room anchor: Play's switches stay as they are
     } else if vr {

@@ -43,10 +43,12 @@ and applying (1 - k) per axis, with both sign conventions, then A/B the still dr
 ## App switches (Phase 1e)
 
 The Phase 1 changes are switches on the app's **Tracking** page, all on by default; each shows its status in plain
-words ("On in this session", "Off from the next start (this session: on)", or a warning when the installed Monado
-build lacks it). The app passes the flag of a switch that is off at every Work and Play start, so `start-argv.txt`
-keeps it and restarts repeat it; the launcher turns the flag into Monado's environment unless that variable is
-already set:
+words, read from the running Monado's environment ("On in this session", "Off from the next start (this session:
+on)", or a warning when the installed Monado build lacks it). The app passes the flag of a switch that is off at every
+Work and Play start, so `start-argv.txt` keeps it and restarts repeat it; the launcher turns the flag into Monado's
+environment unless that variable is already set. The switches are also saved in the active profile's setup.toml
+(`new_exposure`, `room_glide`, `ctrl_steady`, `ctrl_angle`; `omarchyvr_config::tracking`), and a start without the
+flag (the CLI, omarchyvrd) uses the saved value:
 
 | Switch | Off = launcher flag | Monado environment | Marker (status) |
 |---|---|---|---|

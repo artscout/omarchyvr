@@ -1,8 +1,9 @@
 //! The tracking settings of plan phase 1 (docs/TRACKING-STABILITY.md): the controller angle slider and the switches
 //! "New camera exposure", "Smooth room corrections" and "Steadier controllers". All are on by default; the app passes
-//! them at every start (`--ctrl-angle DEG`, and the flag of a switch that is off), so start-argv.txt keeps them. The
-//! angle is also saved in the active profile's setup.toml (shared with `omarchyvr controllers angle`) and changed live
-//! in a running session.
+//! them at every start (`--ctrl-angle DEG`, and the flag of a switch that is off), so start-argv.txt keeps them. All
+//! four are also saved in the active profile's setup.toml, which the launcher reads when a start has no flag (the CLI,
+//! omarchyvrd); the angle is changed live in a running session. The status of a switch comes from the running
+//! Monado's environment.
 use crate::app::AppCore;
 use crate::builds::Markers;
 use crate::launcher::DeskToggles;
@@ -75,18 +76,23 @@ impl Switch {
             Switch::CtrlSteady => m.ctrl_hyst,
         }
     }
+
+    /// Index into `omarchyvr_config::tracking::KEYS` and `Live::tracking_off`.
+    pub fn index(self) -> usize {
+        Switch::ALL.iter().position(|s| *s == self).unwrap_or(0)
+    }
 }
 
 /// The status line of a switch, in plain words, and whether it is a warning.
-/// `markers`: the installed build's (None = not known yet); `running`: the running session's start arguments.
-pub fn status(sw: Switch, want: bool, markers: Option<&Markers>, running: Option<&[String]>) -> (String, bool) {
+/// `markers`: the installed build's (None = not known yet); `running`: whether it is on in the running Monado (from
+/// its environment; None = no session).
+pub fn status(sw: Switch, want: bool, markers: Option<&Markers>, running: Option<bool>) -> (String, bool) {
     if markers.is_some_and(|m| !sw.in_build(m)) {
         return ("The installed Monado build does not have it yet: install the new build (Setup > Install).".into(), true);
     }
     let word = |on: bool| if on { "on" } else { "off" };
     match running {
-        Some(args) => {
-            let now = !args.iter().any(|a| a == sw.off_flag());
+        Some(now) => {
             if now == want {
                 (format!("{} in this session", if now { "On" } else { "Off" }), false)
             } else {
@@ -120,18 +126,11 @@ impl AppCore {
         self.facts.builds.iter().find(|b| b.build.key == "desk" && b.built()).and_then(|b| b.markers)
     }
 
-    /// The running session's start arguments (None: nothing runs).
-    pub fn running_argv(&self) -> Option<Vec<String>> {
-        self.live.service.as_ref()?;
-        let (text, _) = self.facts.start_argv.as_ref()?;
-        Some(text.lines().skip(1).map(|l| l.trim().to_string()).collect())
-    }
-
     /// The status line of one switch.
     pub fn tracking_status(&self, sw: Switch) -> (String, bool) {
         let m = self.build_markers();
-        let run = self.running_argv();
-        status(sw, sw.get(&self.toggles), m.as_ref(), run.as_deref())
+        let run = self.live.service.as_ref().map(|_| !self.live.tracking_off[sw.index()]);
+        status(sw, sw.get(&self.toggles), m.as_ref(), run)
     }
 
     /// The status line of the controller angle.
@@ -140,11 +139,24 @@ impl AppCore {
         angle_status(self.toggles.ctrl_angle, m.as_ref(), self.live.service.is_some())
     }
 
-    /// A switch changed on the page: saved for the next start.
+    /// A switch changed on the page: saved for the next start (the app state and the active profile's setup.toml,
+    /// which the launcher reads too).
     pub fn set_tracking_switch(&mut self, sw: Switch, on: bool) {
         *sw.get_mut(&mut self.toggles) = on;
         self.save_state();
         self.message = format!("{}: {} from the next start", sw.label(), if on { "on" } else { "off" });
+        if self.demo {
+            return;
+        }
+        let store = self.profiles.store.clone();
+        self.task(None, move || {
+            let r = omarchyvr_config::tracking::save(&store, sw.index(), on);
+            Box::new(move |c: &mut AppCore| {
+                if let Err(e) = r {
+                    c.message = format!("{}: saved for this app only; {e}", sw.label());
+                }
+            })
+        });
     }
 
     /// The controller angle slider moved. Every move goes to a running session at once (the driver's live file; the
@@ -197,13 +209,12 @@ mod tests {
     fn switch_status_in_plain_words() {
         let m = all();
         assert_eq!(status(Switch::RoomGlide, true, Some(&m), None), ("On from the next start".into(), false));
-        let run = vec!["--6dof".to_string(), "--no-room-glide".into()];
-        assert_eq!(status(Switch::RoomGlide, false, Some(&m), Some(&run)), ("Off in this session".into(), false));
+        assert_eq!(status(Switch::RoomGlide, false, Some(&m), Some(false)), ("Off in this session".into(), false));
         assert_eq!(
-            status(Switch::RoomGlide, true, Some(&m), Some(&run)),
+            status(Switch::RoomGlide, true, Some(&m), Some(false)),
             ("On from the next start (this session: off)".into(), false)
         );
-        assert_eq!(status(Switch::CtrlSteady, true, Some(&m), Some(&run)), ("On in this session".into(), false));
+        assert_eq!(status(Switch::CtrlSteady, true, Some(&m), Some(true)), ("On in this session".into(), false));
         let old = Markers { ctrl_hyst: false, ..m };
         assert!(status(Switch::CtrlSteady, true, Some(&old), None).1, "a build without it is a warning");
         assert!(!status(Switch::CtrlSteady, true, None, None).1, "an unknown build is not");
@@ -229,6 +240,9 @@ mod tests {
         let (back, vr) = toggles_from_argv(&text, DeskToggles { tracking_flags: true, ..DeskToggles::default() }).unwrap();
         assert!(!vr);
         assert_eq!((back.ctrl_angle, back.new_exposure, back.room_glide, back.ctrl_steady), (45, true, false, true));
+        // no flag = the saved setting (the launcher reads the same setup.toml): the app's value stays
+        let base = DeskToggles { new_exposure: false, ..DeskToggles::default() };
+        assert!(!toggles_from_argv("desk\n--6dof\n", base).unwrap().0.new_exposure);
         // a launcher without the flags gets none of them
         let old = DeskToggles { tracking_flags: false, ..t };
         assert!(!desk_flags(&old).iter().any(|a| a == "--ctrl-angle" || a == "--no-room-glide"));

@@ -311,7 +311,8 @@ pub fn apply_ctrl_angle_live(runtime_dir: &Path, session_dir: &Path, deg: i32) -
 /// * `--no-room-glide`: `PIMAX_ANCHOR_GLIDE=0`, room corrections snap again instead of gliding (1b).
 /// * `--no-ctrl-steady`: `PIMAX_CTRL_TRACK_HYST=0`, the controller fuser's old 80 ms optical window (1d).
 ///
-/// The caller's own environment wins (a variable already set is left alone).
+/// Without a flag the saved setting applies (setup.toml). The caller's own environment wins (a variable already set
+/// is left alone).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TrackingSwitches {
     pub new_exposure: bool,
@@ -326,11 +327,13 @@ pub const TRACKING_FLAGS: [(&str, &str, &str); 3] = [
     ("--no-ctrl-steady", "PIMAX_CTRL_TRACK_HYST", "0"),
 ];
 
-/// Parse [`TRACKING_FLAGS`] and push the kill-switch variables onto `vr.extra_env`.
+/// Parse [`TRACKING_FLAGS`] and push the kill-switch variables onto `vr.extra_env`. Without its flag a switch takes
+/// the saved setting (setup.toml of the active profile, `omarchyvr_config::tracking`; the app's switches), else on.
 pub fn parse_tracking_switches(a: &mut Args, env: &dyn Fn(&str) -> Option<String>, vr: &mut StartOptions) -> TrackingSwitches {
+    let saved = omarchyvr_config::tracking::saved(&omarchyvr_config::Store::from_env(env));
     let mut off = [false; 3];
     for (i, (flag, var, val)) in TRACKING_FLAGS.iter().enumerate() {
-        off[i] = a.flag(flag);
+        off[i] = a.flag(flag) || saved[i] == Some(false);
         if off[i] && env(var).is_none() {
             vr.extra_env.push((var.to_string(), val.to_string()));
         }
