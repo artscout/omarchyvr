@@ -1,217 +1,241 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Pimax Dream Air on Linux: architecture</title>
+<title>omarchyvr architecture</title>
 <style>
 :root{--bg:#f6f8fb;--card:#ffffff;--ink:#1c2433;--mute:#5a6578;--line:#7d8aa3}
 @media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#161b26;--card:#1f2633;--ink:#e8edf5;--mute:#a3afc2;--line:#8c9ab3}}
+:root[data-theme=dark]{--bg:#161b26;--card:#1f2633;--ink:#e8edf5;--mute:#a3afc2;--line:#8c9ab3}
 html,body{margin:0;background:var(--bg);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
-.wrap{width:1600px;height:1000px;position:relative}
+.wrap{width:1600px;height:1080px;position:relative}
 svg{display:block}
-.legend{position:absolute;right:30px;top:24px;display:flex;gap:18px;font-size:14px;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 14px}
+.legend{position:absolute;right:20px;top:20px;display:flex;gap:18px;font-size:14px;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 14px}
 .legend i{display:inline-block;width:14px;height:14px;border-radius:3px;margin-right:6px;vertical-align:-2px}
-@media (max-width:1600px){.wrap{width:100%;height:auto}svg{width:100%;height:auto}}
-</style><script>if(location.hash=="#light")document.documentElement.dataset.theme="light"</script></head><body>
+@media (max-width:1599px){.wrap{width:100%;height:auto}svg{width:100%;height:auto}.legend{position:static;flex-wrap:wrap;margin:12px 16px}}
+</style><script>if(location.hash=="#light")document.documentElement.dataset.theme="light";if(location.hash=="#dark")document.documentElement.dataset.theme="dark"</script></head><body>
 <div class="wrap">
-<svg viewBox="0 0 1600 1000" width="1600" height="1000" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,-apple-system,'Segoe UI',Roboto,sans-serif">
+<svg viewBox="0 0 1600 1080" width="1600" height="1080" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,-apple-system,'Segoe UI',Roboto,sans-serif">
 <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--line)"/></marker></defs>
-<rect width="1600" height="1000" fill="var(--bg)"/>
-<text x="30" y="40" font-size="26" font-weight="800" fill="var(--ink)">Pimax Dream Air on Linux: how the pieces fit</text>
-<text x="30" y="62" font-size="14" fill="var(--mute)">Unofficial. One app (omarchyvr-app) controls everything; the headset talks USB/HID and DisplayPort; Monado is the VR runtime.</text>
-<rect x="20" y="80" width="270" height="640" rx="14" fill="#6b7a99" fill-opacity="0.10" stroke="#6b7a99" stroke-opacity="0.6" stroke-width="1.5" stroke-dasharray="6 4"/>
+<rect width="1600" height="1080" fill="var(--bg)"/>
+<text x="30" y="40" font-size="26" font-weight="800" fill="var(--ink)">omarchyvr: how the pieces fit</text>
+<text x="30" y="62" font-size="14" fill="var(--mute)">Unofficial. One app (omarchyvr-app) has every switch; the Pimax Dream Air talks USB/HID and DisplayPort; one Monado build is the VR runtime; WayVR is the VR desk.</text>
+<rect x="20" y="80" width="270" height="700" rx="14" fill="#6b7a99" fill-opacity="0.10" stroke="#6b7a99" stroke-opacity="0.6" stroke-width="1.5" stroke-dasharray="6 4"/>
 <text x="36" y="106" font-size="17" font-weight="800" fill="var(--ink)">Pimax Dream Air (headset)</text>
-<rect x="36" y="118" width="238" height="76" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
-<rect x="36" y="118" width="7" height="76" rx="3" fill="#2e9e5b"/>
+<rect x="36" y="118" width="238" height="82" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
+<rect x="36" y="118" width="7" height="82" rx="3" fill="#2e9e5b"/>
 <text x="54" y="140" font-size="14" font-weight="700" fill="var(--ink)">Panels 7104x3840</text>
-<text x="54" y="158" font-size="12" fill="var(--mute)">72 Hz (90 Hz new) over DisplayPort</text>
-<text x="54" y="173" font-size="12" fill="var(--mute)">DSC, lens correction on Linux</text>
-<rect x="36" y="204" width="238" height="76" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
-<rect x="36" y="204" width="7" height="76" rx="3" fill="#2e9e5b"/>
-<text x="54" y="226" font-size="14" font-weight="700" fill="var(--ink)">4 tracking cameras + IMU</text>
-<text x="54" y="244" font-size="12" fill="var(--mute)">60 fps, 0 lost; feed 6DoF and hands</text>
-<rect x="36" y="290" width="238" height="76" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
-<rect x="36" y="290" width="7" height="76" rx="3" fill="#2e9e5b"/>
-<text x="54" y="312" font-size="14" font-weight="700" fill="var(--ink)">Controllers (headset radio)</text>
-<text x="54" y="330" font-size="12" fill="var(--mute)">buttons, sticks, vibration; pair/unpair</text>
-<text x="54" y="345" font-size="12" fill="var(--mute)">optical tracking is rough</text>
-<rect x="36" y="376" width="238" height="76" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
-<rect x="36" y="376" width="7" height="76" rx="3" fill="#2e9e5b"/>
-<text x="54" y="398" font-size="14" font-weight="700" fill="var(--ink)">Microphone (USB audio)</text>
-<text x="54" y="416" font-size="12" fill="var(--mute)">2 ch, 48 kHz</text>
-<rect x="36" y="462" width="238" height="76" rx="8" fill="var(--card)" stroke="#d64545" stroke-width="2"/>
-<rect x="36" y="462" width="7" height="76" rx="3" fill="#d64545"/>
-<text x="54" y="484" font-size="14" font-weight="700" fill="var(--ink)">Speakers (DP audio)</text>
-<text x="54" y="502" font-size="12" fill="var(--mute)">no sound path yet on Linux</text>
-<text x="54" y="517" font-size="12" fill="var(--mute)">(no valid audio info on the DP pin)</text>
-<rect x="36" y="548" width="238" height="76" rx="8" fill="var(--card)" stroke="#d9961a" stroke-width="2"/>
-<rect x="36" y="548" width="7" height="76" rx="3" fill="#d9961a"/>
-<text x="54" y="570" font-size="14" font-weight="700" fill="var(--ink)">Eye tracker</text>
-<text x="54" y="588" font-size="12" fill="var(--mute)">streams ~119 Hz; accuracy not final</text>
-<text x="54" y="603" font-size="12" fill="var(--mute)">gated by Pimax licence/dev only</text>
-<rect x="36" y="634" width="238" height="76" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
-<rect x="36" y="634" width="7" height="76" rx="3" fill="#2e9e5b"/>
-<text x="54" y="656" font-size="14" font-weight="700" fill="var(--ink)">IPD motor, restart, brightness</text>
-<text x="54" y="674" font-size="12" fill="var(--mute)">commands from Windows captures</text>
-<rect x="310" y="80" width="260" height="640" rx="14" fill="#6b7a99" fill-opacity="0.10" stroke="#6b7a99" stroke-opacity="0.6" stroke-width="1.5" stroke-dasharray="6 4"/>
+<text x="54" y="158" font-size="12" fill="var(--mute)">90 Hz (default) or 72 Hz</text>
+<text x="54" y="173" font-size="12" fill="var(--mute)">DisplayPort, DSC, direct mode</text>
+<rect x="36" y="212" width="238" height="82" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
+<rect x="36" y="212" width="7" height="82" rx="3" fill="#2e9e5b"/>
+<text x="54" y="234" font-size="14" font-weight="700" fill="var(--ink)">4 tracking cameras + IMU</text>
+<text x="54" y="252" font-size="12" fill="var(--mute)">infrared, 60 fps</text>
+<text x="54" y="267" font-size="12" fill="var(--mute)">feed 6DoF, controllers, hands</text>
+<rect x="36" y="306" width="238" height="82" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
+<rect x="36" y="306" width="7" height="82" rx="3" fill="#2e9e5b"/>
+<text x="54" y="328" font-size="14" font-weight="700" fill="var(--ink)">Controllers (headset radio)</text>
+<text x="54" y="346" font-size="12" fill="var(--mute)">buttons, sticks, vibration</text>
+<text x="54" y="361" font-size="12" fill="var(--mute)">pair / unpair from the app</text>
+<rect x="36" y="400" width="238" height="82" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
+<rect x="36" y="400" width="7" height="82" rx="3" fill="#2e9e5b"/>
+<text x="54" y="422" font-size="14" font-weight="700" fill="var(--ink)">Speakers (DisplayPort audio)</text>
+<text x="54" y="440" font-size="12" fill="var(--mute)">routed at start like Pimax Play</text>
+<text x="54" y="455" font-size="12" fill="var(--mute)">old output restored at stop</text>
+<rect x="36" y="494" width="238" height="82" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
+<rect x="36" y="494" width="7" height="82" rx="3" fill="#2e9e5b"/>
+<text x="54" y="516" font-size="14" font-weight="700" fill="var(--ink)">Microphone (USB audio)</text>
+<text x="54" y="534" font-size="12" fill="var(--mute)">default input while VR runs</text>
+<text x="54" y="549" font-size="12" fill="var(--mute)">feeds the voice commands</text>
+<rect x="36" y="588" width="238" height="82" rx="8" fill="var(--card)" stroke="#d9961a" stroke-width="2"/>
+<rect x="36" y="588" width="7" height="82" rx="3" fill="#d9961a"/>
+<text x="54" y="610" font-size="14" font-weight="700" fill="var(--ink)">Eye tracker</text>
+<text x="54" y="628" font-size="12" fill="var(--mute)">about 119 Hz, per-eye calibration</text>
+<text x="54" y="643" font-size="12" fill="var(--mute)">a gaze point in Work</text>
+<rect x="36" y="682" width="238" height="82" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
+<rect x="36" y="682" width="7" height="82" rx="3" fill="#2e9e5b"/>
+<text x="54" y="704" font-size="14" font-weight="700" fill="var(--ink)">IPD motor, brightness, restart</text>
+<text x="54" y="722" font-size="12" fill="var(--mute)">commands from Windows captures</text>
+<text x="54" y="737" font-size="12" fill="var(--mute)">fast restart in about 8 s</text>
+<rect x="310" y="80" width="260" height="700" rx="14" fill="#6b7a99" fill-opacity="0.10" stroke="#6b7a99" stroke-opacity="0.6" stroke-width="1.5" stroke-dasharray="6 4"/>
 <text x="326" y="106" font-size="17" font-weight="800" fill="var(--ink)">Link: USB, DisplayPort, GPU</text>
-<rect x="326" y="118" width="228" height="100" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
-<rect x="326" y="118" width="7" height="100" rx="3" fill="#2e9e5b"/>
-<text x="344" y="140" font-size="14" font-weight="700" fill="var(--ink)">USB / HID: libpimax (Rust)</text>
+<rect x="326" y="118" width="228" height="96" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
+<rect x="326" y="118" width="7" height="96" rx="3" fill="#2e9e5b"/>
+<text x="344" y="140" font-size="14" font-weight="700" fill="var(--ink)">libpimax (Rust, HID)</text>
 <text x="344" y="158" font-size="12" fill="var(--mute)">wake, keepalive, IMU, controllers</text>
-<text x="344" y="173" font-size="12" fill="var(--mute)">HID allowlist: only captured bytes</text>
-<rect x="326" y="230" width="228" height="100" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
-<rect x="326" y="230" width="7" height="100" rx="3" fill="#2e9e5b"/>
-<text x="344" y="252" font-size="14" font-weight="700" fill="var(--ink)">pimax-cam broker</text>
-<text x="344" y="270" font-size="12" fill="var(--mute)">one owner of the cameras,</text>
-<text x="344" y="285" font-size="12" fill="var(--mute)">many readers; self-heals on unplug</text>
-<rect x="326" y="342" width="228" height="100" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
-<rect x="326" y="342" width="7" height="100" rx="3" fill="#2e9e5b"/>
-<text x="344" y="364" font-size="14" font-weight="700" fill="var(--ink)">omarchyvrd + keepalive</text>
-<text x="344" y="382" font-size="12" fill="var(--mute)">owns the stack, restarts parts safely</text>
-<text x="344" y="397" font-size="12" fill="var(--mute)">watchdog, GPU safety gate</text>
-<rect x="326" y="454" width="228" height="100" rx="8" fill="var(--card)" stroke="#d9961a" stroke-width="2"/>
-<rect x="326" y="454" width="7" height="100" rx="3" fill="#d9961a"/>
-<text x="344" y="476" font-size="14" font-weight="700" fill="var(--ink)">DisplayPort + NVIDIA</text>
-<text x="344" y="494" font-size="12" fill="var(--mute)">patched open module (2Heads1OR,</text>
-<text x="344" y="509" font-size="12" fill="var(--mute)">flip fix), EDID override, DRM lease</text>
-<rect x="326" y="566" width="228" height="100" rx="8" fill="var(--card)" stroke="#d64545" stroke-width="2"/>
-<rect x="326" y="566" width="7" height="100" rx="3" fill="#d64545"/>
-<text x="344" y="588" font-size="14" font-weight="700" fill="var(--ink)">Foveated rendering</text>
-<text x="344" y="606" font-size="12" fill="var(--mute)">not built: needs eye tracking</text>
-<text x="344" y="621" font-size="12" fill="var(--mute)">and runtime support</text>
-<rect x="600" y="80" width="470" height="430" rx="14" fill="#3a6ea5" fill-opacity="0.10" stroke="#3a6ea5" stroke-opacity="0.6" stroke-width="1.5" stroke-dasharray="6 4"/>
+<text x="344" y="173" font-size="12" fill="var(--mute)">allowlist of captured bytes</text>
+<rect x="326" y="226" width="228" height="96" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
+<rect x="326" y="226" width="7" height="96" rx="3" fill="#2e9e5b"/>
+<text x="344" y="248" font-size="14" font-weight="700" fill="var(--ink)">Camera broker</text>
+<text x="344" y="266" font-size="12" fill="var(--mute)">one owner of the cameras</text>
+<text x="344" y="281" font-size="12" fill="var(--mute)">auto-exposure for dim rooms</text>
+<rect x="326" y="334" width="228" height="96" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
+<rect x="326" y="334" width="7" height="96" rx="3" fill="#2e9e5b"/>
+<text x="344" y="356" font-size="14" font-weight="700" fill="var(--ink)">omarchyvrd</text>
+<text x="344" y="374" font-size="12" fill="var(--mute)">owns the stack, restarts parts</text>
+<text x="344" y="389" font-size="12" fill="var(--mute)">safely; VR keeps running</text>
+<rect x="326" y="442" width="228" height="96" rx="8" fill="var(--card)" stroke="#d9961a" stroke-width="2"/>
+<rect x="326" y="442" width="7" height="96" rx="3" fill="#d9961a"/>
+<text x="344" y="464" font-size="14" font-weight="700" fill="var(--ink)">NVIDIA open module</text>
+<text x="344" y="482" font-size="12" fill="var(--mute)">3 local patches (2Heads1OR, flip)</text>
+<text x="344" y="497" font-size="12" fill="var(--mute)">pacman hooks re-apply them</text>
+<rect x="326" y="550" width="228" height="96" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
+<rect x="326" y="550" width="7" height="96" rx="3" fill="#2e9e5b"/>
+<text x="344" y="572" font-size="14" font-weight="700" fill="var(--ink)">EDID override + DRM lease</text>
+<text x="344" y="590" font-size="12" fill="var(--mute)">headset is non-desktop</text>
+<text x="344" y="605" font-size="12" fill="var(--mute)">leased to Monado</text>
+<rect x="326" y="658" width="228" height="96" rx="8" fill="var(--card)" stroke="#d64545" stroke-width="2"/>
+<rect x="326" y="658" width="7" height="96" rx="3" fill="#d64545"/>
+<text x="344" y="680" font-size="14" font-weight="700" fill="var(--ink)">Foveated rendering</text>
+<text x="344" y="698" font-size="12" fill="var(--mute)">not built: needs eye tracking</text>
+<text x="344" y="713" font-size="12" fill="var(--mute)">and runtime support</text>
+<rect x="600" y="80" width="470" height="470" rx="14" fill="#5b84c4" fill-opacity="0.10" stroke="#5b84c4" stroke-opacity="0.6" stroke-width="1.5" stroke-dasharray="6 4"/>
 <text x="616" y="106" font-size="17" font-weight="800" fill="var(--ink)">Monado fork (one build, everything inside)</text>
-<rect x="616" y="118" width="214" height="84" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
-<rect x="616" y="118" width="7" height="84" rx="3" fill="#2e9e5b"/>
+<rect x="616" y="118" width="214" height="94" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
+<rect x="616" y="118" width="7" height="94" rx="3" fill="#2e9e5b"/>
 <text x="634" y="140" font-size="14" font-weight="700" fill="var(--ink)">Pimax driver</text>
-<text x="634" y="158" font-size="12" fill="var(--mute)">display, IMU, lens, controllers</text>
-<rect x="842" y="118" width="214" height="84" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
-<rect x="842" y="118" width="7" height="84" rx="3" fill="#2e9e5b"/>
-<text x="860" y="140" font-size="14" font-weight="700" fill="var(--ink)">SLAM 6DoF (Basalt)</text>
-<text x="860" y="158" font-size="12" fill="var(--mute)">fused output, still-gate</text>
-<rect x="616" y="214" width="214" height="84" rx="8" fill="var(--card)" stroke="#d9961a" stroke-width="2"/>
-<rect x="616" y="214" width="7" height="84" rx="3" fill="#d9961a"/>
-<text x="634" y="236" font-size="14" font-weight="700" fill="var(--ink)">Controller tracking</text>
-<text x="634" y="254" font-size="12" fill="var(--mute)">optical, from the cameras</text>
-<rect x="842" y="214" width="214" height="84" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
-<rect x="842" y="214" width="7" height="84" rx="3" fill="#2e9e5b"/>
-<text x="860" y="236" font-size="14" font-weight="700" fill="var(--ink)">Anchor / room map</text>
-<text x="860" y="254" font-size="12" fill="var(--mute)">floor, play area, forward</text>
-<rect x="616" y="310" width="214" height="84" rx="8" fill="var(--card)" stroke="#d9961a" stroke-width="2"/>
-<rect x="616" y="310" width="7" height="84" rx="3" fill="#d9961a"/>
-<text x="634" y="332" font-size="14" font-weight="700" fill="var(--ink)">Mercury camera hands</text>
-<text x="634" y="350" font-size="12" fill="var(--mute)">models: personal use only</text>
-<rect x="842" y="310" width="214" height="84" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
-<rect x="842" y="310" width="7" height="84" rx="3" fill="#2e9e5b"/>
-<text x="860" y="332" font-size="14" font-weight="700" fill="var(--ink)">Recorder tap</text>
-<text x="860" y="350" font-size="12" fill="var(--mute)">video + tracking logs</text>
-<rect x="616" y="406" width="214" height="84" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
-<rect x="616" y="406" width="7" height="84" rx="3" fill="#2e9e5b"/>
-<text x="634" y="428" font-size="14" font-weight="700" fill="var(--ink)">Haptics</text>
-<text x="634" y="446" font-size="12" fill="var(--mute)">vibration via the session</text>
-<rect x="842" y="406" width="214" height="84" rx="8" fill="var(--card)" stroke="#d9961a" stroke-width="2"/>
-<rect x="842" y="406" width="7" height="84" rx="3" fill="#d9961a"/>
-<text x="860" y="428" font-size="14" font-weight="700" fill="var(--ink)">Eye gaze (PIMAX_EYE)</text>
-<text x="860" y="446" font-size="12" fill="var(--mute)">dev-only, silent in Work</text>
-<rect x="600" y="530" width="470" height="190" rx="14" fill="#3a6ea5" fill-opacity="0.10" stroke="#3a6ea5" stroke-opacity="0.6" stroke-width="1.5" stroke-dasharray="6 4"/>
-<text x="616" y="556" font-size="17" font-weight="800" fill="var(--ink)">Desktop side</text>
-<rect x="616" y="566" width="214" height="138" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
-<rect x="616" y="566" width="7" height="138" rx="3" fill="#2e9e5b"/>
-<text x="634" y="588" font-size="14" font-weight="700" fill="var(--ink)">Hyprland</text>
-<text x="634" y="606" font-size="12" fill="var(--mute)">headless outputs = VR screens</text>
-<text x="634" y="621" font-size="12" fill="var(--mute)">up to 4 screens, one per</text>
-<text x="634" y="636" font-size="12" fill="var(--mute)">virtual display</text>
-<rect x="842" y="566" width="212" height="138" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
-<rect x="842" y="566" width="7" height="138" rx="3" fill="#2e9e5b"/>
-<text x="860" y="588" font-size="14" font-weight="700" fill="var(--ink)">Audio + AI helpers</text>
-<text x="860" y="606" font-size="12" fill="var(--mute)">Whisper speech-to-text</text>
-<text x="860" y="621" font-size="12" fill="var(--mute)">local model or online AI</text>
-<text x="860" y="636" font-size="12" fill="var(--mute)">captions in the headset</text>
-<rect x="1100" y="80" width="480" height="300" rx="14" fill="#2e7d57" fill-opacity="0.10" stroke="#2e7d57" stroke-opacity="0.6" stroke-width="1.5" stroke-dasharray="6 4"/>
+<text x="634" y="158" font-size="12" fill="var(--mute)">display, lens fit to Pimax data</text>
+<text x="634" y="173" font-size="12" fill="var(--mute)">IMU, haptics, input profiles</text>
+<rect x="842" y="118" width="214" height="94" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
+<rect x="842" y="118" width="7" height="94" rx="3" fill="#2e9e5b"/>
+<text x="860" y="140" font-size="14" font-weight="700" fill="var(--ink)">6DoF head (Basalt SLAM)</text>
+<text x="860" y="158" font-size="12" fill="var(--mute)">fused output, pose freeze</text>
+<text x="860" y="173" font-size="12" fill="var(--mute)">while still, IMU noise regimes</text>
+<rect x="616" y="224" width="214" height="94" rx="8" fill="var(--card)" stroke="#d9961a" stroke-width="2"/>
+<rect x="616" y="224" width="7" height="94" rx="3" fill="#d9961a"/>
+<text x="634" y="246" font-size="14" font-weight="700" fill="var(--ink)">Controller tracking</text>
+<text x="634" y="264" font-size="12" fill="var(--mute)">optical, from the cameras</text>
+<text x="634" y="279" font-size="12" fill="var(--mute)">only when picked up (Work)</text>
+<rect x="842" y="224" width="214" height="94" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
+<rect x="842" y="224" width="7" height="94" rx="3" fill="#2e9e5b"/>
+<text x="860" y="246" font-size="14" font-weight="700" fill="var(--ink)">Room anchor</text>
+<text x="860" y="264" font-size="12" fill="var(--mute)">floor, play area, forward</text>
+<text x="860" y="279" font-size="12" fill="var(--mute)">one writer per session</text>
+<rect x="616" y="330" width="214" height="94" rx="8" fill="var(--card)" stroke="#d9961a" stroke-width="2"/>
+<rect x="616" y="330" width="7" height="94" rx="3" fill="#d9961a"/>
+<text x="634" y="352" font-size="14" font-weight="700" fill="var(--ink)">Camera hands (Mercury)</text>
+<text x="634" y="370" font-size="12" fill="var(--mute)">no controllers needed</text>
+<text x="634" y="385" font-size="12" fill="var(--mute)">models: personal use only</text>
+<rect x="842" y="330" width="214" height="94" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
+<rect x="842" y="330" width="7" height="94" rx="3" fill="#2e9e5b"/>
+<text x="860" y="352" font-size="14" font-weight="700" fill="var(--ink)">Recorder tap</text>
+<text x="860" y="370" font-size="12" fill="var(--mute)">video + tracking per take</text>
+<text x="860" y="385" font-size="12" fill="var(--mute)">30 fps with sound</text>
+<rect x="616" y="436" width="214" height="94" rx="8" fill="var(--card)" stroke="#d9961a" stroke-width="2"/>
+<rect x="616" y="436" width="7" height="94" rx="3" fill="#d9961a"/>
+<text x="634" y="458" font-size="14" font-weight="700" fill="var(--ink)">Eye gaze (PIMAX_EYE)</text>
+<text x="634" y="476" font-size="12" fill="var(--mute)">XR_EXT_eye_gaze_interaction</text>
+<text x="634" y="491" font-size="12" fill="var(--mute)">a point, not a mouse</text>
+<rect x="842" y="436" width="214" height="94" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
+<rect x="842" y="436" width="7" height="94" rx="3" fill="#2e9e5b"/>
+<text x="860" y="458" font-size="14" font-weight="700" fill="var(--ink)">SteamVR driver</text>
+<text x="860" y="476" font-size="12" fill="var(--mute)">driver_monado inside SteamVR</text>
+<text x="860" y="491" font-size="12" fill="var(--mute)">Steam updates can break it</text>
+<rect x="600" y="570" width="470" height="210" rx="14" fill="#5b84c4" fill-opacity="0.10" stroke="#5b84c4" stroke-opacity="0.6" stroke-width="1.5" stroke-dasharray="6 4"/>
+<text x="616" y="596" font-size="17" font-weight="800" fill="var(--ink)">Desktop side</text>
+<rect x="616" y="608" width="214" height="156" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
+<rect x="616" y="608" width="7" height="156" rx="3" fill="#2e9e5b"/>
+<text x="634" y="630" font-size="14" font-weight="700" fill="var(--ink)">Hyprland</text>
+<text x="634" y="648" font-size="12" fill="var(--mute)">headless outputs = VR screens</text>
+<text x="634" y="663" font-size="12" fill="var(--mute)">up to 6 around the desktop</text>
+<text x="634" y="678" font-size="12" fill="var(--mute)">apps stay on their screen</text>
+<text x="634" y="693" font-size="12" fill="var(--mute)">the theme follows Omarchy</text>
+<rect x="842" y="608" width="214" height="156" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
+<rect x="842" y="608" width="7" height="156" rx="3" fill="#2e9e5b"/>
+<text x="860" y="630" font-size="14" font-weight="700" fill="var(--ink)">Speech + AI</text>
+<text x="860" y="648" font-size="12" fill="var(--mute)">speech-to-text on the CPU</text>
+<text x="860" y="663" font-size="12" fill="var(--mute)">(Parakeet / Whisper)</text>
+<text x="860" y="678" font-size="12" fill="var(--mute)">local AI: Lara + Qwen</text>
+<text x="860" y="693" font-size="12" fill="var(--mute)">or online (Claude, any API)</text>
+<rect x="1100" y="80" width="480" height="330" rx="14" fill="#3f9a73" fill-opacity="0.10" stroke="#3f9a73" stroke-opacity="0.6" stroke-width="1.5" stroke-dasharray="6 4"/>
 <text x="1116" y="106" font-size="17" font-weight="800" fill="var(--ink)">Play: games</text>
-<rect x="1116" y="118" width="448" height="100" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
-<rect x="1116" y="118" width="7" height="100" rx="3" fill="#2e9e5b"/>
-<text x="1134" y="140" font-size="14" font-weight="700" fill="var(--ink)">Play: Monado + xrizer</text>
-<text x="1134" y="158" font-size="12" fill="var(--mute)">OpenVR/OpenXR games through Steam (Proton)</text>
-<text x="1134" y="173" font-size="12" fill="var(--mute)">launch option shares the Monado socket</text>
-<text x="1134" y="188" font-size="12" fill="var(--mute)">game check page finds the usual causes</text>
-<rect x="1116" y="230" width="448" height="134" rx="8" fill="var(--card)" stroke="#d9961a" stroke-width="2"/>
-<rect x="1116" y="230" width="7" height="134" rx="3" fill="#d9961a"/>
-<text x="1134" y="252" font-size="14" font-weight="700" fill="var(--ink)">Play: SteamVR with driver_monado</text>
-<text x="1134" y="270" font-size="12" fill="var(--mute)">SteamVR is the compositor, Monado supplies the headset</text>
-<text x="1134" y="285" font-size="12" fill="var(--mute)">Oculus Touch profile for controllers</text>
-<text x="1134" y="300" font-size="12" fill="var(--mute)">Steam updates can break it (outside our control)</text>
-<rect x="1100" y="400" width="480" height="320" rx="14" fill="#2e7d57" fill-opacity="0.10" stroke="#2e7d57" stroke-opacity="0.6" stroke-width="1.5" stroke-dasharray="6 4"/>
-<text x="1116" y="426" font-size="17" font-weight="800" fill="var(--ink)">Work: desk</text>
-<rect x="1116" y="438" width="448" height="86" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
-<rect x="1116" y="438" width="7" height="86" rx="3" fill="#2e9e5b"/>
-<text x="1134" y="460" font-size="14" font-weight="700" fill="var(--ink)">WayVR desk</text>
-<text x="1134" y="478" font-size="12" fill="var(--mute)">VR screens (Hyprland), hands before controllers</text>
-<text x="1134" y="493" font-size="12" fill="var(--mute)">gaze pointer, floating keyboard</text>
-<rect x="1116" y="536" width="448" height="80" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
-<rect x="1116" y="536" width="7" height="80" rx="3" fill="#2e9e5b"/>
-<text x="1134" y="558" font-size="14" font-weight="700" fill="var(--ink)">Voice: "Max, ..."</text>
-<text x="1134" y="576" font-size="12" fill="var(--mute)">wake word, window = workspace = VR screen</text>
-<text x="1134" y="591" font-size="12" fill="var(--mute)">Omarchy commands, careful confirm for risky ones</text>
-<rect x="1116" y="628" width="448" height="80" rx="8" fill="var(--card)" stroke="#d9961a" stroke-width="2"/>
-<rect x="1116" y="628" width="7" height="80" rx="3" fill="#d9961a"/>
-<text x="1134" y="650" font-size="14" font-weight="700" fill="var(--ink)">AI agent</text>
-<text x="1134" y="668" font-size="12" fill="var(--mute)">local llama.cpp or online provider</text>
-<text x="1134" y="683" font-size="12" fill="var(--mute)">acts through a safe tool list</text>
-<rect x="20" y="740" width="1560" height="240" rx="14" fill="#7a4fb0" fill-opacity="0.10" stroke="#7a4fb0" stroke-opacity="0.6" stroke-width="1.5" stroke-dasharray="6 4"/>
-<text x="36" y="766" font-size="17" font-weight="800" fill="var(--ink)">Pimax app (omarchyvr-app): every switch lives here</text>
-<rect x="36" y="780" width="300" height="90" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
-<rect x="36" y="780" width="7" height="90" rx="3" fill="#2e9e5b"/>
-<text x="54" y="802" font-size="14" font-weight="700" fill="var(--ink)">Home: Play / Work</text>
-<text x="54" y="820" font-size="12" fill="var(--mute)">one click, saved settings,</text>
-<text x="54" y="835" font-size="12" fill="var(--mute)">start at login, auto mode</text>
-<rect x="348" y="780" width="300" height="90" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
-<rect x="348" y="780" width="7" height="90" rx="3" fill="#2e9e5b"/>
-<text x="366" y="802" font-size="14" font-weight="700" fill="var(--ink)">Settings pages</text>
-<text x="366" y="820" font-size="12" fill="var(--mute)">quality presets, brightness, IPD,</text>
-<text x="366" y="835" font-size="12" fill="var(--mute)">room setup, voice, AI, sound</text>
-<rect x="660" y="780" width="300" height="90" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
-<rect x="660" y="780" width="7" height="90" rx="3" fill="#2e9e5b"/>
-<text x="678" y="802" font-size="14" font-weight="700" fill="var(--ink)">Checks + Autofix</text>
-<text x="678" y="820" font-size="12" fill="var(--mute)">ready check, plain-words errors,</text>
-<text x="678" y="835" font-size="12" fill="var(--mute)">pairing, restart headset</text>
-<rect x="972" y="780" width="300" height="90" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
-<rect x="972" y="780" width="7" height="90" rx="3" fill="#2e9e5b"/>
-<text x="990" y="802" font-size="14" font-weight="700" fill="var(--ink)">Record</text>
-<text x="990" y="820" font-size="12" fill="var(--mute)">video of the headset +</text>
-<text x="990" y="835" font-size="12" fill="var(--mute)">tracking logs per take</text>
-<rect x="1284" y="780" width="280" height="90" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
-<rect x="1284" y="780" width="7" height="90" rx="3" fill="#2e9e5b"/>
-<text x="1302" y="802" font-size="14" font-weight="700" fill="var(--ink)">Room map viewer</text>
-<text x="1302" y="820" font-size="12" fill="var(--mute)">one offline HTML page: 3D, floor plan</text>
-<rect x="36" y="884" width="300" height="80" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
-<rect x="36" y="884" width="7" height="80" rx="3" fill="#2e9e5b"/>
-<text x="54" y="906" font-size="14" font-weight="700" fill="var(--ink)">pimax CLI</text>
-<text x="54" y="924" font-size="12" fill="var(--mute)">the engine behind the app;</text>
-<text x="54" y="939" font-size="12" fill="var(--mute)">for tests and agents</text>
-<rect x="348" y="884" width="612" height="80" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
-<rect x="348" y="884" width="7" height="80" rx="3" fill="#2e9e5b"/>
-<text x="366" y="906" font-size="14" font-weight="700" fill="var(--ink)">Windows capture tooling</text>
-<text x="366" y="924" font-size="12" fill="var(--mute)">USBPcap + Pimax Play logs taken on a Windows PC</text>
-<text x="366" y="939" font-size="12" fill="var(--mute)">feed analysis/, allowlist bytes, tracking benchmarks</text>
-<rect x="972" y="884" width="592" height="80" rx="8" fill="var(--card)" stroke="#8a94a6" stroke-width="2"/>
-<rect x="972" y="884" width="7" height="80" rx="3" fill="#8a94a6"/>
-<text x="990" y="906" font-size="14" font-weight="700" fill="var(--ink)">Docs + AI knowledge</text>
-<text x="990" y="924" font-size="12" fill="var(--mute)">docs/*.md, AGENTS.md, docs/AI-KNOWLEDGE.md</text>
-<text x="990" y="939" font-size="12" fill="var(--mute)">plan to open-source: docs/OPEN-SOURCE-PLAN.md</text>
-<path d="M290,200 L310,200" stroke="var(--line)" stroke-width="2.2" fill="none" marker-end="url(#a)"/>
-<path d="M290,300 L310,300" stroke="var(--line)" stroke-width="2.2" fill="none" marker-end="url(#a)"/>
-<path d="M290,420 L310,420" stroke="var(--line)" stroke-width="2.2" fill="none" marker-end="url(#a)"/>
-<path d="M570,170 L600,170" stroke="var(--line)" stroke-width="2.2" fill="none" marker-end="url(#a)"/>
-<path d="M570,330 L600,330" stroke="var(--line)" stroke-width="2.2" fill="none" marker-end="url(#a)"/>
-<path d="M570,470 L600,470" stroke="var(--line)" stroke-width="2.2" fill="none" marker-end="url(#a)"/>
-<path d="M1070,170 L1100,170" stroke="var(--line)" stroke-width="2.2" fill="none" marker-end="url(#a)"/>
-<path d="M1070,260 L1100,260" stroke="var(--line)" stroke-width="2.2" fill="none" marker-end="url(#a)"/>
-<path d="M1070,500 L1100,500" stroke="var(--line)" stroke-width="2.2" fill="none" marker-end="url(#a)"/>
-<path d="M830,520 L830,540" stroke="var(--line)" stroke-width="2.2" fill="none" marker-end="url(#a)"/>
-<path d="M600,740 L600,722" stroke="var(--line)" stroke-width="2.2" fill="none" stroke-dasharray="6 5" marker-end="url(#a)"/>
-<path d="M1100,740 L1100,722" stroke="var(--line)" stroke-width="2.2" fill="none" stroke-dasharray="6 5" marker-end="url(#a)"/>
-<path d="M165,740 L165,722" stroke="var(--line)" stroke-width="2.2" fill="none" stroke-dasharray="6 5" marker-end="url(#a)"/>
-<text x="1010" y="990" font-size="0"></text>
+<rect x="1116" y="118" width="448" height="82" rx="8" fill="var(--card)" stroke="#d9961a" stroke-width="2"/>
+<rect x="1116" y="118" width="7" height="82" rx="3" fill="#d9961a"/>
+<text x="1134" y="140" font-size="14" font-weight="700" fill="var(--ink)">VR home</text>
+<text x="1134" y="158" font-size="12" fill="var(--mute)">Play lands in a small panel in the headset: Work, SteamVR,</text>
+<text x="1134" y="173" font-size="12" fill="var(--mute)">games, room setup, exit; the menu button opens it</text>
+<rect x="1116" y="210" width="448" height="82" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
+<rect x="1116" y="210" width="7" height="82" rx="3" fill="#2e9e5b"/>
+<text x="1134" y="232" font-size="14" font-weight="700" fill="var(--ink)">Monado + xrizer</text>
+<text x="1134" y="250" font-size="12" fill="var(--mute)">OpenVR / OpenXR games through Steam (Proton)</text>
+<text x="1134" y="265" font-size="12" fill="var(--mute)">a game check explains failures</text>
+<rect x="1116" y="302" width="448" height="92" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
+<rect x="1116" y="302" width="7" height="92" rx="3" fill="#2e9e5b"/>
+<text x="1134" y="324" font-size="14" font-weight="700" fill="var(--ink)">SteamVR</text>
+<text x="1134" y="342" font-size="12" fill="var(--mute)">SteamVR is the compositor, Monado supplies the headset</text>
+<text x="1134" y="357" font-size="12" fill="var(--mute)">Play frees the graphics card: no Work parts, no local AI</text>
+<rect x="1100" y="430" width="480" height="350" rx="14" fill="#3f9a73" fill-opacity="0.10" stroke="#3f9a73" stroke-opacity="0.6" stroke-width="1.5" stroke-dasharray="6 4"/>
+<text x="1116" y="456" font-size="17" font-weight="800" fill="var(--ink)">Work: the VR desk</text>
+<rect x="1116" y="468" width="448" height="92" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
+<rect x="1116" y="468" width="7" height="92" rx="3" fill="#2e9e5b"/>
+<text x="1134" y="490" font-size="14" font-weight="700" fill="var(--ink)">WayVR desk</text>
+<text x="1134" y="508" font-size="12" fill="var(--mute)">six VR screens (left, right, up, up-left, up-right)</text>
+<text x="1134" y="523" font-size="12" fill="var(--mute)">gaze point, watch, presets, passthrough, web pages</text>
+<rect x="1116" y="570" width="448" height="92" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
+<rect x="1116" y="570" width="7" height="92" rx="3" fill="#2e9e5b"/>
+<text x="1134" y="592" font-size="14" font-weight="700" fill="var(--ink)">Huge cinema + 360 backgrounds</text>
+<text x="1134" y="610" font-size="12" fill="var(--mute)">one giant curved screen in a dark room</text>
+<text x="1134" y="625" font-size="12" fill="var(--mute)">skyboxes up to 8K, animated ocean</text>
+<rect x="1116" y="672" width="448" height="92" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
+<rect x="1116" y="672" width="7" height="92" rx="3" fill="#2e9e5b"/>
+<text x="1134" y="694" font-size="14" font-weight="700" fill="var(--ink)">Voice: &quot;Max, ...&quot;</text>
+<text x="1134" y="712" font-size="12" fill="var(--mute)">move windows and screens, presets, backgrounds,</text>
+<text x="1134" y="727" font-size="12" fill="var(--mute)">recording; an AI agent with a safe tool list</text>
+<line x1="292" y1="200" x2="308" y2="200" stroke="var(--line)" stroke-width="2" marker-end="url(#a)"/>
+<line x1="292" y1="330" x2="308" y2="330" stroke="var(--line)" stroke-width="2" marker-end="url(#a)"/>
+<line x1="292" y1="470" x2="308" y2="470" stroke="var(--line)" stroke-width="2" marker-end="url(#a)"/>
+<line x1="292" y1="610" x2="308" y2="610" stroke="var(--line)" stroke-width="2" marker-end="url(#a)"/>
+<line x1="572" y1="170" x2="598" y2="170" stroke="var(--line)" stroke-width="2" marker-end="url(#a)"/>
+<line x1="572" y1="300" x2="598" y2="300" stroke="var(--line)" stroke-width="2" marker-end="url(#a)"/>
+<line x1="572" y1="430" x2="598" y2="430" stroke="var(--line)" stroke-width="2" marker-end="url(#a)"/>
+<line x1="1072" y1="170" x2="1098" y2="170" stroke="var(--line)" stroke-width="2" marker-end="url(#a)"/>
+<line x1="1072" y1="300" x2="1098" y2="300" stroke="var(--line)" stroke-width="2" marker-end="url(#a)"/>
+<line x1="1072" y1="520" x2="1098" y2="520" stroke="var(--line)" stroke-width="2" marker-end="url(#a)"/>
+<line x1="835" y1="552" x2="835" y2="568" stroke="var(--line)" stroke-width="2" marker-end="url(#a)"/>
+<rect x="20" y="800" width="1560" height="260" rx="14" fill="#8a7ac4" fill-opacity="0.10" stroke="#8a7ac4" stroke-opacity="0.6" stroke-width="1.5" stroke-dasharray="6 4"/>
+<text x="36" y="826" font-size="17" font-weight="800" fill="var(--ink)">The app (omarchyvr-app): every switch lives here</text>
+<rect x="36" y="838" width="296" height="92" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
+<rect x="36" y="838" width="7" height="92" rx="3" fill="#2e9e5b"/>
+<text x="54" y="860" font-size="14" font-weight="700" fill="var(--ink)">Home: Play / Work</text>
+<text x="54" y="878" font-size="12" fill="var(--mute)">one click, saved settings,</text>
+<text x="54" y="893" font-size="12" fill="var(--mute)">controllers, sound, quick switches</text>
+<rect x="344" y="838" width="296" height="92" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
+<rect x="344" y="838" width="7" height="92" rx="3" fill="#2e9e5b"/>
+<text x="362" y="860" font-size="14" font-weight="700" fill="var(--ink)">Settings pages</text>
+<text x="362" y="878" font-size="12" fill="var(--mute)">Display, Tracking, Room, Desktop,</text>
+<text x="362" y="893" font-size="12" fill="var(--mute)">Backgrounds, Recording, AI</text>
+<rect x="652" y="838" width="296" height="92" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
+<rect x="652" y="838" width="7" height="92" rx="3" fill="#2e9e5b"/>
+<text x="670" y="860" font-size="14" font-weight="700" fill="var(--ink)">Ready + Autofix</text>
+<text x="670" y="878" font-size="12" fill="var(--mute)">checks and fixes in plain words,</text>
+<text x="670" y="893" font-size="12" fill="var(--mute)">wake guide, problem report</text>
+<rect x="960" y="838" width="296" height="92" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
+<rect x="960" y="838" width="7" height="92" rx="3" fill="#2e9e5b"/>
+<text x="978" y="860" font-size="14" font-weight="700" fill="var(--ink)">Setup + room setup</text>
+<text x="978" y="878" font-size="12" fill="var(--mute)">which headset, one password,</text>
+<text x="978" y="893" font-size="12" fill="var(--mute)">quick (30 s) or full room setup</text>
+<rect x="1268" y="838" width="296" height="92" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
+<rect x="1268" y="838" width="7" height="92" rx="3" fill="#2e9e5b"/>
+<text x="1286" y="860" font-size="14" font-weight="700" fill="var(--ink)">Work first run</text>
+<text x="1286" y="878" font-size="12" fill="var(--mute)">asks once: AI, speech model,</text>
+<text x="1286" y="893" font-size="12" fill="var(--mute)">downloads with progress</text>
+<rect x="36" y="944" width="296" height="96" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
+<rect x="36" y="944" width="7" height="96" rx="3" fill="#2e9e5b"/>
+<text x="54" y="966" font-size="14" font-weight="700" fill="var(--ink)">omarchyvr CLI</text>
+<text x="54" y="984" font-size="12" fill="var(--mute)">the engine behind the app;</text>
+<text x="54" y="999" font-size="12" fill="var(--mute)">for tests and agents</text>
+<rect x="344" y="944" width="604" height="96" rx="8" fill="var(--card)" stroke="#2e9e5b" stroke-width="2"/>
+<rect x="344" y="944" width="7" height="96" rx="3" fill="#2e9e5b"/>
+<text x="362" y="966" font-size="14" font-weight="700" fill="var(--ink)">./install.sh</text>
+<text x="362" y="984" font-size="12" fill="var(--mute)">builds the whole set from source; every system</text>
+<text x="362" y="999" font-size="12" fill="var(--mute)">change in a manifest, one root job (pkexec)</text>
+<rect x="960" y="944" width="604" height="96" rx="8" fill="var(--card)" stroke="#8a94a6" stroke-width="2"/>
+<rect x="960" y="944" width="7" height="96" rx="3" fill="#8a94a6"/>
+<text x="978" y="966" font-size="14" font-weight="700" fill="var(--ink)">Docs + AI knowledge</text>
+<text x="978" y="984" font-size="12" fill="var(--mute)">docs/*.md, AGENTS.md, ai/AI-KNOWLEDGE.md,</text>
+<text x="978" y="999" font-size="12" fill="var(--mute)">numbered lessons (ai/LESSONS.md)</text>
+<line x1="150" y1="798" x2="150" y2="784" stroke="var(--line)" stroke-width="2" marker-end="url(#a)"/>
+<line x1="440" y1="798" x2="440" y2="784" stroke="var(--line)" stroke-width="2" marker-end="url(#a)"/>
+<line x1="835" y1="798" x2="835" y2="784" stroke="var(--line)" stroke-width="2" marker-end="url(#a)"/>
+<line x1="1340" y1="798" x2="1340" y2="784" stroke="var(--line)" stroke-width="2" marker-end="url(#a)"/>
 </svg>
 <div class="legend"><span><i style="background:#2e9e5b"></i>Works</span><span><i style="background:#d9961a"></i>Experimental</span><span><i style="background:#d64545"></i>Missing</span><span><i style="background:#8a94a6"></i>Info</span></div>
 </div></body></html>
