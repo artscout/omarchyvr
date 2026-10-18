@@ -89,6 +89,8 @@ pub struct UiState {
     pub ai_draft: Option<crate::pages::ai::AiDraft>,
     /// When the AI page was drawn last (egui time): a gap means it was opened again, so the Claude CLI is looked at again.
     pub ai_seen: f64,
+    /// screenshots: start with the AI page's Voice settings open
+    pub ai_voice_open: bool,
 }
 
 impl Default for UiState {
@@ -118,6 +120,7 @@ impl Default for UiState {
             onb_pick: None,
             ai_draft: None,
             ai_seen: f64::NEG_INFINITY,
+            ai_voice_open: false,
         }
     }
 }

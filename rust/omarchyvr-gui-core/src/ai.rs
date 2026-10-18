@@ -683,6 +683,12 @@ impl AppCore {
         self.ai_save();
     }
 
+    /// How long the voice listener waits after you stop talking (read by `omarchyvr-voice listen` at its start).
+    pub fn ai_set_voice_listen(&mut self, v: omarchyvr_config::ai::VoiceListen) {
+        self.ai.config.voice_listen = v;
+        self.ai_save();
+    }
+
     /// Where the voice command audit writes its report.
     pub fn voice_audit_report(&self) -> PathBuf {
         self.paths.state_dir.join("voice-audit.html")

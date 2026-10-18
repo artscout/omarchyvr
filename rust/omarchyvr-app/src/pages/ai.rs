@@ -8,7 +8,7 @@ use crate::app::PimaxApp;
 use crate::theme::{self, icon};
 use crate::widgets::{self, card, caption, chip, inset, note, pal, spinner, title};
 use eframe::egui::{self, RichText, Ui};
-use omarchyvr_config::ai::{Feature, Kind, Provider, Secret, VoiceAi, VoiceConfirm, CLAUDE_CLI_MODELS, CLAUDE_CLI_NAME, CLAUDE_MODELS};
+use omarchyvr_config::ai::{Feature, Kind, Provider, Secret, VoiceAi, VoiceConfirm, VoiceListen, CLAUDE_CLI_MODELS, CLAUDE_CLI_NAME, CLAUDE_MODELS};
 use omarchyvr_config::claude_cli::ClaudeCliStatus;
 use omarchyvr_gui_core::ai::{curl_capable, key_status, KeyChoice, VoiceBrain, TEST_PROMPT};
 
@@ -178,7 +178,8 @@ pub fn show(ui: &mut Ui, app: &mut PimaxApp) {
             chip(ui, if ok { "found" } else { "not working" }, if ok { pal(ui).ok } else { pal(ui).warn });
         }
     }, |ui| claude_card(ui, app));
-    fold(ui, "voice", "Voice settings", false, |_| {}, |ui| voice(ui, app, brain));
+    let voice_open = app.ui.ai_voice_open;
+    fold(ui, "voice", "Voice settings", voice_open, |_| {}, |ui| voice(ui, app, brain));
     fold(ui, "local", "Local model on this PC", brain == VoiceBrain::Local, |ui| {
         if brain == VoiceBrain::Local {
             chip(ui, "answers voice commands", pal(ui).ok);
@@ -214,7 +215,7 @@ fn brain_card(ui: &mut Ui, app: &mut PimaxApp, brain: VoiceBrain) {
         let p = theme::pal(ui);
         ui.horizontal(|ui| {
             title(ui, "Max's brain");
-            widgets::help(ui, "Max is the voice assistant (\"Max, move this to screen 2\"). Exact phrases run on this PC without any AI; this choice is who understands the rest. Claude (CLI) uses the Claude Code you are logged into: no key. A local model keeps everything on this PC (Work only). Online uses a provider with your key.");
+            widgets::help(ui, "Max is the voice assistant (\"Max, move this to screen 2\"). Exact phrases run on this PC without any AI; this choice is who understands the rest. Claude (CLI) uses the Claude Code you are logged into: no key. A local model keeps everything on this PC (Work only). Online uses a provider with your key.\n\nListening: how long Max waits after you stop talking. Long (default) lets you say several things in one command with short pauses between them.");
         });
         let names: Vec<&str> = VoiceBrain::ALL.iter().map(|b| b.label()).collect();
         let cur = VoiceBrain::ALL.iter().position(|b| *b == brain).unwrap_or(0);
@@ -331,6 +332,14 @@ fn voice(ui: &mut Ui, app: &mut PimaxApp, brain: VoiceBrain) {
             VoiceConfirm::Dangerous => "Say \"yes\" to confirm lock, close window, and typing or Enter into a terminal.",
             VoiceConfirm::Always => "Say \"yes\" to confirm every voice command.",
         });
+        // how long the listener waits after you stop talking (read when voice starts)
+        let listen = app.core.ai.config.voice_listen;
+        let names = VoiceListen::ALL.map(|v| v.label());
+        let cur = VoiceListen::ALL.iter().position(|v| *v == listen).unwrap_or(1);
+        if let Some(i) = widgets::selector(ui, icon::MICROPHONE, "Listening", &names, cur, true) {
+            app.core.ai_set_voice_listen(VoiceListen::ALL[i]);
+        }
+        note(ui, "How long Max waits after you stop talking. Longer lets you say several things in one command; commands start a little later. Applies the next time voice starts.");
         let mut strip = app.core.ai.config.strip_titles;
         if widgets::switch_row(ui, &mut strip, "No window titles", Some("Privacy: window control sends the names of your apps and, unless this is on, their window titles (which can show a file or page name)."), true).changed() {
             app.core.ai_set_strip_titles(strip);

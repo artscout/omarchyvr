@@ -7,6 +7,7 @@
 //! voice_ai = "fallback"           # off | fallback (when the offline matcher has no answer) | always
 //! strip_titles = false            # privacy: window titles are not sent to a provider
 //! voice_confirm = "none"          # none (default) | dangerous | always: when a voice command waits for "yes"
+//! voice_listen = "long"           # normal | long (default) | very-long: how long voice waits after you stop talking
 //! voice_ai_timeout_s = 4          # optional: how long voice waits for an answer (default 4 local, 8 remote)
 //! voice_ai_gaze = true            # optional: send what you look at with a voice request (default true)
 //! voice_ai_log = true             # optional: ~/.local/state/omarchyvr/logs/ai.log (default true)
@@ -225,6 +226,69 @@ impl VoiceAi {
             VoiceAi::Off => "Off (offline commands only)",
             VoiceAi::Fallback => "When a command is not understood",
             VoiceAi::Always => "Always",
+        }
+    }
+}
+
+/// How long the voice listener waits after you stop talking (`voice_listen`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum VoiceListen {
+    /// The old timings: quick, but long commands get cut at a pause.
+    Normal,
+    /// A bigger buffer (the default, user request 2026-10-18).
+    #[default]
+    Long,
+    /// For long commands of many parts with natural pauses.
+    VeryLong,
+}
+
+impl VoiceListen {
+    pub const ALL: [VoiceListen; 3] = [VoiceListen::Normal, VoiceListen::Long, VoiceListen::VeryLong];
+
+    pub fn id(self) -> &'static str {
+        match self {
+            VoiceListen::Normal => "normal",
+            VoiceListen::Long => "long",
+            VoiceListen::VeryLong => "very-long",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<VoiceListen> {
+        VoiceListen::ALL.into_iter().find(|v| v.id() == s)
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            VoiceListen::Normal => "Quick",
+            VoiceListen::Long => "Long (default)",
+            VoiceListen::VeryLong => "Very long",
+        }
+    }
+
+    /// Silence that ends an utterance, ms (`--endpoint-ms`).
+    pub fn endpoint_ms(self) -> u32 {
+        match self {
+            VoiceListen::Normal => 480,
+            VoiceListen::Long => 750,
+            VoiceListen::VeryLong => 1100,
+        }
+    }
+
+    /// Silence that ends an utterance after a dangling word ("and", "on", ...), ms (`--hangover-ms`).
+    pub fn long_hangover_ms(self) -> u32 {
+        match self {
+            VoiceListen::Normal => 1120,
+            VoiceListen::Long => 1500,
+            VoiceListen::VeryLong => 2000,
+        }
+    }
+
+    /// How long a held cut-off sentence waits for the next utterance, seconds.
+    pub fn followup_s(self) -> f64 {
+        match self {
+            VoiceListen::Normal => 6.0,
+            VoiceListen::Long => 8.0,
+            VoiceListen::VeryLong => 10.0,
         }
     }
 }
@@ -856,6 +920,8 @@ pub struct AiConfig {
     pub voice_ai_timeout_s: Option<f64>,
     /// When a voice command waits for a spoken "yes" (`voice_confirm`, default none).
     pub voice_confirm: VoiceConfirm,
+    /// How long the voice listener waits after you stop talking (`voice_listen`, default long).
+    pub voice_listen: VoiceListen,
     /// Send what you look at with a voice request (`voice_ai_gaze`; None: yes).
     pub voice_ai_gaze: Option<bool>,
     /// Log AI requests to `~/.local/state/omarchyvr/logs/ai.log` (`voice_ai_log`; None: yes).
@@ -1047,6 +1113,10 @@ impl AiConfig {
                         let m = unquote(v, n)?;
                         c.voice_confirm = VoiceConfirm::parse(&m).ok_or_else(|| format!("line {n}: voice_confirm {m:?} (none, dangerous or always)"))?;
                     }
+                    "voice_listen" => {
+                        let m = unquote(v, n)?;
+                        c.voice_listen = VoiceListen::parse(&m).ok_or_else(|| format!("line {n}: voice_listen {m:?} (normal, long or very-long)"))?;
+                    }
                     "voice_ai_gaze" => c.voice_ai_gaze = Some(parse_bool(v, n, k)?),
                     "voice_ai_log" => c.voice_ai_log = Some(parse_bool(v, n, k)?),
                     "voice_ai_prewarm" => c.voice_ai_prewarm = Some(parse_bool(v, n, k)?),
@@ -1162,6 +1232,7 @@ impl AiConfig {
             o += &format!("default = {}\n", quote(d));
         }
         o += &format!("voice_ai = {}\nstrip_titles = {}\nvoice_confirm = {}\n", quote(self.voice_ai.id()), self.strip_titles, quote(self.voice_confirm.id()));
+        o += &format!("voice_listen = {}\n", quote(self.voice_listen.id()));
         if let Some(t) = self.voice_ai_timeout_s {
             o += &format!("voice_ai_timeout_s = {t}\n");
         }
@@ -1910,6 +1981,19 @@ mod tests {
         assert!(v.render().contains("voice_confirm = \"dangerous\""));
         assert_eq!(AiConfig::parse(&v.render()).unwrap().voice_confirm, VoiceConfirm::Dangerous);
         assert!(AiConfig::parse("voice_confirm = \"maybe\"\n").is_err());
+    }
+
+    #[test]
+    fn voice_listen_default_parse_render_and_mapping() {
+        assert_eq!(AiConfig::default().voice_listen, VoiceListen::Long, "a bigger buffer by default");
+        let v = AiConfig::parse("voice_listen = \"very-long\"\n").unwrap();
+        assert_eq!(v.voice_listen, VoiceListen::VeryLong);
+        assert!(v.render().contains("voice_listen = \"very-long\""));
+        assert_eq!(AiConfig::parse(&v.render()).unwrap().voice_listen, VoiceListen::VeryLong);
+        assert_eq!(AiConfig::parse(&AiConfig::default().render()).unwrap().voice_listen, VoiceListen::Long);
+        assert!(AiConfig::parse("voice_listen = \"forever\"\n").is_err());
+        let m: Vec<_> = VoiceListen::ALL.iter().map(|l| (l.endpoint_ms(), l.long_hangover_ms(), l.followup_s())).collect();
+        assert_eq!(m, [(480, 1120, 6.0), (750, 1500, 8.0), (1100, 2000, 10.0)]);
         assert!(VoiceConfirm::Dangerous.asks(true) && !VoiceConfirm::Dangerous.asks(false) && !VoiceConfirm::None.asks(true) && VoiceConfirm::Always.asks(false));
         assert!(AiConfig::parse("strip_titles = yes\n").is_err());
         assert!(is_loopback("http://127.0.0.1:8080/v1") && is_loopback("http://localhost/v1") && is_loopback("http://[::1]:1/v1"));
