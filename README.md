@@ -30,12 +30,12 @@ tar --zstd -xf omarchyvr-*-x86_64.tar.zst
 cd omarchyvr-*/ && ./install.sh
 ```
 
-Nothing is compiled: the release is a finished build (a few hundred MB, about a minute). `./install.sh` checks the files,
+Nothing is compiled: the release is a finished build, about a 170 MB download. `./install.sh` checks the files,
 installs them for your user and opens the app. The app then sets up the PC with **one password**, asks for a restart if
 needed, and you press Play.
 
 Want to build it yourself? `git clone --recursive https://github.com/laughtt/omarchyvr.git`, then `./install.sh` in the
-clone builds everything from source (15 to 30 minutes, about 40 GB).
+clone builds everything from source.
 
 The setup changes system files: it patches the NVIDIA driver, adds a display override to the boot image, installs a
 udev rule and gives Monado realtime priority. Take a snapper snapshot first. Each change is listed in

@@ -31,7 +31,7 @@ Download `omarchyvr-<version>-x86_64.tar.zst` (and its `.sha256`) from the
     tar --zstd -xf omarchyvr-<version>-x86_64.tar.zst
     cd omarchyvr-<version> && ./install.sh
 
-That is the only command. No git clone, no compiler, no 40 GB: the release is a finished build made in a clean Arch
+That is the only command. No git clone, no compiler, about a 170 MB download: the release is a finished build made in a clean Arch
 container (maintainers: [RELEASE.md](RELEASE.md)). Everything after it happens in the app, by itself.
 The terminal ends with "The app finishes the setup (one password)": it never asks for a password.
 
