@@ -1251,6 +1251,24 @@ pub fn cause(o: &Outcome) -> String {
     "wrong or incomplete action".into()
 }
 
+/// The host facts of a simulated world (the audit must not read this PC's processes).
+pub struct WorldProbe {
+    pub running: bool,
+    pub captions: bool,
+}
+
+impl crate::agent::Probe for WorldProbe {
+    fn vr_running(&mut self) -> bool {
+        self.running
+    }
+    fn captions_on(&mut self) -> bool {
+        self.captions
+    }
+    fn now(&mut self) -> String {
+        "Sun 10:00".into()
+    }
+}
+
 /// A live read-only runner (for `--snapshot`): only `hyprctl -j` and `wayvrctl gaze` really run.
 pub struct ReadOnly;
 
@@ -1500,6 +1518,8 @@ pub fn run_cases(cases: &[Case], o: &Opts) -> Result<Vec<Outcome>, String> {
         actor.agent = agent.take();
         if let Some(a) = actor.agent.as_mut() {
             a.recent.clear();
+            // VR running and captions come from the case's world, not this PC (else every case says "vr: off")
+            a.probe = Box::new(WorldProbe { running: c.start.session.running, captions: c.start.view.captions });
         }
         let log_before = std::fs::metadata(&log_path).map(|m| m.len()).unwrap_or(0);
         let words = c.say.to_lowercase();
