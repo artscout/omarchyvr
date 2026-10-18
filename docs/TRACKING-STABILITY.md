@@ -106,6 +106,14 @@ said "0 lost"; the output followed it (corrections 0-6 mm). The yaw drifted only
   cache is rewritten when it moved over 0.01 deg/s or after 5 min). Replay of the session through the exact C code
   (`pimax_bias_test.c`): 0 worn windows accepted (the old rule took 48, the first the 11:59:47 one with the same mean
   as the cache), 16 desk windows accepted at +0.115..0.127 +0.773..0.782 +0.368..0.371 deg/s.
-- **Head IMU logs are kept** (`rust/pimax-cam/src/imulog.rs` `rotate`): a new session renames the previous
-  `head-imu.csv` to `head-imu.<YYYYmmdd-HHMMSS>.csv` (its last write time), links `head-imu.csv.prev` to it and keeps
-  the newest 3 (about 45 MB each).
+  **Provisional bias (0.1.3 review):** with no bias at all (no cache, a fresh machine), the first window under a looser
+  rule (gyro sd < 0.3 deg/s, accel sd < 0.06 m/s²) is used but never cached, until a real rest replaces it; the strict
+  rule alone decides what is cached. Log line `gyro bias provisional: ...`; the Tracking and Home pages then show
+  Gyro "not measured yet" and "Put the headset still on the desk for 2 s to calibrate the gyro" (also after a start
+  with the zero bias), until the first real rest. Replay of the same session without a cache: 1 provisional window
+  (worn, +0.251 +0.938 +0.323), 0 worn windows cached, 15 desk windows accepted.
+- **Head IMU logs are kept** (`rust/pimax-cam/src/imulog.rs` `rotate`): a new session moves the previous
+  `head-imu.csv` to `~/.local/state/omarchyvr/head-imu/head-imu.<YYYYmmdd-HHMMSS>.csv` (its last write time; on disk,
+  since the session dir `/tmp/omarchyvr-session` is tmpfs, RAM, and empty after a reboot), links
+  `head-imu.csv.prev` in the session dir to it and keeps the newest 3 there (about 45 MB each). The copy runs on a
+  thread of its own, so a start never waits for it.

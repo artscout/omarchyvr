@@ -27,6 +27,18 @@ pub enum LogEvent {
         /// How often the averaging window restarted before giving up.
         restarts: u32,
     },
+    /// `gyro bias provisional: gx gy gz dps (...: not a real rest, not cached); put the headset still ...`
+    /// (pimax_hmd.c, no bias cached yet): a quiet-enough window is used until the headset really rests.
+    GyroBiasProvisional {
+        /// Bias in deg/s in use now.
+        gyro_dps: [f32; 3],
+    },
+    /// `gyro bias refined at rest: gx gy gz dps (moved ...)` (pimax_hmd.c): a real rest later in the session
+    /// (measured and cached).
+    GyroBiasRefined {
+        /// Bias in deg/s in use now.
+        gyro_dps: [f32; 3],
+    },
     /// `pimax_video_prepare(90) -> 0`: the rate announced to the headset.
     VideoPrepare {
         /// Announced frames per second.
@@ -119,6 +131,13 @@ pub fn parse_line(line: &str) -> Option<LogEvent> {
             samples,
             restarts,
         });
+    }
+    for (key, provisional) in [("gyro bias provisional:", true), ("gyro bias refined at rest:", false)] {
+        if let Some(rest) = after(t, key) {
+            let mut it = rest.split_whitespace();
+            let g = [num::<f32>(it.next()?)?, num::<f32>(it.next()?)?, num::<f32>(it.next()?)?];
+            return Some(if provisional { LogEvent::GyroBiasProvisional { gyro_dps: g } } else { LogEvent::GyroBiasRefined { gyro_dps: g } });
+        }
     }
     if let Some(rest) = after(t, "headset not still for ") {
         // "3000 ms (13 restarts): tracking with the cached gyro bias 0.087 0.684 0.474 dps; ..."
@@ -269,9 +288,10 @@ impl Summary {
     pub fn feed(&mut self, line: &str) {
         let Some(ev) = parse_line(line) else { return };
         match ev {
-            LogEvent::GyroBiasDone { .. } | LogEvent::GyroBiasFallback { .. } => {
-                self.bias = Some(ev)
-            }
+            LogEvent::GyroBiasDone { .. }
+            | LogEvent::GyroBiasFallback { .. }
+            | LogEvent::GyroBiasProvisional { .. }
+            | LogEvent::GyroBiasRefined { .. } => self.bias = Some(ev),
             LogEvent::VideoPrepare { fps, rc } => self.video_prepare = Some((fps, rc)),
             LogEvent::DisplayMode { w, h, hz } => self.display_mode = Some((w, h, hz)),
             LogEvent::FramePeriod { ms } => self.frame_period_ms = Some(ms),
@@ -410,6 +430,14 @@ impl Summary {
                 if *cached { "saved" } else { "zero (none saved)" },
                 gyro_dps[0], gyro_dps[1], gyro_dps[2]
             )),
+            Some(LogEvent::GyroBiasProvisional { gyro_dps }) => v.push(format!(
+                "gyro: provisional bias {:.3} {:.3} {:.3} dps (no real rest yet: put the headset still on the desk for 2 s to calibrate the gyro)",
+                gyro_dps[0], gyro_dps[1], gyro_dps[2]
+            )),
+            Some(LogEvent::GyroBiasRefined { gyro_dps }) => v.push(format!(
+                "gyro calibration refined at rest: {:.3} {:.3} {:.3} dps",
+                gyro_dps[0], gyro_dps[1], gyro_dps[2]
+            )),
             _ => v.push("gyro calibration: not finished".into()),
         }
         if !self.clients_connected.is_empty() {
@@ -465,6 +493,14 @@ mod tests {
     const GYRO: &str = " INFO [bias_finish] gyro bias done: 0.267 0.687 0.453 dps over 2000 samples (0 restarts); accel -0.035 0.968 0.241 g";
     const PREP: &str = " INFO [pimax_hmd_create] pimax_video_prepare(90) -> 0";
     const MODE: &str = "DEBUG [get_primary_display_mode] found display mode 7104x3840@90.00";
+
+    #[test]
+    fn gyro_provisional_and_refined_lines() {
+        let p = " WARN [bias_provisional] gyro bias provisional: 0.120 0.781 0.366 dps (gyro sd 0.210 0.190 0.230 dps: not a real rest, not cached); put the headset still on the desk for 2 s to calibrate the gyro";
+        assert_eq!(parse_line(p), Some(LogEvent::GyroBiasProvisional { gyro_dps: [0.120, 0.781, 0.366] }));
+        let r = " INFO [bias_finish] gyro bias refined at rest: 0.118 0.775 0.370 dps (moved 0.006; 3 rests this session, 9 windows rejected as not a real rest)";
+        assert_eq!(parse_line(r), Some(LogEvent::GyroBiasRefined { gyro_dps: [0.118, 0.775, 0.370] }));
+    }
 
     #[test]
     fn gyro_fallback_line_counts_as_ready() {

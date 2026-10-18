@@ -96,8 +96,9 @@ pub struct WayvrSettings {
     pub auto_arrange: bool,
     /// The screen the voice captions sit under (`PIMAX_CAPTIONS_SCREEN` for WayVR; None = the first screen).
     pub captions_screen: Option<String>,
-    /// Steady clicks (`click_steady_px`, default 32, 0 = off): a click press holds its point until the laser has
-    /// moved more than this many pixels, so a shaky click does not turn into a drag.
+    /// Steady clicks (`click_steady_px`, default 32 = the app's switch on, 0 = off): a click press holds its point
+    /// until the laser has moved more than this many pixels, so a shaky click does not turn into a drag. The WayVR
+    /// fork's own default is 0 (off, for WayVR without omarchyvr); [`WayvrSettings::yaml`] always writes the key.
     pub click_steady_px: f32,
 }
 

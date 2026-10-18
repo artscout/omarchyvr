@@ -41,7 +41,9 @@ voice or in the app (Desktop > Layout):
   around where the head looks now: `<wayvr home>/config/wayvr/desk-anchor.conf`, with the size of the last placing
   call. The next Work start puts the layout where it was. First ever start, or a stored anchor more than 1.5 m
   (sideways) or 1 m (height) from the head at the first placement of a session: the anchor is taken from the head
-  then, once.
+  then, once. While the runtime has not reported a head pose yet (the pose is still exactly identity), nothing is
+  decided or saved: the screens are placed provisionally (around the stored anchor, else straight ahead of the
+  origin) and the whole layout is placed again at the first real head pose, which then sets the anchor.
 - **Recenter only when asked**: "Max, recenter", the app's **Recenter screens**, `omarchyvr desk recenter`
   (`wayvrctl desk-recenter`; Reset screens / double-click B do the same while locked) set the anchor from the head
   now (yaw only, level) and place the whole layout again: same shape, same height relation, in front of you.
