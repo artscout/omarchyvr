@@ -81,6 +81,8 @@
 > patches/nvidia/nvidia-pimax-verify.hook <- linux/nvidia-pimax-verify.hook
 > patches/nvidia/test_nvidia_patch_reapply.sh <- linux/test_nvidia_patch_reapply.sh
 = patches/nvidia/README.md <- tools/export-extra/nvidia-README.md
++ patches/nvidia/ported-versions.txt
++ patches/nvidia/615.78.08/*.patch
 
 # ---- docs ------------------------------------------------------------------------------------------------------
 + docs/**

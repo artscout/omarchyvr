@@ -131,6 +131,25 @@ printf 'OVR_NVIDIA_ALLOW_UNTESTED=yes; rm -rf /\n' >"$T/bad.env"
 "$ROOT_SH" plan "$T/bad.env" >"$T/out.txt" 2>&1
 [ $? -ne 0 ] && grep -q "unsafe value" "$T/out.txt" && ok "plan: an unsafe value is refused" || bad "plan: unsafe value accepted"
 
+# 3. a ported version (patches/nvidia/<version>/): the plan names it, and the restore reverses the PORTED patches
+plan 615.78.08 no && grep -q "patches ported to 615.78.08 exist" "$T/out.txt" && grep -q "NOT applied" "$T/out.txt" && ok "plan: ported version, not allowed -> says a port exists, not applied" || bad "plan ported refused: $(cat "$T/out.txt")"
+plan 615.78.08 yes && grep -q "patches ported to 615.78.08 are used" "$T/out.txt" && grep -q "615.78.08/nvidia-2h1or-flip-fix.patch" "$T/out.txt" && ok "plan: ported + allowed installs the per-version patches" || bad "plan ported allowed: $(cat "$T/out.txt")"
+plan 999.1 yes && ! grep -q "patches ported to" "$T/out.txt" && ok "plan: an unlisted version mentions no port" || bad "plan: unlisted version mentions a port"
+if [ -n "${NVIDIA_615_DIR:-}" ] && [ -f "$NVIDIA_615_DIR/src/nvidia-modeset/src/nvkms-evo.c" ]; then
+	rm -rf "$T/r615"
+	mkdir -p "$T/r615/nvidia-615.78.08"
+	cp -a "$NVIDIA_615_DIR/." "$T/r615/nvidia-615.78.08/"
+	t=$T/r615/nvidia-615.78.08
+	for p in nvidia-2h1or-viewport nvidia-2h1or-flip-fix nvidia-evo-makeroom-bounded-wait; do patch -p1 -s --no-backup-if-mismatch -d "$t" -i "$PD/615.78.08/$p.patch" || bad "setup: 615 $p"; done
+	grep -q merged_head_sync "$t/kernel-open/nvidia-modeset/nvidia-modeset-linux.c" && ok "setup: 615.78.08 hand-patched, no backups" || bad "setup 615"
+	restore "$t" "$PD"
+	left=0
+	for f in $(cat "$PD"/615.78.08/*.patch | sed -n 's|^+++ b/||p' | sort -u); do cmp -s "$t/$f" "$NVIDIA_615_DIR/$f" || { echo "differs: $f"; left=1; }; done
+	[ $left = 0 ] && grep -q "no patch code left" "$T/out.txt" && ok "restore: the 615.78.08 port is reversed to the stock source" || bad "restore 615: $(cat "$T/out.txt")"
+else
+	echo "note: NVIDIA_615_DIR not set, the 615.78.08 restore test is skipped"
+fi
+
 echo
 [ "$fails" = 0 ] && echo "all checks passed" || echo "$fails check(s) FAILED"
 exit $((fails > 0))
