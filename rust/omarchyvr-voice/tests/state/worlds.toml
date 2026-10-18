@@ -232,3 +232,86 @@ hidden = [4]
 apps = ["t1 foot 1 ~/pimax-re", "t2 foot 2 ~/src/wayvr", "p1 pimax 3", "c1 google-chrome 4 tabs=YouTube*|Gmail - Inbox", "t3 foot 5 title=btop", "o1 obsidian 6"]
 focus = "t1"
 gaze = "1:t1"
+
+# ------------------------------------------------------------------- long goals (goals-long.toml, 2026-10-18)
+# Medium and hard only. Handles are shared on purpose so one expectation fits both tiers of a goal:
+# t3/t4 are the btop windows and t5 is the htop one in ml4 and hl7; s1 is Spotify and c1 Chrome everywhere.
+
+[worlds.ml5]
+# medium: 4 screens, 5 terminals spread over 3 screens plus one off-screen (btop on 3 next to Spotify), Chrome with 4 tabs
+screens = 4
+preset = "assistant"
+apps = [
+  "t1 foot 1 ~/pimax-re",
+  "t2 foot 1 ~/src/monado",
+  "t3 foot 2 ~/src/wayvr",
+  "c1 google-chrome 2 tabs=Gmail - Inbox|YouTube - lofi beats*|GitHub - pimax-re|Google Calendar",
+  "t4 foot 3 title=btop",
+  "s1 spotify 3",
+  "p1 pimax 4",
+  "t5 foot ws8 ~/notes",
+]
+focus = "t1"
+gaze = "2:c1"
+
+[worlds.ml4]
+# medium: 4 screens, code and a terminal on the main one, two btop windows (t3 on 3, t4 on 4) and an htop window (t5)
+screens = 4
+preset = "assistant"
+apps = [
+  "e1 code 1 ~/pimax-re",
+  "t1 foot 1 ~/pimax-re",
+  "t2 foot 2 ~/src/wayvr",
+  "c1 google-chrome 2 tabs=Gmail - Inbox|Google Calendar|YouTube - lofi beats*|GitHub - pimax-re",
+  "s1 spotify 3",
+  "t3 foot 3 title=btop",
+  "t4 foot 4 title=btop",
+  "t5 foot 4 title=htop",
+  "p1 pimax 4",
+]
+focus = "e1"
+gaze = "3:s1"
+
+[worlds.hl7]
+# hard: 6 screens, 7 terminals (two btop on 2 beside Chrome, an htop on the hidden screen 3, different cwds), Chrome with
+# 6 tabs, code, Spotify under the gaze on screen 4, the Pimax app on 6, Obsidian and a terminal on workspaces no screen shows
+screens = 6
+preset = "assistant"
+hidden = [3]
+apps = [
+  "e1 code 1 ~/pimax-re",
+  "t1 foot 1 ~/pimax-re",
+  "t2 foot 1 ~/src/monado",
+  "c1 google-chrome 2 tabs=Gmail - Inbox|YouTube - lofi beats|GitHub - pimax-re|Google Calendar*|Hacker News|Wikipedia - Dune (2021 film)",
+  "t3 foot 2 title=btop",
+  "t4 foot 2 title=btop",
+  "t5 foot 3 title=htop",
+  "s1 spotify 4",
+  "t6 foot 5 ~/src/wayvr",
+  "p1 pimax 6",
+  "o1 obsidian ws9",
+  "t7 foot ws8 ~/notes",
+]
+focus = "t1"
+gaze = "4:s1"
+
+[worlds.hl6]
+# hard: 6 screens, screen 5 hidden (the Pimax app is on it), screen 6 crowded (Spotify, btop, files), code left, Chrome up,
+# Obsidian and a terminal off-screen
+screens = 6
+preset = "assistant"
+hidden = [5]
+apps = [
+  "t1 foot 1 ~/pimax-re",
+  "e1 code 2 ~/pimax-re",
+  "t2 foot 3 ~/src/monado",
+  "c1 google-chrome 4 tabs=Gmail - Inbox|Google Calendar|YouTube - Dune trailer*|GitHub - pimax-re",
+  "p1 pimax 5",
+  "s1 spotify 6",
+  "t3 foot 6 title=btop",
+  "n1 org.gnome.Nautilus 6",
+  "o1 obsidian ws7",
+  "t4 foot ws8 ~/notes",
+]
+focus = "t1"
+gaze = "1:t1"

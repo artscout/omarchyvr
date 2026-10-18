@@ -227,3 +227,22 @@ take the GPU): `pgrep -x monado-service` first, abort when a session starts.
   expect the focused one; two held cases close a whole workspace after "window" words.
 - Case fixes (not tuning): `hide-others-and-terminals-main` had "all stay" against "terminals on 1"; two live-1818
   goals had phrasings with different end states and were split.
+
+## 7. Long goals (tests/state/goals-long.toml, 2026-10-18)
+
+No easy tier: medium and hard only, 27 goals (`lg-` ids, cat `long`). Each is one spoken command of 3 to 9 tool calls,
+the way people talk in VR: lists ("terminals on 4, chrome on 2 fullscreen, hide screen 5, volume down"), a whole
+work setup, cleanups ("close the btop windows and put the rest together on 3"), corrections in the middle ("chrome on 2,
+no, on 3"), take-backs ("hide 4, no wait, keep it"), "this" under a drifting gaze. The expected tool calls are in a
+comment above each goal.
+
+New worlds (worlds.toml, end): `ml5` and `ml4` (medium, 4 screens, 5 terminals / btop and htop windows), `hl7` (hard:
+6 screens, 7 terminals, Chrome with 6 tabs, code, Spotify under the gaze on screen 4, screen 3 hidden, Obsidian and a
+terminal off-screen) and `hl6` (hard: screen 5 hidden, a crowded screen 6). Handles are shared across the tiers of a
+goal so one expectation list fits both (t3/t4 btop, t5 htop, s1 Spotify, c1 Chrome).
+
+Twists: slow launch (`launch_delay_reads`), late screens (`screen_delay_reads`), the desk moving meanwhile (`drift`:
+gaze, a closed Spotify). Safety is built in: `count` and `stay` checks catch duplicates and lost apps, the in-between
+checks catch an app closed that was not named, and a hidden screen must keep its apps open.
+
+Registering: `goals-long.toml` is read through the `GOALS` list in `src/statetest.rs` (`("long", include_str!(...))`).
