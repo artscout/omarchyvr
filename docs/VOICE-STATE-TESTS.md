@@ -176,7 +176,10 @@ is checked for "nothing else changed". The report says which step never held: "s
 - `screen_delay_reads = N`: a screen made shown or added shows in `hyprctl -j monitors` after N more reads.
 - `drift = ["focus t2", "close s1", "gaze 3", "open chrome 2"]`: applied once, right after the first read the
   voice code makes (the desk changes while the AI thinks). Checks that compare with the start use the
-  drifted start, so the drift is not blamed on the voice code. Add `allow` for what the drift changes.
+  drifted start, so the drift is not blamed on the voice code. Add `allow` for what the drift changes. Since
+  2026-10-18 (G) the end verdict does the same for apps closed or opened by hand: the unwanted-changes diff starts
+  from the drifted desk (`check_from`), the expectations still read the real start ("s1 closed").
+- `--only a,b,c` picks every case whose id, category or phrase holds any of them (a quick rerun of a failure list).
 
 New failure buckets: "broke mid-way" (the end is right, a check on the way failed) and "step order / step
 missing". The HTML report and the JSON file show `steps_ok` and the mid-way reasons; the leaderboard has three

@@ -380,9 +380,12 @@ The model sees the VR screens by number with their apps when a request is about 
 `screens: 1 main [w1 foot, w2 foot] ; 2 left [] ; 3 right hidden [w3 pimax]` (the `wN` of the apps line; `hidden` =
 hidden by voice).
 
-**Agent mode** (`voice_agent = true` in ai.toml, the default; `agent::goal`). A request that is a goal of several
+**Agent mode** (`voice_agent = true` in ai.toml, the default; `agent::goal`). Since 2026-10-18 (state audit G) a goal
+is first ONE whole plan like every other command (section "How every command is decided"); the step loop below runs
+only when that plan is refused before anything ran, or for an open-ended goal ("find the window with the error and
+close it"). A request that is a goal of several
 steps, with a goal word ("set up", "let's", "I want to watch", "get ready", "prepare") and more than one thing in it, or
-a long request with "and"/"then"/two commas, runs one step at a time: each round the model gets the goal, the steps
+a long request with "and"/"then"/two commas, then runs one step at a time: each round the model gets the goal, the steps
 done with their results and the VR screens by number with their apps now (`screens now: 1 main* ws2: foot | 2 left ws11: empty`, `*` = focused), and
 answers the next single step from the catalogue (under the grammar) or `done`. At most 10 steps (the user's cap) or 30 s. Each step
 shows "Step 2: Cinema mode" in the headset, the end one line with every step ("Done 3 steps: 1. Playing Dune.mkv | 2.
@@ -499,20 +502,43 @@ Dry-run audit (local Lara + Qwen3.5-4B on the GPU, `tests/fixtures/live-2026-10-
      other at 0.9+ and no rule / phrase found a command and not several parts ─► nothing runs, no AI call
      top below 0.5, or other among the picks, or Lara down ─► every intent (the full prompt, cached)
      else every category at 0.1+, plus the categories of the hints and the matcher's guesses; screens and apps
-     together ─► the shared rules text (same bytes as the full prompt) + those intents in a fixed category order
-     + their worked examples + a grammar of the same intents; a weak answer (none, an error, an intent outside
-     the set) asks once more with every intent
+     together ─► since 2026-10-18 G: the full prompt (cached) with `likely: screens, apps` before the words
+     (`LARA_PROMPT = "full"`); variant `lara-subsets`: the shared rules text + those intents in a fixed category
+     order + their worked examples + a grammar of the same intents, a weak answer asking once more with every intent
      ▼
   the model: the WHOLE sentence once, with the state; a plan of up to 9 steps (`nlu::PLAN_MAX`, 200 answer tokens
-  for a plan, 48 for one step)
+  for a plan, 48 for one step). Long commands too: the step-at-a-time goal loop is no longer a route of its own
      ▼
-  the guard (the only one): a step that would close apps (win.ws.close / win.close / close_window /
-  win.close.named) or stop the session while a sure screen rule says hide / show is replaced by the rule
-  (`guard: win.ws.close -> vr.screens.hide` in the debug line and ai.log)
+  the guard: a step that would close apps (win.ws.close / win.close / close_window / win.close.named) or stop the
+  session while a sure screen rule says hide / show is replaced by the rule (`guard: ...` in the debug line)
+     ▼
+  the plan repairs (`agent::repair_plan`, `place_plan`, `cover_plan`; `repair: ...` in the debug line): "hide the
+  rest" keeps the screens the plan uses; a fullscreen / preset / screens reset / screen count / workspace close the
+  words never ask for is dropped; a screen the words give ("play dune on screen three", "put the terminals on two")
+  and a count ("two terminals") go back in; "put this on screen one fullscreen" gets its move; a part with an exact
+  phrase or a sure rule the plan forgot gets its step
+     ▼
+  the dry run on the state (`planner::check`, plans of 2+ steps): a missing screen, no such tool, or an app closed
+  that nobody named refuses the plan before anything runs; a goal ("set up ...", a long list) then goes on one step
+  at a time (`agent::goal`), looking at the desktop after each step. An open-ended goal whose later steps depend on
+  what an earlier one finds ("find the window with the error and close it", "if spotify is open ...",
+  `agent::open_ended`) starts there directly
      ▼
   the steps, in order: one fresh hyprctl read after each step (`screenstate::Steps`); a later step on "the focused
-  window" that names none (fullscreen, float, close) acts on the window the step before moved, opened or focused
+  window" that names none (fullscreen, float, close) acts on the app its own part names ("chrome on two
+  fullscreen"), else on the window the step before moved, opened, named or focused, else on "this" (the gaze at the
+  start); a failed step does not end the plan (only the window steps right after it are skipped)
 ```
+
+- **Corrections word by word** (`command::resolve_corrections`): "terminals on four, chrome on two, no, on three"
+  goes to the model as `meant (the corrections applied; do exactly this): "terminals on 4, chrome on 3"`, "hide
+  screen four, no wait, keep it, hide screen two instead" as `meant: "hide screen 2"`: only the taken-back part
+  changes. The hints come from the meant sentence. "cinema mode, no room" is no correction.
+- **"this" in the model's state:** WayVR's gaze report names an overlay and a fixation, not a window; the window
+  under it is found from the desk's geometry (`gaze::resolve`) and the model gets `eyes on: wN`.
+- **Programs in terminals** ("the btop windows", "htop"): found by the terminal's title. "close the btop windows" /
+  "both btops" closes every window of that program (`windows::plural_name`); a kind ("all the terminals") or
+  everything stays refused. "close youtube and calendar in chrome" closes the two tabs, never Chrome.
 
 - **Every command goes to the AI** when it is on (`voice_ai = "fallback"` or `"always"`): the rules, the matcher
   and the fuzzy matcher no longer decide alone, they give hints. `voice_ai_fast_path = true` in ai.toml (off by
@@ -541,6 +567,25 @@ Dry-run audit (local Lara + Qwen3.5-4B on the GPU, `tests/fixtures/live-2026-10-
   rest comes from llama-server's cache). Lara's subsets average 11,465 characters, 3,403 tokens, but 1,109
   evaluated: each category set is a different prompt after the shared rules, so the one server slot's cache misses
   more, and the p50 doubles. Lara adds 6 cases (mostly short screen commands she keeps in their category).
+
+- **Long commands, one whole plan (state audit 2026-10-18, 739 medium + hard cases, Qwen3.5-4B + Lara on this
+  PC; lesson 75):**
+
+  | run | overall | medium | hard | goals-long | steps in order | unsafe | p50 / p95 ms | prompt / evaluated tokens per request |
+  |---|---|---|---|---|---|---|---|---|
+  | E: long goals on the step-at-a-time loop (95 of 108) | 593 (80.2%) | 338/410 | 255/329 | 25/108 | 31/37 | 8 | 669 / 2697 | 3,522 / 1,311 (121 cases not counted) |
+  | G1: one whole plan, repairs, Lara subsets | 639 (86.5%) | 364/410 | 275/329 | 89/108 | 31/37 | 0 | 682 / 2612 | 4,017 / 1,491 |
+  | G2: + "this", plural closes, destinations, Lara subsets (b) | 663 (89.7%) | 377/410 | 286/329 | 91/108 | 35/37 | 0 | 711 / 2741 | 3,820 / 1,734 |
+  | G3: the same, Lara full prompt (a) | 666 (90.1%) | 372/410 | 294/329 | 91/108 | 35/37 | 1 | 500 / 2452 | 5,120 / 233 |
+  | **G: (a) + "close it" after emptying a screen = hide** | **668 (90.4%)** | 373/410 | 295/329 | 92/108 | 35/37 | **0** | **504 / 2487** | 5,120 / **233** |
+
+- **Lara: the full prompt, her categories as a hint line** (`agent::LARA_PROMPT = "full"`, variant knob
+  `router.prompt`; `lara-subsets` brings back the subsets). Lara still decides chatter (nothing runs, no AI call)
+  and names the likely categories (`likely: screens, apps` in the user message); the model always gets the same
+  full system prompt and grammar, which llama-server's one slot keeps cached: 233 tokens evaluated per request
+  instead of 1,734, p50 711 -> 500 ms, the same score (663 vs 666 of 739). The cost of every request of a command
+  (several Lara or goal requests) is summed in ai.log (`requests`, `sys_chars`, `user_chars`, `prompt_tokens`,
+  `eval_tokens`) and in the audit's `cost`.
 
 ## How the local voice AI decides (scoped planner, user design 2026-10-16)
 

@@ -676,6 +676,11 @@ impl Sim {
         self.history.push((cmd.to_string(), self.world.clone()));
     }
 
+    /// Did the desk drift (Timing::drift) during the case?
+    pub fn drifted(&self) -> bool {
+        self.drift_done
+    }
+
     /// The first read the voice code makes: the desk changes once (Timing::drift).
     fn drift_after_read(&mut self) {
         if self.drift_done || self.world.timing.drift.is_empty() {

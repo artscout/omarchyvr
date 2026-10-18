@@ -231,6 +231,15 @@ pub fn clean_title(t: &str) -> String {
     t.chars().map(|c| if c.is_control() { ' ' } else { c }).take(TITLE_MAX).collect::<String>().trim().to_string()
 }
 
+/// Most characters of the words heard in a model request: a long command of 9 steps is ~250 characters (state
+/// audit 2026-10-18: the old title limit of 80 cut "... and turn the volume down" to "... and turn t").
+pub const HEARD_MAX: usize = 400;
+
+/// The words heard, for a model request: control characters dropped, at most [`HEARD_MAX`] characters.
+pub fn clean_heard(t: &str) -> String {
+    t.chars().map(|c| if c.is_control() { ' ' } else { c }).take(HEARD_MAX).collect::<String>().trim().to_string()
+}
+
 /// The compact window list for a model: most recently focused first, at most [`BRIEF_MAX`].
 pub fn briefs(clients: &[Client]) -> Vec<Brief> {
     let mut v: Vec<&Client> = clients.iter().collect();
@@ -257,7 +266,7 @@ pub fn ai_user_message(request: &str, list: &[Brief]) -> String {
         .iter()
         .map(|b| serde_json::json!({"id": b.id, "class": b.class, "title": b.title, "ws": b.workspace}))
         .collect();
-    serde_json::json!({"request": clean_title(request), "windows": w}).to_string()
+    serde_json::json!({"request": clean_heard(request), "windows": w}).to_string()
 }
 
 /// Check a model answer. `Ok(Some(address))` = focus that window (always one of `list`), `Ok(None)` = "none",
@@ -535,6 +544,39 @@ pub fn names_many(q: &str) -> bool {
     crate::command::words(q).iter().any(|x| matches!(x.as_str(), "all" | "every" | "everything" | "windows" | "apps" | "programs" | "screen" | "screens" | "workspace" | "session" | "vr"))
 }
 
+/// The program name in a close request and whether it names several windows: "the btop windows" -> ("btop", true),
+/// "both btops" -> ("btop", true), "spotify" -> ("spotify", false).
+pub fn plural_name(q: &str) -> (String, bool) {
+    let w = crate::command::words(q);
+    let plural = w.iter().any(|x| matches!(x.as_str(), "all" | "every" | "both" | "windows" | "apps" | "programs" | "ones" | "instances"));
+    let rest: Vec<String> = w.into_iter().filter(|x| !matches!(x.as_str(), "all" | "every" | "both" | "the" | "of" | "windows" | "window" | "apps" | "app" | "programs" | "program" | "ones" | "one" | "instances")).collect();
+    // "btops" = btop (a plural of a program name)
+    let one = rest.len() == 1 && rest[0].len() >= 4 && rest[0].ends_with('s') && !rest[0].ends_with("ss");
+    let plural = plural || one;
+    let name = if one { rest[0].trim_end_matches('s').to_string() } else { rest.join(" ") };
+    (name, plural)
+}
+
+/// The program a spoken app names when a terminal runs it ("htop", "the htop terminal", "btops" -> "btop"); None when
+/// no terminal's title starts with one of the words (a class or a kind decides then).
+pub fn term_program_named(clients: &[Client], q: &str) -> Option<String> {
+    let w = crate::command::words(q);
+    w.iter()
+        .filter(|x| x.len() >= 3 && !matches!(x.as_str(), "the" | "terminal" | "terminals" | "window" | "windows" | "app" | "apps" | "all" | "both" | "one" | "ones"))
+        .find(|x| clients.iter().any(|c| is_terminal(&c.class) && term_program(&c.title, x)) && !clients.iter().any(|c| !is_terminal(&c.class) && app_score(c, x) >= 75))
+        .map(|x| if clients.iter().any(|c| term_program(&c.title, x) && c.title.to_lowercase().starts_with(x.as_str())) { x.clone() } else { x.trim_end_matches('s').to_string() })
+}
+
+/// Does a terminal's title show this program ("btop" in "btop", "htop - 12 tasks"; not "user@host:~/btop-notes")?
+pub fn term_program(title: &str, name: &str) -> bool {
+    let n = name.trim().to_lowercase();
+    if n.len() < 3 || n.contains(' ') {
+        return false;
+    }
+    let first = title.to_lowercase().split(|c: char| !c.is_alphanumeric() && c != '-' && c != '_').find(|x| !x.is_empty()).unwrap_or("").to_string();
+    first == n || first == n.trim_end_matches('s')
+}
+
 /// "Close Spotify", "close the video", "close YouTube" (user rule 2026-10-16: no app closes unless the user names
 /// it): the app the words name by class, kind or alias closes. A name only a browser TAB carries (YouTube in Chrome)
 /// closes that tab, never the browser. Several apps of that kind: the one looked at or focused among them, else
@@ -544,16 +586,48 @@ fn close_named(query: &str, r: &mut dyn Runner, wayvrctl: &str) {
     if q.is_empty() || names_no_app(&q) {
         return close_one(r, wayvrctl);
     }
-    if names_many(&q) {
+    // "youtube and calendar in chrome", "the youtube tab and the calendar tab": each name on its own; "in chrome" /
+    // "in the browser" says they are tabs (state audit 2026-10-18: the model's "google-chrome" for that closed Chrome)
+    let mut qq = format!(" {q} ");
+    let mut in_browser = false;
+    for tail in [" in google chrome ", " in the chrome ", " in chrome ", " in the browser ", " from chrome ", " from the browser "] {
+        if qq.ends_with(tail) {
+            qq = qq[..qq.len() - tail.len()].to_string() + " ";
+            in_browser = true;
+        }
+    }
+    let names: Vec<String> = qq.split(" and ").map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect();
+    if names.len() >= 2 || in_browser {
+        for n in names {
+            let tabbed = in_browser && !crate::command::words(&n).iter().any(|x| matches!(x.as_str(), "tab" | "page"));
+            close_named(&if tabbed { format!("{n} tab") } else { n }, r, wayvrctl);
+        }
+        return;
+    }
+    // "the btop windows", "both btops", "all the btop windows": every window of THAT named program. Only a
+    // specific name left after the plural words; a kind ("all the terminals") or everything stays refused
+    let (name, plural) = plural_name(&q);
+    if names_many(&q) && (name.is_empty() || names_many(&name) || app_alias(&name) || app_alias(name.trim_end_matches('s'))) {
         return r.toast("Closing many apps at once is not done by voice: nothing closed");
     }
+    let q = if name.is_empty() { q } else { name };
     let clients = match hyprctl_json(r, "clients").and_then(|j| parse_clients(&j)) {
         Ok(c) => c,
         Err(e) => return r.toast(&format!("Close: {e}")),
     };
     // "the youtube tab": a tab, never the app
     let tab_words = crate::command::words(&q).iter().any(|x| matches!(x.as_str(), "tab" | "page" | "site" | "website"));
-    let apps: Vec<&Client> = if tab_words { Vec::new() } else { clients.iter().filter(|c| c.workspace > 0 && address_ok(&c.address) && app_score(c, &q) >= 75).collect() };
+    // a program in a terminal goes by the terminal's title ("btop", "htop"; state audit 2026-10-18: "close the btop
+    // windows" closed nothing); a browser title never counts (a tab name closes the tab, below)
+    let in_terminal = |c: &Client| is_terminal(&c.class) && term_program(&c.title, &q);
+    let apps: Vec<&Client> = if tab_words { Vec::new() } else { clients.iter().filter(|c| c.workspace > 0 && address_ok(&c.address) && (app_score(c, &q) >= 75 || in_terminal(c))).collect() };
+    if plural && apps.len() >= 2 && !app_alias(&q) && !app_alias(q.trim_end_matches('s')) {
+        let mut closed = 0;
+        for c in &apps {
+            closed += usize::from(close_window(r, &c.address).is_ok());
+        }
+        return r.toast(&format!("Closed {closed} {q} windows"));
+    }
     if apps.is_empty() {
         let tq: String = crate::command::words(&q).into_iter().filter(|x| !matches!(x.as_str(), "tab" | "page" | "site" | "website")).collect::<Vec<_>>().join(" ");
         let site = crate::desk::site_url(&tq).map(|(n, _)| n).unwrap_or_else(|| tq.clone());
@@ -1016,6 +1090,10 @@ fn select<'a>(clients: &'a [Client], query: &str, focused: Option<&Client>) -> V
         clients.iter().filter(|c| focused.is_some_and(|f| f.address == c.address)).collect()
     } else if is_everything(query) {
         clients.iter().filter(|c| c.workspace > 0).collect()
+    } else if let Some(prog) = term_program_named(clients, &q) {
+        // "htop", "the htop terminal", "the btop windows": the terminals running that program (by their title), not
+        // every terminal (state audit 2026-10-18: "move htop to screen one" found no htop)
+        clients.iter().filter(|c| c.workspace > 0 && is_terminal(&c.class) && term_program(&c.title, &prog)).collect()
     } else {
         let f = kind_filter(&q);
         let v: Vec<&Client> = clients.iter().filter(|c| c.workspace > 0 && f(c)).collect();
@@ -1140,13 +1218,41 @@ fn list_screen(target: &str, r: &mut dyn Runner, wayvrctl: &str) {
 
 /// "Open YouTube on screen 3", "open ~/Videos/x.mkv on the left screen", "open https://... on screen 2": that screen
 /// is focused, then the site (a new browser window), the file (its default app), or the app family starts there.
+/// "two new terminals" -> (2, Some("terminal")), "a new terminal" -> (1, Some("terminal")), "youtube" -> (1, None)
+/// (None: the words as they are). At most 4 windows by voice.
+pub fn open_count(what: &str) -> (usize, Option<String>) {
+    let w = crate::command::words(what);
+    let mut n = 1usize;
+    let mut rest: Vec<String> = Vec::new();
+    for (i, x) in w.iter().enumerate() {
+        if i == 0 && x.parse::<usize>().is_ok() {
+            n = x.parse::<usize>().unwrap_or(1).clamp(1, 4);
+        } else if !(rest.is_empty() && matches!(x.as_str(), "new" | "more" | "another" | "a" | "an" | "extra" | "fresh")) {
+            rest.push(x.clone());
+        }
+    }
+    if rest.is_empty() || rest.len() == w.len() {
+        return (1, None);
+    }
+    // "terminals" -> "terminal" when several were asked for (the launcher name is singular)
+    if n > 1 && rest.len() == 1 && rest[0].ends_with('s') && launch_for(rest[0].trim_end_matches('s')).is_some() {
+        rest[0] = rest[0].trim_end_matches('s').to_string();
+    }
+    (n, Some(rest.join(" ")))
+}
+
 fn open_on(target: &str, what: &str, r: &mut dyn Runner, wayvrctl: &str) {
     let what = what.trim();
+    // "two new terminals", "2 terminals", "a new terminal": how many (at most 4) and of what
+    let (count, plain) = if what.starts_with('/') || what.starts_with('~') || what.contains("://") || what.contains('.') { (1, None) } else { open_count(what) };
+    let fresh_word = plain.is_some();
+    let what_owned = plain.unwrap_or_else(|| what.to_string());
+    let what = what_owned.as_str();
     // an app that is open comes to that screen (a new window only when asked: "a new", "another")
     let ww = crate::command::words(what);
     // a terminal is always a new one ("open a terminal on screen 2"; the slot drops the article)
     let terminal = launch_for(what).is_some_and(|a| a.first().is_some_and(|x| x == "omarchy-launch-terminal"));
-    let fresh = terminal || ww.first().is_some_and(|x| matches!(x.as_str(), "a" | "an")) || ww.iter().any(|x| matches!(x.as_str(), "new" | "another" | "second"));
+    let fresh = fresh_word || terminal || ww.first().is_some_and(|x| matches!(x.as_str(), "a" | "an")) || ww.iter().any(|x| matches!(x.as_str(), "new" | "another" | "second"));
     if !fresh && !what.starts_with('/') && !what.starts_with('~') && !what.contains("://") {
         let clients = hyprctl_json(r, "clients").and_then(|j| parse_clients(&j)).unwrap_or_default();
         if running_app(&clients, what).is_some() {
@@ -1170,8 +1276,16 @@ fn open_on(target: &str, what: &str, r: &mut dyn Runner, wayvrctl: &str) {
         vec!["omarchy-launch-browser".into(), "--new-window".into(), url]
     } else if let Some(a) = launch_for(what) {
         a
+    } else if let Some((video, _)) = crate::desk::find_video(what, &crate::desk::video_dirs()) {
+        // "play dune on screen three": a downloaded video by its name, in the player on that screen
+        let p = video.to_string_lossy().into_owned();
+        if std::path::Path::new("/usr/bin/mpv").exists() {
+            vec!["mpv".into(), "--fs".into(), "--force-window=immediate".into(), "--".into(), p]
+        } else {
+            vec!["xdg-open".into(), p]
+        }
     } else {
-        return r.toast(&format!("I can open a site, an address, a file or a terminal / browser / files there, not \"{}\"", short(what, 30)));
+        return r.toast(&format!("I can open a site, an address, a file, a downloaded video or a terminal / browser / files there, not \"{}\"", short(what, 30)));
     };
     if !monitor_ok(&s.output) {
         return r.toast("Bad screen name");
@@ -1180,6 +1294,9 @@ fn open_on(target: &str, what: &str, r: &mut dyn Runner, wayvrctl: &str) {
     r.screen_unhide(screen_number(s.slot).unwrap_or(0));
     if let Err(e) = dispatch(r, &format!("hl.dsp.focus({{ monitor = \"{}\" }})", s.output)) {
         return r.toast(&format!("Screen: {e}"));
+    }
+    for _ in 1..count {
+        let _ = r.run(&argv, false);
     }
     match r.run(&argv, false) {
         Ok(_) => {
@@ -2085,6 +2202,21 @@ pub fn execute(args: &[String], transcript: &str, ai: &mut Option<Box<dyn LlmCli
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn close_names_a_program_and_its_plural() {
+        assert_eq!(plural_name("btop windows"), ("btop".to_string(), true));
+        assert_eq!(plural_name("both btops"), ("btop".to_string(), true));
+        assert_eq!(plural_name("all the btop windows"), ("btop".to_string(), true));
+        assert_eq!(plural_name("spotify"), ("spotify".to_string(), false));
+        assert_eq!(plural_name("all windows"), (String::new(), true));
+        assert!(term_program("btop", "btop") && term_program("htop - 12 tasks", "htop"));
+        assert!(!term_program("user@host:~/btop-notes", "btop") && !term_program("btop", "htop"));
+        assert_eq!(open_count("two new terminals"), (2, Some("terminal".to_string())));
+        assert_eq!(open_count("a new terminal"), (1, Some("terminal".to_string())));
+        assert_eq!(open_count("youtube"), (1, None));
+        assert_eq!(open_count("9 terminals"), (4, Some("terminal".to_string())), "at most 4");
+    }
     use std::collections::VecDeque;
 
     /// A scripted compositor: answers `hyprctl -j ...` from fixtures, records dispatches.

@@ -333,7 +333,7 @@ pub fn user_message(state: &str, cands: &[Cand], heard: &str, hints: bool) -> St
         let h: Vec<String> = cands.iter().map(|c| format!("{} {:.2}", c.id, c.score)).collect();
         s += &format!("hints: {}\n", h.join(", "));
     }
-    s += &format!("heard: \"{}\"", crate::windows::clean_title(heard).replace('"', "'"));
+    s += &format!("heard: \"{}\"", crate::windows::clean_heard(heard).replace('"', "'"));
     s
 }
 

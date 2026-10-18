@@ -703,6 +703,10 @@ fn assert_one(a: &str, start: &World, end: &World, toasts: &[String], asked: boo
             let bad: Vec<String> = apps.iter().filter(|a| !end.screen_of(a).is_some_and(|n| want.contains(&n))).map(|a| format!("{} on {}", a.name, end.screen_of(a).map(|n| format!("screen {n}")).unwrap_or(format!("ws {}", a.ws)))).collect();
             if bad.is_empty() {
                 let mut cover: Vec<String> = apps.iter().map(|a| format!("app:{}:ws", a.name)).collect();
+                // "new:video on 3": the new app itself is what was asked for
+                if let Some(kind) = sel.strip_prefix("new:") {
+                    cover.push(format!("app:new:{kind}"));
+                }
                 cover.push("screen:*:shown".into());
                 (true, String::new(), cover)
             } else {
@@ -1130,6 +1134,13 @@ pub struct Verdict {
 /// Score an end state: the expectations hold (all of `expect`, plus one set of `any` when given), and nothing
 /// changed that they do not cover (focus excepted, `allow` keys excepted).
 pub fn check(start: &World, end: &World, expect: &[String], any: &[Vec<String>], allow: &[String], toasts: &[String], asked: bool) -> Verdict {
+    check_from(start, start, end, expect, any, allow, toasts, asked)
+}
+
+/// [`check`] with the unwanted changes counted from `base` (the start after a drift: an app the user closed by hand
+/// is no change of the voice code) while the expectations still read the real start ("s1 closed").
+#[allow(clippy::too_many_arguments)]
+pub fn check_from(start: &World, base: &World, end: &World, expect: &[String], any: &[Vec<String>], allow: &[String], toasts: &[String], asked: bool) -> Verdict {
     let mut v = Verdict::default();
     let mut covers: Vec<String> = allow.to_vec();
     covers.push("focus".into());
@@ -1167,7 +1178,7 @@ pub fn check(start: &World, end: &World, expect: &[String], any: &[Vec<String>],
         }
     }
     let moved_tab = |name: &str| moved_tab(start, end, name);
-    let changes = world::diff(start, end);
+    let changes = world::diff(base, end);
     let moved: Vec<String> = changes.iter().filter_map(|c| c.key.strip_prefix("app:").and_then(|k| k.strip_suffix(":closed"))).filter(|n| moved_tab(n)).map(str::to_string).collect();
     for ch in changes {
         if covers.iter().any(|p| key_match(p, &ch.key)) {
@@ -1227,8 +1238,11 @@ pub fn prompt_cost(prompts: &[String]) -> serde_json::Value {
     for p in prompts {
         let Ok(v) = serde_json::from_str::<serde_json::Value>(p) else { continue };
         let g = |k: &str| v.get(k).and_then(serde_json::Value::as_u64).unwrap_or(0);
-        if v.get("sys_chars").is_some() {
-            n += 1;
+        // `requests`: every request of the command in one line (several Lara / goal requests); older lines: one
+        match v.get("requests").and_then(serde_json::Value::as_u64) {
+            Some(k) => n += k,
+            None if v.get("sys_chars").is_some() => n += 1,
+            None => {}
         }
         sys += g("sys_chars");
         user += g("user_chars");
@@ -1432,7 +1446,8 @@ pub fn pick(all: &[Case], o: &Opts) -> Vec<Case> {
         .iter()
         .filter(|c| o.split == "all" || c.split == o.split)
         .filter(|c| o.tier.as_ref().is_none_or(|t| &c.tier == t))
-        .filter(|c| o.only.as_ref().is_none_or(|q| c.id.contains(q.as_str()) || c.cat == *q || c.say.contains(q.as_str())))
+        // `--only a,b,c`: any of them (a case id, a category, words of the phrase)
+        .filter(|c| o.only.as_ref().is_none_or(|qs| qs.split(',').map(str::trim).filter(|q| !q.is_empty()).any(|q| c.id.contains(q) || c.cat == q || c.say.contains(q))))
         .cloned()
         .collect();
     subset(&v, o.subset, o.seed)
@@ -1578,7 +1593,18 @@ pub fn run_cases(cases: &[Case], o: &Opts) -> Result<Vec<Outcome>, String> {
             .map(|b| String::from_utf8_lossy(&b[(log_before as usize).min(b.len())..]).lines().filter(|l| !l.contains("\"trace\"")).map(str::to_string).collect())
             .unwrap_or_default();
         let prompt_chars: usize = prompts.iter().map(|p| p.len()).sum();
-        let verdict = check(&c.start, &sim.world, &c.expect, &c.any, &c.allow, &sim.toasts, trace.asked);
+        // a drift (an app closed by hand while the AI thinks) is the user's doing: the end is compared with the start
+        // after the drift (lg-drift-spotify-gone: "s1 closed" was blamed on the voice code and scored unsafe)
+        let base = if sim.drifted() {
+            let mut b = c.start.clone();
+            // only what the user did to apps; "this" stays the app gazed at when the command started
+            let by_hand: Vec<String> = c.start.timing.drift.iter().filter(|v| v.starts_with("close ") || v.starts_with("open ")).cloned().collect();
+            b.drift(&by_hand);
+            b
+        } else {
+            c.start.clone()
+        };
+        let verdict = check_from(&c.start, &base, &sim.world, &c.expect, &c.any, &c.allow, &sim.toasts, trace.asked);
         let mut verdict = verdict;
         let mut steps_ok = None;
         let mut mid_reasons = Vec::new();
@@ -2186,4 +2212,38 @@ mod tests {
             assert!(v.pass, "{goal} {tier} with {tool}: {:?} {:?}", v.reasons, out.commands);
         }
     }
+
+    #[test]
+    fn the_btop_windows_close_and_nothing_else() {
+        let cat = crate::catalogue::Catalogue::from_texts(crate::catalogue::BUILTIN, None).unwrap();
+        let all = load_cases().unwrap();
+        let c = all.iter().find(|c| c.id.starts_with("lg-close-named-only.h")).unwrap().clone();
+        let s: BTreeMap<String, String> = [("app", "btop windows")].iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+        let out = world::apply(&c.start, &cat, "win.close.named", &s).unwrap();
+        let v = check(&c.start, &out.world, &["t3 closed".to_string(), "t4 closed".to_string(), "t5 stay".to_string(), "t1 stay".to_string()], &[], &["*".to_string()], &out.toasts, false);
+        assert!(v.pass, "{:?} {:?}", v.reasons, out.toasts);
+        // one name, two windows, no plural: nothing closes (it asks which)
+        let s: BTreeMap<String, String> = [("app", "btop")].iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+        let out = world::apply(&c.start, &cat, "win.close.named", &s).unwrap();
+        assert!(!world::diff(&c.start, &out.world).iter().any(|d| d.key.ends_with(":closed")), "{:?}", out.toasts);
+        // a kind stays refused
+        let s: BTreeMap<String, String> = [("app", "all the terminals")].iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+        let out = world::apply(&c.start, &cat, "win.close.named", &s).unwrap();
+        assert!(!world::diff(&c.start, &out.world).iter().any(|d| d.key.ends_with(":closed")), "{:?}", out.toasts);
+    }
+
+    #[test]
+    fn moving_an_off_screen_app_keeps_the_target_screen_on_its_workspace() {
+        // "the terminals on 1" with a terminal on workspace 8 (no screen shows it): focusing it brought workspace 8
+        // onto a screen, the fresh read then named 8 as screen 1's workspace and every terminal went there
+        let cat = crate::catalogue::Catalogue::from_texts(crate::catalogue::BUILTIN, None).unwrap();
+        let all = load_cases().unwrap();
+        let c = all.iter().find(|c| c.id == "lg-setup-work.h2").unwrap().clone();
+        let s: BTreeMap<String, String> = [("screen", "1"), ("app", "terminals")].iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+        let out = world::apply(&c.start, &cat, "win.screen.put_n", &s).unwrap();
+        let v = check(&c.start, &out.world, &["terminals on 1".to_string()], &[], &["*".to_string()], &out.toasts, false);
+        assert!(v.pass, "{:?} {:?}", v.reasons, out.toasts);
+        assert!(!world::diff(&c.start, &out.world).iter().any(|d| d.text.contains("ws 8") && !d.text.contains("ws 8 ->")), "{:?}", out.commands);
+    }
+
 }

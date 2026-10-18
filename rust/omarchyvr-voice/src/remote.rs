@@ -282,7 +282,7 @@ pub fn classify_system() -> String {
 
 /// The classifier's user message: the words and the matcher's best guesses.
 pub fn classify_user(heard: &str, summary: &str) -> String {
-    let mut s = format!("heard: \"{}\"", windows::clean_title(heard));
+    let mut s = format!("heard: \"{}\"", windows::clean_heard(heard));
     if !summary.is_empty() {
         s += &format!("\nstate: {summary}");
     }

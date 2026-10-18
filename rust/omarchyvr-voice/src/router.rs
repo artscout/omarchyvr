@@ -52,7 +52,7 @@ pub fn laya_criteria() -> Value {
 /// checkpoint even when the tuned one was the default (measured 2026-10-16).
 pub fn laya_body(heard: &str, model: &str) -> Value {
     json!({
-        "state": {"voice command": crate::windows::clean_title(heard)},
+        "state": {"voice command": crate::windows::clean_heard(heard)},
         "questions": {"category": {"type": "choice", "instructions": LAYA_INSTRUCTIONS, "criteria": laya_criteria()}},
         "model": model,
     })

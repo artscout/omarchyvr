@@ -495,6 +495,156 @@ pub fn take_back(w: &[String], raw: &str) -> TakeBack {
     TakeBack::None
 }
 
+/// The request with its corrections applied, when the sentence holds any (user goal 2026-10-18: a take-back undoes
+/// only the part taken back): "chrome on two, no, on three, hide five" -> "chrome on 3, hide 5"; "hide screen four,
+/// no wait, keep it, hide screen two instead and put the terminals on one" -> "hide screen 2 and put the terminals
+/// on 1"; "terminals to screen three, I mean two, spotify to four, no one" -> "terminals to screen 2, spotify to 1".
+/// A correction is a piece (between commas) that starts with "no" / "wait" / "actually" / "sorry" / "I mean" /
+/// "or rather": a keep phrase ("keep it", "leave four", "forget that") drops the clause before it; a fragment with a
+/// number or a side ("on three", "3") replaces that clause's last number or side; a request of its own replaces
+/// the clause. "no room" / "no captions" (a "no" without a number, keep word or verb) is no correction. None: no
+/// correction found. Words come out normalised (numbers as digits).
+pub fn resolve_corrections(raw: &str) -> Option<String> {
+    // pieces at commas, and before "i mean" / "or rather" / "no wait" / "actually" inside a piece
+    let mut pieces: Vec<Vec<String>> = Vec::new();
+    for seg in raw.split([',', ';', '.', '!', '?']) {
+        let w: Vec<String> = words(seg).into_iter().filter(|x| !matches!(x.as_str(), "uh" | "um" | "max" | "eh" | "hmm" | "oh")).collect();
+        let mut cur: Vec<String> = Vec::new();
+        let mut i = 0;
+        while i < w.len() {
+            let two = w.get(i + 1).map(String::as_str);
+            let starts = (w[i] == "i" && two == Some("mean")) || (w[i] == "or" && two == Some("rather")) || (w[i] == "no" && two == Some("wait")) || w[i] == "actually";
+            if starts && !cur.is_empty() {
+                pieces.push(std::mem::take(&mut cur));
+            }
+            cur.push(w[i].clone());
+            i += 1;
+        }
+        if !cur.is_empty() {
+            pieces.push(cur);
+        }
+    }
+    let is_num = |x: &str| x.parse::<u32>().is_ok();
+    let is_side = |x: &str| crate::windows::slot_word(x).is_some() && x != "app";
+    let keep_word = |x: &str| matches!(x, "keep" | "leave" | "forget" | "never" | "dont" | "don't" | "scratch" | "skip" | "cancel" | "nevermind");
+    let mut out: Vec<Vec<String>> = Vec::new();
+    let mut changed = false;
+    let mut k = 0;
+    while k < pieces.len() {
+        let p = &pieces[k];
+        k += 1;
+        // the leading correction words
+        let mut j = 0;
+        let mut markers = 0;
+        let mut only_no = true;
+        while j < p.len() {
+            let x = p[j].as_str();
+            let two = p.get(j + 1).map(String::as_str);
+            if (x == "i" && two == Some("mean")) || (x == "or" && two == Some("rather")) {
+                j += 2;
+                markers += 1;
+                only_no = false;
+            } else if matches!(x, "no" | "wait" | "actually" | "sorry") {
+                j += 1;
+                markers += 1;
+                only_no &= x == "no";
+            } else {
+                break;
+            }
+        }
+        let mut rest: Vec<String> = p[j..].to_vec();
+        if markers == 0 || out.is_empty() {
+            let mut q = p.clone();
+            if q.last().is_some_and(|x| x == "instead") {
+                q.pop();
+                changed = true;
+            }
+            if !q.is_empty() {
+                out.push(q);
+            }
+            continue;
+        }
+        // "no wait," then the correction in the next piece
+        if rest.is_empty() && k < pieces.len() {
+            rest = pieces[k].clone();
+            k += 1;
+        }
+        if rest.last().is_some_and(|x| x == "instead") {
+            rest.pop();
+        }
+        let keep = rest.first().is_some_and(|x| keep_word(x));
+        let fragment = !has_verb(&rest) && rest.len() <= 4 && rest.iter().any(|x| is_num(x) || is_side(x));
+        let full = has_verb(&rest);
+        if only_no && !(keep || fragment || full) {
+            // "cinema mode, no room": a request of its own, no correction
+            let mut q = p.clone();
+            if q.last().is_some_and(|x| x == "instead") {
+                q.pop();
+            }
+            out.push(q);
+            continue;
+        }
+        if rest.is_empty() {
+            continue;
+        }
+        changed = true;
+        // the clause before: the last part of the previous piece after its last "and" / "then"
+        let prev = out.last_mut().unwrap();
+        let cut = prev.iter().rposition(|x| matches!(x.as_str(), "and" | "then")).map(|i| i + 1).unwrap_or(0);
+        if keep {
+            // the clause and its "and" go
+            prev.truncate(cut.saturating_sub(1));
+            if prev.is_empty() {
+                out.pop();
+            }
+            // "leave four, hide two": what follows the keep phrase in the same piece is a request of its own
+            let after: Vec<String> = rest.iter().skip(1).skip_while(|x| matches!(x.as_str(), "it" | "that" | "this" | "one" | "mind" | "about" | "do" | "that's") || is_num(x)).cloned().collect();
+            if has_verb(&after) {
+                out.push(after);
+            }
+            continue;
+        }
+        if fragment {
+            let new_num = rest.iter().find(|x| is_num(x)).cloned();
+            let new_side = rest.iter().find(|x| is_side(x)).cloned();
+            let clause = &mut prev[cut..];
+            let at = if new_num.is_some() { clause.iter().rposition(|x| is_num(x)) } else { clause.iter().rposition(|x| is_side(x)) }.or_else(|| clause.iter().rposition(|x| is_num(x) || is_side(x)));
+            let with = new_num.or(new_side).unwrap_or_default();
+            match at {
+                Some(i) => clause[i] = with,
+                None => {
+                    // "chrome on to, no, three": the ASR's "to" / "for" at the end was the number
+                    if let Some(last) = clause.last_mut().filter(|x| matches!(x.as_str(), "for" | "to" | "too" | "won" | "tree" | "free")) {
+                        *last = with;
+                    } else {
+                        prev.extend(rest);
+                    }
+                }
+            }
+            continue;
+        }
+        // a request of its own replaces the clause before it
+        prev.truncate(cut);
+        if prev.is_empty() {
+            out.pop();
+            out.push(rest);
+        } else {
+            prev.extend(rest);
+        }
+    }
+    if !changed {
+        return None;
+    }
+    // "hide two instead and ...": the word says the correction, it is no part of the request
+    let text: Vec<String> = out
+        .into_iter()
+        .map(|p| p.iter().enumerate().filter(|(i, x)| *x != "instead" || p.get(i + 1).is_some_and(|n| n == "of")).map(|(_, x)| x.clone()).collect::<Vec<_>>())
+        .filter(|p| !p.is_empty())
+        .map(|p| p.join(" "))
+        .collect();
+    (!text.is_empty()).then(|| text.join(", "))
+}
+
 /// Verbs that start a command of their own after "and" / "then" ("close screen 2 and make the main one bigger").
 const CLAUSE_VERBS: &[&str] = &[
     "make", "put", "move", "open", "close", "hide", "show", "turn", "switch", "go", "play", "start", "stop", "set", "add",
@@ -540,24 +690,7 @@ pub fn clauses(w: &[String]) -> Vec<Vec<String>> {
 /// before has one too ("the terminals on the left screen and chrome on the right"). "hide screens 2, 3 and 4",
 /// "swap screens 1 and 2" and "put chrome and spotify on screen 2" stay one part.
 pub fn parts(raw: &str) -> Vec<String> {
-    let mut chunks: Vec<String> = Vec::new();
-    for seg in raw.split([',', ';', ':', '?', '!']).flat_map(|s| s.split(". ")) {
-        let mut cur: Vec<&str> = Vec::new();
-        for tok in seg.split_whitespace() {
-            let t = tok.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase();
-            if CLAUSE_JOIN.contains(&t.as_str()) {
-                if !cur.is_empty() {
-                    chunks.push(cur.join(" "));
-                }
-                cur.clear();
-                continue;
-            }
-            cur.push(tok);
-        }
-        if !cur.is_empty() {
-            chunks.push(cur.join(" "));
-        }
-    }
+    let chunks = chunks(raw);
     let mut out: Vec<String> = Vec::new();
     for c in chunks {
         let w = words(&c);
@@ -578,6 +711,35 @@ pub fn parts(raw: &str) -> Vec<String> {
         }
     }
     out
+}
+
+/// A verb that starts a request of its own ("make", "put", "close" ...).
+pub fn is_clause_verb(w: &str) -> bool {
+    CLAUSE_VERBS.contains(&w)
+}
+
+/// The pieces of a sentence between commas and "and" / "then" ("dim the room, captions off and fps on" -> 3);
+/// [`parts`] joins the pieces that are no request of their own.
+pub fn chunks(raw: &str) -> Vec<String> {
+    let mut chunks: Vec<String> = Vec::new();
+    for seg in raw.split([',', ';', ':', '?', '!']).flat_map(|s| s.split(". ")) {
+        let mut cur: Vec<&str> = Vec::new();
+        for tok in seg.split_whitespace() {
+            let t = tok.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase();
+            if CLAUSE_JOIN.contains(&t.as_str()) {
+                if !cur.is_empty() {
+                    chunks.push(cur.join(" "));
+                }
+                cur.clear();
+                continue;
+            }
+            cur.push(tok);
+        }
+        if !cur.is_empty() {
+            chunks.push(cur.join(" "));
+        }
+    }
+    chunks
 }
 
 fn has_verb(w: &[String]) -> bool {
@@ -964,4 +1126,21 @@ mod tests {
         }
     }
 
+
+    #[test]
+    fn corrections_are_applied_to_the_part_they_correct() {
+        let r = |x: &str| resolve_corrections(x).unwrap_or_else(|| "-".into());
+        assert_eq!(r("terminals on four, chrome on two, no, on three, hide screen five and turn the volume up"), "terminals on 4, chrome on 3, hide screen 5 and turn the volume up");
+        assert_eq!(r("hide screen four, no wait, keep it, hide screen two instead and put the terminals on one"), "hide screen 2 and put the terminals on 1");
+        assert_eq!(r("hide 4, actually no, hide 2, and terminals to 1"), "hide 2, and terminals to 1");
+        assert_eq!(r("uh Max, close four, no, leave four, hide two, and the terminals on the main screen"), "hide 2, and the terminals on the main screen");
+        assert_eq!(r("terminals to screen three, I mean two, spotify to four, no one, and mute"), "terminals to screen 2, spotify to 1, and mute");
+        assert_eq!(r("uh put the terminals on 3, no wait, 2, spotify on 4, no, 1, and mute it all"), "put the terminals on 2, spotify on 1, and mute it all");
+        assert_eq!(r("move chrome to screen four, no, three, then fullscreen it and mute it"), "move chrome to screen 3, then fullscreen it and mute it");
+        assert_eq!(r("turn the volume to twenty, no, sixty"), "turn the volume to 60");
+        // no correction
+        assert_eq!(r("cinema mode, no room, volume thirty"), "-");
+        assert_eq!(r("dim the room, no captions, fps on"), "-");
+        assert_eq!(r("put the terminals on two and mute"), "-");
+    }
 }

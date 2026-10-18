@@ -1,0 +1,6 @@
+# Lara option (a), the default since 2026-10-18 G: the full cached prompt always; Lara only drops chatter and names the likely categories in the user
+# message (the one llama-server slot keeps the full prompt cached). Option (b): lara-subsets.
+name = "lara-full"
+notes = "Lara: chatter + a likely: hint line, the full prompt"
+[router]
+prompt = "full"

@@ -430,6 +430,35 @@ pub struct Actor {
     pub whole: Option<Whole>,
 }
 
+/// The words of the close request in a sentence: from the close verb to the next request ("close both btops then
+/// take the htop terminal to 1" -> "close both btops"); the whole words when no close verb is found.
+pub fn close_clause(words: &str) -> String {
+    let w = command::words(words);
+    const CLOSE: &[&str] = &["close", "closed", "quit", "exit", "kill", "shut"];
+    let Some(i) = w.iter().position(|x| CLOSE.contains(&x.as_str())) else { return words.to_string() };
+    let mut out: Vec<String> = Vec::new();
+    for (k, x) in w.iter().enumerate().skip(i) {
+        // "and" / "then" before another verb ends it; "close spotify and chrome" stays one request
+        if k > i && matches!(x.as_str(), "then" | "and") && w.get(k + 1).is_some_and(|n| command::is_clause_verb(n) || n == "then") {
+            break;
+        }
+        if k > i && x == "then" {
+            break;
+        }
+        out.push(x.clone());
+    }
+    out.join(" ")
+}
+
+/// A sentence that corrects itself ("X, no, Y"), for the AI.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Correction {
+    /// The whole request with the corrections applied ([`command::resolve_corrections`]).
+    Meant(String),
+    /// Only the words after the last correction marker (no piece-wise reading was possible).
+    Tail(String),
+}
+
 /// The hints of a sentence sent to the AI as a whole ([`Actor::ask_whole`]).
 #[derive(Debug, Clone, Default)]
 pub struct Whole {
@@ -444,6 +473,10 @@ pub struct Whole {
     pub intents: Vec<String>,
     /// How many requests the sentence holds (2+: the answer may be a plan).
     pub parts: usize,
+    /// Per part, in order: its exact phrase or sure screen rule (None: no sure hint).
+    pub part_hints: Vec<Option<Match>>,
+    /// The request with its corrections applied ([`command::resolve_corrections`]); the plan repairs read it.
+    pub meant: Option<String>,
 }
 
 /// Dictation stops after this long without speech.
@@ -667,10 +700,16 @@ impl Actor {
         // on (`voice_ai_fast_path`) a short single request still runs from the rules / matcher below, and only
         // several requests or a corrected one go to the AI as a whole.
         if let Some(fast) = self.agent.as_ref().map(|a| a.settings.fast_path) {
+            // the corrections applied to the part they correct ("chrome on two, no, on three, hide five" = "chrome
+            // on 3, hide 5"); the model gets that meaning, the hints come from it
+            let meant = command::resolve_corrections(&whole_raw);
             let parts = command::parts(&self.last_raw);
-            if !fast || corrected.is_some() || goal || parts.len() >= 2 || clauses.len() >= 2 {
+            if !fast || corrected.is_some() || meant.is_some() || goal || parts.len() >= 2 || clauses.len() >= 2 {
                 let parts = if parts.len() >= 2 || clauses.len() < 2 { parts } else { split_raw(&self.last_raw, &clauses) };
-                let correction = corrected.map(|t| t.join(" "));
+                let correction = match meant {
+                    Some(m) => Some(Correction::Meant(m)),
+                    None => corrected.map(|t| Correction::Tail(t.join(" "))),
+                };
                 if correction.is_some() {
                     self.last_raw = whole_raw;
                     self.last_words = whole_words.join(" ");
@@ -752,9 +791,9 @@ impl Actor {
     /// or the matcher would do goes in as a hint line (after a correction only the parts after it, so the corrected
     /// value does not anchor the model), the model answers the plan. The model failing or saying nothing: the parts
     /// run as the rules and the matcher decide them, when every part is settled.
-    fn ask_whole(&mut self, words: Vec<String>, parts: &[String], correction: Option<String>, now: Instant, r: &mut dyn Runner) -> Option<String> {
+    fn ask_whole(&mut self, words: Vec<String>, parts: &[String], correction: Option<Correction>, now: Instant, r: &mut dyn Runner) -> Option<String> {
         let hint_parts: Vec<String> = match &correction {
-            Some(tail) => command::parts(tail),
+            Some(Correction::Meant(m)) | Some(Correction::Tail(m)) => command::parts(m),
             None => parts.to_vec(),
         };
         // before the AI, as before: noise ("max ma max max") and a sentence cut off mid-way (wait for the rest)
@@ -770,6 +809,24 @@ impl Actor {
             self.followup_until = Some(now + Duration::from_secs_f64(self.cat.wake.followup_s.max(1.0)));
             return None;
         }
+        // a part that joined pieces of their own ("dim the room and captions off and fps on": no verb in the later
+        // ones) is split again when every piece is a command by itself, so each gets its hint (and its step)
+        let hint_parts: Vec<String> = hint_parts
+            .into_iter()
+            .flat_map(|p| {
+                let ch = command::chunks(&p);
+                let each = ch.len() >= 2
+                    && ch.iter().all(|c| {
+                        let w = crate::rules::tidy(&command::drop_openers(&command::words(c)));
+                        crate::rules::screen_rule(&w).is_some() || command::best(&self.cat, &w).is_some()
+                    });
+                if each {
+                    ch
+                } else {
+                    vec![p]
+                }
+            })
+            .collect();
         let mut lines: Vec<String> = Vec::new();
         let mut whole = Whole::default();
         let mut settled: Vec<Vec<String>> = Vec::new();
@@ -790,6 +847,9 @@ impl Actor {
                     "?".to_string()
                 }
             };
+            // an exact phrase or a screen rule of its own part: the plan must cover it ([`crate::agent::cover_plan`])
+            let sure = m.clone().filter(|_| hint.starts_with("rule (sure)") || hint.starts_with("match"));
+            whole.part_hints.push(sure);
             lines.push(if hint_parts.len() >= 2 { format!("\"{text}\" -> {hint}") } else { hint });
             if let Some(m) = &m {
                 whole.intents.push(m.id.clone());
@@ -805,7 +865,11 @@ impl Actor {
         } else if lines.first().is_some_and(|l| l != "?") {
             whole.lines += &format!("{}\n", lines[0]);
         }
-        if let Some(t) = &correction {
+        if let Some(Correction::Meant(m)) = &correction {
+            whole.meant = Some(m.clone());
+            // the take-back resolved word by word: only the corrected part changes, the rest stands
+            whole.lines += &format!("meant (the corrections applied; do exactly this): \"{}\"\n", m.replace('"', "'"));
+        } else if let Some(Correction::Tail(t)) = &correction {
             whole.lines += &format!("correction: the request after the correction wins: \"{}\"\n", t.replace('"', "'"));
         }
         let cands = crate::fuzzy::candidates(&self.cat, &words, 3);
@@ -1138,18 +1202,22 @@ impl Actor {
         // "close one app" (the one looked at) while the words NAME something else ("close youtube", "close the
         // video"): only what is named may close (a tab for a site), never the app that happens to be in front
         let close_one = self.cat.get(&m.id).is_some_and(|i| i.run.first().is_some_and(|p| p == "@win") && i.run.get(1).is_some_and(|a| a == "close"));
-        if close_one && !crate::windows::names_no_app(&self.last_words) && self.cat.get("win.close.named").is_some() {
-            *m = Match { id: "win.close.named".into(), slots: [("app".to_string(), self.last_words.clone())].into_iter().collect(), score: 0 };
+        // (in a sentence of several requests only the close request's own words count: "close both btops, then take
+        // the htop terminal to 1" must never become one app name of the whole sentence, state audit 2026-10-18)
+        let close_words = close_clause(&self.last_words);
+        if close_one && !crate::windows::names_no_app(&close_words) && self.cat.get("win.close.named").is_some() {
+            *m = Match { id: "win.close.named".into(), slots: [("app".to_string(), close_words)].into_iter().collect(), score: 0 };
             return;
         }
         // a model's app slot for "close <app>" must come from the words heard ("close this program" is no "code"):
-        // else the words themselves name it
+        // else the words themselves name it ("btop windows" is grounded in "both btops": plurals and plural words)
         if m.id == "win.close.named" {
             let heard = command::words(&self.last_words);
             let slot = m.slots.get("app").cloned().unwrap_or_default();
-            let grounded = command::words(&slot).iter().filter(|x| !command::FILLERS.contains(&x.as_str())).all(|x| heard.contains(x));
+            let said = |x: &str| heard.iter().any(|h| h == x || h.trim_end_matches('s') == x.trim_end_matches('s'));
+            let grounded = command::words(&slot).iter().filter(|x| !command::FILLERS.contains(&x.as_str()) && !matches!(x.as_str(), "windows" | "window" | "all" | "both" | "apps" | "app")).all(|x| said(x));
             if !grounded {
-                m.slots.insert("app".into(), self.last_words.clone());
+                m.slots.insert("app".into(), close_words);
             }
         }
         let ws_close = self.cat.get(&m.id).is_some_and(|i| i.run.first().is_some_and(|p| p == "@win") && i.run.get(1).is_some_and(|a| a == "ws_close"));
