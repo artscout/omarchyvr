@@ -7,7 +7,7 @@ Goal (user, 2026-10-15): SteamVR is the main way to run all games, with no per-g
 - what works and what does not,
 - the in-headset test plan.
 
-Status: **built, not yet tried in the headset.** The default stays "Games run with: Monado" until the test below passes.
+Status: **the default** since release 0.1.2 ("Games run with: SteamVR", the way the project owner has played since 2026-10-16). A fresh install has no `games.toml`, so Play uses SteamVR; xrizer (the Monado path) is not in the release. `omarchyvr vr games steamvr` saves the choice even before SteamVR is installed in Steam; Play registers the Monado driver in SteamVR's `openvrpaths.vrpath` at every start.
 
 ## 1. Steam for VR games (Monado path, no launch options)
 
@@ -33,7 +33,7 @@ variable once for Steam covers every game.
 "Games" at the top of the app window is the switch. It is saved in `~/.config/omarchyvr/games.toml` (`runtime = "monado"|"steamvr"`),
 which the app and the CLI share. Engine: `omarchyvr vr games monado|steamvr|status`.
 
-| | Monado (default) | SteamVR (experimental) |
+| | Monado (needs xrizer, a source build) | SteamVR (default) |
 |---|---|---|
 | `openvrpaths.vrpath` | xrizer only, read-only (0444) | SteamVR first, writable (0644; SteamVR 2.17 exits on a read-only file, LESSONS row 28) |
 | SteamVR driver | unregistered | `<monado build>/steamvr-monado` in `external_drivers` |
@@ -58,8 +58,8 @@ With SteamVR chosen, `omarchyvr vr start`:
 
 The `--runtime monado|steamvr` start option overrides the saved choice once.
 
-**Flip the default** after a good headset test: `pub const DEFAULT: Games = Games::Monado;` in
-`rust/omarchyvr-tools/src/vr/steamvr.rs`. Change it to `Games::SteamVr`. The app and the CLI both read it.
+**The default** is `pub const DEFAULT: Games = Games::SteamVr;` in `rust/omarchyvr-tools/src/vr/steamvr.rs`; the app and
+the CLI both read it (the saved `games.toml` and auto mode's `game_runtime` come first).
 
 ### The driver (Monado, one build)
 

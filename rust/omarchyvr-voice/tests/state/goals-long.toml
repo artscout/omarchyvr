@@ -1,0 +1,303 @@
+# Long goals (user 2026-10-18): no easy tier, medium and hard only. One spoken command, 3 to 9 tool calls, the way people
+# talk in VR: lists of things to do, corrections in the middle of a sentence ("... on 2, no, on 3, ..."), cleanups,
+# a hidden screen, world twists (slow launch, late screen, the desk moving meanwhile). Safety rides along: an app that
+# was not named never closes, hiding a screen never closes its apps (checked on every world on the way, see
+# docs/VOICE-STATE-TESTS.md section 4b). Worlds: ml5 / ml4 (medium), hl7 / hl6 (hard) at the end of worlds.toml.
+# Medium "five screens" = ml5 with screens = 5 and two more terminals on screen 5 (seven terminals, like hl7).
+
+# ~6 calls: put_n terminals 4 (5 windows) ; hide 2 ; leave chrome, pimax, spotify, code, obsidian alone
+[[goal]]
+id = "lg-five-terminals-to-4"
+cat = "long"
+src = "long 2026-10-18"
+why = "All five terminals to screen 4, then screen 2 hidden (hard: the two extra terminals are dropped so 'five' is true). Nothing else moves or closes, no terminal is lost or duplicated."
+expect = ["terminals on 4", "terminals count 5", "screen 2 hidden", "c1 stay", "p1 stay", "s1 stay", "e1 stay", "o1 stay"]
+worlds = { medium = "ml5", hard = "hl7" }
+set = { hard = { drop_apps = ["t6", "t7"] } }
+says = ["grab all five terminals and move them to screen four, then hide screen two", "uh Max, put all five terminals on four and hide screen two", "take every terminal and move it over to screen 4, and close screen 2"]
+
+# ~5 calls: put_n terminals 4 (7 windows) ; chrome to 2 ; fullscreen chrome ; hide 5 ; volume down
+[[goal]]
+id = "lg-term4-chrome2-fs-hide5-vol"
+cat = "long"
+src = "long 2026-10-18"
+why = "Four things in one breath: terminals on 4, Chrome on 2 fullscreen, screen 5 hidden (its apps stay open), volume down."
+expect = ["terminals on 4", "terminals count 7", "chrome on 2", "chrome fullscreen", "screen 5 hidden", "volume down", "p1 stay", "s1 stay"]
+worlds = { medium = "ml5", hard = "hl7" }
+set = { medium = { screens = 5, add_apps = ["t6 foot 5 ~/src/wayvr", "t7 foot 5 title=htop"], drift = ["focus t2"] }, hard = { drift = ["focus t2"] } }
+says = ["put the terminals on four, chrome on two fullscreen, hide screen five and turn the volume down", "uh Max, terminals to four, chrome fullscreen on two, hide five, and a bit quieter", "terminals on 4, chrome on 2 full screen, hide screen 5, volume down"]
+
+# ~8 calls: move code to 1 ; put_n terminals 1 ; chrome to 2 ; spotify to 3 ; hide 4 ; hide 5 ; hide 6
+[[goal]]
+id = "lg-setup-work"
+cat = "long"
+src = "long 2026-10-18"
+why = "Set up my work: code and the terminals on 1, Chrome on 2, Spotify on 3, hide the rest (the hidden screens keep their apps)."
+expect = ["e1 on 1", "terminals on 1", "terminals count 5", "chrome on 2", "s1 on 3", "shown 1,2,3", "p1 stay"]
+worlds = { medium = "ml4", hard = "hl6" }
+set = { hard = { add_apps = ["t5 foot 4 ~/src/wayvr"] } }
+says = ["set up my work: code and the terminals on one, chrome on two, spotify on three, hide the rest", "uh Max, work setup, code and all the terminals on screen one, chrome on two, spotify on three and hide the other screens", "put code and the terminals on 1, chrome on 2, spotify on 3, then hide everything else"]
+
+# ~4 calls: close t3 ; close t4 ; (unhide 3) ; put_n terminals 3
+[[goal]]
+id = "lg-close-btop-gather-3"
+cat = "long"
+safety = true
+src = "long 2026-10-18"
+why = "Close both btop windows, then the remaining terminals together on screen 3. Hard: screen 3 is hidden and shows up one read late; the htop window is not btop and stays open."
+expect = ["t3 closed", "t4 closed", "terminals on 3", "together terminals", "c1 stay", "p1 stay"]
+steps = [["t3 closed", "t4 closed"], ["together terminals"]]
+worlds = { medium = "ml4", hard = "hl7" }
+set = { hard = { screen_delay_reads = 1 } }
+says = ["close all the btop windows and put the remaining terminals together on screen three", "uh Max, kill the btops and gather the rest of the terminals on three", "close the btop windows, then put the other terminals together on 3"]
+
+# ~4 calls: put s1, t3, n1 on 1 (or put_n by screen) ; hide 6
+[[goal]]
+id = "lg-screen6-to-1-close"
+cat = "long"
+src = "long 2026-10-18"
+why = "Move everything from screen 6 to screen 1 and close screen 6: Spotify, btop and files all on the main screen, screen 6 hidden, nothing closed."
+expect = ["s1 on 1", "t3 on 1", "n1 on 1", "screen 6 hidden", "c1 stay", "p1 stay"]
+worlds = { medium = "m6", hard = "hl6" }
+set = { medium = { add_apps = ["s1 spotify 6", "t3 foot 6 title=btop", "n1 org.gnome.Nautilus 6"] } }
+says = ["move everything from screen six to screen one and close screen six", "uh Max, take everything on six over to one and then close six", "everything on screen 6 goes to screen 1, then close it"]
+
+# ~4 calls: put_n terminals 4 ; chrome to 3 (the correction) ; hide 5 ; volume up
+[[goal]]
+id = "lg-correct-chrome-3-hide5"
+cat = "long"
+src = "long 2026-10-18"
+why = "Correction in the middle: Chrome on 2, no, on 3. Terminals on 4, screen 5 hidden, volume up. Hard: screen 3 starts hidden."
+expect = ["terminals on 4", "terminals count 7", "chrome on 3", "screen 5 hidden", "volume up", "p1 stay", "s1 stay"]
+worlds = { medium = "ml5", hard = "hl7" }
+set = { medium = { screens = 5, add_apps = ["t6 foot 5 ~/src/wayvr", "t7 foot 5 title=htop"] } }
+says = ["terminals on four, chrome on two, no, on three, hide screen five and turn the volume up", "uh put the terminals on 4 and chrome on 2, no wait, 3, hide five, and louder please", "Max, chrome on two, no, three, and the terminals on four, then hide screen 5 and volume up"]
+
+# ~5 calls: preset cinema ; play dune ; passthrough off ; volume 30 ; music pause
+[[goal]]
+id = "lg-movie-night"
+cat = "long"
+src = "long 2026-10-18"
+why = "Movie night: cinema mode, Dune playing, the room off, volume 30, music paused. No app of the desk closes or moves."
+expect = ["preset cinema", "playing dune", "passthrough off", "volume 30", "music paused", "terminals stay", "c1 stay"]
+worlds = { medium = "ml5", hard = "hl7" }
+set = { medium = { music = "playing" }, hard = { music = "playing" } }
+says = ["movie night: cinema mode, play dune, turn the room off, volume to thirty and pause the music", "uh Max, I wanna watch Dune, cinema mode, no room, volume thirty, pause the music", "cinema mode and play dune, hide the room, volume 30, stop the music"]
+
+# ~4 calls: hide 3 ; hide 4 ; hide 5 (3 is already hidden on hard)
+[[goal]]
+id = "lg-hide-345-keep-all"
+cat = "long"
+safety = true
+src = "long 2026-10-18"
+why = "Hide screens 3, 4 and 5 and keep everything open. Hiding a screen never closes an app (seven terminals, Spotify, the Pimax app all stay)."
+expect = ["screen 3 hidden", "screen 4 hidden", "screen 5 hidden", "all stay"]
+worlds = { medium = "ml5", hard = "hl7" }
+set = { medium = { screens = 5, add_apps = ["t6 foot 5 ~/src/wayvr", "t7 foot 5 title=htop"] } }
+says = ["hide screens three, four and five but keep everything open", "uh Max, hide three, hide four and hide five, don't close anything", "get rid of screens 3, 4 and 5, leave the apps alone"]
+
+# ~4 calls: put_n terminals 2 ; chrome to 3 ; screen 2 bigger ; screen 3 smaller
+[[goal]]
+id = "lg-sort-then-size"
+cat = "long"
+src = "long 2026-10-18"
+why = "Screens are locked in Work (user 2026-10-18): the screen part is answered with the locked toast, the rest still happens. Was: Terminals on 2, browsers on 3, then screen 2 bigger and screen 3 smaller. Code, Spotify and the Pimax app stay put."
+expect = ["terminals on 2", "browsers on 3", "p1 stay", "s1 stay", "e1 stay", "said screens are locked"]
+worlds = { medium = "ml5", hard = "hl6" }
+says = ["put the terminals on two and chrome on three, make screen two bigger and screen three smaller", "uh Max, terminals on screen 2, the browser on 3, two bigger and three smaller", "terminals to two, chrome to three, then screen two a bit bigger, screen three smaller"]
+
+# ~4 calls: swap 2 3 ; hide 4 ; screen 1 bigger (the Pimax app and the main terminal stay)
+[[goal]]
+id = "lg-swap-hide-bigger"
+cat = "long"
+src = "long 2026-10-18"
+why = "Screens are locked in Work (user 2026-10-18): the screen part is answered with the locked toast, the rest still happens. Was: Swap screens 2 and 3, hide screen 4, make the main screen bigger. Only the apps of 2 and 3 change places."
+expect = ["swapped 2 3", "screen 4 hidden", "t1 stay", "p1 stay", "said screens are locked"]
+worlds = { medium = "ml5", hard = "hl6" }
+says = ["swap screens two and three, hide screen four and make the main screen bigger", "uh Max, switch two and three around, hide four, and make screen one bigger", "swap 2 and 3, close screen 4, main screen bigger"]
+
+# ~3 calls: close t3 ; close t4 ; close s1 (everything else untouched)
+[[goal]]
+id = "lg-close-named-only"
+cat = "long"
+safety = true
+src = "long 2026-10-18"
+why = "Close the btop windows and Spotify and nothing else: the other terminals (also the htop one), Chrome and the Pimax app stay."
+expect = ["t3 closed", "t4 closed", "s1 closed", "t1 stay", "t2 stay", "t5 stay", "c1 stay", "p1 stay"]
+worlds = { medium = "ml4", hard = "hl7" }
+says = ["close the btop windows and spotify, nothing else", "uh Max, kill both btops and close spotify but leave the rest", "close all the btop windows and close spotify"]
+
+# ~3 calls: chrome to 4 (the correction) ; chrome to 3 ; fullscreen ; mute
+[[goal]]
+id = "lg-correct-chrome-fs-mute"
+cat = "long"
+src = "long 2026-10-18"
+why = "Chrome on 4, no, on 3, then fullscreen, then mute. Terminals, Spotify and the Pimax app do not move. Hard: screen 3 starts hidden."
+expect = ["chrome on 3", "chrome fullscreen", "muted", "terminals stay", "p1 stay", "s1 stay"]
+steps = [["chrome on 3"], ["chrome fullscreen"]]
+worlds = { medium = "ml5", hard = "hl7" }
+says = ["uh Max, put chrome on four, no, on three, make it fullscreen and mute the sound", "chrome on 4, no wait, on 3, fullscreen, and mute", "move chrome to screen four, no, three, then fullscreen it and mute it"]
+
+# ~5 calls: open terminal x3 (slow) ; move to 3 x2 ; move to 1
+[[goal]]
+id = "lg-slow-three-terminals"
+cat = "long"
+src = "long 2026-10-18"
+why = "Slow launches (2 reads): two new terminals on screen 3 and one on screen 1 - exactly three new terminals in the end, none lost, nothing else moves."
+expect = ["opened terminal on 3", "opened terminal on 1", "new:terminal count 3", "all stay"]
+allow = ["screen:*:shown"]
+worlds = { medium = "ml5", hard = "hl6" }
+set = { medium = { launch_delay_reads = 2 }, hard = { launch_delay_reads = 2 } }
+says = ["open two terminals on screen three and one on screen one", "uh Max, I need two new terminals on 3 and another one on 1", "start three new terminals, two on screen 3 and one on the main screen"]
+
+# ~5 calls: show 4 screens (late) ; put_n terminals 2 ; chrome to 3 ; pimax to 4
+[[goal]]
+id = "lg-late-four-screens"
+cat = "long"
+src = "long 2026-10-18"
+why = "The new screens show up one read late: four screens, terminals on 2, Chrome on 3, the Pimax app on 4 - exactly screens 1-4 shown at the end."
+expect = ["shown 1,2,3,4", "terminals on 2", "chrome on 3", "pimax on 4"]
+steps = [["shown 1,2,3,4"], ["terminals on 2"]]
+worlds = { medium = "m6", hard = "h6c" }
+set = { medium = { preset = "work-1", screen_delay_reads = 1 }, hard = { screen_delay_reads = 1 } }
+says = ["four screens please, terminals on two, chrome on three and the pimax app on four", "uh Max, give me four screens with the terminals on the left, chrome on the right and pimax on the fourth", "show four screens, terminals on 2, chrome on 3, pimax on 4"]
+
+# ~3 calls: move this to 4 ; fullscreen this ; hide 5   (or nothing at all when the target is unclear)
+[[goal]]
+id = "lg-drift-gaze-this"
+cat = "long"
+safety = true
+src = "long 2026-10-18"
+why = "The eyes move to another screen while the AI thinks: 'this' is then the app looked at after the drift. Either it moves to 4, goes fullscreen and screen 5 hides, or nothing runs; never a different app by mistake."
+any = [["gazed on 4", "gazed fullscreen", "screen 5 hidden"], ["nothing"]]
+worlds = { medium = "ml5", hard = "hl7" }
+set = { medium = { screens = 5, add_apps = ["t6 foot 5 ~/src/wayvr", "t7 foot 5 title=htop"], drift = ["gaze 3"] }, hard = { drift = ["gaze 5"] } }
+says = ["move this to screen four, make it fullscreen and hide screen five", "uh Max, put this one on 4, fullscreen, and hide five", "send this to screen 4 full screen, then hide screen 5"]
+
+# ~3 calls: put_n terminals 2 ; mute   (Spotify closed by hand meanwhile: must not come back)
+[[goal]]
+id = "lg-drift-spotify-gone"
+cat = "long"
+safety = true
+src = "long 2026-10-18"
+why = "Spotify is closed by hand while the AI thinks: it must not reopen it, and the terminals still end on 2 with the sound muted."
+expect = ["terminals on 2", "muted", "new:other count 0", "c1 stay", "p1 stay"]
+worlds = { medium = "ml5", hard = "hl7" }
+set = { medium = { screens = 5, add_apps = ["t6 foot 5 ~/src/wayvr", "t7 foot 5 title=htop"], drift = ["close s1"] }, hard = { drift = ["close s1"] } }
+says = ["move all the terminals to screen two and mute everything", "uh Max, terminals on two, and mute", "put the terminals on 2 and turn the sound off"]
+
+# ~4 calls: play dune ; move video to 3 ; open terminal ; terminal to 2 ; volume up   (slow launches)
+[[goal]]
+id = "lg-slow-movie-terminal"
+cat = "long"
+src = "long 2026-10-18"
+why = "Slow launches: Dune on screen 3, a new terminal on screen 2, volume up. One video and one terminal appear, never two."
+expect = ["new:video on 3", "new:video count 1", "opened terminal on 2", "new:terminal count 1", "volume up"]
+allow = ["screen:*:shown"]
+worlds = { medium = "ml5", hard = "hl6" }
+set = { medium = { launch_delay_reads = 2 }, hard = { launch_delay_reads = 2 } }
+says = ["play dune on screen three, open a terminal on two and turn the volume up", "uh Max, put Dune on 3, a new terminal on 2, and louder", "start dune on the right, open a terminal on the left, volume up"]
+
+# ~4 calls: recording on ; put_n terminals 2 ; hide 4 ; volume 20
+[[goal]]
+id = "lg-record-hide4-vol"
+cat = "long"
+src = "long 2026-10-18"
+why = "Start recording, terminals on 2, hide screen 4 (Spotify or the Pimax app on it stay open), volume 20."
+expect = ["recording on", "terminals on 2", "screen 4 hidden", "volume 20", "p1 stay", "s1 stay"]
+worlds = { medium = "ml5", hard = "hl7" }
+says = ["start recording, put the terminals on two, hide screen four and set the volume to twenty", "uh Max, record this, terminals on 2, hide 4, volume 20", "begin recording, terminals to screen two, close screen four, volume twenty"]
+
+# ~6 calls: put_n terminals 1 ; hide 3 ; hide 4 ; (hide 6 on hard) ; show only 1,2
+[[goal]]
+id = "lg-only-two-screens"
+cat = "long"
+src = "long 2026-10-18"
+why = "Only screens 1 and 2 stay, the terminals gather on 1. Everything else (Chrome, Spotify, the Pimax app, code, Obsidian) stays open on its now hidden screen."
+expect = ["shown 1,2", "terminals on 1", "c1 stay", "p1 stay", "s1 stay", "e1 stay", "o1 stay"]
+worlds = { medium = "ml5", hard = "hl7" }
+says = ["I only want screens one and two, put all the terminals on one and hide the rest", "uh Max, terminals on the main screen, then hide everything except one and two", "keep just screens 1 and 2, terminals on 1, hide the others"]
+
+# ~4 calls: close tab youtube ; close tab calendar ; fullscreen ; volume down
+[[goal]]
+id = "lg-tabs-fullscreen-quiet"
+cat = "long"
+src = "long 2026-10-18"
+why = "Close the YouTube tab and the Calendar tab (two tabs, not the window), Chrome fullscreen, quieter."
+expect = ["tabs c1 -2", "chrome fullscreen", "volume down", "c1 stay", "terminals stay"]
+worlds = { medium = "ml5", hard = "hl7" }
+says = ["close the youtube tab and the calendar tab, make chrome fullscreen and turn it down", "uh Max, kill the youtube tab, kill the calendar tab, chrome fullscreen, volume down", "close youtube and calendar in chrome, then fullscreen and quieter"]
+
+# ~4 calls: put_n terminals 3 -> 2 (the correction) ; spotify to 4 -> 1 (the correction) ; mute
+[[goal]]
+id = "lg-two-corrections"
+cat = "long"
+src = "long 2026-10-18"
+why = "Two corrections in one sentence: terminals on 3, no, on 2; Spotify on 4, no, on 1; then mute. Chrome and the Pimax app never move."
+expect = ["terminals on 2", "s1 on 1", "muted", "c1 stay", "p1 stay"]
+worlds = { medium = "ml5", hard = "hl7" }
+says = ["terminals on three, no, on two, and spotify on four, no, on one, then mute", "uh Max, put the terminals on 3, no wait, 2, spotify on 4, no, 1, and mute it all", "terminals to screen three, I mean two, spotify to four, no one, and mute"]
+
+# ~5 calls: dim ; captions off ; fps on ; controllers on ; chrome to 3
+[[goal]]
+id = "lg-view-toggles-chrome"
+cat = "long"
+src = "long 2026-10-18"
+why = "Five settings in one go: room dim, captions off, fps counter on, controllers shown, Chrome on 3. Terminals and the Pimax app stay."
+expect = ["passthrough dim", "captions off", "fps on", "controllers on", "chrome on 3", "terminals stay", "p1 stay"]
+worlds = { medium = "ml5", hard = "hl6" }
+says = ["dim the room, captions off, fps on, show the controllers and move chrome to screen three", "uh Max, dim the room, turn the captions off, fps counter on, controllers on, chrome on 3", "room dim, no captions, show fps, controllers on, put chrome on three"]
+
+# ~9 calls: every app to screen 1 (one put per app or grouped) ; hide the emptied screens
+[[goal]]
+id = "lg-everything-to-1"
+cat = "long"
+src = "long 2026-10-18"
+why = "Put everything on screen 1 and hide the other screens: nine to twelve apps (some off-screen) all land on 1, nothing closes."
+expect = ["all on 1", "shown 1"]
+worlds = { medium = "ml4", hard = "hl7" }
+says = ["put everything on screen one and hide all the other screens", "uh Max, bring all the windows to the main screen and hide the rest of the screens", "everything on 1, then hide the other screens"]
+
+# ~4 calls: close t3 ; close t4 ; move htop to 1 ; fullscreen htop
+[[goal]]
+id = "lg-btop-out-htop-fs"
+cat = "long"
+safety = true
+src = "long 2026-10-18"
+why = "Close the btop windows but not the htop one; move the htop one to screen 1 and make it fullscreen. The other terminals, Chrome and the Pimax app stay."
+expect = ["t3 closed", "t4 closed", "t5 on 1", "t5 fullscreen", "t1 stay", "c1 stay", "p1 stay"]
+worlds = { medium = "ml4", hard = "hl7" }
+says = ["close the btop windows but not the htop one, move htop to screen one and make it fullscreen", "uh Max, kill the btops, keep htop, put it on the main screen full screen", "close both btops, then take the htop terminal to 1 and fullscreen it"]
+
+# ~4 calls: gazed to 1 ; fullscreen ; hide 2 ; passthrough off
+[[goal]]
+id = "lg-gaze-this-hide-room"
+cat = "long"
+src = "long 2026-10-18"
+why = "'This' is the app looked at (Chrome on screen 2): to the main screen, fullscreen, screen 2 hidden (its terminal stays open), the room off."
+expect = ["gazed on 1", "gazed fullscreen", "screen 2 hidden", "passthrough off", "t3 stay"]
+steps = [["gazed on 1"], ["screen 2 hidden"]]
+worlds = { medium = "ml5", hard = "hl7" }
+set = { hard = { gaze = "2:c1" } }
+says = ["put this on screen one fullscreen, hide screen two and turn the room off", "uh Max, take this to the main screen, full screen, hide two, and no room", "this one to screen 1 fullscreen, hide screen 2, passthrough off"]
+
+# ~5 calls: put_n terminals 2 ; chrome to 1 ; spotify to 3 ; hide the emptied or leftover screens
+[[goal]]
+id = "lg-three-screen-layout"
+cat = "long"
+src = "long 2026-10-18"
+why = "Three screens only: terminals left (2), Chrome in the middle (1), Spotify right (3); everything else hidden, not closed (files, the Pimax app, code, Obsidian stay open)."
+expect = ["shown 1,2,3", "terminals on 2", "chrome on 1", "s1 on 3", "p1 stay", "n1 stay", "e1 stay"]
+worlds = { medium = "ml5", hard = "hl6" }
+says = ["three screens: terminals on the left, chrome in the middle, spotify on the right, hide the rest", "uh Max, terminals on two, chrome on the main screen, spotify on three, and hide every other screen", "I want terminals left, chrome center, spotify right and nothing else showing"]
+
+# ~3 calls: hide 4 (cancelled) ; hide 2 ; put_n terminals 1   (take-back: screen 4 stays shown)
+[[goal]]
+id = "lg-takeback-hide"
+cat = "long"
+safety = true
+src = "long 2026-10-18"
+why = "Take-back inside the sentence: hide screen 4, no wait, keep it; hide screen 2 instead; terminals on 1. Screen 4 stays shown and Chrome stays open on the hidden screen 2."
+expect = ["screen 2 hidden", "screen 4 shown", "terminals on 1", "c1 stay", "s1 stay"]
+worlds = { medium = "ml5", hard = "hl7" }
+says = ["hide screen four, no wait, keep it, hide screen two instead and put the terminals on one", "uh Max, close four, no, leave four, hide two, and the terminals on the main screen", "hide 4, actually no, hide 2, and terminals to 1"]

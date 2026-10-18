@@ -35,6 +35,7 @@ fn healthy_machine_has_no_failures() {
         "setcap",
         "kernel-log",
         "stale-service",
+        "monado-libs",
     ] {
         assert_eq!(level(&r, id), Level::Ok, "{id}\n{}", r.render());
     }
@@ -312,4 +313,49 @@ fn fix_plan_never_contains_forbidden_commands() {
     for f in forbidden {
         assert!(!plan.contains(&format!("echo {f}")), "{f}");
     }
+}
+
+const SVC: &str = "/home/u/src/monado/build/src/xrt/targets/service/monado-service";
+
+#[test]
+fn missing_library_is_parsed_from_the_loader_message() {
+    use omarchyvr_doctor::checks::missing_library;
+    let e = format!("{SVC}: error while loading shared libraries: libonnxruntime.so.1: cannot open shared object file: No such file or directory\n");
+    assert_eq!(missing_library(&e).as_deref(), Some("libonnxruntime.so.1"));
+    // the loader's trace mode (what the check runs): a missing library is listed as "not found"
+    let t = "\tlibc.so.6 => /usr/lib/libc.so.6 (0x7f)\n\tlibonnxruntime.so.1 => not found\n\tlibm.so.6 => /usr/lib/libm.so.6 (0x7f)\n";
+    assert_eq!(missing_library(t).as_deref(), Some("libonnxruntime.so.1"));
+    assert_eq!(missing_library("\tlibc.so.6 => /usr/lib/libc.so.6 (0x7f)\n"), None);
+    assert_eq!(missing_library("monado-service: usage: ...\n"), None);
+    assert_eq!(missing_library("error while loading shared libraries: \n"), None);
+}
+
+#[test]
+fn monado_that_cannot_load_its_libraries_fails_in_plain_words() {
+    let mut h = FakeHost::healthy();
+    h.cmds.insert(
+        format!("timeout 5 env LD_TRACE_LOADED_OBJECTS=1 {SVC}"),
+        omarchyvr_doctor::CmdOut {
+            code: Some(0),
+            stdout: "\tlibc.so.6 => /usr/lib/libc.so.6 (0x7f)\n\tlibonnxruntime.so.1 => not found\n".into(),
+            stderr: String::new(),
+        },
+    );
+    let r = run_checks(&h, &opts());
+    let c = r.get("monado-libs").unwrap();
+    assert_eq!(c.level, Level::Fail);
+    assert!(c.detail.contains("Monado cannot load its libraries: libonnxruntime.so.1") && c.detail.contains("reinstall"), "{}", c.detail);
+    assert!(r.has_fail());
+}
+
+#[test]
+fn monado_is_not_started_while_a_session_runs() {
+    let mut h = FakeHost::healthy();
+    h.file("/proc/777/comm", "monado-service\n");
+    // the answer would fail, but it must not even be asked
+    h.cmds.remove(&format!("timeout 5 env LD_TRACE_LOADED_OBJECTS=1 {SVC}"));
+    let r = run_checks(&h, &opts());
+    let c = r.get("monado-libs").unwrap();
+    assert_eq!(c.level, Level::Ok);
+    assert!(c.detail.contains("not checked"), "{}", c.detail);
 }

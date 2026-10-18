@@ -14,6 +14,8 @@ start-argv.txt, so a restart keeps it.
   at a start in this mode (it stays saved). Captions are turned off (voice entry).
 - One source of truth for the numbers: `huge_size()` in `rust/omarchyvr-tools/src/vr/preset.rs`.
 
+Like every layout it is locked in place (docs/SCREENS.md "Locked layouts"): "Max, recenter" brings it in front of you.
+
 ## Numbers
 | | value |
 |---|---|

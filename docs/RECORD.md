@@ -65,7 +65,7 @@ Scenarios: `on-desk`, `worn-still`, `look-around`, `walk-room`, `fast-turns`, `c
 |---|---|
 | `cameras.pxcam` | both cameras, every frame with its MCU timestamp (`pimax-cam record`, the `~/src/cam-data` format; replay with `run_slam.sh`/`pimax-cam broker --source`). From the camera broker when it runs; the free camera when no session runs; **not recorded** when a session holds the camera without a broker (`take.txt` says so). |
 | `monado.log`, `ctrltrack.log`, `ctrl-imu-{left,right}.csv` | only what the session wrote during the take (csv keeps its header and whole lines only) |
-| `head-imu.csv` | head IMU (1 kHz, as fed to the 6DoF tracker) + tracker pose times, written by a 6DoF session (`PIMAX_HEAD_IMU_LOG`, from 2026-10-16 builds). `omarchyvr-slam take-euroc TAKE` turns cameras + this into a EuRoC dataset for `run_slam.sh replay` (Basalt offline); `omarchyvr-slam take-head TAKE` works without it (head speed from the images). |
+| `head-imu.csv` | head IMU (1 kHz, as fed to the 6DoF tracker) + tracker pose times, written by a 6DoF session (`PIMAX_HEAD_IMU_LOG`, from 2026-10-16 builds). The previous sessions' logs are kept on disk as `~/.local/state/omarchyvr/head-imu/head-imu.<stamp>.csv` (newest 3; `head-imu.csv.prev` in the session dir links the last one; the session dir itself is tmpfs, RAM). `omarchyvr-slam take-euroc TAKE` turns cameras + this into a EuRoC dataset for `run_slam.sh replay` (Basalt offline); `omarchyvr-slam take-head TAKE` works without it (head speed from the images). |
 | `session.txt`, `start-argv.txt`, `perf-start.txt`, `perf-end.txt` | session mode and flags, performance stats at both ends |
 | `take.txt` | scenario, times, what was and was not captured |
 

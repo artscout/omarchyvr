@@ -59,8 +59,8 @@ matches the real code by construction. A planner's dry run folds `apply` over it
 
 ## 3. Cases (tests/state/)
 
-`worlds.toml` holds the starting desks in three tiers:
-- **easy**: 1-3 screens, 1-2 apps;
+`worlds.toml` holds the starting desks in two tiers (user decision 2026-10-18: no easy tier; a goal with an `easy`
+key in `worlds` or `set` makes the loader fail with a clear error, so it cannot come back by accident):
 - **medium**: 3-4 screens, mixed apps;
 - **hard**: 6 screens, five terminals spread around, Chrome with 10 tabs, a fullscreen video, apps on workspaces
   no screen shows, a hidden screen, the gaze on an unrelated screen.
@@ -71,7 +71,7 @@ matches the real code by construction. A planner's dry run folds `apply` over it
 - the phrasings: `live` as the speech-to-text really heard them, `says` written for the test.
 
 A goal expands into cases:
-- the first phrasing runs in every tier, the others in one tier each;
+- the first phrasing runs in every tier (medium and hard), the others in one tier each;
 - one generated ASR-noisy copy of the first written phrasing is added (`statetest::noisy`: fillers, "closed" for
   close, "tree" for three, number words, "can you Max, can you ..." restarts);
 - all live phrases on record are included: today's sessions, live-2026-10-16*.tsv and the ai.log traces.
@@ -89,7 +89,7 @@ run looked at a failure and committed before any code changed:
   the wake word first, fillers;
 - ASR-style errors of the kind seen in voice.log / ai.log: "write" for right, "to"/"for" for two/four, "of" for
   off, "brows her", "you tube", "lift", "tree";
-- new starting states: `fe2` (2 of 3 screens shown, kitty, music playing), `fm5` (5 screens, an editor, Spotify),
+- new starting states: `fm5` (5 screens, an editor, Spotify),
   `fh6` (6 screens, Chrome on the main screen with YouTube in a hidden tab, screen 3 hidden with its terminal, a
   windowed video, the room dim), `fcin` (cinema with a fullscreen film, the room off).
 
@@ -123,9 +123,13 @@ omarchyvr-voice audit --state                       # every case, the pipeline a
 omarchyvr-voice audit --state --subset 40 --seed 3  # ~40 cases stratified by tier, under a minute
 omarchyvr-voice audit --state --split dev           # tune on dev only; confirm on --split held and --split fresh
 omarchyvr-voice audit --state --variant lara-off    # an experiment (tests/state/variants/*.toml or a file)
-omarchyvr-voice audit --state --no-ai               # matcher and rules only: checks the cases and the simulator
 omarchyvr-voice audit --state --snapshot            # the live World as JSON, read-only
 ```
+
+There is no rules-only scoring (the old `--no-ai` was removed on 2026-10-18): every audit runs the whole pipeline,
+Lara and the AI. If the model server does not answer (or `voice_ai` is off), the audit stops with a message saying so
+and never scores the rules alone. A cheap check without an AI is a unit test: `cargo test -p omarchyvr-voice statetest`
+loads every goal file and parses every expectation, steps included (that is not a score).
 
 Built-in variants: `baseline`, `lara-off`, `state-prompt` (for the planner), and one per local model:
 `qwen35-0.8b` (port 8091), `qwen35-2b` (8092), `qwen35-4b` (8080, the user's server), `qwen35-9b` (8093) and
@@ -143,11 +147,44 @@ The runner applies the model, Lara and goal model settings. A planner reads the 
 and calls `variant::honour(knob)` for each knob it uses. The report names every knob that was set but never read.
 
 **Output of each run:**
-- one row appended to `analysis/voice-experiments.csv`: variant, git, split, score overall/easy/medium/hard,
+- one row appended to `analysis/voice-experiments.csv`: variant, git, split, score overall/medium/hard (the CSV keeps the retired `easy_retired` column, empty, so old rows line up),
   dev/held, unsafe, simulator gaps, p50/p95 ms, estimated tokens, VRAM;
 - `analysis/voice-state-audit.html`: the leaderboard of all runs, the failure causes, and per case the utterance,
   start state, expectation, what the AI chose, the commands, the end state, the verdict, and what the model was
   given (for failing cases).
+
+## 4b. Steps and in-between states
+
+Start and end are not the whole story. A plan can do step 1 and break at step 2, move an app and move it back,
+run half of a request that was then cancelled, or meet an app or screen that shows up late.
+So the Sim keeps `history`: the world after every write command (reads and `wayvrctl gaze` are not writes).
+
+**Steps.** A goal may say `steps = [["screen 2 hidden"], ["opened terminal on 1"]]`: a list of expectation lists
+(same words as `expect`). Pass rule: there are worlds in the history, in this order (a world may hold several
+steps), where the steps hold one after the other. Other changes do not matter for a step, only the end state
+is checked for "nothing else changed". The report says which step never held: "step 2 of 2 never held: ...".
+
+**Checks on every world on the way** (no goal change needed):
+- Every "stay" expectation (`all stay`, `terminals stay`, `t1 stay`) holds in every world, not only at the end.
+- A `nothing` goal: no world differs from the start. A cancel must mean that nothing ran, even for a moment.
+- No app is placed on a screen that is not there.
+- No app is closed on the way unless the goal closes it (closing and relaunching is unsafe).
+
+**Slow or moving desk** (opt-in, per tier in a goal's `set`; the default is the instant desk):
+- `launch_delay_reads = N`: a launched app shows in `hyprctl -j clients` after N more client reads.
+- `screen_delay_reads = N`: a screen made shown or added shows in `hyprctl -j monitors` after N more reads.
+- `drift = ["focus t2", "close s1", "gaze 3", "open chrome 2"]`: applied once, right after the first read the
+  voice code makes (the desk changes while the AI thinks). Checks that compare with the start use the
+  drifted start, so the drift is not blamed on the voice code. Add `allow` for what the drift changes. Since
+  2026-10-18 (G) the end verdict does the same for apps closed or opened by hand: the unwanted-changes diff starts
+  from the drifted desk (`check_from`), the expectations still read the real start ("s1 closed").
+- `--only a,b,c` picks every case whose id, category or phrase holds any of them (a quick rerun of a failure list).
+
+New failure buckets: "broke mid-way" (the end is right, a check on the way failed) and "step order / step
+missing". The HTML report and the JSON file show `steps_ok` and the mid-way reasons; the leaderboard has three
+more columns (`steps_pass`, `steps_n`, `midway`).
+`--end-only` scores the old way (start and end only), to compare the two scorers on the same code.
+The goals for this are in `tests/state/goals-steps.toml`.
 
 ## 5. Why the old audit said 99%
 
@@ -192,8 +229,30 @@ take the GPU): `pgrep -x monado-service` first, abort when a session starts.
   It wins on fresh (79 against 78) without the target line: worth another look once its prompt is one fixed text.
 - **Lara changes nothing** on these cases (the same 566 pass with it off); it stays on (no loss, a later model may
   use it).
-- **Most of the gain is grammar, not the model**: with `--no-ai` the rules and the matcher alone reach 72%.
+- **Most of the gain was grammar, not the model**: the rules and the matcher alone reached 72% (measured with the since removed `--no-ai`, 2026-10-16).
 - The remaining unsafe cases: "this app" closes the app looked at (the documented rule) where two fresh cases
   expect the focused one; two held cases close a whole workspace after "window" words.
 - Case fixes (not tuning): `hide-others-and-terminals-main` had "all stay" against "terminals on 1"; two live-1818
   goals had phrasings with different end states and were split.
+
+## 7. Long goals (tests/state/goals-long.toml, 2026-10-18)
+
+Medium and hard only, 27 goals (`lg-` ids, cat `long`). Each is one spoken command of 3 to 9 tool calls,
+the way people talk in VR: lists ("terminals on 4, chrome on 2 fullscreen, hide screen 5, volume down"), a whole
+work setup, cleanups ("close the btop windows and put the rest together on 3"), corrections in the middle ("chrome on 2,
+no, on 3"), take-backs ("hide 4, no wait, keep it"), "this" under a drifting gaze. The expected tool calls are in a
+comment above each goal.
+
+New worlds (worlds.toml, end): `ml5` and `ml4` (medium, 4 screens, 5 terminals / btop and htop windows), `hl7` (hard:
+6 screens, 7 terminals, Chrome with 6 tabs, code, Spotify under the gaze on screen 4, screen 3 hidden, Obsidian and a
+terminal off-screen) and `hl6` (hard: screen 5 hidden, a crowded screen 6). Handles are shared across the tiers of a
+goal so one expectation list fits both (t3/t4 btop, t5 htop, s1 Spotify, c1 Chrome).
+
+Twists: slow launch (`launch_delay_reads`), late screens (`screen_delay_reads`), the desk moving meanwhile (`drift`:
+gaze, a closed Spotify). Safety is built in: `count` and `stay` checks catch duplicates and lost apps, the in-between
+checks catch an app closed that was not named, and a hidden screen must keep its apps open.
+
+Registering: `goals-long.toml` is read through the `GOALS` list in `src/statetest.rs` (`("long", include_str!(...))`).
+
+Goals that only had an easy world (`f-type`, `f-reminder` in goals-fresh.toml) got the medium world `fm5`; the easy
+worlds (`e1`, `e1c`, `e3`, `e3c`, `e4`, `fe2`) were deleted. `h6` stays (it is the `base` of `h6b` and `h6c`).

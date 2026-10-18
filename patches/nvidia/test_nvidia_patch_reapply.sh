@@ -339,6 +339,68 @@ cmp -s "$T/u6/nvidia-999.6/$F" "$PRISTINE_FILE" && [ "$(grep -c '^dkms build' "$
 mkv u7 999.7
 NVIDIA_PATCH_STATUS=/proc/none/status expect_rc 0 "unwritable status file is not an error" "$SCRIPT" --allow-untested --src-root "$T/u7"
 
+# 13. per-version patches and "ported" versions (<dir>/<version>/<name> overrides the default set)
+HP=$T/hp
+mkdir -p "$HP/998.1" "$HP/998.3"
+cp "$HERE"/nvidia-*.patch "$SCRIPT" "$HP/"
+HS=$HP/nvidia-patch-reapply.sh
+printf '# test\n998.1\n998.3  # ported\n' >"$T/ported.txt"
+# 998.1: the line the default viewport patch removes differs in this driver (an extra blank); its port has the same change
+sed 's|^\(-    EvoSetViewportPointIn(.*0 /\* y \*/,\) updateState);|\1  updateState);|' "$HERE/nvidia-2h1or-viewport.patch" >"$HP/998.1/nvidia-2h1or-viewport.patch"
+! cmp -s "$HP/998.1/nvidia-2h1or-viewport.patch" "$HERE/nvidia-2h1or-viewport.patch" && ok "ported setup: the port differs from the default patch" || bad "ported setup failed"
+portedtree() { # portedtree NAME VERSION
+	mkv "$1" "$2"
+	sed -i 's|^\(    EvoSetViewportPointIn(.*0 /\* y \*/,\) updateState);|\1  updateState);|' "$T/$1/nvidia-$2/$F"
+}
+export NVIDIA_PATCH_PORTED=$T/ported.txt
+portedtree p1 998.1
+expect_rc 0 "ported version without the opt-in: refused" "$HS" --src-root "$T/p1"
+grep -q "Patches ported to 998.1 exist" "$T/out.txt" && ok "refusal banner mentions the port" || bad "refusal banner without port hint"
+[ "$(st result)" = untested-refused ] && ok "ported version is still untested (needs the opt-in)" || bad "ported version status: $(cat "$NVIDIA_PATCH_STATUS")"
+expect_rc 0 "ported version with the opt-in uses the port" "$HS" --allow-untested --src-root "$T/p1"
+grep -q "using the patches ported to 998.1" "$T/out.txt" && ok "says the port is used" || bad "port not announced"
+grep -q merged_head_sync "$T/p1/nvidia-998.1/$FLIPF" && grep -q mergeHeadSection "$T/p1/nvidia-998.1/$F" && ok "ported: all three patches in" || bad "ported tree incomplete"
+[ "$(st result)" = untested-allowed ] && [ "$(st fuzz)" = 0 ] && [ "$(st port)" = ported ] && ok "status: untested-allowed, fuzz 0, port=ported" || bad "ported status: $(cat "$NVIDIA_PATCH_STATUS")"
+expect_rc 0 "ported tree, second run" "$HS" --allow-untested --src-root "$T/p1"
+grep -q "already patched" "$T/out.txt" && ok "ported: idempotent" || bad "ported second run"
+# the same tree under a version without a port: the default patch does not fit, in any fuzz
+portedtree p2 998.2
+expect_rc 1 "same source, version without a port: default patch conflicts" "$HS" --allow-untested --src-root "$T/p2"
+! grep -q "using the patches ported" "$T/out.txt" && ok "no port used for an unlisted version" || bad "unlisted version used a port"
+# a ported version never takes the relaxed --fuzz=2 retry (the default patch would fit with fuzz 2 here)
+cp "$HERE/nvidia-2h1or-viewport.patch" "$HP/998.3/"
+mkv p3 998.3
+fuzzed "$T/p3/nvidia-998.3"
+expect_rc 1 "ported version with a changed context line: conflict, no fuzz" "$HS" --allow-untested --src-root "$T/p3"
+! grep -q "trying --fuzz=2" "$T/out.txt" && [ "$(st result)" = failed ] && ok "ported: no fuzz retry, status failed" || bad "ported version took the fuzz path: $(cat "$T/out.txt")"
+mkv p4 998.4
+fuzzed "$T/p4/nvidia-998.4"
+expect_rc 0 "unlisted version, same change: fuzz 2 still available" "$HS" --allow-untested --src-root "$T/p4"
+[ "$(st fuzz)" = 2 ] && ok "unlisted version still uses fuzz 2" || bad "unlisted fuzz"
+# the shipped list and directory agree
+unset NVIDIA_PATCH_PORTED
+for v in $(sed 's/#.*//' "$HERE/ported-versions.txt"); do
+	for n in nvidia-2h1or-viewport.patch nvidia-2h1or-flip-fix.patch nvidia-evo-makeroom-bounded-wait.patch; do
+		[ -f "$HERE/$v/$n" ] && ok "ported $v ships $n" || bad "ported $v lacks $n"
+	done
+	! grep -qx "$v" <(sed 's/#.*//; s/[[:space:]]//g' "$HERE/tested-versions.txt") && ok "ported $v is not in tested-versions.txt (no hardware test yet)" || bad "ported $v is listed as tested"
+done
+
+# 13b. the real 615.78.08 source (the stock dkms tree, e.g. /usr/src/nvidia-615.78.08 or an extracted package) when given
+if [ -n "${NVIDIA_615_DIR:-}" ] && [ -f "$NVIDIA_615_DIR/$F" ]; then
+	mkdir -p "$T/r615"
+	cp -a "$NVIDIA_615_DIR" "$T/r615/nvidia-615.78.08"
+	expect_rc 0 "615.78.08 without the opt-in: refused (not hardware-tested)" "$SCRIPT" --src-root "$T/r615"
+	expect_rc 0 "615.78.08 with the opt-in: the port applies" "$SCRIPT" --allow-untested --src-root "$T/r615"
+	[ "$(st result)" = untested-allowed ] && [ "$(st fuzz)" = 0 ] && [ "$(st port)" = ported ] && ok "615.78.08: fuzz 0, port=ported" || bad "615 status: $(cat "$NVIDIA_PATCH_STATUS")"
+	grep -q merged_head_sync "$T/r615/nvidia-615.78.08/$FLIPF" && grep -q mergeHeadSection "$T/r615/nvidia-615.78.08/$F" && ok "615.78.08: merged_head_sync + viewport in" || bad "615 patches incomplete"
+	for p in "$HERE/615.78.08"/*.patch; do
+		patch -R -p1 --dry-run --fuzz=0 -s -d "$T/r615/nvidia-615.78.08" -i "$p" >/dev/null 2>&1 && ok "615.78.08: $(basename "$p") reverses cleanly with --fuzz=0" || bad "615 $(basename "$p") does not reverse"
+	done
+else
+	echo "note: NVIDIA_615_DIR not set, the real 615.78.08 source test is skipped"
+fi
+
 echo
 [ "$fails" = 0 ] && echo "all checks passed" || echo "$fails check(s) FAILED"
 exit $((fails > 0))

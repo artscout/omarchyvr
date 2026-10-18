@@ -36,8 +36,15 @@
 #   --allow-untested  patch a driver that is not in tested-versions.txt (also allow_untested=1 in the conf file)
 #   --version V   only /usr/src/nvidia-V (default: every /usr/src/nvidia-<digits> tree)
 #   --src-root D  directory holding the nvidia-<ver> trees (default /usr/src, or $NVIDIA_SRC_ROOT)
-#   --patch FILE  patch to use, repeatable, applied in the order given (default: the three above, next to this script)
-# Environment (tests): NVIDIA_PATCH_TESTED (tested list), NVIDIA_PATCH_CONF (conf file), NVIDIA_PATCH_STATUS (status file).
+#   --patch FILE  patch to use, repeatable, applied in the order given (default: the three above, see "Per-version
+#                 patches"; with --patch the given files are used for every tree)
+# Per-version patches: for the driver version V each of the three patches is taken from <this dir>/V/<name> when that
+# file exists, else from <this dir>/<name> (the default set, written for the tested version). A version listed in
+# ported-versions.txt has such a V/ directory: its patches were ported to that source, apply with --fuzz=0 and were
+# compile-checked, but are NOT hardware-tested. It is still "untested" (needs the opt-in), but the opt-in uses the clean
+# port and never the relaxed --fuzz=2 retry; the status file gets a line port=ported.
+# Environment (tests): NVIDIA_PATCH_TESTED (tested list), NVIDIA_PATCH_PORTED (ported list), NVIDIA_PATCH_CONF (conf file),
+# NVIDIA_PATCH_STATUS (status file).
 # Exit codes: 0 ok (already patched or patched now), 1 error or conflict, 2 --check found an unpatched tree.
 set -euo pipefail
 
@@ -45,6 +52,9 @@ HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 SRC_ROOT=${NVIDIA_SRC_ROOT:-/usr/src}
 PATCH_FILES=()
 TESTED_FILE=${NVIDIA_PATCH_TESTED:-$HERE/tested-versions.txt}
+PORTED_FILE=${NVIDIA_PATCH_PORTED:-$HERE/ported-versions.txt}
+DEFAULT_PATCH_NAMES=(nvidia-2h1or-viewport.patch nvidia-2h1or-flip-fix.patch nvidia-evo-makeroom-bounded-wait.patch)
+EXPLICIT_PATCHES=0
 CONF_FILE=${NVIDIA_PATCH_CONF:-/etc/omarchyvr/nvidia.conf}
 STATUS_FILE=${NVIDIA_PATCH_STATUS:-/var/lib/omarchyvr/nvidia-patch-status}
 ALLOW_UNTESTED=0 FUZZ=0
@@ -69,14 +79,14 @@ while [ $# -gt 0 ]; do
 	--force-build) FORCE_BUILD=1 ;;
 	--version) ONLY_VERSION=${2:?--version needs a value}; shift ;;
 	--src-root) SRC_ROOT=${2:?--src-root needs a value}; shift ;;
-	--patch) PATCH_FILES+=("${2:?--patch needs a value}"); shift ;;
+	--patch) PATCH_FILES+=("${2:?--patch needs a value}"); EXPLICIT_PATCHES=1; shift ;;
 	-h | --help) awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "${BASH_SOURCE[0]}"; exit 0 ;;
 	*) echo "unknown option $1 (try --help)" >&2; exit 1 ;;
 	esac
 	shift
 done
 if [ ${#PATCH_FILES[@]} -eq 0 ]; then
-	PATCH_FILES=("$HERE/nvidia-2h1or-viewport.patch" "$HERE/nvidia-2h1or-flip-fix.patch" "$HERE/nvidia-evo-makeroom-bounded-wait.patch")
+	PATCH_FILES=("${DEFAULT_PATCH_NAMES[@]/#/$HERE/}")
 fi
 
 # the opt-in saved by the app (parsed, never sourced)
@@ -93,16 +103,35 @@ is_tested() {
 	fi
 }
 
+# is_ported VERSION: listed in ported-versions.txt (patches ported + compile-checked, not hardware-tested)
+is_ported() {
+	[ -r "$PORTED_FILE" ] && sed 's/#.*//; s/[[:space:]]//g' "$PORTED_FILE" | grep -Fxq -- "$1"
+}
+
+# select_patches VERSION: PATCH_FILES for that driver version (see "Per-version patches"); --patch files win
+select_patches() {
+	local n f
+	[ "$EXPLICIT_PATCHES" = 1 ] && return 0
+	PATCH_FILES=()
+	for n in "${DEFAULT_PATCH_NAMES[@]}"; do
+		f=$HERE/$n
+		[ -f "$HERE/$1/$n" ] && f=$HERE/$1/$n
+		[ -f "$f" ] || { echo "patch file $f not found" >&2; return 1; }
+		PATCH_FILES+=("$(readlink -f -- "$f")")
+	done
+}
+
 # write_status VERSION RESULT FUZZ: what the app shows (tested | untested-allowed | untested-refused | failed)
 write_status() {
 	[ "$CHECK" = 1 ] && return 0
-	local old_fuzz=""
+	local old_fuzz="" port=""
+	is_ported "$1" && port="port=ported"$'\n'
 	if [ "$3" = - ] && [ -r "$STATUS_FILE" ] && grep -qx "driver=$1" "$STATUS_FILE"; then
 		old_fuzz=$(sed -n 's/^fuzz=//p' "$STATUS_FILE" | head -n1) # nothing applied this run: keep what the last patch run used
 	fi
 	{
 		mkdir -p "$(dirname "$STATUS_FILE")" &&
-			printf 'driver=%s\nresult=%s\nfuzz=%s\ntime=%s\n' "$1" "$2" "${old_fuzz:-$3}" "$(date -u +%FT%TZ)" >"$STATUS_FILE.new" &&
+			printf 'driver=%s\nresult=%s\nfuzz=%s\ntime=%s\n%s' "$1" "$2" "${old_fuzz:-$3}" "$(date -u +%FT%TZ)" "$port" >"$STATUS_FILE.new" &&
 			mv -f "$STATUS_FILE.new" "$STATUS_FILE" && chmod 644 "$STATUS_FILE"
 	} 2>/dev/null || true
 }
@@ -134,6 +163,7 @@ refuse_untested() { # refuse_untested DIR VERSION
 		echo "# The patches were NOT applied; the stock nvidia module is built and the desktop works."
 		echo "# The Dream Air headset needs the patches: turn on 'Allow the patch on untested NVIDIA drivers'"
 		echo "# in the omarchyvr app (Onboarding > System setup), then press Apply. Tested: $(tested_list)."
+		is_ported "$2" && echo "# Patches ported to $2 exist (compile-checked, not hardware-tested): the opt-in applies those."
 		echo "################################################################################"
 	} >&2
 	if [ "$HOOK" = 1 ] && [ -z "${NVIDIA_PATCH_NO_SYSLOG:-}" ] && command -v logger >/dev/null 2>&1; then
@@ -147,6 +177,7 @@ warn_untested() { # warn_untested DIR VERSION
 		echo "# You allowed patching untested drivers, so they are applied anyway. The patched module may fail to"
 		echo "# build, or the headset picture may break. If the build fails, the stock module is installed instead"
 		echo "# (--fallback) and the desktop keeps working."
+		is_ported "$2" && echo "# $2 has ported patches (compile-checked, NOT hardware-tested): see docs/NVIDIA-615.md for the test plan."
 		echo "################################################################################"
 	} >&2
 }
@@ -325,9 +356,14 @@ for d in "${trees[@]}"; do
 	fi
 	okres=tested
 	[ $UNTESTED = 1 ] && okres=untested-allowed
+	select_patches "$ver" || { rc=1; continue; }
+	PORTED=0
+	is_ported "$ver" && [ -f "$HERE/$ver/${DEFAULT_PATCH_NAMES[0]}" ] && PORTED=1
+	[ $PORTED = 1 ] && say "$d: using the patches ported to $ver ($HERE/$ver/): they were compile-checked, NOT tested on hardware"
 	plan_rc=0
 	plan_tree "$d" || plan_rc=$?
-	if [ $plan_rc = 1 ] && [ $UNTESTED = 1 ]; then
+	# a ported version applies with --fuzz=0 or not at all: a relaxed match there means the source changed again
+	if [ $plan_rc = 1 ] && [ $UNTESTED = 1 ] && [ $PORTED = 0 ]; then
 		say "$d: the patches do not apply with --fuzz=0 ($PLAN_ERR); trying --fuzz=2 (untested driver)"
 		FUZZ=2
 		plan_rc=0

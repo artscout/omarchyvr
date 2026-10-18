@@ -7,7 +7,8 @@
 //! * **off** (`--no-eye`, or no eye build / no calibration): no `PIMAX_EYE`.
 //!
 //! In EVERY mode `conf.d/55-eye.yaml` is written, and it is the only file that sets WayVR's gaze input keys
-//! (`gaze_pointer`, `gaze_target`, `gaze_over_controllers`, `gaze_dwell_ms`). It sorts after the old hand-made
+//! (`gaze_pointer`, `gaze_target`, `gaze_over_controllers`, `gaze_dwell_ms`, `gaze_refine`) and the learning keys
+//! (`gaze_learn`, `gaze_learn_key`). It sorts after the old hand-made
 //! `20-gaze.yaml` and the app's `50-pimax-app.yaml`, so nothing older can turn gaze input on. The gaze is only a visual
 //! point (`gaze_laser`, the dot) unless the ONE switch `gaze_mouse=on` in `eye.conf` is set (app: Tracking > Eyes >
 //! "Eyes as a mouse", default off; user decision 2026-10-17).
@@ -104,27 +105,44 @@ pub fn parse(
     (mode, note)
 }
 
+/// The calibration fingerprint WayVR files its gaze lessons under (`gaze_learn_key`): the first 12 hex digits of a
+/// 64-bit FNV-1a hash of the calibration file's bytes; "" when there is no file. A new calibration gives a new key,
+/// so lessons learned with the old one are discarded.
+pub fn calibration_key(path: &Path) -> String {
+    let Ok(bytes) = std::fs::read(path) else { return String::new() };
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in bytes {
+        h ^= u64::from(b);
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("{h:016x}")[..12].to_string()
+}
+
 /// The conf.d YAML for a mode. Always a file: every gaze input key is set here, so an older conf.d file
 /// (`20-gaze.yaml`, `50-pimax-app.yaml`) cannot turn gaze input on. Gaze input (`gaze_pointer`: the eyes move the
 /// pointer and a trigger clicks where you look; `gaze_target`: `wayvrctl gaze`, which voice "this" reads) only with
-/// eye tracking on AND `gaze_mouse=on`; never a dwell click.
-pub fn conf_yaml(mode: EyeMode, set: &EyeSettings) -> String {
+/// eye tracking on AND `gaze_mouse=on`; never a dwell click. `gaze_learn` (lessons from clicks; never input) only
+/// with eye tracking on and `learn=on`; `gaze_refine` (hold-to-refine) is part of "Eyes as a mouse": same as the
+/// mouse. `cal_key`: see [`calibration_key`].
+pub fn conf_yaml(mode: EyeMode, set: &EyeSettings, cal_key: &str) -> String {
     let on = mode != EyeMode::Off;
     let mouse = on && set.mouse;
+    let learn = on && set.learn;
     format!(
         "# written by `omarchyvr desk start` from ~/.config/omarchyvr/eye.conf (the Pimax app, Tracking > Eyes); do not edit.\n\
          # The gaze is only a visual point unless \"Eyes as a mouse\" (gaze_mouse=on) is set.\n\
          gaze_pointer: {mouse}\ngaze_target: {mouse}\ngaze_over_controllers: {mouse}\ngaze_dwell_ms: 0\n\
-         gaze_laser: {}\ngaze_laser_style: dot\ngaze_laser_alpha: 0.35\ngaze_fixation_ms: 200\n",
+         gaze_laser: {}\ngaze_laser_style: dot\ngaze_laser_alpha: 0.35\ngaze_fixation_ms: 200\n\
+         gaze_learn: {learn}\ngaze_refine: {mouse}\ngaze_learn_key: \"{cal_key}\"\n",
         on && set.dot
     )
 }
 
 /// Write `conf.d/55-eye.yaml` (every mode, see [`conf_yaml`]). Returns a note for the start output (None when off).
-pub fn apply_conf(wayvr_home: &Path, mode: EyeMode, set: &EyeSettings) -> io::Result<Option<String>> {
+pub fn apply_conf(wayvr_home: &Path, mode: EyeMode, set: &EyeSettings, cal_key: &str) -> io::Result<Option<String>> {
     let conf_d = wayvr_home.join("config/wayvr/conf.d");
     let f = conf_d.join(CONF_NAME);
-    let y = conf_yaml(mode, set);
+    let y = conf_yaml(mode, set, cal_key);
     std::fs::create_dir_all(&conf_d)?;
     let tmp = conf_d.join(".55-eye.yaml.tmp");
     std::fs::write(&tmp, &y)?;
@@ -190,17 +208,24 @@ mod tests {
     fn conf_files_have_unique_keys_and_no_gaze_input_by_default() {
         // the user's rule (2026-10-17): by default the gaze is only a visual point, in every mode, --eye included
         for mode in [EyeMode::Silent, EyeMode::Forced, EyeMode::Off] {
-            let s = conf_yaml(mode, &EyeSettings::default());
+            let s = conf_yaml(mode, &EyeSettings::default(), "");
             for k in ["gaze_pointer: false\n", "gaze_target: false\n", "gaze_over_controllers: false\n", "gaze_dwell_ms: 0\n"] {
                 assert!(s.contains(k), "{mode:?} lacks {k}: {s}");
             }
             assert_eq!(s.contains("gaze_laser: true\n"), mode != EyeMode::Off, "{mode:?}: the dot only with eye tracking on");
+            assert!(s.contains("gaze_refine: false\n"), "{mode:?}: no refine without Eyes as a mouse");
+            assert_eq!(s.contains("gaze_learn: true\n"), mode != EyeMode::Off, "{mode:?}: learning only with eye tracking on");
         }
         // the one explicit switch
-        let m = conf_yaml(EyeMode::Silent, &EyeSettings { dot: false, mouse: true, ..EyeSettings::default() });
+        let m = conf_yaml(EyeMode::Silent, &EyeSettings { dot: false, mouse: true, ..EyeSettings::default() }, "abc");
+        assert!(m.contains("gaze_refine: true\n") && m.contains("gaze_learn_key: \"abc\"\n"));
         assert!(m.contains("gaze_pointer: true\n") && m.contains("gaze_target: true\n") && m.contains("gaze_laser: false\n") && m.contains("gaze_dwell_ms: 0\n"));
-        assert!(conf_yaml(EyeMode::Off, &EyeSettings { mouse: true, ..EyeSettings::default() }).contains("gaze_pointer: false\n"), "no eye tracking, no gaze mouse");
-        for y in [conf_yaml(EyeMode::Silent, &EyeSettings::default()), m] {
+        assert!(conf_yaml(EyeMode::Off, &EyeSettings { mouse: true, ..EyeSettings::default() }, "").contains("gaze_pointer: false\n"), "no eye tracking, no gaze mouse");
+        let off = conf_yaml(EyeMode::Off, &EyeSettings { mouse: true, ..EyeSettings::default() }, "k");
+        assert!(off.contains("gaze_refine: false\n") && off.contains("gaze_learn: false\n"));
+        let nolearn = conf_yaml(EyeMode::Silent, &EyeSettings { learn: false, ..EyeSettings::default() }, "");
+        assert!(nolearn.contains("gaze_learn: false\n") && nolearn.contains("gaze_pointer: false\n"), "learn off is independent");
+        for y in [conf_yaml(EyeMode::Silent, &EyeSettings::default(), ""), m] {
             let keys: Vec<&str> = y.lines().filter(|l| !l.starts_with('#')).map(|l| l.split(':').next().unwrap()).collect();
             let mut u = keys.clone();
             u.sort();
@@ -214,11 +239,11 @@ mod tests {
     fn apply_writes_and_removes() {
         let h = crate::vr::test_dir("eye-desk");
         let f = h.join("config/wayvr/conf.d").join(CONF_NAME);
-        assert!(apply_conf(&h, EyeMode::Silent, &EyeSettings::default()).unwrap().unwrap().contains("visual only"));
-        assert_eq!(std::fs::read_to_string(&f).unwrap(), conf_yaml(EyeMode::Silent, &EyeSettings::default()));
+        assert!(apply_conf(&h, EyeMode::Silent, &EyeSettings::default(), "").unwrap().unwrap().contains("visual only"));
+        assert_eq!(std::fs::read_to_string(&f).unwrap(), conf_yaml(EyeMode::Silent, &EyeSettings::default(), ""));
         // an old hand-made 20-gaze.yaml (gaze_pointer: true) sorts before 55-eye.yaml, which is written even when off
         std::fs::write(h.join("config/wayvr/conf.d/20-gaze.yaml"), "gaze_pointer: true\ngaze_over_controllers: true\n").unwrap();
-        assert!(apply_conf(&h, EyeMode::Off, &EyeSettings::default()).unwrap().is_none());
+        assert!(apply_conf(&h, EyeMode::Off, &EyeSettings::default(), "").unwrap().is_none());
         assert!(std::fs::read_to_string(&f).unwrap().contains("gaze_pointer: false\n"));
         assert!(CONF_NAME > "20-gaze.yaml" && CONF_NAME > super::super::wayvr_conf::CONF_NAME, "sorts last of the gaze files");
         let _ = std::fs::remove_dir_all(h);
@@ -238,6 +263,20 @@ mod tests {
         // no eye build under the fake home: off, with a reason
         let o = crate::vr::desk::parse_desk(&mut Args(Vec::new()), &env).unwrap();
         assert!(o.eye_mode == EyeMode::Off && o.eye_note.is_some());
+    }
+
+    #[test]
+    fn calibration_key_follows_the_file_contents() {
+        let d = crate::vr::test_dir("eye-key");
+        let f = d.join("eye-calibration.toml");
+        assert_eq!(calibration_key(&f), "", "no file, no key");
+        std::fs::write(&f, "a = 1\n").unwrap();
+        let k1 = calibration_key(&f);
+        assert_eq!(k1.len(), 12);
+        assert_eq!(k1, calibration_key(&f), "stable");
+        std::fs::write(&f, "a = 2\n").unwrap();
+        assert_ne!(k1, calibration_key(&f), "a new calibration, a new key");
+        let _ = std::fs::remove_dir_all(d);
     }
 
     #[test]

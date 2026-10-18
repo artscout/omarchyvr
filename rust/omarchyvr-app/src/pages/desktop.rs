@@ -17,19 +17,7 @@ pub fn show(ui: &mut Ui, app: &mut PimaxApp) {
     let dev = app.core.state.dev_mode;
     section(ui, "Desktop", None, |ui| {
         switch_row(ui, &mut app.core.toggles.passthrough, "Passthrough", Some("The room behind the screens (the headset's camera view)."), ed && (caps.no_passthrough || !t.passthrough));
-        const PRESETS: [(Preset, &str); 5] = [(Preset::None, "None"), (Preset::Cinema, "Cinema"), (Preset::CinemaHuge, "Huge cinema"), (Preset::Work, "Work"), (Preset::Assistant, "Assistant")];
-        let names: Vec<&str> = PRESETS.iter().map(|x| x.1).collect();
-        let cur = PRESETS.iter().position(|x| x.0 == app.core.toggles.preset).unwrap_or(0);
-        if let Some(i) = seg_row(
-            ui,
-            "Preset",
-            Some("None: the screens as you placed them. Cinema: curved screens, passthrough dimmed. Huge cinema: one giant curved screen filling about 68 degrees, the room black, captions off (say \"Max, huge cinema\"). Work: flat, sharper screens. Assistant: voice captions on. Applies at the next desk start."),
-            &names,
-            cur,
-            ed && caps.preset,
-        ) {
-            app.core.toggles.preset = PRESETS[i].0;
-        }
+        layout_picker(ui, app, ed, caps.preset);
         wayvr::screen_numbers(ui, app);
         home::subtitles_row(ui, app);
     });
@@ -53,6 +41,36 @@ pub fn show(ui: &mut Ui, app: &mut PimaxApp) {
             }
         });
     });
+}
+
+/// The "Layout" picker: six fixed, locked screen layouts, applied live while Work runs, plus Recenter screens.
+fn layout_picker(ui: &mut Ui, app: &mut PimaxApp, ed: bool, supported: bool) {
+    let running = app.core.live.alive("wayvr");
+    let names: Vec<&str> = Preset::ALL.iter().map(|p| p.label()).collect();
+    let cur = Preset::ALL.iter().position(|p| *p == app.core.toggles.preset).unwrap_or(0);
+    let help = "Work 4: screens 1 main, 2 left, 3 right, 4 up (the default). Focus 3: 1, 2, 3 close together. Work 5: 1, 2, 3 plus 5 up-left and 6 up-right. Work 6: all six. Cinema: one big curved screen, the room dimmed. Huge cinema: one 11 m screen, the room black. Screens never move by themselves: no grabbing, no auto-reset. Recenter brings the whole layout in front of you.";
+    // saved with the other settings; while Work runs it is also applied now, so it stays usable then
+    let can = supported && !app.core.layout_busy() && (ed || running);
+    if let Some(i) = seg_row(ui, "Layout", Some(help), &names, cur, can) {
+        app.core.layout_choose(Preset::ALL[i], running);
+    }
+    ui.horizontal_wrapped(|ui| {
+        let ok = running && !app.core.layout_busy();
+        let r = widgets::ibutton(ui, icon::CROSSHAIR, "Recenter screens", ok).on_hover_text("The whole layout in front of you, same shape (the same as \"Max, recenter\"). Only while Work runs.");
+        if r.clicked() {
+            app.core.layout_recenter();
+        }
+        if app.core.layout_busy() {
+            widgets::spinner(ui);
+        }
+    });
+    let p = theme::pal(ui);
+    let (text, color) = match &app.core.layout_result {
+        Some((false, e)) => (e.clone(), p.warn_text),
+        _ if !supported => ("The installed launcher has no layouts: install the current build.".to_string(), p.warn_text),
+        _ => (omarchyvr_gui_core::screens::layout_status(app.core.toggles.preset, running), p.dim),
+    };
+    ui.label(egui::RichText::new(text).size(12.0).color(color));
 }
 
 /// "Web pages in VR": a page on a VR screen of the desk, and what the browser can do (docs/research/webxr.md).

@@ -1,0 +1,6 @@
+# Lara option (b), the default before 2026-10-18 G: a system prompt of only Lara's categories (a different prompt per
+# category set, so the one llama-server slot's cache misses). The default is option (a), the full cached prompt.
+name = "lara-subsets"
+notes = "Lara: category subsets of the prompt"
+[router]
+prompt = "subset"

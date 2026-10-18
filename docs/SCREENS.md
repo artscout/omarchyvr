@@ -11,6 +11,46 @@ In Work mode (the WayVR desk), you can have up to **six VR screens** (user decis
 ```
 The screens are filled in this order: left, right, up, up-left, up-right.
 
+## Locked layouts (user decisions 2026-10-18)
+In Work the VR screens are **totally unmovable**: no hand or controller grab-move or resize, no WayVR auto-reset (not
+even the start-up "out of view for more than 2 s" reset, lesson 76), and no voice nudge, closer, farther, bigger,
+smaller, scale, place or reset. Apps still move between screens. The screens come in **fixed layouts**, switched by
+voice or in the app (Desktop > Layout):
+
+| layout | say | screens shown | width x distance | curvature | room |
+|---|---|---|---|---|---|
+| **Work 4** (default, `work-4`) | "work four", "work mode" | 1 main, 2 left, 3 right, 4 up | 1.6 m at 2.0 m | flat | normal |
+| Focus 3 (`focus-3`) | "focus mode" | 1, 2, 3 close | 1.2 m at 1.3 m | flat | normal |
+| Work 5 (`work-5`) | "five screens layout" | 1, 2, 3, 5 up-left, 6 up-right | 1.6 m at 2.0 m | flat | normal |
+| Work 6 (`work-6`) | "six screens layout" | all six | 1.6 m at 2.0 m | flat | normal |
+| Cinema (`cinema`) | "cinema" | 1 | 3.2 m at 3.5 m | 0.35 | dimmed |
+| Huge cinema (`cinema-huge`) | "huge cinema" | 1 | 11 m at 8 m | 0.2 | black (docs/CINEMA.md) |
+
+- **One table**: `Preset::layout` in `rust/omarchyvr-tools/src/vr/preset.rs`. It is sent to WayVR as
+  `wayvrctl desk-screens --place --width W --distance D --curvature C` and WayVR's `default_layout` puts the screens
+  edge to edge (1.5 deg apart, the side screens turned toward you, the upper row just above the lower one; see below).
+- **Screens shown** = exactly the layout's screens, pinned even when empty (`ShowState::for_preset`); the focused
+  screen still shows. `desk start --screens` is raised to the outputs a layout needs (work-5 needs 6).
+- **Old names** still parse (CLI, app, auto mode): `work-3` = focus-3, `work-1` = cinema, `assistant` = work-6
+  (`--preset assistant` also turns the voice captions on), `work` = work-4.
+- **The lock** is WayVR's `desk_locked` (our fork, default on; every preset's `conf.d/60-preset.yaml` writes
+  `desk_locked: true`): desk screens (desktop captures) refuse grab, two-hand resize, edit-mode resize, `ResetOverlay`,
+  `screen-nudge` and `screen-place` (one log line each), and are never auto-reset. Voice: those commands answer
+  **"The screens are locked. Say a layout name, or recenter."** and are not offered to the AI (docs/VOICE.md).
+- **The anchor.** WayVR builds the layout around a stored anchor (the head's yaw and position when it was set), never
+  around where the head looks now: `<wayvr home>/config/wayvr/desk-anchor.conf`, with the size of the last placing
+  call. The next Work start puts the layout where it was. First ever start, or a stored anchor more than 1.5 m
+  (sideways) or 1 m (height) from the head at the first placement of a session: the anchor is taken from the head
+  then, once. While the runtime has not reported a head pose yet (the pose is still exactly identity), nothing is
+  decided or saved: the screens are placed provisionally (around the stored anchor, else straight ahead of the
+  origin) and the whole layout is placed again at the first real head pose, which then sets the anchor.
+- **Recenter only when asked**: "Max, recenter", the app's **Recenter screens**, `omarchyvr desk recenter`
+  (`wayvrctl desk-recenter`; Reset screens / double-click B do the same while locked) set the anchor from the head
+  now (yaw only, level) and place the whole layout again: same shape, same height relation, in front of you.
+  Nothing moves on its own.
+- A layout switch never moves the layout to where you look: it is placed around the same anchor.
+- Unlock (not in the app): `desk_locked: false` in a later conf.d file; then the old rules below apply again.
+
 ## Screen numbers (single source of truth)
 Every VR screen has a fixed number. It is the same everywhere: the number badge WayVR draws on each screen,
 `omarchyvr desk screens show N` (the first N screens in this order), and voice ("screen 3"):
@@ -117,29 +157,27 @@ Under the selector, a readiness line shows the state of the screens:
    `screens`). It follows Hyprland's event socket.
    - A VR screen is **shown while its workspace has an app, or while it has the focus**. Otherwise it is hidden, but it
      keeps running.
-   - Presets set a limit, kept in `$XDG_RUNTIME_DIR/omarchyvr-screens.state`:
-
-     | preset | screens shown |
-     |---|---|
-     | cinema, cinema-huge, work-1 | the main screen only |
-     | work-3 | main + left + right (shown even when empty) |
-     | assistant, none | every screen, on demand |
-
+   - Layouts set a limit and pin their own screens, kept in `$XDG_RUNTIME_DIR/omarchyvr-screens.state` (pinned
+     screens come first, then screens with apps, within the limit): work-4 1-4, focus-3 1-3, work-5 1, 2, 3, 5, 6,
+     work-6 all, cinema and cinema-huge the main screen only (see "Locked layouts").
    - The **focused** screen is always shown, even over the limit: an app that opens there, or "go to the left
      screen", never lands on a screen you cannot see.
    - Voice screen commands lift the limit.
    - If the watcher fails, the screens just stay as they are, and omarchyvrd restarts it.
-5. **Modes never close apps** (user report 2026-10-15). A mode (cinema, work-3, work-1, assistant) only changes how
+5. **Modes never close apps** (user report 2026-10-15). A mode (a layout: work-4, focus-3, work-5, work-6, cinema, cinema-huge) only changes how
    many screens show and where they are. It reads Hyprland and tells WayVR which screens to show; it never closes,
    kills or moves an app. A screen it hides keeps its apps, and the toast names them: "Cinema mode. Still open on
    hidden screens: left (google-chrome), right (pimax). Say "go to the left screen"". The next mode with more
-   screens (work-3, assistant) shows them again. `--hide-others` only hides other desktop captures (a mirrored
+   screens (work-4, work-6) shows them again. `--hide-others` only hides other desktop captures (a mirrored
    output), never a WayVR app window or panel.
    - What happened in the report: "put everything in its own window" had put Chrome on the left screen and the
      Pimax app on the right one; "put everything in cinema mode" then hid both screens (cinema shows one), with no
      word about it, so the apps looked closed. Hyprland still had all three apps.
 
 ## The default layout and screen placement (user decisions 2026-10-17)
+
+> Since 2026-10-18 the screens are locked ("Locked layouts" above): the placement math below still builds every
+> layout, around the stored anchor; placing single screens by voice and Reset screens are off while locked.
 
 "Set a default position for the screens, 6 in total, that NEVER overlap each other from one perspective." And: a
 command like "move this left" means "put THIS screen to the LEFT of the other one", seen from where the head is NOW;
@@ -204,8 +242,8 @@ Voice (omarchyvr-voice `windows.rs`, `wayvrctl screen-place NAME left|right|up|d
 
 | say | does |
 |---|---|
-| move this left / right / up / down | the screen goes to the left of its left neighbour (one place over), and so on |
-| put screen 2 above screen 1, move screen 5 to the left of screen 4, put screen 3 next to screen 2 | beside that screen ("next to" = right of it) |
+| move this left / right / up / down | the screen goes to the left of its left neighbour (one place over), and so on (locked: refused) |
+| put screen 2 above screen 1, move screen 5 to the left of screen 4, put screen 3 next to screen 2 | beside that screen ("next to" = right of it) (locked: refused) |
 | bring this screen here | in front of you |
 | move it in front of me | all screens: Reset screens |
 
@@ -275,7 +313,7 @@ the voice command):
 - Not touched: hidden workspaces, pinned windows, a real fullscreen (a video), and helper dialogs (file pickers,
   password prompts: classes `xdg-desktop-portal*`, `polkit*`, `pinentry`, `gcr-prompter`, `zenity`, ...).
 - At the watcher's start nothing moves: it notes where the apps are.
-- In cinema or work-1, an app sent to its own screen lifts the screen limit, so it does not vanish.
+- In cinema, an app sent to its own screen lifts the screen limit, so it does not vanish.
 - "Put everything back together" turns the sorting off (`sort = off` in the state file): the kinds share the main
   screen on purpose. "Put everything in its own window" turns it on again. A mode switch keeps the setting.
 - Hyprland 0.56 dispatchers used: `hl.dsp.focus({ window = "address:..." })` then
@@ -294,10 +332,10 @@ The words follow the user's decisions of 2026-10-15 (docs/VOICE-DECISIONS.md):
 | say | does |
 |---|---|
 | new window / open a new window | focuses the **next free screen**, in the order left, right, up, up-left, up-right (the first whose workspace has no app), and shows it. If every screen has apps, you get an empty workspace on this screen. |
-| move this left / right / up / down, move the screen left | places the **VR screen itself** (the focused one; the one you look at only with "Eyes as a mouse" on) beside its neighbour on that side, as seen from your head now; the others make room so none overlaps (`wayvrctl screen-place`, see "The default layout and screen placement") |
-| put screen 2 above screen 1, move screen 5 to the left of screen 4, bring this screen here | the same placement beside the named screen, or in front of you |
-| bring it closer / push it away | the screen a quarter of its distance closer or farther (0.4 to 8 m) |
-| zoom in / zoom out, make the screen bigger / smaller | the screen 25 % bigger or smaller, in place |
+| move this left / right / up / down, move the screen left | places the **VR screen itself** (the focused one; the one you look at only with "Eyes as a mouse" on) beside its neighbour on that side, as seen from your head now; the others make room so none overlaps (`wayvrctl screen-place`, see "The default layout and screen placement") **Locked (default): answers "The screens are locked. Say a layout name, or recenter."** |
+| put screen 2 above screen 1, move screen 5 to the left of screen 4, bring this screen here | the same placement beside the named screen, or in front of you **Locked (default): answers "The screens are locked. Say a layout name, or recenter."** |
+| bring it closer / push it away | the screen a quarter of its distance closer or farther (0.4 to 8 m) **Locked (default): answers "The screens are locked. Say a layout name, or recenter."** |
+| zoom in / zoom out, make the screen bigger / smaller | the screen 25 % bigger or smaller, in place **Locked (default): answers "The screens are locked. Say a layout name, or recenter."** |
 | send this to the left screen, move this app to the right screen, send this to the main screen | sends the **focused app** to the screen on that side of its own screen. From the left screen, "right" is the main one. From the up screen, "down" is the main one. |
 | go to the left screen / switch to the right screen / focus the main (middle) screen | focuses that screen |
 | put everything in its own window / organize / separate everything | sorts the apps of the shown screens **by kind**: terminals together (tiled splits), the browser, the Pimax app, and each other app class on its own. The kind of the app you are using stays where it is; the other kinds go to the left, right and up screens. When the screens run out, a kind stays where it is. With one screen, a kind goes to the next unused workspace. Hidden workspaces are not touched. Turns the watcher's sorting on. |
@@ -309,7 +347,7 @@ The words follow the user's decisions of 2026-10-15 (docs/VOICE-DECISIONS.md):
 | save this layout (as coding), restore the (coding) layout | remembers which app is on which screen (`~/.local/state/omarchyvr/voice-layouts.json`); restore moves the open apps back, nothing opens or closes |
 | list windows | the VR screens with their apps: "4 screens \| 1 Main: foot, firefox \| 2 Left: empty \| 3 Right: code \| 4 Up: empty \| not shown: 3 (steam)" |
 | close window | closes the whole screen's apps. It asks "say yes" only when there are 2 or more apps; with one app it closes at once ("close this" = one app, at once). |
-| close the other windows / only this window / one screen | **shows one screen only** (the work-1 preset). It never closes workspaces or apps. |
+| close the other windows / only this window / one screen | **shows one screen only** (`desk screens hide others`; the layout stays). It never closes workspaces or apps. |
 
 ### What voice knows, and how a move is checked (2026-10-17)
 The voice keeps the state simple (`rust/omarchyvr-voice/src/screenstate.rs`): per screen **number** 1-6 (found by the
@@ -362,7 +400,10 @@ omarchyvr desk screens show N | more K | add SLOT   # voice: one plain line, exi
 omarchyvr desk screens watch                   # the session's watcher (started by desk start)
 wayvrctl desk-screens [--place] [--hide-others] [-w 2] [-d 2.5] [-c 0] [--gap 0.05] main=SUNSHINE left=PIMAX-LEFT right=PIMAX-RIGHT:hide up=PIMAX-UP:hide up-left=PIMAX-UPLEFT up-right=PIMAX-UPRIGHT
 wayvrctl screen-place PIMAX-UP left [--of SUNSHINE]   # left|right|up|down|front|swap: placed once from the head now; the others make room
-wayvrctl reset-screens                        # every shown screen back in the default layout
+wayvrctl reset-screens                        # every shown screen back in the default layout (locked: = desk-recenter)
+wayvrctl desk-recenter                        # locked layouts: the whole layout in front of you, anchor kept for the next start
+omarchyvr desk preset work-4|focus-3|work-5|work-6|cinema|cinema-huge
+omarchyvr desk recenter                       # one plain line; exit 1 without a Work session
 ```
 Tests never reach the real compositor:
 - `PIMAX_HYPRCTL` points the launcher at a fake `hyprctl`;

@@ -6,7 +6,8 @@ Unofficial. Supports the Pimax Dream Air. Not affiliated with Pimax or Omarchy.
 > it patches the NVIDIA open kernel module (DKMS) and installs pacman hooks that re-apply the patch after driver updates,
 > adds an EDID override and rebuilds the initramfs, installs a udev rule for the headset, and sets `cap_sys_nice` on the Monado service.
 > **Take a snapper snapshot first.** The setup takes one too when snapper has a `root` config, but your own is a good habit.
-> The only tested NVIDIA driver is **610.57.04**; read [NVIDIA-UNTESTED.md](NVIDIA-UNTESTED.md) for other versions,
+> VR needs **`nvidia-open-dkms` 610.57.04**, the version we patch and test, until newer drivers are supported: on
+> newer ones both eyes show the left half. Read [NVIDIA-UNTESTED.md](NVIDIA-UNTESTED.md) for other versions,
 > [UNINSTALL.md](UNINSTALL.md) for the way back and [SECURITY-STATUS.md](SECURITY-STATUS.md) for known open issues.
 
 ## What the one password changes
@@ -44,6 +45,14 @@ The terminal ends with "The app finishes the setup (one password)": it never ask
   build gives), writes the files that hold your paths (the OpenXR runtime manifest `openxr_monado-dev.json`, the SteamVR
   driver registration, units, desktop entries), records everything for the uninstaller, and keeps Monado's realtime
   permission when `monado-service` did not change;
+- the release itself is relocatable (`$ORIGIN` library paths), but a program with a file capability (`cap_sys_nice` on
+  `monado-service`) ignores `$ORIGIN`. So the install rewrites the library path (RUNPATH) of every installed file to the
+  absolute path inside your folder, with the `patchelf` that travels in the release (`lib/omarchyvr/tools/patchelf`, GPL-3.0,
+  see [THIRD-PARTY.md](../THIRD-PARTY.md)); the list is `~/.local/share/omarchyvr/runpath-rewrite.tsv`. Moving
+  `~/.local/lib/omarchyvr` afterwards needs a new `./install.sh`;
+- the speech model is downloaded at the end (about 600 MB); if that fails the install goes on and warns, and `./install.sh`
+  run again fetches only what is missing. Without a user systemd session (SSH, a text console) the user services are
+  installed but enabled at your next desktop login;
 - libraries that change often on Arch (OpenCV, tbb, fmt, ...) travel inside the release (`lib/omarchyvr/deps`); stable
   system libraries (Vulkan, Wayland, X11, SDL2, GStreamer, glib, dbus, ...) come from your system. `MANIFEST.txt` lists
   which is which, the commits of Monado and WayVR, the Monado feature markers and the checksum of every file.
@@ -129,7 +138,7 @@ says so.**
 |---|---|---|---|---|
 | Factory calibration (cameras, IMU) | `~/.config/omarchyvr/headset-calibration.xml` (mode 600) | kept | `~/.config/pimax/`, the lab `analysis/`, Pimax's Windows data (`ProgramData-Pimax/slam/device_calibration_*.xml` in the lab tree, a clone or a mounted shared drive), a backup | the shipped reference; the Room setup tile says "Using the reference calibration"; Room setup reads your headset's own |
 | Controller LED models | `~/.config/omarchyvr/controllers/` | kept | `~/.config/pimax/controllers/`, Pimax's Windows data (`ProgramData-Pimax/slam/H1/<serial>/controller_params.json`), a backup | the shipped reference (Pimax's default models; the per-serial files on the project PC were the same numbers) |
-| Lens profile | `~/.config/omarchyvr/lens.conf` | kept | `~/.config/pimax/lens.conf`, a backup | the shipped Dream Air profile (the project headset's tuned lens numbers) |
+| Lens profile | `~/.config/omarchyvr/lens.conf` | kept | `~/.config/pimax/lens.conf`, a backup | the shipped Dream Air profile (fitted on the project headset; Room setup does not replace it, only a `lens.conf` of your own does) |
 | Gyro bias | `~/.cache/omarchyvr/gyro-bias` | kept | `~/.cache/pimax/gyro-bias`, a backup | the Dream Air default, measured and saved the first time the headset rests for 2 s. No start waits for a still headset (`PIMAX_BIAS_TIMEOUT_MS=200`) |
 | IPD | `~/.config/omarchyvr/ipd.env` | kept | `~/.config/pimax/ipd.env`, a backup | 63 mm (Tools > IPD sets yours) |
 | Eye calibration | `~/.config/omarchyvr/eye-calibration.toml`, `eye-correction.toml` | kept | `~/.config/pimax/`, a backup | the built-in test calibration of the base start list |
@@ -227,7 +236,7 @@ The eye tracker (`2104:0561`) is not on USB after a headset restart: that is nor
 captured enable, which the VR start sends itself; the start says "Eye tracker off: switched on at the start". Do not
 turn eye tracking off for it.
 
-The app window did not open at login? A second start of the app brings the window to the front; if the window process has no window or does not answer within 3 seconds, it is replaced by a new one. At login the app waits for the Wayland display first. Log: `~/.local/state/omarchyvr/logs/omarchyvr-app.log`.
+The app window did not open at login? A second start of the app brings the window to the front; if the window process has no window or does not answer within 3 seconds, it is replaced by a new one. On Hyprland the app also asks the desktop, 5 seconds after its first frame and after every second start, whether its window is really there (a window process can draw without the desktop showing it); only when Hyprland answers with a client list that lacks it three times in a row (2 s apart) does it start a new window by itself, at most once per app start, and never when Hyprland cannot be asked or lists no clients. At login the app waits for the Wayland display first. Log: `~/.local/state/omarchyvr/logs/omarchyvr-app.log`.
 
 ## Requirements
 
@@ -236,11 +245,11 @@ The app window did not open at login? A second start of the app brings the windo
 | Distro | Omarchy (Arch) | other Arch-based | non-Arch (no pacman hooks or packages) |
 | Compositor | Hyprland (Lua config) | other Wayland compositors with `wp_drm_lease_device_v1` | X11 |
 | GPU | NVIDIA RTX 4090 | other NVIDIA RTX with the open modules; AMD, Intel (no patches) | NVIDIA proprietary-only modules (pre-Turing) |
-| NVIDIA driver | `nvidia-open-dkms` 610.57.04 | (none) | any other version: runs unpatched (the left half shows in both eyes) unless you allow the patch on untested drivers (app switch, off by default) |
+| NVIDIA driver | `nvidia-open-dkms` 610.57.04 (VR needs exactly this version for now) | (none) | any other version: runs unpatched (the left half shows in both eyes) unless you allow the patch on untested drivers (app switch, off by default) |
 | Headset | Pimax Dream Air (34a4:0044) | other Pimax models: read-only probe, labelled "untested" | |
 | Kernel | 7.2 (linux-omarchy) | other Arch kernels with headers | |
 | Disk | 40 GB free for the build, plus ~30 GB of downloads (reused when present) | | |
-| Steam | Steam (multilib) + SteamVR, installed by you | | |
+| Steam | Steam (multilib) + SteamVR, installed by you: games run through SteamVR (Play registers the Monado driver in it) | | |
 
 ## Options
 

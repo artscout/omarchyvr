@@ -1,5 +1,5 @@
 //! The tracking settings of plan phase 1 (docs/TRACKING-STABILITY.md): the controller angle slider and the switches
-//! "New camera exposure", "Smooth room corrections" and "Steadier controllers". All are on by default; the app passes
+//! "New camera exposure", "Smooth room corrections", "Steadier controllers" and "Hold the head when it does not move". All are on by default; the app passes
 //! them at every start (`--ctrl-angle DEG`, and the flag of a switch that is off), so start-argv.txt keeps them. All
 //! four are also saved in the active profile's setup.toml, which the launcher reads when a start has no flag (the CLI,
 //! omarchyvrd); the angle is changed live in a running session. The status of a switch comes from the running
@@ -8,7 +8,7 @@ use crate::app::AppCore;
 use crate::builds::Markers;
 use crate::launcher::DeskToggles;
 
-/// One of the three switches.
+/// One of the four switches.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Switch {
     /// The camera exposure law of 2026-10-17 (off = `--old-exposure`, PIMAX_CAM_AE_LAW=old).
@@ -17,11 +17,13 @@ pub enum Switch {
     RoomGlide,
     /// The controller fuser's 220 ms optical window (off = `--no-ctrl-steady`, PIMAX_CTRL_TRACK_HYST=0).
     CtrlSteady,
+    /// The head drift governor (off = `--no-drift-hold`, PIMAX_SLAM_DRIFT_HOLD=0).
+    DriftHold,
 }
 
 impl Switch {
     /// Every switch, in page order.
-    pub const ALL: [Switch; 3] = [Switch::NewExposure, Switch::RoomGlide, Switch::CtrlSteady];
+    pub const ALL: [Switch; 4] = [Switch::NewExposure, Switch::RoomGlide, Switch::CtrlSteady, Switch::DriftHold];
 
     /// The app's label.
     pub fn label(self) -> &'static str {
@@ -29,6 +31,7 @@ impl Switch {
             Switch::NewExposure => "New camera exposure",
             Switch::RoomGlide => "Smooth room corrections",
             Switch::CtrlSteady => "Steadier controllers",
+            Switch::DriftHold => "Hold the head when it does not move",
         }
     }
 
@@ -38,6 +41,7 @@ impl Switch {
             Switch::NewExposure => "The cameras meter only the parts of the view that are not blown out, so a bright window no longer makes the room pulse (at most 2 exposure changes a second). Off: the previous exposure law (PIMAX_CAM_AE_LAW=old). Applies at the next start.",
             Switch::RoomGlide => "After the first placement, every room correction (room map, AprilTag, floor) glides to its new place, faster while you turn your head, instead of jumping. Off: corrections over 25 cm snap at once, as before (PIMAX_ANCHOR_GLIDE=0). Applies at the next start.",
             Switch::CtrlSteady => "The controllers hold their camera fix for 220 ms instead of 80 ms and confirm before they switch back, so they shimmer and jump less at the edge of the view. Off: the old 80 ms window (PIMAX_CTRL_TRACK_HYST=0). Applies at the next start.",
+            Switch::DriftHold => "When the accelerometer shows the head is not moving (sitting still, or only turning), the head position stays where it is, even if the camera tracker slides. Off: the position follows the tracker as before (it can slide slowly, 2026-10-18). Takes effect at the next start.",
         }
     }
 
@@ -47,6 +51,7 @@ impl Switch {
             Switch::NewExposure => "--old-exposure",
             Switch::RoomGlide => "--no-room-glide",
             Switch::CtrlSteady => "--no-ctrl-steady",
+            Switch::DriftHold => "--no-drift-hold",
         }
     }
 
@@ -56,6 +61,7 @@ impl Switch {
             Switch::NewExposure => t.new_exposure,
             Switch::RoomGlide => t.room_glide,
             Switch::CtrlSteady => t.ctrl_steady,
+            Switch::DriftHold => t.drift_hold,
         }
     }
 
@@ -65,6 +71,7 @@ impl Switch {
             Switch::NewExposure => &mut t.new_exposure,
             Switch::RoomGlide => &mut t.room_glide,
             Switch::CtrlSteady => &mut t.ctrl_steady,
+            Switch::DriftHold => &mut t.drift_hold,
         }
     }
 
@@ -74,6 +81,7 @@ impl Switch {
             Switch::NewExposure => m.ae_law,
             Switch::RoomGlide => m.anchor_glide,
             Switch::CtrlSteady => m.ctrl_hyst,
+            Switch::DriftHold => m.drift_hold,
         }
     }
 
@@ -126,11 +134,17 @@ impl AppCore {
         self.facts.builds.iter().find(|b| b.build.key == "desk" && b.built()).and_then(|b| b.markers)
     }
 
-    /// The status line of one switch.
+    /// The status line of one switch. The head hold adds what the running session held, from the log.
     pub fn tracking_status(&self, sw: Switch) -> (String, bool) {
         let m = self.build_markers();
         let run = self.live.service.as_ref().map(|_| !self.live.tracking_off[sw.index()]);
-        status(sw, sw.get(&self.toggles), m.as_ref(), run)
+        let (mut text, warn) = status(sw, sw.get(&self.toggles), m.as_ref(), run);
+        if sw == Switch::DriftHold && run == Some(true) {
+            if let Some(total) = self.live.log.sixdof.drift_total_cm {
+                text.push_str(&format!("; held {total:.0} cm of slide this session"));
+            }
+        }
+        (text, warn)
     }
 
     /// The status line of the controller angle.
@@ -202,7 +216,7 @@ mod tests {
     use super::*;
 
     fn all() -> Markers {
-        Markers { ctrl_angle: true, anchor_glide: true, ae_law: true, ctrl_hyst: true, ..Markers::default() }
+        Markers { ctrl_angle: true, anchor_glide: true, ae_law: true, ctrl_hyst: true, drift_hold: true, ..Markers::default() }
     }
 
     #[test]
@@ -239,14 +253,14 @@ mod tests {
         let text = format!("desk\n{}\n", f.join("\n"));
         let (back, vr) = toggles_from_argv(&text, DeskToggles { tracking_flags: true, ..DeskToggles::default() }).unwrap();
         assert!(!vr);
-        assert_eq!((back.ctrl_angle, back.new_exposure, back.room_glide, back.ctrl_steady), (45, true, false, true));
+        assert_eq!((back.ctrl_angle, back.new_exposure, back.room_glide, back.ctrl_steady, back.drift_hold), (45, true, false, true, true));
         // no flag = the saved setting (the launcher reads the same setup.toml): the app's value stays
         let base = DeskToggles { new_exposure: false, ..DeskToggles::default() };
         assert!(!toggles_from_argv("desk\n--6dof\n", base).unwrap().0.new_exposure);
         // a launcher without the flags gets none of them
         let old = DeskToggles { tracking_flags: false, ..t };
         assert!(!desk_flags(&old).iter().any(|a| a == "--ctrl-angle" || a == "--no-room-glide"));
-        let caps = crate::launcher::parse_caps("omarchyvr desk start [--ctrl-angle DEG] [--old-exposure] [--no-room-glide] [--no-ctrl-steady]");
+        let caps = crate::launcher::parse_caps("omarchyvr desk start [--ctrl-angle DEG] [--old-exposure] [--no-room-glide] [--no-ctrl-steady] [--no-drift-hold]");
         assert!(caps.tracking);
         assert!(!t.supported(&crate::launcher::LauncherCaps::default()).tracking_flags);
     }

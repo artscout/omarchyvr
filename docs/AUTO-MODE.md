@@ -61,7 +61,7 @@ All keys and defaults are listed in [packaging/auto.toml.example](../packaging/a
 | `auto_start` | true | start on put-on |
 | `mode` | desk | desk or game |
 | `game_runtime` | monado | monado (Monado + xrizer) or steamvr. **SteamVR is phase 1 (static):** auto mode starts nothing for it, notifies once and keeps out of its way. `omarchyvr vr steam-options` prints `%command%` for steamvr. |
-| `preset` | none | none (= the launcher default, cinema), cinema, cinema-huge, work-3, work-1, assistant (below) |
+| `preset` | none | none (= the launcher default, work-4), work-4, focus-3, work-5, work-6, cinema, cinema-huge (old names work-3, work-1, assistant still work; docs/SCREENS.md "Locked layouts") |
 | `sixdof`, `ctrl_track`, `perf` | true | session flags |
 | `relocalize`, `room_map` | true, home | room relocalisation after a start (when the map exists) |
 | `sleep_games`, `sleep_foreign` | false | allow stopping games / sessions not started by auto mode |
@@ -70,18 +70,19 @@ All keys and defaults are listed in [packaging/auto.toml.example](../packaging/a
 | `imu` | true | read IF2/IF1 read-only for 0.4 s every `poll_s` while plugged |
 
 ## Desk presets (`omarchyvr desk start --preset NAME`, also usable without auto mode)
-`omarchyvr desk start` uses **cinema** unless `--preset` says otherwise; `--preset none` removes the preset file. Each start
+`omarchyvr desk start` uses **work-4** unless `--preset` says otherwise (the layouts are locked in place: [SCREENS.md](SCREENS.md) "Locked layouts"); `--preset none` removes the preset file. Each start
 writes `<wayvr home>/config/wayvr/conf.d/60-preset.yaml`. It sorts after the launcher's files and the app's
 `50-pimax-app.yaml`, so the preset wins. Once WayVR runs, the preset's screen layout is applied over `wayvrctl`. Switch
 live with `omarchyvr desk preset NAME` or by voice ([VOICE.md](VOICE.md)).
 
-| preset | screens (live layout) | conf.d | launcher |
-|---|---|---|---|
-| cinema (default) | 1 big curved | `default_curvature: 0.35` | passthrough dimmed: `--gain 0.35` |
-| cinema-huge (`imax`, `huge-cinema`, `theater`) | 1 huge curved (11 m at 8 m, 68 degrees; docs/CINEMA.md) | `default_curvature: 0.2` | passthrough off (`--off`), backdrop off |
-| work-3 (alias work) | desktop + 2 WayVR app panels, flat | `default_curvature: 0.0`, `screen_max_height: 2160` | - |
-| work-1 | 1 flat | same as work-3 | - |
-| assistant | all, slightly curved | `default_curvature: 0.15` | `--voice` (captions + commands) |
+| preset | screens shown | size | conf.d | launcher |
+|---|---|---|---|---|
+| work-4 (default, alias work) | 1 main, 2 left, 3 right, 4 up | 1.6 m at 2 m, flat | `default_curvature: 0.0`, `screen_max_height: 2160`, `desk_locked: true` | - |
+| focus-3 (old work-3) | 1, 2, 3 | 1.2 m at 1.3 m, flat | same | - |
+| work-5 | 1, 2, 3, 5, 6 | 1.6 m at 2 m, flat | same | - |
+| work-6 (old assistant) | all six | 1.6 m at 2 m, flat | same | old name `assistant`: also `--voice` |
+| cinema (old work-1) | 1 big curved | 3.2 m at 3.5 m | `default_curvature: 0.35`, `desk_locked: true` | passthrough dimmed: `--gain 0.35` |
+| cinema-huge (`imax`, `huge-cinema`, `theater`) | 1 huge curved (11 m at 8 m, 68 degrees; docs/CINEMA.md) | | `default_curvature: 0.2`, `desk_locked: true` | passthrough off (`--off`), backdrop off |
 
 ## Control: `omarchyvr auto ...` / `omarchyvr-autod ...`
 ```

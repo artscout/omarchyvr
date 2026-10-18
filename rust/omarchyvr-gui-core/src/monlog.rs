@@ -63,6 +63,12 @@ pub struct SixDofLog {
     pub errors: Vec<String>,
     /// The last few state-change lines, newest last.
     pub recent: Vec<String>,
+    /// The drift governor's last hold: cm the tracker slid without movement (`6DoF drift:` line).
+    pub drift_last_cm: Option<f64>,
+    /// Seconds that slide took.
+    pub drift_last_secs: Option<f64>,
+    /// Session total of held drift in cm.
+    pub drift_total_cm: Option<f64>,
 }
 
 /// Eye tracking in the runtime.
@@ -168,6 +174,9 @@ pub struct MonadoLog {
     pub camera: CameraLog,
     /// Gyro calibration finished (or fell back to the cached bias).
     pub gyro_ready: bool,
+    /// No measured gyro bias yet: tracking runs with a zero bias (nothing cached: a fresh machine) or a provisional
+    /// one (not a real rest). Cleared by the first real rest ("gyro bias done" / "refined at rest").
+    pub gyro_unmeasured: bool,
     /// Rate announced to the headset (`pimax_video_prepare(72) -> 0`).
     pub video_hz: Option<u32>,
     /// Clients connected minus disconnected.
@@ -178,6 +187,14 @@ pub struct MonadoLog {
     pub exited: bool,
     /// The last error lines.
     pub errors: Vec<String>,
+}
+
+/// The line the app shows while no gyro bias was measured on this PC yet.
+pub const GYRO_REST_HINT: &str = "Put the headset still on the desk for 2 s to calibrate the gyro";
+
+/// [`GYRO_REST_HINT`] while the log says tracking runs without a measured gyro bias (zero or provisional).
+pub fn gyro_hint(m: &MonadoLog) -> Option<&'static str> {
+    (m.gyro_ready && m.gyro_unmeasured).then_some(GYRO_REST_HINT)
 }
 
 fn push_capped(v: &mut Vec<String>, s: &str, cap: usize) {
@@ -221,7 +238,18 @@ impl MonadoLog {
         }
         if let Some(ev) = parse_line(t) {
             match ev {
-                LogEvent::GyroBiasDone { .. } | LogEvent::GyroBiasFallback { .. } => self.gyro_ready = true,
+                LogEvent::GyroBiasDone { .. } | LogEvent::GyroBiasRefined { .. } => {
+                    self.gyro_ready = true;
+                    self.gyro_unmeasured = false;
+                }
+                LogEvent::GyroBiasFallback { cached, .. } => {
+                    self.gyro_ready = true;
+                    self.gyro_unmeasured = !cached;
+                }
+                LogEvent::GyroBiasProvisional { .. } => {
+                    self.gyro_ready = true;
+                    self.gyro_unmeasured = true;
+                }
                 LogEvent::VideoPrepare { fps, rc: 0 } => self.video_hz = Some(fps),
                 LogEvent::ClientConnected(_) => self.clients += 1,
                 LogEvent::ClientDisconnected(_) => self.clients -= 1,
@@ -267,6 +295,19 @@ impl MonadoLog {
             if corr.is_some() {
                 s.correction = corr;
             }
+            return true;
+        }
+        if let Some(rest) = after(t, "6DoF drift: ") {
+            // "head tracking slid 12 cm without movement in 10 s; held (session total 150 cm)"
+            if let Some(i) = rest.find("slid ") {
+                let r = &rest[i + 5..];
+                s.drift_last_cm = r.split_whitespace().next().and_then(|w| w.parse().ok()).or(s.drift_last_cm);
+                s.drift_last_secs = float_before(r, " s;").or(s.drift_last_secs);
+            }
+            if let Some(tot) = after(rest, "session total ") {
+                s.drift_total_cm = tot.split_whitespace().next().and_then(|w| w.parse().ok()).or(s.drift_total_cm);
+            }
+            push_capped(&mut s.recent, t, 8);
             return true;
         }
         if let Some(rest) = after(t, "6DoF supervisor: ") {
@@ -533,6 +574,40 @@ mod tests {
         assert!(m.gyro_ready);
         assert_eq!(m.clients, 3);
         assert_eq!(m.apps, vec!["omarchyvr-passthrough", "wayvr", "libmonado"]);
+    }
+
+    #[test]
+    fn gyro_without_a_measured_bias_asks_for_a_rest() {
+        let mut m = MonadoLog::default();
+        m.feed(" WARN [bias_timeout] headset not still for 200 ms (0 restarts): tracking with the zero (no cache) gyro bias 0.000 0.000 0.000 dps; it is refined every time the headset rests for 2000 ms (put the headset still on the desk for 2 s to calibrate the gyro)");
+        assert!(m.gyro_ready && m.gyro_unmeasured);
+        assert_eq!(gyro_hint(&m), Some(GYRO_REST_HINT));
+        m.feed(" WARN [bias_provisional] gyro bias provisional: 0.120 0.781 0.366 dps (gyro sd 0.210 0.190 0.230 dps: not a real rest, not cached); put the headset still on the desk for 2 s to calibrate the gyro");
+        assert!(m.gyro_unmeasured, "a provisional bias is not a measured one");
+        m.feed(" INFO [bias_finish] gyro bias refined at rest: 0.118 0.775 0.370 dps (moved 0.006; 1 rests this session, 2 windows rejected as not a real rest)");
+        assert!(!m.gyro_unmeasured);
+        assert_eq!(gyro_hint(&m), None);
+        let mut c = MonadoLog::default();
+        c.feed(" WARN [bias_timeout] headset not still for 200 ms (0 restarts): tracking with the cached gyro bias 0.087 0.684 0.474 dps; it is refined every time the headset rests for 2000 ms");
+        assert!(c.gyro_ready && !c.gyro_unmeasured, "a cached bias needs no hint");
+        assert_eq!(gyro_hint(&MonadoLog::default()), None, "not started: no hint");
+    }
+
+    #[test]
+    fn drift_hold_line() {
+        let line = "6DoF drift: head tracking slid 12 cm without movement in 10 s; held (session total 150 cm)";
+        for l in [line.to_string(), format!(" INFO [slam_poll_locked] {line}")] {
+            let mut m = MonadoLog::default();
+            m.feed(&l);
+            let s = &m.sixdof;
+            assert_eq!((s.drift_last_cm, s.drift_last_secs, s.drift_total_cm), (Some(12.0), Some(10.0), Some(150.0)), "{l}");
+            assert_eq!(s.recent.len(), 1);
+        }
+        let mut m = MonadoLog::default();
+        assert_eq!(m.sixdof.drift_total_cm, None);
+        m.feed("6DoF drift: head tracking slid 3 cm without movement in 10 s; held (session total 7 cm)");
+        m.feed("6DoF drift: head tracking slid 9 cm without movement in 10 s; held (session total 16 cm)");
+        assert_eq!((m.sixdof.drift_last_cm, m.sixdof.drift_total_cm), (Some(9.0), Some(16.0)));
     }
 
     #[test]

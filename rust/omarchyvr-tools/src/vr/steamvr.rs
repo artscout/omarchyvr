@@ -31,8 +31,10 @@ pub enum Games {
     SteamVr,
 }
 
-/// The default until the user tested SteamVR in the headset (docs/STEAMVR.md). Flip to `Games::SteamVr` then.
-pub const DEFAULT: Games = Games::Monado;
+/// The default when nothing is saved (games.toml absent, no `game_runtime` in auto.toml): SteamVR. It is the path the
+/// project owner has run since 2026-10-16 (docs/STEAMVR.md), and the release ships no xrizer, so "Monado + xrizer"
+/// cannot be the default of a fresh install.
+pub const DEFAULT: Games = Games::SteamVr;
 
 /// SteamVR's Steam app id.
 pub const STEAMVR_APPID: &str = "250820";
@@ -129,12 +131,21 @@ pub fn switch(home: &Path, g: Games, build: &Path, xrizer: &Path) -> Result<Vec<
         Games::SteamVr => {
             let sv = super::openvr_link::steamvr_dir(home);
             let drv = has_driver(build).then(|| driver_dir(build));
-            let line = super::openvr_link::ensure_steamvr(home, &sv, drv.as_deref()).map_err(|e| format!("Could not switch games to SteamVR: {e}"))?;
-            out.push(line);
-            match super::runtime_link::ensure_steamvr(home) {
-                Ok(Some(l)) => out.push(format!("OpenXR runtime set: {l}")),
-                Ok(None) => {}
-                Err(e) => out.push(format!("WARNING: could not point the OpenXR runtime at SteamVR ({e})")),
+            if !super::openvr_link::is_runtime(&sv) {
+                // SteamVR is installed from Steam, often after this tool first runs (a fresh install): the choice is
+                // still saved; Play registers the Monado driver and hands openvrpaths.vrpath to SteamVR at start
+                out.push(format!(
+                    "WARNING: SteamVR is not installed yet ({} has no bin/linux64/vrclient.so): install SteamVR in Steam. The choice 'SteamVR' is saved; Play registers the Monado driver once SteamVR is installed.",
+                    sv.display()
+                ));
+            } else {
+                let line = super::openvr_link::ensure_steamvr(home, &sv, drv.as_deref()).map_err(|e| format!("Could not switch games to SteamVR: {e}"))?;
+                out.push(line);
+                match super::runtime_link::ensure_steamvr(home) {
+                    Ok(Some(l)) => out.push(format!("OpenXR runtime set: {l}")),
+                    Ok(None) => {}
+                    Err(e) => out.push(format!("WARNING: could not point the OpenXR runtime at SteamVR ({e})")),
+                }
             }
             if drv.is_none() {
                 out.push(format!("WARNING: {} has no SteamVR driver (steamvr-monado): SteamVR will not find the headset. Install the Monado build with the driver.", build.display()));
@@ -939,11 +950,20 @@ mod tests {
     #[test]
     fn switch_errors_are_plain_words() {
         let h = crate::vr::test_dir("games-switch-err");
-        let e = switch(&h, Games::SteamVr, &h.join("b"), &h.join("x")).unwrap_err();
-        assert!(e.starts_with("Could not switch games to SteamVR") && e.contains("install SteamVR"), "{e}");
         let e = switch(&h, Games::Monado, &h.join("b"), &h.join("x")).unwrap_err();
         assert!(e.contains("xrizer is not built"), "{e}");
         assert!(!settings_path(&h).exists(), "a failed switch saves nothing");
+    }
+
+    #[test]
+    fn steamvr_choice_is_saved_even_before_steamvr_is_installed() {
+        // a fresh install: Steam and SteamVR come later; the choice must not be lost (and the install must not fail)
+        let h = crate::vr::test_dir("games-switch-no-steamvr");
+        let out = switch(&h, Games::SteamVr, &h.join("b"), &h.join("x")).unwrap();
+        assert!(out.iter().any(|l| l.contains("SteamVR is not installed yet") && l.contains("Play registers the Monado driver")), "{out:?}");
+        assert_eq!(parse_settings(&std::fs::read_to_string(settings_path(&h)).unwrap()), Some(Games::SteamVr));
+        assert!(!super::super::openvr_link::vrpath(&h).exists(), "nothing is written for a SteamVR that is not there");
+        assert_eq!(DEFAULT, Games::SteamVr, "a fresh install (no games.toml) plays with SteamVR");
     }
 
     // --- start/stop with fakes ---

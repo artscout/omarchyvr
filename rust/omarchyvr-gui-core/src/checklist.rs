@@ -327,7 +327,7 @@ pub fn from_doctor(facts: &Facts, live: &Live, p: &Paths) -> Vec<Item> {
         let group = match c.id {
             "headset" | "tobii" | "udev" | "keepalive" => Group::Headset,
             "gpu" | "patches" | "merged-head-sync" | "connector" | "lease" | "kernel-log" => Group::Display,
-            "stale-service" => Group::Desk,
+            "stale-service" | "monado-libs" => Group::Desk,
             "setcap" => continue,
             _ => Group::Extras,
         };

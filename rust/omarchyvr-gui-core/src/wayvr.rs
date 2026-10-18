@@ -246,7 +246,7 @@ pub fn screens(layout: &[Overlay]) -> Vec<String> {
 /// A command over `wayvrctl`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Ctl {
-    /// Every active screen back in front of you (and saved).
+    /// The whole layout in front of you, same shape (`desk-recenter`; screens never move otherwise).
     ResetScreens,
     /// Show / hide all overlays (toggle).
     ShowHide,
@@ -287,7 +287,7 @@ impl Ctl {
     pub fn args(&self) -> Vec<String> {
         let s = |x: &str| x.to_string();
         match self {
-            Ctl::ResetScreens => vec![s("reset-screens")],
+            Ctl::ResetScreens => vec![s("desk-recenter")],
             Ctl::ShowHide => vec![s("show-hide")],
             Ctl::SwitchSet(n) => vec![s("switch-set"), n.to_string()],
             Ctl::ProcessList => vec![s("process-list")],
@@ -315,7 +315,7 @@ impl Ctl {
     /// For people.
     pub fn label(&self) -> String {
         match self {
-            Ctl::ResetScreens => "Reset screens".into(),
+            Ctl::ResetScreens => "Recenter screens: the whole layout in front of you, same shape".into(),
             Ctl::ShowHide => "Show / hide all".into(),
             Ctl::SwitchSet(0) => "Hide all".into(),
             Ctl::SwitchSet(_) => "Show all".into(),
@@ -470,7 +470,7 @@ mod tests {
 
     #[test]
     fn wayvrctl_command_lines() {
-        assert_eq!(Ctl::ResetScreens.args(), vec!["reset-screens"]);
+        assert_eq!(Ctl::ResetScreens.args(), vec!["desk-recenter"]);
         assert_eq!(Ctl::SwitchSet(0).args(), vec!["switch-set", "0"]);
         assert_eq!(Ctl::Terminate(7).args(), vec!["process-terminate", "{\"user\":7}"]);
         assert_eq!(

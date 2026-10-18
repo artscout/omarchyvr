@@ -245,11 +245,22 @@ verify_release() {
 	rm -rf "$tmp"
 	return $bad
 }
+# overlay_src PATH: PATH inside the release tree ($REPO), or its patched copy when the overlay (installer/runpath.py plan:
+# the ELF files whose RUNPATH was made absolute for this prefix) holds one. Without OVR_OVERLAY: PATH itself.
+overlay_src() {
+	local p=$1 o
+	if [[ -n ${OVR_OVERLAY:-} ]]; then
+		o=$OVR_OVERLAY/${p#"$REPO"/}
+		if [[ -f $o && ! -L $o ]]; then printf '%s\n' "$o"; return 0; fi
+	fi
+	printf '%s\n' "$p"
+}
 # install_tree SRC DST CLASS NOTE: copy a directory tree (files, links) into DST. A file with the same bytes stays as it
 # is (its inode and its file capability are kept); changed files are replaced atomically; files of an older install
-# that SRC does not have are removed. DST is recorded as one directory for the uninstaller.
+# that SRC does not have are removed. DST is recorded as one directory for the uninstaller. With OVR_OVERLAY set, a file
+# the overlay has (same relative path below $REPO) is installed in place of the release file.
 install_tree() {
-	local src=$1 dst=$2 class=$3 note=${4:-} rel t mode
+	local src=$1 dst=$2 class=$3 note=${4:-} rel t mode f
 	if [[ "$DRY" == 1 ]]; then printf 'WOULD install tree\t%s -> %s\n' "$src" "$dst"; return 0; fi
 	mkdir -p "$dst"
 	(cd "$src" && find . -mindepth 1 -type d -print0) | while IFS= read -r -d '' rel; do mkdir -p "$dst/$rel"; done
@@ -260,12 +271,12 @@ install_tree() {
 			if [[ -L "$dst/$rel" && "$(readlink "$dst/$rel")" == "$t" ]]; then continue; fi
 			rm -rf -- "${dst:?}/$rel"
 			ln -s -- "$t" "$dst/$rel"
-		elif [[ -f "$dst/$rel" && ! -L "$dst/$rel" ]] && cmp -s "$src/$rel" "$dst/$rel"; then
-			continue
 		else
-			mode=$(stat -c %a "$src/$rel")
+			f=$(overlay_src "$src/$rel")
+			if [[ -f "$dst/$rel" && ! -L "$dst/$rel" ]] && cmp -s "$f" "$dst/$rel"; then continue; fi
+			mode=$(stat -c %a "$f")
 			rm -rf -- "${dst:?}/$rel.ovr-new"
-			install -m "$mode" "$src/$rel" "$dst/$rel.ovr-new"
+			install -m "$mode" "$f" "$dst/$rel.ovr-new"
 			mv -f -- "$dst/$rel.ovr-new" "$dst/$rel"
 		fi
 	done < <(cd "$src" && find . -mindepth 1 \( -type f -o -type l \) -print0)

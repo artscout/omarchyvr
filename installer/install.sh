@@ -177,6 +177,11 @@ if [[ " $GPUS " == *" nvidia "* ]]; then
 		# (app: setup screen > NVIDIA driver patch > "Allow the patch on untested NVIDIA drivers")
 		NV_PLAN=patch
 		NV_WHY="NVIDIA $NV_VER is NOT a tested version ($NVIDIA_TESTED_VERSIONS): the patch is applied only if you allow it in the app (off by default). Please send a report from the app (Help > Report a problem) so support can be added."
+		# a version the patches were ported to (patches/nvidia/ported-versions.txt): compile-checked, still not hardware-tested
+		if [[ -r $REPO/patches/nvidia/ported-versions.txt ]] &&
+			[[ " $(sed 's/#.*//' "$REPO/patches/nvidia/ported-versions.txt" | tr -s ' \t\n' ' ') " == *" $NV_VER "* ]]; then
+			NV_WHY="NVIDIA $NV_VER is NOT a tested version ($NVIDIA_TESTED_VERSIONS), but the patches were ported to it (compile-checked, not tested on hardware): they are applied only if you allow it in the app (off by default)."
+		fi
 	else
 		NV_PLAN=patch
 		NV_WHY="NVIDIA $NV_VER open modules: tested"
@@ -286,6 +291,20 @@ if [[ $STAGING == 0 ]]; then
 	for p in monado-service vrserver wayvr; do pgrep -x "$p" >/dev/null 2>&1 && RUNNING+="$p "; done
 fi
 
+fetch_file() { # fetch_file URL SHA DEST [REUSE_CANDIDATE...]
+	local url=$1 sum=$2 dst=$3 c
+	shift 3
+	if file_ok "$dst" "$sum"; then note "$(basename "$dst"): present, checksum ok (reused)"; return 0; fi
+	for c in "$@"; do
+		if file_ok "$c" "$sum"; then mkdir -p "$(dirname "$dst")"; cp "$c" "$dst"; note "$(basename "$dst"): copied from $c (checksum ok)"; return 0; fi
+	done
+	[[ $NO_DL == 1 ]] && die "$dst missing and --no-downloads given"
+	mkdir -p "$(dirname "$dst")"
+	curl -fL --retry 3 -o "$dst.part" "$url" || { rm -f "$dst.part"; die "download of $url failed"; }
+	file_ok "$dst.part" "$sum" || { rm -f "$dst.part"; die "checksum mismatch for $url (refused)"; }
+	mv -f "$dst.part" "$dst"
+	note "$(basename "$dst"): downloaded, checksum ok"
+}
 # ==== 2. prebuilt: check the files; from source: lab data and pinned upstreams ======================================
 if [[ $MODE == prebuilt ]]; then
 	say "2/7 Checking the release files against MANIFEST.txt"
@@ -323,20 +342,6 @@ fetch_git() { # fetch_git URL COMMIT DIR [--recursive]
 	fi
 	[[ ${4:-} == --recursive ]] && git -C "$dir" submodule update --init --recursive --quiet
 	return 0
-}
-fetch_file() { # fetch_file URL SHA DEST [REUSE_CANDIDATE...]
-	local url=$1 sum=$2 dst=$3 c
-	shift 3
-	if file_ok "$dst" "$sum"; then note "$(basename "$dst"): present, checksum ok (reused)"; return 0; fi
-	for c in "$@"; do
-		if file_ok "$c" "$sum"; then mkdir -p "$(dirname "$dst")"; cp "$c" "$dst"; note "$(basename "$dst"): copied from $c (checksum ok)"; return 0; fi
-	done
-	[[ $NO_DL == 1 ]] && die "$dst missing and --no-downloads given"
-	mkdir -p "$(dirname "$dst")"
-	curl -fL --retry 3 -o "$dst.part" "$url"
-	file_ok "$dst.part" "$sum" || { rm -f "$dst.part"; die "checksum mismatch for $url (refused)"; }
-	mv -f "$dst.part" "$dst"
-	note "$(basename "$dst"): downloaded, checksum ok"
 }
 fetch_file "$ORT_URL" "$ORT_SHA256" "$CACHE/dl/onnxruntime-$ORT_VERSION.tgz" "$HOME/$ORT_REUSE"
 [[ $SKIP_BASALT == 1 ]] || fetch_git "$BASALT_URL" "$BASALT_COMMIT" "$CACHE/src/basalt" --recursive
@@ -461,9 +466,33 @@ mkdir -p "$BIN"
 if [[ $MODE == prebuilt ]]; then
 	# the release holds the finished set in the layout of the installed prefix: bin/, lib/omarchyvr/*, share/omarchyvr/data
 	HASH=${COMMIT:0:9}
+	# RUNPATHs: the release is relocatable ($ORIGIN), but monado-service gets cap_sys_nice (setcap) and a process with a
+	# file capability runs in secure mode, where glibc ignores $ORIGIN (and LD_LIBRARY_PATH) for the whole process and
+	# every library it loads: "libonnxruntime.so.1: cannot open shared object file" (release 0.1.1). An absolute
+	# DT_RUNPATH is honoured, so every installed ELF gets its RUNPATH rewritten to the absolute path inside THIS prefix.
+	# The patched copies are made in a temp overlay first (the release files, and the MANIFEST.txt just verified, stay
+	# untouched); a patched file with the same bytes as the installed one keeps the installed file, so its inode and its
+	# file capability survive a reinstall.
+	PATCHELF=$REPO/lib/omarchyvr/tools/patchelf
+	[[ -x $PATCHELF ]] || PATCHELF=$(command -v patchelf || true)
+	[[ -n $PATCHELF ]] || die "the release lacks lib/omarchyvr/tools/patchelf (needed to set the library paths of this install)"
+	OVR_OVERLAY="$CACHE/abs-runpath"
+	OVR_OVERLAY_BASE=$REPO
+	rm -rf "$OVR_OVERLAY"
+	mkdir -p "$OVR_OVERLAY"
+	python3 -I "$REPO/installer/runpath.py" plan "$REPO" "$PREFIX" "$PATCHELF" "$OVR_OVERLAY" >"$SHARE/runpath-rewrite.tsv.new" ||
+		die "could not set the library paths for $PREFIX (nothing was installed)"
+	{
+		echo "# written by install.sh $(date -u +%FT%TZ): release $VERSION; RUNPATH of each installed ELF made absolute for $PREFIX"
+		echo "# (monado-service has cap_sys_nice, which makes glibc ignore \$ORIGIN); path <TAB> release RUNPATH <TAB> installed RUNPATH"
+		cat "$SHARE/runpath-rewrite.tsv.new"
+	} >"$SHARE/runpath-rewrite.tsv"
+	rm -f "$SHARE/runpath-rewrite.tsv.new"
+	record file "$SHARE/runpath-rewrite.tsv" RESET "RUNPATH rewrite list of this install"
+	note "library paths: $(grep -vc '^#' "$SHARE/runpath-rewrite.tsv") ELF files get absolute RUNPATHs for $PREFIX (list: $SHARE/runpath-rewrite.tsv)"
 	for b in "${OVR_BINS[@]}"; do
 		[[ -x $REPO/bin/$b ]] || die "the release lacks bin/$b"
-		put "$REPO/bin/$b" "$BIN/$b" 755 REBUILD "omarchyvr $HASH (release $VERSION)"
+		put "$(overlay_src "$REPO/bin/$b")" "$BIN/$b" 755 REBUILD "omarchyvr $HASH (release $VERSION)"
 	done
 	cap_keep_begin "$SERVICE"
 	for t in "$REPO"/lib/omarchyvr/*/; do
@@ -475,6 +504,9 @@ if [[ $MODE == prebuilt ]]; then
 	unchanged | kept) note "realtime permission (cap_sys_nice): kept (monado-service has the same bytes)" ;;
 	changed) note "Monado changed: its realtime permission is set again with one password (the app offers it at its next start)" ;;
 	esac
+	python3 -I "$REPO/installer/runpath.py" check "$REPO" "$PREFIX" "$PATCHELF" || die "an installed file still has a relative or missing library path (see above)"
+	rm -rf "$OVR_OVERLAY"
+	unset OVR_OVERLAY OVR_OVERLAY_BASE
 	# the files that hold absolute paths are written here, for this prefix (never shipped)
 	write_runtime_json "$MONADO_BUILD" || die "the release lacks libopenxr_monado.so"
 	note "OpenXR runtime manifest: $MONADO_BUILD/openxr_monado-dev.json"
@@ -541,11 +573,15 @@ for u in "${OVR_UNITS[@]}"; do
 done
 rm -f "$tmp"
 if [[ $DRY == 0 ]]; then
-	systemctl --user daemon-reload
-	for u in omarchyvr-keepalived.service omarchyvrd.service; do
-		systemctl --user enable "$u" >/dev/null 2>&1 && record enabled "$u" RESET "enabled at login"
-		systemctl --user start "$u" || warn "could not start $u now (it starts at the next login)"
-	done
+	# no user bus (SSH, a text console, a container): the units are installed but cannot be enabled now; the install goes on
+	if systemctl --user daemon-reload; then
+		for u in omarchyvr-keepalived.service omarchyvrd.service; do
+			systemctl --user enable "$u" >/dev/null 2>&1 && record enabled "$u" RESET "enabled at login"
+			systemctl --user start "$u" || warn "could not start $u now (it starts at the next login)"
+		done
+	else
+		warn "no systemd user session here (no desktop login?): the user services are installed but not enabled yet; they are enabled at your next desktop login, or when you open the app"
+	fi
 else
 	note "WOULD: systemctl --user daemon-reload; enable --now omarchyvr-keepalived.service omarchyvrd.service"
 fi
@@ -579,24 +615,39 @@ if [[ $STAGING == 1 ]]; then
 		file_ok "$HOME/${f%%:*}" "${f##*:}" && note "~/${f%%:*}: present, checksum ok" || note "~/${f%%:*}: WOULD download"
 	done
 else
+	# The speech models are needed by voice only: a failed download (offline, a bad checksum) must never stop the install
+	# (the root job and the app come next). A bad file is never kept. The app has no download button for them yet:
+	# ./install.sh fetches only what is missing, so running it again repairs this.
+	VOICE_HINT="voice commands need the speech model; run ./install.sh again with a working connection (it downloads only what is missing)"
 	if ! { file_ok "$HOME/$PARAKEET_DIR/encoder.int8.onnx" "$PARAKEET_ENCODER_SHA256" && file_ok "$HOME/$PARAKEET_DIR/decoder.int8.onnx" "$PARAKEET_DECODER_SHA256" && file_ok "$HOME/$PARAKEET_DIR/joiner.int8.onnx" "$PARAKEET_JOINER_SHA256"; }; then
-		[[ $NO_DL == 1 ]] && die "speech model missing and --no-downloads given"
-		note "speech model: downloading (source $PARAKEET_SOURCE: $PARAKEET_URL)"
-		mkdir -p "$CACHE/dl" "$HOME/models"
-		curl -fL --retry 3 -o "$CACHE/dl/parakeet.tar.bz2" "$PARAKEET_URL"
-		tar -xjf "$CACHE/dl/parakeet.tar.bz2" -C "$CACHE/dl"
-		d=$(find "$CACHE/dl" -maxdepth 1 -type d -name '*parakeet-tdt-0.6b-v3-int8*' | head -1)
-		file_ok "$d/encoder.int8.onnx" "$PARAKEET_ENCODER_SHA256" || die "speech model checksum mismatch (refused)"
-		rm -rf "${HOME:?}/$PARAKEET_DIR"
-		mv "$d" "$HOME/$PARAKEET_DIR"
+		if [[ $NO_DL == 1 ]]; then
+			warn "speech model missing and --no-downloads given: $VOICE_HINT"
+		else
+			note "speech model: downloading (source $PARAKEET_SOURCE: $PARAKEET_URL)"
+			mkdir -p "$CACHE/dl" "$HOME/models"
+			rm -rf "$CACHE/dl/parakeet.tar.bz2" "$CACHE"/dl/*parakeet-tdt-0.6b-v3-int8*
+			if curl -fL --retry 3 -o "$CACHE/dl/parakeet.tar.bz2" "$PARAKEET_URL" && tar -xjf "$CACHE/dl/parakeet.tar.bz2" -C "$CACHE/dl"; then
+				d=$(find "$CACHE/dl" -maxdepth 1 -type d -name '*parakeet-tdt-0.6b-v3-int8*' | head -1)
+				if [[ -n $d ]] && file_ok "$d/encoder.int8.onnx" "$PARAKEET_ENCODER_SHA256"; then
+					rm -rf "${HOME:?}/$PARAKEET_DIR"
+					mv "$d" "$HOME/$PARAKEET_DIR"
+					note "speech model: downloaded, checksum ok"
+				else
+					warn "speech model: the download does not match its checksum (refused, not kept): $VOICE_HINT"
+				fi
+			else
+				warn "speech model: the download failed: $VOICE_HINT"
+			fi
+			rm -rf "$CACHE/dl/parakeet.tar.bz2" "$CACHE"/dl/*parakeet-tdt-0.6b-v3-int8*
+		fi
 	else
 		note "speech model ~/$PARAKEET_DIR: present, checksum ok"
 	fi
 	record data "$HOME/$PARAKEET_DIR" KEEP "speech model"
-	fetch_file "$VAD_URL" "$VAD_SHA256" "$HOME/$VAD_FILE"
+	( fetch_file "$VAD_URL" "$VAD_SHA256" "$HOME/$VAD_FILE" ) || warn "voice activity model: not available now (voice then uses its energy detector); run ./install.sh again to fetch it"
 	record data "$HOME/$VAD_FILE" KEEP "voice activity model"
 	if [[ $GPU_SPEECH == 1 ]]; then
-		fetch_file "$WHISPER_MODEL_URL" "$WHISPER_MODEL_SHA256" "$HOME/$WHISPER_MODEL"
+		( fetch_file "$WHISPER_MODEL_URL" "$WHISPER_MODEL_SHA256" "$HOME/$WHISPER_MODEL" ) || warn "whisper model (GPU speech): not downloaded; run ./install.sh --gpu-speech again"
 		record data "$HOME/$WHISPER_MODEL" KEEP "whisper model (GPU speech)"
 	fi
 	if [[ $NO_DL == 0 ]]; then

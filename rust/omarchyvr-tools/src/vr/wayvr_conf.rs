@@ -96,6 +96,10 @@ pub struct WayvrSettings {
     pub auto_arrange: bool,
     /// The screen the voice captions sit under (`PIMAX_CAPTIONS_SCREEN` for WayVR; None = the first screen).
     pub captions_screen: Option<String>,
+    /// Steady clicks (`click_steady_px`, default 32 = the app's switch on, 0 = off): a click press holds its point
+    /// until the laser has moved more than this many pixels, so a shaky click does not turn into a drag. The WayVR
+    /// fork's own default is 0 (off, for WayVR without omarchyvr); [`WayvrSettings::yaml`] always writes the key.
+    pub click_steady_px: f32,
 }
 
 impl Default for WayvrSettings {
@@ -118,6 +122,7 @@ impl Default for WayvrSettings {
             pointing_moves_cursor: false,
             auto_arrange: false,
             captions_screen: None,
+            click_steady_px: 32.0,
         }
     }
 }
@@ -192,6 +197,7 @@ impl WayvrSettings {
                 },
                 "pointing_moves_cursor" => s.pointing_moves_cursor = b(&mut warn).unwrap_or(s.pointing_moves_cursor),
                 "auto_arrange" => s.auto_arrange = b(&mut warn).unwrap_or(s.auto_arrange),
+                "click_steady_px" => s.click_steady_px = f(&mut warn).unwrap_or(s.click_steady_px),
                 "captions_screen" => s.captions_screen = Some(v.to_string()).filter(|x| !x.is_empty()),
                 _ => warn.push(format!("line {}: unknown key {k}", n + 1)),
             }
@@ -218,6 +224,7 @@ impl WayvrSettings {
         o += &format!("screen_numbers = {}\n", self.screen_numbers.key());
         o += &format!("pointing_moves_cursor = {}\n", self.pointing_moves_cursor);
         o += &format!("auto_arrange = {}\n", self.auto_arrange);
+        o += &format!("click_steady_px = {:.0}\n", self.click_steady_px);
         if let Some(s) = &self.captions_screen {
             o += &format!("captions_screen = {s}\n");
         }
@@ -245,6 +252,9 @@ impl WayvrSettings {
         if !self.grab_dist_rate.is_finite() || !(0.0..=5.0).contains(&self.grab_dist_rate) {
             v.push("grab_dist_rate must be 0-5".into());
         }
+        if !self.click_steady_px.is_finite() || !(0.0..=500.0).contains(&self.click_steady_px) {
+            v.push("click_steady_px must be 0-500 (0 = off)".into());
+        }
         if self.grab_size_max > 50.0 || self.grab_dist_max > 100.0 {
             v.push("the size or distance limit is not a room any more (max 50 m wide, 100 m away)".into());
         }
@@ -263,7 +273,7 @@ impl WayvrSettings {
              world_lock_grab: {}\nworld_lock_pin: {}\ngrab_keep_apparent_size: {}\ngrab_dist_rate: {:.3}\n\
              grab_size_min: {:.3}\ngrab_size_max: {:.3}\ngrab_dist_min: {:.3}\ngrab_dist_max: {:.3}\n\
              enable_keyboard: {}\nhide_grab_help: {}\ncontrollers_in_work: {}\n\
-             show_controller_models: {}\ncontroller_axes: {}\nscreen_numbers: {}\nfocus_follows_mouse_mode: {}\n",
+             show_controller_models: {}\ncontroller_axes: {}\nscreen_numbers: {}\nfocus_follows_mouse_mode: {}\nclick_steady_px: {:.1}\n",
             self.world_lock_grab,
             self.world_lock_pin,
             self.grab_keep_apparent_size,
@@ -279,7 +289,8 @@ impl WayvrSettings {
             self.controller_axes,
             self.screen_numbers.yaml_key(),
             // WayVR moves the desktop cursor on every hover unless this is true (then only on click / move_mouse)
-            !self.pointing_moves_cursor
+            !self.pointing_moves_cursor,
+            self.click_steady_px
         )
     }
 }
@@ -365,6 +376,16 @@ mod tests {
         // an old file without the keys gets the safe defaults
         let (old, _) = WayvrSettings::parse("enable_keyboard = false\n");
         assert!(!old.pointing_moves_cursor && !old.auto_arrange);
+    }
+
+    #[test]
+    fn steady_clicks_default_32_and_round_trip() {
+        let d = WayvrSettings::default();
+        assert!(d.yaml().contains("click_steady_px: 32.0\n"), "{}", d.yaml());
+        let (off, w) = WayvrSettings::parse("click_steady_px = 0\n");
+        assert!(w.is_empty() && off.click_steady_px == 0.0 && off.yaml().contains("click_steady_px: 0.0\n"));
+        assert_eq!(WayvrSettings::parse(&off.render()).0, off);
+        assert!(!WayvrSettings { click_steady_px: -1.0, ..d }.validate().is_empty());
     }
 
     #[test]

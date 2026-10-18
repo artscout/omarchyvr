@@ -40,6 +40,23 @@ pub const BLOCKED_PROGRAMS: &[&str] = &[
 /// `hyprctl` arguments that are never allowed (rows 13-15, 46, 47).
 const BLOCKED_HYPRCTL: &[&str] = &["reload", "dpms", "window.close", "workspace = \"e", "focus({ workspace", "keyword", "monitor"];
 
+/// The toast of every screen geometry request while the Work screens are locked (user decision 2026-10-18).
+pub const LOCKED_MSG: &str = "The screens are locked. Say a layout name, or recenter.";
+
+/// The intents that move, resize or reset a VR screen: they answer [`LOCKED_MSG`] while the screens are locked.
+pub const GEOMETRY_IDS: &[&str] = &[
+    "win.screen.nudge",
+    "win.screen.adjust",
+    "win.screen.scale",
+    "win.screen.closer",
+    "win.screen.farther",
+    "win.screen.bigger",
+    "win.screen.smaller",
+    "win.screen.place",
+    "win.screen.here",
+    "vr.screens.reset",
+];
+
 /// Slot types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -88,6 +105,10 @@ pub struct Intent {
     /// A few words for the voice AI's intent list (default: the first phrases).
     #[serde(default)]
     pub gloss: String,
+    /// Not offered to the voice AI (a locked screen geometry intent: it still matches its phrases and answers
+    /// [`LOCKED_MSG`]). Set by [`Catalogue::lock_screens`], never read from a file.
+    #[serde(skip)]
+    pub ai_hidden: bool,
 }
 
 fn safe() -> String {
@@ -169,11 +190,21 @@ pub struct Catalogue {
     pub intents: Vec<Intent>,
     /// What the loader dropped or fixed, for `omarchyvr-voice intents` and the log.
     pub notes: Vec<String>,
+    /// The Work screens are locked (the default): [`Catalogue::lock_screens`] was applied.
+    pub screens_locked: bool,
 }
 
 /// `~/.config/omarchyvr/voice-intents.toml`.
 pub fn user_path() -> PathBuf {
     expand("~/.config/omarchyvr/voice-intents.toml")
+}
+
+/// Does a `60-preset.yaml` say `desk_locked: false`?
+pub fn desk_unlocked(yaml: &str) -> bool {
+    yaml.lines().any(|l| {
+        let l = l.split('#').next().unwrap_or("").trim();
+        l.strip_prefix("desk_locked:").is_some_and(|v| v.trim().trim_matches(['"', '\'']) == "false")
+    })
 }
 
 /// `~/...` -> `$HOME/...`.
@@ -257,7 +288,25 @@ impl Catalogue {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
             Err(e) => return Err(format!("{}: {e}", user.display())),
         };
-        Catalogue::from_texts(BUILTIN, text.as_deref())
+        let mut c = Catalogue::from_texts(BUILTIN, text.as_deref())?;
+        // locked is the default; `desk_locked: false` in WayVR's 60-preset.yaml turns it off
+        let conf = expand(&c.backdrop.wayvr_home).join("config/wayvr/conf.d/60-preset.yaml");
+        if !std::fs::read_to_string(conf).is_ok_and(|t| desk_unlocked(&t)) {
+            c.lock_screens();
+        }
+        Ok(c)
+    }
+
+    /// Lock the screen geometry (user decision 2026-10-18): every [`GEOMETRY_IDS`] intent keeps its phrases (a spoken
+    /// request still matches) but answers [`LOCKED_MSG`], and the voice AI no longer sees it.
+    pub fn lock_screens(&mut self) {
+        for i in self.intents.iter_mut().filter(|i| GEOMETRY_IDS.contains(&i.id.as_str())) {
+            i.run = vec!["@say".into(), LOCKED_MSG.into()];
+            i.say = String::new();
+            i.output = false;
+            i.ai_hidden = true;
+        }
+        self.screens_locked = true;
     }
 
     /// Parse and merge (`over` = the user's file).
@@ -270,6 +319,7 @@ impl Catalogue {
             llm: b.llm.unwrap_or_default(),
             intents: Vec::new(),
             notes: Vec::new(),
+            screens_locked: false,
         };
         let mut all = b.intent;
         if let Some(o) = over {
@@ -346,6 +396,11 @@ impl Catalogue {
         self.intents.iter().filter(|i| i.enabled)
     }
 
+    /// The enabled intents the voice AI may use (not the locked geometry ones).
+    pub fn ai_enabled(&self) -> impl Iterator<Item = &Intent> {
+        self.enabled().filter(|i| !i.ai_hidden)
+    }
+
     pub fn get(&self, id: &str) -> Option<&Intent> {
         self.intents.iter().find(|i| i.id == id)
     }
@@ -374,7 +429,7 @@ mod tests {
         assert_eq!(rows, want);
         assert!(c.get("omarchy.lock").unwrap().confirm);
         assert_eq!(c.enabled().count(), c.intents.len());
-        assert_eq!(c.intents.len(), 144); // + vr.preset.cinema_huge (2026-10-17) // + win.screen.place/here (2026-10-17) // + vr.input.show_controllers/hide_controllers (PIMAX_CTRL_INHAND) // + win.app.open/here // + win.close.named (no app closes unless named) // + vr.screens.hide/hide_others, win.screen.scale, vr.session.stop (live 2026-10-16 b) // + vr.screens.numbers/numbers_hide/numbers_always (WayVR badges) // + screen numbers: win.screen.put_from/move_all/move_n/goto_n/swap/adjust/list_n/open_n, win.layout.save(_as)/restore(_as), omarchy.volume.set // + win.screen.put/put_n, vr.preset.exit_cinema, media.play (agent mode) // + vr.screens.count/more/one_more/add, win.screen.open/gather (2026-10-16) // + vr.input.controllers/hands (prefer-hands) // + win.screen.goto/move/nudge/closer/farther/bigger/smaller, win.organize/together (VR screens) // + voice.debug.on/off, typing, keys, browser, + win.ws.new/ws.close/focus.gaze/move.here/merge.here
+        assert_eq!(c.intents.len(), 146); // + vr.preset.work4/work5/work6, assistant gone (locked layouts 2026-10-18) // + vr.preset.cinema_huge (2026-10-17) // + win.screen.place/here (2026-10-17) // + vr.input.show_controllers/hide_controllers (PIMAX_CTRL_INHAND) // + win.app.open/here // + win.close.named (no app closes unless named) // + vr.screens.hide/hide_others, win.screen.scale, vr.session.stop (live 2026-10-16 b) // + vr.screens.numbers/numbers_hide/numbers_always (WayVR badges) // + screen numbers: win.screen.put_from/move_all/move_n/goto_n/swap/adjust/list_n/open_n, win.layout.save(_as)/restore(_as), omarchy.volume.set // + win.screen.put/put_n, vr.preset.exit_cinema, media.play (agent mode) // + vr.screens.count/more/one_more/add, win.screen.open/gather (2026-10-16) // + vr.input.controllers/hands (prefer-hands) // + win.screen.goto/move/nudge/closer/farther/bigger/smaller, win.organize/together (VR screens) // + voice.debug.on/off, typing, keys, browser, + win.ws.new/ws.close/focus.gaze/move.here/merge.here
         // window control: user request 2026-10-15; the destructive ones ask for a spoken yes
         for id in ["win.close", "win.ws.close", "win.tab.close"] {
             assert!(c.get(id).unwrap().confirm && c.get(id).unwrap().safety == "careful", "{id}");
@@ -429,6 +484,41 @@ backend = "off"
         let c = Catalogue::from_texts(BUILTIN, Some(bad)).unwrap();
         assert!(c.get("x").is_none());
         assert!(Catalogue::from_texts(BUILTIN, Some("[[intent]]\nid = 3\n")).is_err());
+    }
+
+    #[test]
+    fn locked_screens_hide_the_geometry_intents_from_the_ai_and_keep_their_phrases() {
+        let open = Catalogue::from_texts(BUILTIN, None).unwrap();
+        assert!(!open.screens_locked && open.ai_enabled().count() == open.enabled().count());
+        let mut c = open.clone();
+        c.lock_screens();
+        assert!(c.screens_locked);
+        for id in GEOMETRY_IDS {
+            let i = c.get(id).unwrap_or_else(|| panic!("{id}"));
+            assert_eq!(i.run, ["@say", LOCKED_MSG], "{id}");
+            assert!(i.ai_hidden && !i.phrases.is_empty() && i.enabled, "{id}");
+            assert!(blocked(i).is_none(), "{id}");
+            assert!(c.enabled().any(|x| x.id == *id), "{id} still matches phrases");
+            assert!(!c.ai_enabled().any(|x| x.id == *id), "{id}");
+        }
+        let (a, b) = (crate::agent::tools(&open), crate::agent::tools(&c));
+        assert!(b.len() < a.len());
+        for id in GEOMETRY_IDS {
+            let name = id.replace('.', "_");
+            assert!(a.iter().any(|t| t.spec.name == name), "{name} open");
+            assert!(!b.iter().any(|t| t.spec.name == name), "{name} locked");
+        }
+        assert!(crate::nlu::system_prompt(&c).len() < crate::nlu::system_prompt(&open).len());
+        assert!(!crate::nlu::system_prompt(&c).contains("win.screen.nudge") && !crate::nlu::system_prompt(&c).contains("vr.screens.reset"));
+        assert!(!crate::llm::prompt(&c).contains("win.screen.bigger") && crate::llm::prompt(&open).contains("win.screen.bigger"));
+        assert!(!crate::remote::act_system_for(true).contains("moves the VR screen in space"));
+    }
+
+    #[test]
+    fn desk_locked_false_in_the_wayvr_config_unlocks() {
+        assert!(desk_unlocked("a: 1\ndesk_locked: false\n"));
+        assert!(desk_unlocked("desk_locked: \"false\" # test"));
+        assert!(!desk_unlocked("desk_locked: true\n") && !desk_unlocked("# desk_locked: false\n") && !desk_unlocked(""));
     }
 
     #[test]

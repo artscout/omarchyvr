@@ -3,6 +3,9 @@
 Maintainer side (the command line is fine here). Users never build: they download `omarchyvr-<version>-x86_64.tar.zst`
 from GitHub Releases, unpack it and run `./install.sh` ([INSTALL.md](INSTALL.md)).
 
+Release notes: [v0.1.3](releases/v0.1.3.md), [v0.1.0](releases/v0.1.0.md) (0.1.1 and 0.1.2 were packaging fixes of
+the prebuilt release; their notes are on the GitHub Releases page).
+
 ## What a release is
 
 One tarball with a finished build, made in a clean Arch Linux container from a committed commit and the public stand-ins
@@ -16,6 +19,8 @@ only (no `tools/lab-data.sh link`, no `.claude/`, the eye start list is the publ
                                                 CMakeCache.txt (path-free options copy for the app's preflight): the build-tree layout, fewer files
       lib/omarchyvr/{basalt,onnxruntime,sherpa-onnx,wayvr}/   libbasalt, ONNX Runtime, speech library, WayVR + libopenvr_api.so
       lib/omarchyvr/deps/                       bundled libraries (OpenCV, tbb, fmt, dc1394, ...)
+      lib/omarchyvr/tools/patchelf              the container's patchelf (GPL-3.0, PATCHELF-LICENSE.txt next to it): install.sh makes the
+                                                installed RUNPATHs absolute with it (installer/runpath.py), no pacman dependency
       share/omarchyvr/data/                     what install.sh copies to $DATA (docs, udev rule, NVIDIA patches, device descriptors)
       README-INSTALL.txt BUILD-PACKAGES.txt     for the user; the builder's package list
 
@@ -44,6 +49,15 @@ Monado's `openxr_monado-dev.json` (absolute paths) is NOT in the tarball: `insta
 
        docker run --rm -v "$PWD":/src:ro -v "$PWD/dist":/out omarchyvr-release-builder \
            /src/packaging/release/verify-release.sh /out/omarchyvr-0.1.0-x86_64.tar.zst /src
+
+   Then the install test in a disposable root container (`packaging/release/test-install.sh`; needs docker, not while VR runs):
+
+       packaging/release/test-install.sh dist/omarchyvr-0.1.0-x86_64.tar.zst
+
+   It installs as a fresh user, gives `monado-service` `cap_sys_nice` like the app's root job, and checks in secure mode that
+   Monado still finds its libraries (release 0.1.1 did not: a program with a file capability ignores `$ORIGIN` RUNPATHs,
+   so the tarball keeps them relative and `install.sh` makes the installed copies absolute). The same checks must FAIL on the
+   unpatched release tree; the script checks that too.
 
    Then, on an Omarchy test PC (between VR sessions): unpack in a path you like, `./install.sh`, check the app's Ready
    screen and Play. This is the only check that proves the bundled libraries work with the real GPU stack.

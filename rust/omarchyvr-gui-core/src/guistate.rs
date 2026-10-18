@@ -103,6 +103,7 @@ impl GuiState {
         let mut s = GuiState::default();
         let mut eye_v2 = false;
         let mut stage = None;
+        let mut old_assistant = false;
         for l in text.lines() {
             let Some((k, v)) = l.split_once('=') else { continue };
             let on = matches!(v.trim(), "true" | "1" | "yes");
@@ -131,7 +132,10 @@ impl GuiState {
                 "page" => s.page = Page::from_name(v.trim()),
                 "perf" => s.toggles.perf = on,
                 "anchor" => s.toggles.anchor = on,
-                "preset" => s.toggles.preset = crate::launcher::Preset::parse(v),
+                "preset" => {
+                    s.toggles.preset = crate::launcher::Preset::parse(v);
+                    old_assistant = crate::launcher::Preset::captions_alias(v);
+                }
                 "controllers_work" => s.toggles.ctrl_work = CtrlMode::parse(v).unwrap_or(CtrlMode::WhenHeld),
                 "controllers_play" => s.toggles.ctrl_play = CtrlMode::parse(v).unwrap_or(CtrlMode::Always),
                 "ctrl_angle" => {
@@ -142,6 +146,7 @@ impl GuiState {
                 "new_exposure" => s.toggles.new_exposure = on,
                 "room_glide" => s.toggles.room_glide = on,
                 "ctrl_steady" => s.toggles.ctrl_steady = on,
+                "drift_hold" => s.toggles.drift_hold = on,
                 "screens" => s.toggles.screens = crate::screens::clamp(v.trim().parse().unwrap_or(0)),
                 "scale_pct" => s.scale_pct = v.trim().parse::<u16>().ok().filter(|x| (50..=200).contains(x)).unwrap_or(100),
                 _ => {}
@@ -160,6 +165,11 @@ impl GuiState {
         if !eye_v2 && !text.trim().is_empty() {
             s.toggles.eye = true;
         }
+        // the old "assistant" preset was Work 6 with the voice (and its captions) on at start; the launcher now gets
+        // `--preset work-6`, so the voice switch carries the captions for a user upgrading from it (saved from now on)
+        if old_assistant {
+            s.toggles.voice = true;
+        }
         s
     }
 
@@ -167,7 +177,7 @@ impl GuiState {
     pub fn render(&self) -> String {
         let t = &self.toggles;
         format!(
-            "# Pimax app state (written by omarchyvr-app)\nonboarded = {}\nsetup_stage = {}\neye_visual = true\neye = {}\nsixdof = {}\nctrl_track = {}\nhands = {}\nhands_roles = {}\nhands_chosen = {}\npassthrough = {}\nvoice = {}\nhz = {}\nperf = {}\nanchor = {}\npreset = {}\ncontrollers_work = {}\ncontrollers_play = {}\nctrl_angle = {}\nnew_exposure = {}\nroom_glide = {}\nctrl_steady = {}\nscreens = {}\nscale_pct = {}\nautostart = {}\nlast_mode = {}\nlast_result = {}\nlast_at = {}\nargv_at = {}\ndev_mode = {}\nnvidia_allow_untested = {}\nheadset = {}\ncolours = {}\n{}",
+            "# Pimax app state (written by omarchyvr-app)\nonboarded = {}\nsetup_stage = {}\neye_visual = true\neye = {}\nsixdof = {}\nctrl_track = {}\nhands = {}\nhands_roles = {}\nhands_chosen = {}\npassthrough = {}\nvoice = {}\nhz = {}\nperf = {}\nanchor = {}\npreset = {}\ncontrollers_work = {}\ncontrollers_play = {}\nctrl_angle = {}\nnew_exposure = {}\nroom_glide = {}\nctrl_steady = {}\ndrift_hold = {}\nscreens = {}\nscale_pct = {}\nautostart = {}\nlast_mode = {}\nlast_result = {}\nlast_at = {}\nargv_at = {}\ndev_mode = {}\nnvidia_allow_untested = {}\nheadset = {}\ncolours = {}\n{}",
             self.onboarded,
             self.setup.name(),
             t.eye,
@@ -188,6 +198,7 @@ impl GuiState {
             t.new_exposure,
             t.room_glide,
             t.ctrl_steady,
+            t.drift_hold,
             t.screens,
             self.scale_pct,
             self.autostart,
@@ -239,11 +250,25 @@ mod tests {
     }
 
     #[test]
+    fn the_old_assistant_preset_keeps_its_captions() {
+        // a gui-state.toml from before the locked layouts: preset = assistant (Work 6 + voice captions at start)
+        let s = GuiState::parse("onboarded = true\nvoice = false\npreset = assistant\n");
+        assert_eq!(s.toggles.preset, crate::launcher::Preset::Work6);
+        assert!(s.toggles.voice, "the voice switch carries the captions the old preset turned on");
+        let flags = crate::launcher::desk_flags(&DeskToggles { preset_flag: true, ..s.toggles });
+        assert!(flags.iter().any(|f| f == "--voice") && flags.windows(2).any(|w| w[0] == "--preset" && w[1] == "work-6"), "{flags:?}");
+        // saved again it is a plain work-6 with voice on; a plain work-6 does not switch the voice on
+        let again = GuiState::parse(&s.render());
+        assert!(again.toggles.voice && again.toggles.preset == crate::launcher::Preset::Work6);
+        assert!(!GuiState::parse("onboarded = true\nvoice = false\npreset = work-6\n").toggles.voice);
+    }
+
+    #[test]
     fn round_trip_and_defaults() {
         let s = GuiState {
             setup: SetupStage::Restart,
             onboarded: true,
-            toggles: DeskToggles { eye: false, sixdof: true, ctrl_track: true, hands: true, hands_roles: true, passthrough: true, voice: true, hz90: true, perf: false, anchor: true, preset: crate::launcher::Preset::Cinema, eye_default_on: false, screens: 2, ctrl_work: CtrlMode::Off, ctrl_play: CtrlMode::WhenHeld, ctrl_angle: -12, new_exposure: false, room_glide: false, ctrl_steady: false, tracking_flags: false },
+            toggles: DeskToggles { eye: false, sixdof: true, ctrl_track: true, hands: true, hands_roles: true, passthrough: true, voice: true, hz90: true, perf: false, anchor: true, preset: crate::launcher::Preset::Cinema, eye_default_on: false, screens: 2, ctrl_work: CtrlMode::Off, ctrl_play: CtrlMode::WhenHeld, ctrl_angle: -12, new_exposure: false, room_glide: false, ctrl_steady: false, drift_hold: false, tracking_flags: false, preset_flag: false },
             page: Some(Page::Tools),
             scale_pct: 130,
             autostart: true,

@@ -9,6 +9,7 @@ Builds the tarball users install without compiling. How and why: [docs/RELEASE.m
 | `bundle-libs.py` | decides core/tree/bundled per library, sets `$ORIGIN` RUNPATHs with patchelf, `check` = ldd of every ELF |
 | `manifest.sh` | writes `MANIFEST.txt` (read by `verify_release` in `installer/lib.sh`) |
 | `verify-release.sh` | all checks on the finished tarball; a failure deletes it |
+| `test-install.sh` | host side: installs a tarball in a disposable root container (docker), sets `cap_sys_nice` on `monado-service`, checks that Monado still loads its libraries; the unpatched tree must fail (`test-install-container.sh` runs inside) |
 | `scan-tree.py` | `tools/leak-scan.py` over an unpacked tree, plus the builder-path and model-file checks |
 | `README-INSTALL.txt` | the plain-text note that sits in the tarball |
 

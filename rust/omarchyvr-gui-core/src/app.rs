@@ -394,6 +394,8 @@ pub struct AppCore {
     pub(crate) speaker_test_from: Option<usize>,
     /// Status line.
     pub message: String,
+    /// The last live layout switch or recenter (Desktop page): (ok, plain words).
+    pub layout_result: Option<(bool, String)>,
     /// Confirmation to show.
     pub pending: Option<Pending>,
     /// Running tool session.
@@ -424,6 +426,12 @@ pub struct AppCore {
     pub demo_subtitles: bool,
     /// The eye laser as last switched from the app (WayVR has no query for it).
     pub eye_laser: Option<bool>,
+    /// Learning from clicks as last read from the running WayVR (`gaze-learn status`), and when.
+    pub eye_learn: Option<omarchyvr_tools::vr::eye_learn::LearnStatus>,
+    /// When `eye_learn` was last asked for.
+    pub eye_learn_at: Option<Instant>,
+    /// The last quick eye check in plain words (text, success).
+    pub eye_check: Option<(String, bool)>,
     /// `~/.config/omarchyvr/eye.conf`: the gaze dot (visual effect) and "Eyes as a mouse" (default off).
     pub eye_settings: omarchyvr_config::eye::EyeSettings,
     /// The last headset restart's result.
@@ -557,6 +565,7 @@ impl AppCore {
             speaker_result: None,
             speaker_test_from: None,
             message: String::new(),
+            layout_result: None,
             pending: None,
             session_tool: None,
             onboarding: OnboardingView::default(),
@@ -572,6 +581,9 @@ impl AppCore {
             room_requested: false,
             demo_subtitles: false,
             eye_laser: None,
+            eye_learn: None,
+            eye_learn_at: None,
+            eye_check: None,
             eye_settings: omarchyvr_config::eye::EyeSettings::load(&omarchyvr_config::eye::default_path()),
             headset_reset: None,
             headset_reset_from: None,
@@ -722,6 +734,7 @@ impl AppCore {
         self.toggles.eye_default_on = self.facts.caps.no_eye;
         // a launcher that knows --ctrl-angle and the tracking switches gets them at every start
         self.toggles.tracking_flags = self.facts.caps.tracking;
+        self.toggles.preset_flag = self.facts.caps.preset;
         self.adopt_start_argv();
         // a build may have appeared: the plans are worked out again (the old ones stay in use meanwhile)
         self.plans_fresh.clear();
@@ -2224,6 +2237,114 @@ impl AppCore {
     pub fn set_eye_mouse(&mut self, on: bool) {
         self.eye_settings.mouse = on;
         self.save_eye_settings();
+    }
+
+    /// "Learn from my clicks" (`learn` in eye.conf, default on; next Work start). Learning never makes input.
+    pub fn set_eye_learn(&mut self, on: bool) {
+        self.eye_settings.learn = on;
+        self.save_eye_settings();
+    }
+
+    /// What it learned, in plain words (None until the running session answered).
+    pub fn eye_learn_text(&self) -> Option<String> {
+        self.eye_learn.as_ref().map(omarchyvr_tools::vr::eye_learn::status_text)
+    }
+
+    /// Ask the running WayVR what it learned (`wayvrctl gaze-learn status --json`), at most every 5 s.
+    pub fn eye_learn_refresh(&mut self) {
+        if self.eye_learn_at.is_some_and(|t| t.elapsed() < Duration::from_secs(5)) || self.task_busy("gazelearn") {
+            return;
+        }
+        self.eye_learn_at = Some(Instant::now());
+        if self.demo {
+            self.eye_learn = Some(omarchyvr_tools::vr::eye_learn::LearnStatus { enabled: true, lessons: 12, taken: 14, refused: 2, last_error_deg: Some(0.8), offset_deg: Some((0.4, -0.2)), key: "demo".into() });
+            return;
+        }
+        if !self.live.alive("wayvr") {
+            self.eye_learn = None;
+            return;
+        }
+        let ctl = self.wayvr_paths.ctl.clone();
+        self.task(Some("gazelearn"), move || {
+            let r = omarchyvr_tools::vr::eye_learn::status(&ctl);
+            Box::new(move |c: &mut AppCore| c.eye_learn = r.ok())
+        });
+    }
+
+    /// "Forget what it learned" (`wayvrctl gaze-learn forget`).
+    pub fn eye_learn_forget(&mut self) {
+        if self.demo {
+            self.eye_learn = Some(omarchyvr_tools::vr::eye_learn::LearnStatus { enabled: true, ..Default::default() });
+            self.message = "Forgot what it learned".into();
+            return;
+        }
+        if !self.live.alive("wayvr") {
+            self.message = "Start Work first: the lessons live in the running session".into();
+            return;
+        }
+        let ctl = self.wayvr_paths.ctl.clone();
+        self.task(Some("gazelearn"), move || {
+            let r = omarchyvr_tools::vr::eye_learn::forget(&ctl);
+            Box::new(move |c: &mut AppCore| {
+                c.eye_learn_at = None;
+                c.message = match r {
+                    Ok(()) => "Forgot what it learned".into(),
+                    Err(e) => format!("cannot forget: {e}"),
+                };
+            })
+        });
+    }
+
+    /// "Quick eye check": shows a dot in the headset (a toast says "Look at the dot in front of you"), up to 8 s.
+    pub fn eye_quick_check(&mut self) {
+        if self.demo {
+            self.eye_check = Some((omarchyvr_tools::vr::eye_learn::check_text(&omarchyvr_tools::vr::eye_learn::Check::Done { before: 2.1, after: 0.4 }), true));
+            return;
+        }
+        if !self.live.alive("wayvr") {
+            self.eye_check = Some(("Start Work first".into(), false));
+            return;
+        }
+        self.eye_check = Some(("Look at the dot in front of you in the headset...".into(), true));
+        let ctl = self.wayvr_paths.ctl.clone();
+        self.task(Some("gazecheck"), move || {
+            let r = omarchyvr_tools::vr::eye_learn::check(&ctl);
+            Box::new(move |c: &mut AppCore| {
+                c.eye_check = Some(match r {
+                    Ok(ch) => (omarchyvr_tools::vr::eye_learn::check_text(&ch), matches!(ch, omarchyvr_tools::vr::eye_learn::Check::Done { .. })),
+                    Err(e) => (format!("The check did not run: {e}"), false),
+                });
+                c.eye_learn_at = None;
+            })
+        });
+    }
+
+    /// "Steady clicks" (`click_steady_px` in the WayVR settings, default 32, 0 = off): saved at once for every desk
+    /// start (WayVR reads it once, at start).
+    pub fn set_click_steady(&mut self, on: bool) {
+        let px = if on { 32.0 } else { 0.0 };
+        self.wayvr.settings.click_steady_px = px;
+        let mut s = self.wayvr.on_disk.clone().unwrap_or_default();
+        s.click_steady_px = px;
+        if self.demo {
+            self.wayvr.on_disk = Some(s);
+            return;
+        }
+        let path = self.wayvr_paths.settings.clone();
+        self.task(None, move || {
+            let r = wayvr::save_settings(&path, &s);
+            Box::new(move |c: &mut AppCore| match r {
+                Ok(()) => {
+                    if let Some(d) = c.wayvr.on_disk.as_mut() {
+                        d.click_steady_px = px;
+                    } else {
+                        c.wayvr.on_disk = Some(s);
+                    }
+                    c.message = format!("Steady clicks {}: saved for every desk start", if on { "on" } else { "off" });
+                }
+                Err(e) => c.message = format!("cannot save {}: {e}", path.display()),
+            })
+        });
     }
 
     fn save_eye_settings(&mut self) {

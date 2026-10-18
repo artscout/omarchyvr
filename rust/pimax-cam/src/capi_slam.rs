@@ -430,6 +430,10 @@ pub unsafe extern "C" fn pimax_cam_track_update(
         });
         t.log_vio(&s);
         let o = t.h.update(now_ns as i64, s);
+        if let Some(r) = t.h.drift.take_report(now_ns as i64) {
+            // Monado's log (stderr); the app reads it (omarchyvr-gui-core monlog).
+            eprintln!("{}", crate::drift::report_line(&r));
+        }
         if !out.is_null() {
             // SAFETY: writable per contract.
             unsafe { *out = out_to_c(t, &o) };
@@ -495,6 +499,10 @@ pub unsafe extern "C" fn pimax_cam_track_update_vio(
         t.log_vio(&s);
         t.h.set_scene_mean(crate::headpose::scene::latest(1000));
         let o = t.h.update(now_ns as i64, s);
+        if let Some(r) = t.h.drift.take_report(now_ns as i64) {
+            // Monado's log (stderr); the app reads it (omarchyvr-gui-core monlog).
+            eprintln!("{}", crate::drift::report_line(&r));
+        }
         if !out.is_null() {
             // SAFETY: writable per contract.
             unsafe { *out = out_to_c(t, &o) };

@@ -16,6 +16,7 @@ Patches for the NVIDIA open kernel modules (`open-gpu-kernel-modules`).
 | `nvidia-2h1or-flip-fix.patch` | merged-head flip sync (module parameter `merged_head_sync`) |
 | `nvidia-evo-makeroom-bounded-wait.patch` | bounded wait in the EVO make-room path (no display-engine hang) |
 | `tested-versions.txt` | the driver versions the patches were tested on (one per line) |
+| `ported-versions.txt`, `<version>/` | versions the patches were ported to (compile-checked, not hardware-tested); `<version>/` holds that version's three patches, which override the default set |
 | `nvidia-patch-reapply.sh` | applies them idempotently to `/usr/src/nvidia-<version>` (`--check`, `--verify`, `--rebuild`, `--allow-untested`) |
 | `nvidia-pimax-patch.hook`, `nvidia-pimax-verify.hook` | pacman hooks (before and after the dkms build) |
 | `blackwell/nvidia-dp-fec-reread.patch` | Crystal Super on RTX 50: re-read the sink's FEC capability so DSC is allowed (the only patch it needs); not applied by the scripts here |
@@ -31,6 +32,11 @@ prints a loud WARNING, tries `--fuzz=0` and then `--fuzz=2`, still requires the 
 `--fallback` a failed build ends with the stock module. Every run writes `/var/lib/omarchyvr/nvidia-patch-status`
 (`driver=`, `result=tested|untested-allowed|untested-refused|failed`, `fuzz=`, `time=`) for the app. Tests can override
 the paths with `NVIDIA_PATCH_TESTED`, `NVIDIA_PATCH_CONF`, `NVIDIA_PATCH_STATUS`. Details: [../../docs/NVIDIA-UNTESTED.md](../../docs/NVIDIA-UNTESTED.md).
+
+Per-version patches: for driver version V each patch is taken from `V/<name>` when it exists, else from the default set
+next to this README (written for 610.57.04). A version in `ported-versions.txt` (today 615.78.08, see
+[../../docs/NVIDIA-615.md](../../docs/NVIDIA-615.md)) is still untested and needs the opt-in, but the opt-in applies the clean
+`--fuzz=0` port and never the `--fuzz=2` retry; the status file then also has `port=ported`.
 
 Apply by hand: `patch -p1 -d /usr/src/nvidia-<version> < nvidia-2h1or-viewport.patch` (in the order above), or let
 the app's Fix button do it. Details: [../../linux/DISPLAY.md](../../linux/DISPLAY.md). The files are also reachable

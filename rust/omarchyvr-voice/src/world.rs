@@ -92,13 +92,13 @@ pub struct Session {
     pub running: bool,
     /// work | play | off
     pub mode: String,
-    /// cinema | work-3 | work-1 | assistant
+    /// work-4 | focus-3 | work-5 | work-6 | cinema | cinema-huge
     pub preset: String,
 }
 
 impl Default for Session {
     fn default() -> Self {
-        Session { running: true, mode: "work".into(), preset: "work-3".into() }
+        Session { running: true, mode: "work".into(), preset: "work-4".into() }
     }
 }
 
@@ -251,6 +251,19 @@ pub struct Typed {
 }
 
 /// The whole desk.
+/// How slowly the simulated desktop answers (opt-in per world; the defaults are the old instant desk).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct Timing {
+    /// A launched app shows in `hyprctl -j clients` only after this many more client reads.
+    pub launch_delay_reads: u32,
+    /// A screen made shown or added shows in `hyprctl -j monitors` only after this many more monitor reads.
+    pub screen_delay_reads: u32,
+    /// Changes made once, right after the first read the voice code makes: "focus t2", "close s1", "gaze 3",
+    /// "open <class> <screen>" (the desk changes while the AI thinks).
+    pub drift: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct World {
@@ -282,6 +295,7 @@ pub struct World {
     /// Next address / focus counter.
     pub next_id: u64,
     pub clock: u64,
+    pub timing: Timing,
 }
 
 impl Default for World {
@@ -314,6 +328,7 @@ impl Default for World {
             closed: Vec::new(),
             next_id: 0x100,
             clock: 1,
+            timing: Timing::default(),
         };
         w.normalize();
         w
@@ -482,6 +497,46 @@ impl World {
         self.focus_screen(home);
     }
 
+    /// Apply drift verbs (`Timing::drift`). Unknown verbs and missing apps are skipped (the desk moved on).
+    pub fn drift(&mut self, verbs: &[String]) {
+        for v in verbs {
+            let t: Vec<&str> = v.split_whitespace().collect();
+            match t.as_slice() {
+                ["focus", name] => {
+                    if let Some(id) = self.app(name).map(|a| a.id.clone()) {
+                        let _ = self.focus_app(&id);
+                    }
+                }
+                ["close", name] => {
+                    if let Some(i) = self.apps.iter().position(|a| a.id == *name || a.name == *name) {
+                        let a = self.apps.remove(i);
+                        if self.focus.as_deref() == Some(a.id.as_str()) {
+                            let ws_now = self.screen(self.focused_screen).map(|s| s.ws).unwrap_or(1);
+                            self.focus = self.top_on(ws_now);
+                        }
+                        self.closed.push(a);
+                    }
+                }
+                ["gaze", n] => {
+                    if let Ok(n) = n.parse::<u8>() {
+                        self.gaze = Some(GazeAt { screen: n, app: None });
+                    }
+                }
+                ["open", class, n] => {
+                    if let (Ok(n), true) = (n.parse::<u8>(), true) {
+                        let ws = self.screen(n).map(|s| s.ws);
+                        let id = self.launch(class, class, Vec::new());
+                        if let (Some(ws), Some(a)) = (ws, self.apps.iter_mut().find(|a| a.id == id)) {
+                            a.ws = ws;
+                        }
+                    }
+                }
+                _ => {}
+            }
+            self.normalize();
+        }
+    }
+
     /// A new app on the focused screen's workspace, focused.
     fn launch(&mut self, class: &str, title: &str, tabs: Vec<Tab>) -> String {
         let id = self.new_id();
@@ -595,17 +650,126 @@ pub struct Sim {
     pub unmodelled: Vec<String>,
     /// The Unix ms the gaze report is stamped with.
     pub now_ms: u64,
+    /// The world after every write (not reads), with the command that made it. The steps and the in-between
+    /// checks of statetest.rs look at these.
+    pub history: Vec<(String, World)>,
+    /// Apps launched but not yet in `hyprctl -j clients`: id -> client reads still to wait.
+    unseen_apps: BTreeMap<String, u32>,
+    /// Screens made shown or added but not yet in `hyprctl -j monitors`: n -> monitor reads still to wait.
+    unseen_screens: BTreeMap<u8, u32>,
+    drift_done: bool,
+}
+
+/// A preset's layout: (show limit, slots, width m, distance m, curvature, passthrough). The locked Work layouts
+/// (user decision 2026-10-18; docs/SCREENS.md): screens 1 main, 2 left, 3 right, 4 up, 5 up-left, 6 up-right.
+pub fn layout_of(preset: &str) -> Option<(u8, Vec<u8>, f32, f32, f32, &'static str)> {
+    Some(match preset {
+        "work-4" => (4, vec![2, 3, 4], 1.6, 2.0, 0.0, "normal"),
+        "focus-3" => (3, vec![2, 3], 1.2, 1.3, 0.0, "normal"),
+        "work-5" => (5, vec![2, 3, 5, 6], 1.6, 2.0, 0.0, "normal"),
+        "work-6" => (6, vec![2, 3, 4, 5, 6], 1.6, 2.0, 0.0, "normal"),
+        "cinema" => (1, vec![], 3.2, 3.5, 0.35, "dim"),
+        "cinema-huge" => (1, vec![], 11.0, 8.0, 0.2, "off"),
+        _ => return None,
+    })
 }
 
 impl Sim {
     pub fn new(world: World) -> Sim {
         let now_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(1_000_000);
-        Sim { world, commands: Vec::new(), toasts: Vec::new(), unmodelled: Vec::new(), now_ms }
+        Sim { world, commands: Vec::new(), toasts: Vec::new(), unmodelled: Vec::new(), now_ms, history: Vec::new(), unseen_apps: BTreeMap::new(), unseen_screens: BTreeMap::new(), drift_done: false }
     }
 
     /// The commands that change something (reads left out).
     pub fn writes(&self) -> Vec<String> {
         self.commands.iter().filter(|c| !is_read(c)).cloned().collect()
+    }
+
+    /// Record the world after a write.
+    pub fn snap(&mut self, cmd: &str) {
+        self.history.push((cmd.to_string(), self.world.clone()));
+    }
+
+    /// Did the desk drift (Timing::drift) during the case?
+    pub fn drifted(&self) -> bool {
+        self.drift_done
+    }
+
+    /// The first read the voice code makes: the desk changes once (Timing::drift).
+    fn drift_after_read(&mut self) {
+        if self.drift_done || self.world.timing.drift.is_empty() {
+            return;
+        }
+        self.drift_done = true;
+        let verbs = self.world.timing.drift.clone();
+        self.world.drift(&verbs);
+    }
+
+    /// `hyprctl -j clients` / `activewindow` with the launch delay applied (apps not there yet are left out).
+    fn clients_read(&mut self, active: bool) -> String {
+        if self.unseen_apps.is_empty() {
+            return if active { self.world.active_json() } else { self.world.clients_json() };
+        }
+        let mut w = self.world.clone();
+        {
+            let gone: Vec<String> = self.unseen_apps.keys().cloned().collect();
+            w.apps.retain(|a| !gone.contains(&a.id));
+            if w.focus.as_ref().is_some_and(|f| gone.contains(f)) {
+                w.focus = None;
+            }
+            if !active {
+                for n in self.unseen_apps.values_mut() {
+                    *n -= 1;
+                }
+                self.unseen_apps.retain(|_, n| *n > 0);
+            }
+        }
+        if active {
+            w.active_json()
+        } else {
+            w.clients_json()
+        }
+    }
+
+    /// `hyprctl -j monitors` with the screen delay applied.
+    fn monitors_read(&mut self) -> String {
+        if self.unseen_screens.is_empty() {
+            return self.world.monitors_json();
+        }
+        let mut w = self.world.clone();
+        for (n, _) in self.unseen_screens.iter() {
+            if let Some(s) = w.screens.iter_mut().find(|s| s.n == *n) {
+                s.present = false;
+            }
+        }
+        for n in self.unseen_screens.values_mut() {
+            *n -= 1;
+        }
+        self.unseen_screens.retain(|_, n| *n > 0);
+        w.monitors_json()
+    }
+
+    /// What the delays hide: the apps and the (present, shown) flags before a write.
+    fn timing_before(&self) -> Option<(Vec<String>, Vec<(bool, bool)>)> {
+        let t = &self.world.timing;
+        (t.launch_delay_reads > 0 || t.screen_delay_reads > 0).then(|| (self.world.apps.iter().map(|a| a.id.clone()).collect(), self.world.screens.iter().map(|s| (s.present, s.shown)).collect()))
+    }
+
+    fn timing_after(&mut self, before: (Vec<String>, Vec<(bool, bool)>)) {
+        let (ids, flags) = before;
+        let (ld, sd) = (self.world.timing.launch_delay_reads, self.world.timing.screen_delay_reads);
+        if ld > 0 {
+            for a in self.world.apps.iter().filter(|a| !ids.contains(&a.id)) {
+                self.unseen_apps.insert(a.id.clone(), ld);
+            }
+        }
+        if sd > 0 {
+            for (s, (p, sh)) in self.world.screens.iter().zip(flags) {
+                if (s.present && !p) || (s.shown && !sh) {
+                    self.unseen_screens.insert(s.n, sd);
+                }
+            }
+        }
     }
 
     fn unknown(&mut self, what: String) -> Result<String, String> {
@@ -961,27 +1125,21 @@ impl Sim {
     fn preset(&mut self, p: &str) -> Result<String, String> {
         let w = &mut self.world;
         let p = match p {
-            "work" | "work3" => "work-3",
-            "work1" => "work-1",
+            // the old names stay aliases (omarchyvr-tools preset.rs)
+            "work" | "work3" | "work-3" => "focus-3",
+            "work1" | "work-1" => "cinema",
+            "assistant" | "llm" => "work-6",
             x => x,
         };
-        let (limit, pinned, width, distance, curv, pt): (u8, Vec<u8>, f32, f32, f32, &str) = match p {
-            "cinema" => (1, vec![], 3.2, 3.5, 0.35, "dim"),
-            "cinema-huge" => (1, vec![], 11.0, 8.0, 0.2, "off"),
-            "work-3" => (3, vec![2, 3], 1.6, 2.0, 0.0, "normal"),
-            "work-1" => (1, vec![], 2.0, 2.2, 0.0, "normal"),
-            "assistant" => (6, vec![], 2.0, 2.5, 0.15, "normal"),
-            other => return Err(format!("unknown preset {other}")),
-        };
+        let Some((limit, pinned, width, distance, curv, pt)) = layout_of(p) else { return Err(format!("unknown preset {p}")) };
         if !w.session.running {
             return Err("No Work session is running".into());
         }
-        w.show = ShowRule { limit, pinned, hidden: Vec::new(), sort: w.show.sort };
+        // a work layout shows exactly its slots: the other screens are hidden
+        let hidden: Vec<u8> = if p.starts_with("work-") || p.starts_with("focus-") { (2..=6).filter(|n| !pinned.contains(n)).collect() } else { Vec::new() };
+        w.show = ShowRule { limit, pinned, hidden, sort: w.show.sort };
         w.view.passthrough = pt.into();
         w.view.skybox = "off".into();
-        if p == "assistant" {
-            w.view.captions = true;
-        }
         for s in w.screens.iter_mut() {
             let (yaw, pitch) = SLOT_ANGLES[s.n as usize - 1];
             s.width = width;
@@ -1103,6 +1261,19 @@ impl Sim {
                 self.desk_screens(sub, &arg)
             }
             ["desk", "preset", p, ..] => self.preset(p),
+            ["desk", "recenter", ..] => {
+                // the whole layout turns in front of the user: the sim puts the screens back at the layout's angles
+                if !self.world.session.running {
+                    return Err("No Work session is running".into());
+                }
+                for s in self.world.screens.iter_mut() {
+                    let (yaw, pitch) = SLOT_ANGLES[s.n as usize - 1];
+                    s.yaw = yaw;
+                    s.pitch = pitch;
+                }
+                self.world.events.push("recenter".into());
+                Ok("Screens recentered in front of you\n".into())
+            }
             ["desk", "stop", ..] => {
                 self.world.session.running = false;
                 self.world.session.mode = "off".into();
@@ -1206,11 +1377,12 @@ impl Runner for Sim {
         self.commands.push(line.clone());
         let prog = argv.first().map(String::as_str).unwrap_or("");
         let base = prog.rsplit('/').next().unwrap_or(prog);
+        let before = if is_read(&line) { None } else { self.timing_before() };
         let r = match base {
             "hyprctl" => match (argv.get(1).map(String::as_str), argv.get(2).map(String::as_str)) {
-                (Some("-j"), Some("clients")) => Ok(self.world.clients_json()),
-                (Some("-j"), Some("activewindow")) => Ok(self.world.active_json()),
-                (Some("-j"), Some("monitors")) => Ok(self.world.monitors_json()),
+                (Some("-j"), Some("clients")) => Ok(self.clients_read(false)),
+                (Some("-j"), Some("activewindow")) => Ok(self.clients_read(true)),
+                (Some("-j"), Some("monitors")) => Ok(self.monitors_read()),
                 (Some("-j"), Some("workspaces")) => Ok(self.world.workspaces_json()),
                 (Some("dispatch"), Some(lua)) => {
                     let lua = lua.to_string();
@@ -1315,6 +1487,13 @@ impl Runner for Sim {
         };
         if r.is_ok() && !is_read(&line) {
             self.world.normalize();
+            if let Some(b) = before {
+                self.timing_after(b);
+            }
+            self.snap(&line);
+        }
+        if is_read(&line) {
+            self.drift_after_read();
         }
         r
     }
@@ -1332,6 +1511,7 @@ impl Runner for Sim {
                 self.unmodelled.push(format!("passthrough {other}"));
             }
         }
+        self.snap(&format!("passthrough {line}"));
         Ok(format!("ok {line}"))
     }
     fn toast(&mut self, text: &str) {
@@ -1340,6 +1520,7 @@ impl Runner for Sim {
     fn captions(&mut self, on: bool) -> Result<(), String> {
         self.commands.push(format!("captions {}", if on { "on" } else { "off" }));
         self.world.view.captions = on;
+        self.snap(&format!("captions {}", if on { "on" } else { "off" }));
         Ok(())
     }
     fn skyboxes(&mut self) -> Vec<String> {
@@ -1351,6 +1532,7 @@ impl Runner for Sim {
             self.commands.push("screens limit = 4".into());
             self.world.show.limit = 4;
             self.world.refresh_shown();
+            self.snap("screens limit = 4");
         }
     }
     /// act.rs `Real::screen_unhide`: screen `n` out of the hidden list.
@@ -1359,11 +1541,13 @@ impl Runner for Sim {
             self.commands.push(format!("screens unhide {n}"));
             self.world.show.hidden.retain(|h| *h as usize != n);
             self.world.refresh_shown();
+            self.snap(&format!("screens unhide {n}"));
         }
     }
     fn screens_sort(&mut self, on: bool) {
         self.commands.push(format!("screens sort = {}", if on { "on" } else { "off" }));
         self.world.show.sort = on;
+        self.snap(&format!("screens sort = {}", if on { "on" } else { "off" }));
     }
 }
 
@@ -1453,12 +1637,11 @@ pub fn describe(w: &World, blocks: &[&str]) -> String {
         s
     };
     if on("session") {
-        out.push(format!(
-            "session: {}, preset {}{}",
-            if w.session.running { w.session.mode.as_str() } else { "stopped" },
-            w.session.preset,
-            if w.recording { ", recording" } else { "" }
-        ));
+        if w.session.running {
+            out.push(format!("session: {}, preset {}{}", w.session.mode, w.session.preset, if w.recording { ", recording" } else { "" }));
+        } else {
+            out.push(format!("session: off (VR not running){}", if w.recording { ", recording" } else { "" }));
+        }
     }
     if on("screens") || on("apps") {
         out.push("screens (1 main, 2 left, 3 right, 4 up, 5 up-left, 6 up-right):".into());
@@ -1602,6 +1785,13 @@ pub fn diff(a: &World, b: &World) -> Vec<Change> {
 /// place (no wayvrctl command reports them), hidden browser tabs (the voice code only sees the active tab's title),
 /// terminal cwd (taken from the title when it looks like `user@host:path`), volume.
 pub fn snapshot(r: &mut dyn Runner, wayvrctl: &str) -> World {
+    let running = crate::agent::Probe::vr_running(&mut crate::agent::HostProbe);
+    snapshot_session(r, wayvrctl, running, None)
+}
+
+/// [`snapshot`] with the VR session from the caller's probe: `running`, and the preset the voice state knows (None:
+/// the default one while VR runs). VR off: not running, no preset.
+pub fn snapshot_session(r: &mut dyn Runner, wayvrctl: &str, running: bool, preset: Option<&str>) -> World {
     let mut w = World { apps: Vec::new(), workspaces: Vec::new(), ..World::default() };
     let mons: Vec<Value> = r.run(&["hyprctl".into(), "-j".into(), "monitors".into()], true).ok().and_then(|j| serde_json::from_str::<Value>(&j).ok()).and_then(|v| v.as_array().cloned()).unwrap_or_default();
     for s in w.screens.iter_mut() {
@@ -1685,6 +1875,11 @@ pub fn snapshot(r: &mut dyn Runner, wayvrctl: &str) -> World {
             }
         }
     }
+    w.session = if running {
+        Session { running: true, mode: "work".into(), preset: preset.unwrap_or(act::DEFAULT_PRESET).to_string() }
+    } else {
+        Session { running: false, mode: "off".into(), preset: String::new() }
+    };
     w.events.push("snapshot: screen sizes/places, hidden tabs and volume are not readable live".into());
     w.normalize();
     w
@@ -1693,6 +1888,33 @@ pub fn snapshot(r: &mut dyn Runner, wayvrctl: &str) -> World {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn snapshot_session_follows_the_probe() {
+        struct Empty;
+        impl Runner for Empty {
+            fn run(&mut self, _argv: &[String], _capture: bool) -> Result<String, String> {
+                Err("none".into())
+            }
+            fn passthrough(&mut self, _line: &str) -> Result<String, String> {
+                Err("none".into())
+            }
+            fn toast(&mut self, _text: &str) {}
+            fn captions(&mut self, _on: bool) -> Result<(), String> {
+                Ok(())
+            }
+            fn skyboxes(&mut self) -> Vec<String> {
+                Vec::new()
+            }
+        }
+        let off = snapshot_session(&mut Empty, "wayvrctl", false, Some("cinema"));
+        assert!(!off.session.running && off.session.preset.is_empty());
+        assert!(describe(&off, &["session"]).contains("session: off (VR not running)"), "{}", describe(&off, &["session"]));
+        let on = snapshot_session(&mut Empty, "wayvrctl", true, Some("cinema"));
+        assert!(on.session.running && on.session.preset == "cinema");
+        assert!(describe(&on, &["session"]).contains("session: work, preset cinema"));
+        assert_eq!(snapshot_session(&mut Empty, "wayvrctl", true, None).session.preset, act::DEFAULT_PRESET);
+    }
     use crate::catalogue::BUILTIN;
 
     fn desk() -> World {
@@ -1748,6 +1970,61 @@ mod tests {
         assert_eq!(s.world.apps.len(), 2);
         let d = diff(&desk(), &s.world);
         assert!(d.iter().any(|c| c.key == "app:t2:closed"));
+    }
+
+    fn argv(s: &str) -> Vec<String> {
+        s.split_whitespace().map(str::to_string).collect()
+    }
+
+    #[test]
+    fn every_write_is_kept_in_the_history_and_reads_are_not() {
+        let mut s = Sim::new(desk());
+        s.run(&argv("hyprctl -j clients"), true).unwrap();
+        assert!(s.history.is_empty());
+        s.run(&argv("omarchy-launch-terminal"), true).unwrap();
+        s.run(&argv("wl-paste"), true).unwrap();
+        s.run(&argv("omarchy-audio-output-volume raise"), true).unwrap();
+        assert_eq!(s.history.len(), 2);
+        assert_eq!(s.history[0].1.apps.len(), 4);
+        assert_eq!(s.history[1].1.media.volume, s.history[0].1.media.volume + 5);
+    }
+
+    #[test]
+    fn a_launched_app_shows_in_clients_after_the_delay() {
+        let mut w = desk();
+        w.timing.launch_delay_reads = 2;
+        let mut s = Sim::new(w);
+        s.run(&argv("omarchy-launch-terminal"), true).unwrap();
+        let n = |s: &mut Sim| serde_json::from_str::<Value>(&s.run(&argv("hyprctl -j clients"), true).unwrap()).unwrap().as_array().unwrap().len();
+        assert_eq!((n(&mut s), n(&mut s), n(&mut s)), (3, 3, 4), "two reads without it, the third has it");
+        assert_eq!(s.world.apps.len(), 4, "it was there all along in the world");
+    }
+
+    #[test]
+    fn a_new_screen_shows_in_monitors_after_the_delay() {
+        let mut w = desk();
+        w.timing.screen_delay_reads = 1;
+        let mut s = Sim::new(w);
+        let mons = |s: &mut Sim| serde_json::from_str::<Value>(&s.run(&argv("hyprctl -j monitors"), true).unwrap()).unwrap().as_array().unwrap().len();
+        assert_eq!(mons(&mut s), 4, "screens 1-4 are there; 4 is empty and hidden");
+        s.run(&argv("omarchyvr desk screens more 1"), true).unwrap();
+        assert!(s.world.screens[3].shown);
+        assert_eq!((mons(&mut s), mons(&mut s)), (3, 4), "the newly shown screen is missing for one read");
+    }
+
+    #[test]
+    fn drift_happens_once_after_the_first_read() {
+        let mut w = desk();
+        w.timing.drift = vec!["focus t2".into(), "close c1".into(), "gaze 3".into()];
+        let mut s = Sim::new(w);
+        let first = s.run(&argv("hyprctl -j clients"), true).unwrap();
+        assert_eq!(serde_json::from_str::<Value>(&first).unwrap().as_array().unwrap().len(), 3, "the first read still shows the old desk");
+        assert!(s.world.app("c1").is_none() && s.world.focus.as_deref() == Some("0x2") && s.world.gaze.as_ref().map(|g| g.screen) == Some(3));
+        assert!(s.history.is_empty(), "a drift is not a write of the voice code");
+        s.world.drift(&["open foot 2".to_string()]);
+        let again = s.run(&argv("hyprctl -j clients"), true).unwrap();
+        assert_eq!(serde_json::from_str::<Value>(&again).unwrap().as_array().unwrap().len(), 3);
+        assert_eq!(s.world.apps.len(), 3, "once: the second read changed nothing");
     }
 
     #[test]

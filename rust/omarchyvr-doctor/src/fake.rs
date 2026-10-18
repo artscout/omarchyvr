@@ -120,6 +120,7 @@ impl FakeHost {
             0,
             &format!("{svc} cap_sys_nice=ep\n"),
         );
+        h.cmd(&format!("timeout 5 env LD_TRACE_LOADED_OBJECTS=1 {svc}"), 0, "\tlibc.so.6 => /usr/lib/libc.so.6 (0x7f)\n");
         h.cmd("journalctl -k -b --no-pager -q", 0, "kernel: all quiet\n");
         h.file("/proc/1/comm", "systemd\n");
         h.file("/proc/4242/comm", "firefox\n");

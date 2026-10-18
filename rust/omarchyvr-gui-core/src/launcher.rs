@@ -29,7 +29,7 @@ pub struct LauncherCaps {
     pub no_perf: bool,
     /// `--anchor` (`PIMAX_ANCHOR=1`: the room offset hook).
     pub anchor: bool,
-    /// `--preset cinema|cinema-huge|work|assistant`.
+    /// `--preset work-4|focus-3|work-5|work-6|cinema|cinema-huge`.
     pub preset: bool,
     /// `desk captions on|off|status` (the live subtitles).
     pub captions: bool,
@@ -43,7 +43,7 @@ pub struct LauncherCaps {
     pub screens: bool,
     /// `--controllers when-held|always|off` (PIMAX_CTRL_INHAND, docs/CONTROLLERS-INHAND.md).
     pub controllers: bool,
-    /// `--ctrl-angle DEG` and the tracking switches `--old-exposure`, `--no-room-glide`, `--no-ctrl-steady`
+    /// `--ctrl-angle DEG` and the tracking switches `--old-exposure`, `--no-room-glide`, `--no-ctrl-steady`, `--no-drift-hold`
     /// (tracking plan phase 1, docs/TRACKING-STABILITY.md).
     pub tracking: bool,
 }
@@ -67,44 +67,87 @@ pub fn parse_caps(usage: &str) -> LauncherCaps {
         hands: has("--hands"),
         screens: has("--screens"),
         controllers: has("--controllers"),
-        tracking: has("--ctrl-angle") && has("--no-ctrl-steady"),
+        tracking: has("--ctrl-angle") && has("--no-ctrl-steady") && has("--no-drift-hold"),
     }
 }
 
-/// A WayVR preset of `desk start --preset` (conf.d/60-preset.yaml of the launcher).
+/// A fixed screen layout of `desk start --preset NAME` / `desk preset NAME` (locked: screens never move by themselves).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Preset {
-    /// No preset.
+    /// Screens 1 main, 2 left, 3 right, 4 up (1.6 m wide at 2 m). The default.
     #[default]
-    None,
-    /// Curved screens, passthrough dimmed.
+    Work4,
+    /// Screens 1, 2, 3 close together (1.2 m at 1.3 m).
+    Focus3,
+    /// Screens 1, 2, 3 plus 5 up-left and 6 up-right.
+    Work5,
+    /// All six screens.
+    Work6,
+    /// One big curved screen (3.2 m at 3.5 m), room dimmed.
     Cinema,
-    /// A huge cinema: one 6 m screen filling ~68 degrees, the room black.
+    /// One 11 m screen at 8 m, room black.
     CinemaHuge,
-    /// Flat, sharper screens.
-    Work,
-    /// Voice captions (the LLM assistant setup).
-    Assistant,
 }
 
 impl Preset {
-    /// Every preset.
-    pub const ALL: [Preset; 5] = [Preset::None, Preset::Cinema, Preset::CinemaHuge, Preset::Work, Preset::Assistant];
+    /// Every layout, in the order the picker shows them.
+    pub const ALL: [Preset; 6] = [Preset::Work4, Preset::Focus3, Preset::Work5, Preset::Work6, Preset::Cinema, Preset::CinemaHuge];
 
-    /// The launcher's name.
+    /// The launcher's name (`omarchyvr desk preset NAME`).
     pub fn name(self) -> &'static str {
         match self {
-            Preset::None => "none",
+            Preset::Work4 => "work-4",
+            Preset::Focus3 => "focus-3",
+            Preset::Work5 => "work-5",
+            Preset::Work6 => "work-6",
             Preset::Cinema => "cinema",
             Preset::CinemaHuge => "cinema-huge",
-            Preset::Work => "work",
-            Preset::Assistant => "assistant",
         }
     }
 
-    /// From [`Preset::name`].
+    /// For people.
+    pub fn label(self) -> &'static str {
+        match self {
+            Preset::Work4 => "Work 4",
+            Preset::Focus3 => "Focus 3",
+            Preset::Work5 => "Work 5",
+            Preset::Work6 => "Work 6",
+            Preset::Cinema => "Cinema",
+            Preset::CinemaHuge => "Huge cinema",
+        }
+    }
+
+    /// One line: what the layout is.
+    pub fn description(self) -> &'static str {
+        match self {
+            Preset::Work4 => "Work 4: screen 1 in front, 2 left, 3 right, 4 above (1.6 m wide at 2 m). The default.",
+            Preset::Focus3 => "Focus 3: screens 1, 2 and 3 close together (1.2 m wide at 1.3 m).",
+            Preset::Work5 => "Work 5: screens 1, 2 and 3, plus 5 above left and 6 above right.",
+            Preset::Work6 => "Work 6: all six screens.",
+            Preset::Cinema => "Cinema: one big curved screen (3.2 m wide at 3.5 m), the room dimmed.",
+            Preset::CinemaHuge => "Huge cinema: one 11 m screen at 8 m, the room black.",
+        }
+    }
+
+    /// From [`Preset::name`] or an old name (a recorded start or an old gui-state.toml):
+    /// work-3/work3 = Focus 3, work/work4 = Work 4, work-1 = Cinema, assistant/llm = Work 6.
+    /// "none", empty and anything unknown give the default (Work 4), so an old `preset = "none"` loads cleanly.
     pub fn parse(s: &str) -> Preset {
-        Preset::ALL.into_iter().find(|p| p.name() == s.trim()).unwrap_or_default()
+        let s = s.trim();
+        if let Some(p) = Preset::ALL.into_iter().find(|p| p.name() == s) {
+            return p;
+        }
+        match s {
+            "work-3" | "work3" => Preset::Focus3,
+            "work-1" => Preset::Cinema,
+            "assistant" | "llm" => Preset::Work6,
+            _ => Preset::Work4,
+        }
+    }
+
+    /// The old `assistant` (`llm`) name: Work 6 with the voice captions on at start (omarchyvr-tools preset.rs).
+    pub fn captions_alias(s: &str) -> bool {
+        matches!(s.trim().to_ascii_lowercase().as_str(), "assistant" | "llm")
     }
 }
 
@@ -150,9 +193,14 @@ pub struct DeskToggles {
     pub room_glide: bool,
     /// "Steadier controllers" (off = `--no-ctrl-steady`, PIMAX_CTRL_TRACK_HYST=0).
     pub ctrl_steady: bool,
+    /// "Hold the head when it does not move" (off = `--no-drift-hold`, PIMAX_SLAM_DRIFT_HOLD=0).
+    pub drift_hold: bool,
     /// The launcher knows `--ctrl-angle` and the tracking switches (from `omarchyvr desk help`, not saved): only then
     /// are they passed.
     pub tracking_flags: bool,
+    /// The launcher knows `--preset` (from `omarchyvr desk help`, not saved): only then is `--preset NAME` always
+    /// passed (so start-argv.txt records the layout).
+    pub preset_flag: bool,
 }
 
 impl Default for DeskToggles {
@@ -171,7 +219,7 @@ impl Default for DeskToggles {
             hz90: true,
             perf: true,
             anchor: true,
-            preset: Preset::None,
+            preset: Preset::Work4,
             eye_default_on: false,
             screens: crate::screens::DEFAULT_SCREENS,
             ctrl_work: CtrlMode::WhenHeld,
@@ -180,7 +228,9 @@ impl Default for DeskToggles {
             new_exposure: true,
             room_glide: true,
             ctrl_steady: true,
+            drift_hold: true,
             tracking_flags: false,
+            preset_flag: false,
         }
     }
 }
@@ -230,6 +280,7 @@ pub fn toggles_from_argv(text: &str, base: DeskToggles) -> Option<(DeskToggles, 
     t.new_exposure &= !has("--old-exposure");
     t.room_glide &= !has("--no-room-glide");
     t.ctrl_steady &= !has("--no-ctrl-steady");
+    t.drift_hold &= !has("--no-drift-hold");
     if vr && has("--home") {
         // the VR home (docs/VR-HOME.md) decides its own readout and room anchor: Play's switches stay as they are
     } else if vr {
@@ -240,11 +291,7 @@ pub fn toggles_from_argv(text: &str, base: DeskToggles) -> Option<(DeskToggles, 
         t.voice = has("--voice") || value("--preset") == Some("assistant");
         t.perf = !has("--no-perf");
         t.eye = if has("--no-eye") { false } else if has("--eye") { true } else { base.eye_default_on };
-        t.preset = match value("--preset") {
-            Some(p) if p.starts_with("work") => Preset::Work,
-            Some(p) => Preset::parse(p),
-            None => Preset::None,
-        };
+        t.preset = value("--preset").map_or(Preset::Work4, Preset::parse);
     }
     Some((t, vr))
 }
@@ -290,8 +337,9 @@ impl DeskToggles {
         self.hands_roles &= self.hands;
         self.voice &= caps.voice;
         self.anchor &= caps.anchor;
+        self.preset_flag = caps.preset;
         if !caps.preset {
-            self.preset = Preset::None;
+            self.preset = Preset::Work4;
         }
         // an older launcher has no VR screens: one screen, no flag
         self.screens = if caps.screens { crate::screens::clamp(self.screens) } else { crate::screens::DEFAULT_SCREENS };
@@ -345,7 +393,7 @@ pub fn desk_flags(t: &DeskToggles) -> Vec<String> {
     if t.anchor {
         v.push("--anchor".into());
     }
-    if t.preset != Preset::None {
+    if t.preset_flag {
         v.push("--preset".into());
         v.push(t.preset.name().into());
     }
@@ -368,7 +416,7 @@ fn tracking_flags(t: &DeskToggles, v: &mut Vec<String>) {
     }
     v.push("--ctrl-angle".into());
     v.push(t.ctrl_angle.clamp(omarchyvr_config::ctrl_angle::MIN_DEG, omarchyvr_config::ctrl_angle::MAX_DEG).to_string());
-    for (on, flag) in [(t.new_exposure, "--old-exposure"), (t.room_glide, "--no-room-glide"), (t.ctrl_steady, "--no-ctrl-steady")] {
+    for (on, flag) in [(t.new_exposure, "--old-exposure"), (t.room_glide, "--no-room-glide"), (t.ctrl_steady, "--no-ctrl-steady"), (t.drift_hold, "--no-drift-hold")] {
         if !on {
             v.push(flag.into());
         }
@@ -630,17 +678,26 @@ mod tests {
 
     #[test]
     fn a_recorded_start_becomes_the_setting() {
-        let base = DeskToggles { voice: false, ctrl_track: false, anchor: false, eye_default_on: true, ..DeskToggles::default() };
+        let base = DeskToggles { voice: false, ctrl_track: false, anchor: false, eye_default_on: true, preset_flag: true, ..DeskToggles::default() };
         let (t, vr) = toggles_from_argv("desk\n--6dof\n--ctrl-track\n--voice\n--anchor\n--hands\n--preset\nwork-3\n", base).unwrap();
         assert!(!vr && t.sixdof && t.ctrl_track && t.voice && t.anchor && t.hands && !t.hands_roles && t.eye && t.passthrough);
-        assert_eq!(t.preset, Preset::Work);
+        assert_eq!(t.preset, Preset::Focus3, "old name work-3");
         // the huge cinema is recorded and read back by its name (start-argv keeps it over restarts)
         let (th, _) = toggles_from_argv("desk\n--preset\ncinema-huge\n", base).unwrap();
         assert_eq!(th.preset, Preset::CinemaHuge);
         assert_eq!(Preset::parse("cinema-huge"), Preset::CinemaHuge);
+        // old names and an old gui-state.toml ("none") load cleanly
+        for (old, new) in [("none", Preset::Work4), ("", Preset::Work4), ("work", Preset::Work4), ("work4", Preset::Work4), ("work3", Preset::Focus3), ("work-1", Preset::Cinema), ("assistant", Preset::Work6), ("llm", Preset::Work6), ("zzz", Preset::Work4)] {
+            assert_eq!(Preset::parse(old), new, "{old}");
+        }
+        assert_eq!(toggles_from_argv("desk\n--6dof\n", base).unwrap().0.preset, Preset::Work4, "no --preset = Work 4");
+        let (ta, _) = toggles_from_argv("desk\n--preset\nassistant\n", base).unwrap();
+        assert!(ta.voice && ta.preset == Preset::Work6, "assistant also turns the captions on");
+        assert!(desk_flags(&DeskToggles { preset_flag: false, ..t }).iter().all(|f| f != "--preset"), "old launcher: no flag");
+        assert!(desk_flags(&base).windows(2).any(|w| w[0] == "--preset" && w[1] == "work-4"), "the default is recorded too");
         assert_eq!(desk_flags(&th).windows(2).find(|w| w[0] == "--preset").map(|w| w[1].as_str()), Some("cinema-huge"));
         // the same flags come back out (Play repeats the session)
-        assert_eq!(desk_flags(&t), ["--fps", "90", "--6dof", "--ctrl-track", "--hands", "--voice", "--anchor", "--preset", "work"]);
+        assert_eq!(desk_flags(&t), ["--fps", "90", "--6dof", "--ctrl-track", "--hands", "--voice", "--anchor", "--preset", "focus-3"]);
         let (t, vr) = toggles_from_argv("vr\n--fps\n90\n--6dof\n--perf\n", base).unwrap();
         assert!(vr && t.hz90 && t.sixdof && !t.ctrl_track && t.perf && !t.voice);
         let (t, _) = toggles_from_argv("desk\n--no-eye\n--no-passthrough\n", base).unwrap();
@@ -689,7 +746,7 @@ mod tests {
     fn command_lines() {
         let t = DeskToggles::with_eye();
         assert_eq!(desk_start_args(&t, false).join(" "), "desk start --fps 90 --eye --6dof");
-        let all = DeskToggles { eye: true, sixdof: true, ctrl_track: true, hands: false, hands_roles: false, passthrough: false, voice: true, hz90: true, perf: false, anchor: false, preset: Preset::None, eye_default_on: false, screens: 6, ctrl_work: CtrlMode::WhenHeld, ctrl_play: CtrlMode::Always, ..DeskToggles::default() };
+        let all = DeskToggles { eye: true, sixdof: true, ctrl_track: true, hands: false, hands_roles: false, passthrough: false, voice: true, hz90: true, perf: false, anchor: false, preset: Preset::Work4, eye_default_on: false, screens: 6, ctrl_work: CtrlMode::WhenHeld, ctrl_play: CtrlMode::Always, ..DeskToggles::default() };
         // a newer launcher: eye on by default, --no-eye to turn it off
         let newer = DeskToggles { eye_default_on: true, ..all };
         assert!(!desk_flags(&newer).contains(&"--eye".to_string()));
