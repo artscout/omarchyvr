@@ -144,6 +144,11 @@ impl Preset {
             _ => Preset::Work4,
         }
     }
+
+    /// The old `assistant` (`llm`) name: Work 6 with the voice captions on at start (omarchyvr-tools preset.rs).
+    pub fn captions_alias(s: &str) -> bool {
+        matches!(s.trim().to_ascii_lowercase().as_str(), "assistant" | "llm")
+    }
 }
 
 /// The desk-mode switches of the main page.

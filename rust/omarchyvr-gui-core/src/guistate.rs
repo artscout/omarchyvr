@@ -103,6 +103,7 @@ impl GuiState {
         let mut s = GuiState::default();
         let mut eye_v2 = false;
         let mut stage = None;
+        let mut old_assistant = false;
         for l in text.lines() {
             let Some((k, v)) = l.split_once('=') else { continue };
             let on = matches!(v.trim(), "true" | "1" | "yes");
@@ -131,7 +132,10 @@ impl GuiState {
                 "page" => s.page = Page::from_name(v.trim()),
                 "perf" => s.toggles.perf = on,
                 "anchor" => s.toggles.anchor = on,
-                "preset" => s.toggles.preset = crate::launcher::Preset::parse(v),
+                "preset" => {
+                    s.toggles.preset = crate::launcher::Preset::parse(v);
+                    old_assistant = crate::launcher::Preset::captions_alias(v);
+                }
                 "controllers_work" => s.toggles.ctrl_work = CtrlMode::parse(v).unwrap_or(CtrlMode::WhenHeld),
                 "controllers_play" => s.toggles.ctrl_play = CtrlMode::parse(v).unwrap_or(CtrlMode::Always),
                 "ctrl_angle" => {
@@ -160,6 +164,11 @@ impl GuiState {
         // dev-only value, so it is switched on once (the user can switch it off afterwards: the key is then written)
         if !eye_v2 && !text.trim().is_empty() {
             s.toggles.eye = true;
+        }
+        // the old "assistant" preset was Work 6 with the voice (and its captions) on at start; the launcher now gets
+        // `--preset work-6`, so the voice switch carries the captions for a user upgrading from it (saved from now on)
+        if old_assistant {
+            s.toggles.voice = true;
         }
         s
     }
@@ -238,6 +247,20 @@ mod tests {
         let mut s = GuiState::default();
         s.toggles.hz90 = false;
         assert!(!GuiState::parse(&s.render()).toggles.hz90, "72 survives a save and load");
+    }
+
+    #[test]
+    fn the_old_assistant_preset_keeps_its_captions() {
+        // a gui-state.toml from before the locked layouts: preset = assistant (Work 6 + voice captions at start)
+        let s = GuiState::parse("onboarded = true\nvoice = false\npreset = assistant\n");
+        assert_eq!(s.toggles.preset, crate::launcher::Preset::Work6);
+        assert!(s.toggles.voice, "the voice switch carries the captions the old preset turned on");
+        let flags = crate::launcher::desk_flags(&DeskToggles { preset_flag: true, ..s.toggles });
+        assert!(flags.iter().any(|f| f == "--voice") && flags.windows(2).any(|w| w[0] == "--preset" && w[1] == "work-6"), "{flags:?}");
+        // saved again it is a plain work-6 with voice on; a plain work-6 does not switch the voice on
+        let again = GuiState::parse(&s.render());
+        assert!(again.toggles.voice && again.toggles.preset == crate::launcher::Preset::Work6);
+        assert!(!GuiState::parse("onboarded = true\nvoice = false\npreset = work-6\n").toggles.voice);
     }
 
     #[test]

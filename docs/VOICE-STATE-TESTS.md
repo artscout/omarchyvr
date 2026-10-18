@@ -123,7 +123,6 @@ omarchyvr-voice audit --state                       # every case, the pipeline a
 omarchyvr-voice audit --state --subset 40 --seed 3  # ~40 cases stratified by tier, under a minute
 omarchyvr-voice audit --state --split dev           # tune on dev only; confirm on --split held and --split fresh
 omarchyvr-voice audit --state --variant lara-off    # an experiment (tests/state/variants/*.toml or a file)
-omarchyvr-voice audit --state --no-ai               # matcher and rules only: checks the cases and the simulator
 omarchyvr-voice audit --state --snapshot            # the live World as JSON, read-only
 ```
 
