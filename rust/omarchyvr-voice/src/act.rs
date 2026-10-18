@@ -60,16 +60,27 @@ pub trait Runner {
 pub struct Recorder<'a> {
     pub inner: &'a mut dyn Runner,
     pub toasts: Vec<String>,
+    /// `wayvrctl gaze` answers of this request: read once, at its start ("this" = what was looked at when the
+    /// command started, not where the eyes went while the AI thought; user decision 2026-10-18).
+    gaze: Vec<(Vec<String>, Result<String, String>)>,
 }
 
 impl<'a> Recorder<'a> {
     pub fn new(inner: &'a mut dyn Runner) -> Recorder<'a> {
-        Recorder { inner, toasts: Vec::new() }
+        Recorder { inner, toasts: Vec::new(), gaze: Vec::new() }
     }
 }
 
 impl Runner for Recorder<'_> {
     fn run(&mut self, argv: &[String], capture: bool) -> Result<String, String> {
+        if capture && argv.get(1).is_some_and(|a| a == "gaze") {
+            if let Some((_, out)) = self.gaze.iter().find(|(a, _)| a == argv) {
+                return out.clone();
+            }
+            let out = self.inner.run(argv, capture);
+            self.gaze.push((argv.to_vec(), out.clone()));
+            return out;
+        }
         self.inner.run(argv, capture)
     }
     fn live(&self) -> bool {
@@ -414,6 +425,25 @@ pub struct Actor {
     pub task_busy: std::sync::Arc<std::sync::atomic::AtomicBool>,
     /// "Max, cancel" / "stop" was heard while a task ran: it stops before its next step.
     pub task_cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// A sentence of several requests (or a corrected one) on its way to the AI as a whole: what the rules and the
+    /// matcher would do per part (hints only), and the sure screen rules a plan may not contradict.
+    pub whole: Option<Whole>,
+}
+
+/// The hints of a sentence sent to the AI as a whole ([`Actor::ask_whole`]).
+#[derive(Debug, Clone, Default)]
+pub struct Whole {
+    /// `parts: "hide screen 2" = rule vr.screens.hide screens=2 | "make the main one bigger" = ?` and, after a
+    /// correction, `correction: ...`: lines of the model's user message.
+    pub lines: String,
+    /// Sure screen rules (hide / hide the others): a plan step that closes apps or other screens instead is replaced
+    /// by the rule (live 2026-10-16: "close screen number two" must hide the screen, never close apps).
+    pub sure: Vec<Match>,
+    /// The intents the rules and the matcher found (their categories stay offered when Lara filters the tools; any
+    /// of them means the words are a command, never chatter).
+    pub intents: Vec<String>,
+    /// How many requests the sentence holds (2+: the answer may be a plan).
+    pub parts: usize,
 }
 
 /// Dictation stops after this long without speech.
@@ -431,7 +461,7 @@ pub fn fill(arg: &str, slots: &BTreeMap<String, String>, wayvrctl: &str, pimax: 
 impl Actor {
     pub fn new(cat: Catalogue, wayvrctl: Option<String>, state: State) -> Actor {
         let wayvrctl = wayvrctl.unwrap_or_else(|| expand(&cat.paths.wayvrctl).to_string_lossy().into_owned());
-        Actor { cat, wayvrctl, state, pending: None, followup_until: None, held: None, llm: None, ai: None, last_words: String::new(), last_raw: String::new(), agent: None, debug: false, trace: None, confirm: omarchyvr_config::ai::VoiceConfirm::Dangerous, yes_given: false, dictating: None, task_busy: Default::default(), task_cancel: Default::default() }
+        Actor { cat, wayvrctl, state, pending: None, followup_until: None, held: None, llm: None, ai: None, last_words: String::new(), last_raw: String::new(), agent: None, debug: false, trace: None, confirm: omarchyvr_config::ai::VoiceConfirm::Dangerous, yes_given: false, dictating: None, task_busy: Default::default(), task_cancel: Default::default(), whole: None }
     }
 
     /// Forget a pending question and the "Max" follow-up window (the AI bench between phrases).
@@ -589,6 +619,14 @@ impl Actor {
         // "can you s Max can you shut down ...": the words after the last "Max"; "screen number 3" = "screen 3"
         let words = crate::rules::tidy(&command::after_last_wake(&words, &self.cat.wake.words));
         self.followup_until = None;
+        // "this" / "here": the gaze is read first, before anything else reads the desk, and kept for the whole
+        // request (the Recorder): the target is what was looked at when the command started
+        if crate::agent::is_deictic(&words) {
+            let _ = r.run(&[self.wayvrctl.clone(), "gaze".into()], true);
+            if let Some(g) = self.agent.as_mut().and_then(|a| a.gaze.as_mut()) {
+                let _ = g.gaze(r);
+            }
+        }
         // a command about screens: the numbers flash (a move then highlights its target screen)
         if words.iter().any(|w| matches!(w.as_str(), "screen" | "screens" | "window" | "windows" | "pantalla")) && !words.iter().any(|w| matches!(w.as_str(), "lock" | "screenshot")) {
             crate::windows::badges(r, &self.wayvrctl.clone(), None);
@@ -601,8 +639,12 @@ impl Actor {
         // "yeah put youtube ...", "so uh open ...": the opening words are no part of the command
         let words = command::drop_openers(&words);
         self.trace = Some(Trace { heard: self.last_words.clone(), route: "match".into(), ..Default::default() });
-        // taken back in the same breath: nothing runs ("hide screen two, no, forget it"); corrected: the correction
-        // alone counts ("two screens, no, three screens")
+        // taken back in the same breath: nothing runs ("hide screen two, no, forget it"); corrected: with the AI the
+        // whole sentence goes to it (the last request wins), without it the correction alone counts ("two screens,
+        // no, three screens")
+        let whole_words = words.clone();
+        let whole_raw = self.last_raw.clone();
+        let mut corrected: Option<Vec<String>> = None;
         let words = match command::take_back(&words, &self.last_raw) {
             command::TakeBack::Cancel => {
                 self.set_route("cancel");
@@ -611,16 +653,34 @@ impl Actor {
             }
             command::TakeBack::Correct(tail) => {
                 self.last_raw = tail.join(" ");
+                corrected = Some(tail.clone());
                 tail
             }
             command::TakeBack::None => words,
         };
         // what the guard and the consent check read: the command words as decided on
         self.last_words = words.join(" ");
-        // several commands in one sentence ("close screen 2 and make the main one bigger"): each clause on its own,
-        // so a rule for the first never swallows the second
         let clauses = command::clauses(&words);
         let goal = self.agent.as_ref().is_some_and(|a| a.settings.goal) && crate::agent::is_goal(&self.last_raw);
+        // with the AI (user decisions 2026-10-18): EVERY command goes to it, as a whole sentence with the state (the
+        // router sorts, the model decides); the rules and the matcher only give hints per part. With the fast path
+        // on (`voice_ai_fast_path`) a short single request still runs from the rules / matcher below, and only
+        // several requests or a corrected one go to the AI as a whole.
+        if let Some(fast) = self.agent.as_ref().map(|a| a.settings.fast_path) {
+            let parts = command::parts(&self.last_raw);
+            if !fast || corrected.is_some() || goal || parts.len() >= 2 || clauses.len() >= 2 {
+                let parts = if parts.len() >= 2 || clauses.len() < 2 { parts } else { split_raw(&self.last_raw, &clauses) };
+                let correction = corrected.map(|t| t.join(" "));
+                if correction.is_some() {
+                    self.last_raw = whole_raw;
+                    self.last_words = whole_words.join(" ");
+                }
+                let all = if correction.is_some() { whole_words } else { words };
+                return self.ask_whole(all, &parts, correction, now, r);
+            }
+        }
+        // no AI: several commands in one sentence ("close screen 2 and make the main one bigger"): each clause on its
+        // own, so a rule for the first never swallows the second
         if clauses.len() >= 2 && !goal {
             if let Some(out) = self.run_clauses(&clauses, now, r) {
                 return out;
@@ -650,6 +710,8 @@ impl Actor {
         let mut ran: Vec<String> = Vec::new();
         let mut decisions: Vec<String> = Vec::new();
         let mut asked = false;
+        // one fresh read after each clause; "make it fullscreen" after a move acts on the window moved
+        let mut steps = crate::screenstate::Steps::start(r, true);
         for (i, c) in clauses.iter().enumerate() {
             self.last_words = c.join(" ");
             self.last_raw = raws.get(i).cloned().unwrap_or_else(|| c.join(" "));
@@ -659,10 +721,13 @@ impl Actor {
                     if let Some(a) = self.agent.as_mut() {
                         a.note(&self.last_words, &m.id, true);
                     }
+                    steps.aim(r, crate::agent::window_scoped(&m.id));
                     ran.push(self.run_or_confirm(m, now, r));
+                    steps.after(r);
                 }
                 None => {
                     let out = self.decide_words(c.clone(), now, r, true);
+                    steps.after(r);
                     let t = self.trace.clone().unwrap_or_default();
                     asked |= t.asked;
                     decisions.push(format!("{} {}", t.route, t.decision));
@@ -681,6 +746,115 @@ impl Actor {
         t.asked |= asked;
         self.trace = Some(t);
         Some((!ran.is_empty()).then(|| ran.join(",")))
+    }
+
+    /// A sentence of several requests or a corrected one, to the AI as a whole ([`Whole`]): per part what the rules
+    /// or the matcher would do goes in as a hint line (after a correction only the parts after it, so the corrected
+    /// value does not anchor the model), the model answers the plan. The model failing or saying nothing: the parts
+    /// run as the rules and the matcher decide them, when every part is settled.
+    fn ask_whole(&mut self, words: Vec<String>, parts: &[String], correction: Option<String>, now: Instant, r: &mut dyn Runner) -> Option<String> {
+        let hint_parts: Vec<String> = match &correction {
+            Some(tail) => command::parts(tail),
+            None => parts.to_vec(),
+        };
+        // before the AI, as before: noise ("max ma max max") and a sentence cut off mid-way (wait for the rest)
+        if crate::fuzzy::is_noise(&words) {
+            self.trace = Some(Trace { heard: self.last_words.clone(), route: "noise".into(), ..Default::default() });
+            return None;
+        }
+        let whole_match = self.exact(&words, r);
+        let free_slot = whole_match.as_ref().is_some_and(|m| self.cat.get(&m.id).is_some_and(|i| i.slots.values().any(|t| matches!(t, crate::catalogue::SlotType::Text))));
+        if correction.is_none() && command::dangling(&words) && (whole_match.is_none() || free_slot) && words.len() < 24 {
+            self.trace = Some(Trace { heard: self.last_words.clone(), route: "wait".into(), ..Default::default() });
+            self.held = Some((words.clone(), self.last_raw.clone()));
+            self.followup_until = Some(now + Duration::from_secs_f64(self.cat.wake.followup_s.max(1.0)));
+            return None;
+        }
+        let mut lines: Vec<String> = Vec::new();
+        let mut whole = Whole::default();
+        let mut settled: Vec<Vec<String>> = Vec::new();
+        let mut all = true;
+        for p in &hint_parts {
+            let w = crate::rules::tidy(&command::drop_openers(&command::words(p)));
+            let rule = crate::rules::screen_rule(&w);
+            let m = rule.clone().or_else(|| self.exact(&w, r));
+            let text = p.trim().replace('"', "'");
+            let hint = match &m {
+                Some(m) => {
+                    // a screen rule is grammar, sure of what it reads; the model follows it unless the words say more
+                    let kind = if rule.is_some() { "rule (sure)" } else if command::best(&self.cat, &w).is_some_and(|b| b.id == m.id) { "match" } else { "fuzzy" };
+                    format!("{kind}: {}", self.hint_of(m))
+                }
+                None => {
+                    all = false;
+                    "?".to_string()
+                }
+            };
+            lines.push(if hint_parts.len() >= 2 { format!("\"{text}\" -> {hint}") } else { hint });
+            if let Some(m) = &m {
+                whole.intents.push(m.id.clone());
+            }
+            if let Some(m) = rule.filter(|m| crate::agent::sure_screen_rule(&m.id)) {
+                whole.sure.push(m);
+            }
+            settled.push(w);
+        }
+        whole.parts = parts.len().max(hint_parts.len());
+        if lines.len() >= 2 {
+            whole.lines += &format!("parts: {}\n", lines.join(" | "));
+        } else if lines.first().is_some_and(|l| l != "?") {
+            whole.lines += &format!("{}\n", lines[0]);
+        }
+        if let Some(t) = &correction {
+            whole.lines += &format!("correction: the request after the correction wins: \"{}\"\n", t.replace('"', "'"));
+        }
+        let cands = crate::fuzzy::candidates(&self.cat, &words, 3);
+        self.trace = Some(Trace { heard: self.last_words.clone(), route: "ai-whole".into(), cands: cands.iter().map(|c| (c.id.clone(), c.score)).collect(), ..Default::default() });
+        self.whole = Some(whole);
+        let mut ag = self.agent.take()?;
+        let routed = ag.route(self, &words, None, &cands, now, r);
+        self.agent = Some(ag);
+        self.whole = None;
+        let why = match routed {
+            crate::agent::Routed::Handled(id) => return Some(id),
+            // the model decided there is nothing to do: nothing runs
+            crate::agent::Routed::Ignored | crate::agent::Routed::Matcher => return None,
+            crate::agent::Routed::Failed(e) => e,
+        };
+        // the model failed (not running, timed out, no online backup): what the rules and the matcher settle runs
+        // (every part, or nothing), so voice is not dead without the AI
+        if all && !settled.is_empty() {
+            let raw = self.last_raw.clone();
+            self.last_raw = hint_parts.join(", ");
+            let out = if settled.len() >= 2 {
+                self.run_clauses(&settled, now, r).flatten()
+            } else {
+                let m = crate::rules::screen_rule(&settled[0]).or_else(|| self.exact(&settled[0].clone(), r))?;
+                Some(self.run_or_confirm(m, now, r))
+            };
+            self.last_raw = raw;
+            if let Some(t) = self.trace.as_mut() {
+                t.decision = format!("{} (AI: {})", t.decision, if why.is_empty() { "none" } else { &why });
+            }
+            return out;
+        }
+        if let Some(c) = cands.first().filter(|c| c.score >= ASK_BACK && c.complete && !c.free_text) {
+            let c = c.clone();
+            r.toast(&format!("AI: {why}"));
+            return Some(self.ask_back(&c, now, r));
+        }
+        r.toast(&format!("Didn't get \"{}\" (AI: {why}). Say: Max, help", words.join(" ")));
+        None
+    }
+
+    /// A match as a hint line for the model: `vr.screens.hide screens="2"` (text slots quoted, as the model answers).
+    fn hint_of(&self, m: &Match) -> String {
+        let mut s = m.id.clone();
+        for (k, v) in &m.slots {
+            let text = self.cat.get(&m.id).and_then(|i| i.slots.get(k)).is_some_and(|t| matches!(t, crate::catalogue::SlotType::Text | crate::catalogue::SlotType::Name));
+            s += &if text { format!(" {k}=\"{}\"", v.replace('"', "'")) } else { format!(" {k}={v}") };
+        }
+        s
     }
 
     /// The exact (or near-exact) phrase match of these words, after the checks a free-text slot needs; no model.
@@ -2008,6 +2182,8 @@ mod tests {
         assert_eq!(r.lines[1], "toast: Reminder in 5 min: stretch");
         r.lines.clear();
         a.hear("Pimax send this to workspace 2", t, &mut r);
+        // "this": the gaze is read first (none in a dry run: the focused window)
+        r.lines.retain(|l| !l.ends_with("wayvrctl gaze"));
         assert_eq!(r.lines[0], "would run: hyprctl dispatch 'hl.dsp.window.move({ workspace = \"2\", follow = false })'");
         r.lines.clear();
         a.hear("Pimax battery", t, &mut r);
@@ -2303,4 +2479,33 @@ mod tests {
         assert_eq!(find_backdrop(&b, "flowers"), None);
         assert_eq!(backdrop_plan("sky", "skybox"), ("off", "default".into()));
     }
+
+    #[test]
+    fn the_gaze_is_read_once_per_request() {
+        // the eyes move while the AI thinks: the request keeps what was looked at when it started
+        struct Eyes(u32);
+        impl Runner for Eyes {
+            fn run(&mut self, argv: &[String], _c: bool) -> Result<String, String> {
+                self.0 += 1;
+                Ok(format!("{} {}", argv.join(" "), self.0))
+            }
+            fn passthrough(&mut self, _l: &str) -> Result<String, String> {
+                Ok(String::new())
+            }
+            fn toast(&mut self, _t: &str) {}
+            fn captions(&mut self, _on: bool) -> Result<(), String> {
+                Ok(())
+            }
+            fn skyboxes(&mut self) -> Vec<String> {
+                vec![]
+            }
+        }
+        let mut e = Eyes(0);
+        let mut rec = Recorder::new(&mut e);
+        let g = |r: &mut Recorder| r.run(&["wayvrctl".into(), "gaze".into()], true).unwrap();
+        let first = g(&mut rec);
+        assert_eq!(g(&mut rec), first);
+        assert_ne!(rec.run(&["hyprctl".into(), "-j".into(), "clients".into()], true).unwrap(), rec.run(&["hyprctl".into(), "-j".into(), "clients".into()], true).unwrap(), "other reads stay fresh");
+    }
+
 }

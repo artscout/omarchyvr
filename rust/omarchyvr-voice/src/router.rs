@@ -72,14 +72,14 @@ pub fn parse_laya(body: &str) -> Result<Class, String> {
         .unwrap_or_default();
     if probs.is_empty() {
         let c = a.get("choice").and_then(Value::as_str).and_then(Category::parse).ok_or("bad reply from the router: no choice")?;
-        return Ok(Class { category: c, confidence: a.get("confidence").and_then(Value::as_f64).unwrap_or(0.5), second: None, third: None });
+        return Ok(Class { category: c, confidence: a.get("confidence").and_then(Value::as_f64).unwrap_or(0.5), second: None, third: None, probs: Vec::new() });
     }
     probs.sort_by(|x, y| y.1.total_cmp(&x.1));
     let (category, confidence) = probs[0];
     let second = probs.get(1).map(|p| p.0);
     // the third only when the first two together are still unsure
     let third = probs.get(2).filter(|_| probs[0].1 + probs.get(1).map(|p| p.1).unwrap_or(0.0) < 0.8).map(|p| p.0);
-    Ok(Class { category, confidence, second, third })
+    Ok(Class { category, confidence, second, third, probs })
 }
 
 /// The router of the two-stage mode on this PC.

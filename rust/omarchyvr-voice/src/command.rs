@@ -534,6 +534,61 @@ pub fn clauses(w: &[String]) -> Vec<Vec<String>> {
     out
 }
 
+/// The requests in one sentence, as raw text (user decision 2026-10-18: a sentence of several goes to the AI as a
+/// whole; these parts only give it the rule hints). A cut at a comma or at "and" / "then" / "also" / "plus" counts
+/// when the part after it has a verb of its own ("... and make it fullscreen"), or a destination while the part
+/// before has one too ("the terminals on the left screen and chrome on the right"). "hide screens 2, 3 and 4",
+/// "swap screens 1 and 2" and "put chrome and spotify on screen 2" stay one part.
+pub fn parts(raw: &str) -> Vec<String> {
+    let mut chunks: Vec<String> = Vec::new();
+    for seg in raw.split([',', ';', ':', '?', '!']).flat_map(|s| s.split(". ")) {
+        let mut cur: Vec<&str> = Vec::new();
+        for tok in seg.split_whitespace() {
+            let t = tok.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase();
+            if CLAUSE_JOIN.contains(&t.as_str()) {
+                if !cur.is_empty() {
+                    chunks.push(cur.join(" "));
+                }
+                cur.clear();
+                continue;
+            }
+            cur.push(tok);
+        }
+        if !cur.is_empty() {
+            chunks.push(cur.join(" "));
+        }
+    }
+    let mut out: Vec<String> = Vec::new();
+    for c in chunks {
+        let w = words(&c);
+        if content(&w).is_empty() {
+            continue;
+        }
+        let own = match out.last() {
+            None => true,
+            Some(prev) => has_verb(&w) || (has_destination(&w) && has_destination(&words(prev))),
+        };
+        // a part that is only numbers or "screen N" belongs to the list before it
+        let list = w.iter().all(|x| x.parse::<u32>().is_ok() || FILLERS.contains(&x.as_str()) || matches!(x.as_str(), "screen" | "screens" | "number"));
+        if own && !list {
+            out.push(c.trim().to_string());
+        } else if let Some(last) = out.last_mut() {
+            last.push_str(" and ");
+            last.push_str(c.trim());
+        }
+    }
+    out
+}
+
+fn has_verb(w: &[String]) -> bool {
+    w.iter().any(|x| CLAUSE_VERBS.contains(&x.as_str()))
+}
+
+/// "to screen 3", "on the right", "left", "up right": where something goes.
+fn has_destination(w: &[String]) -> bool {
+    w.iter().enumerate().any(|(i, x)| (matches!(x.as_str(), "to" | "on" | "onto" | "into" | "in") && i + 1 < w.len()) || (x != "app" && crate::windows::slot_word(x).is_some()))
+}
+
 /// Words that open a sentence without being part of the command ("yeah put youtube ...", "so uh open ...", "well,
 /// okay, hide ..."): dropped from the front.
 const OPENERS: &[&str] = &["yeah", "yes", "yep", "well", "so", "okay", "ok", "alright", "and", "uh", "um", "uhm", "oh", "hmm", "eh", "ah", "now", "hey", "right", "also"];
@@ -894,4 +949,19 @@ mod tests {
         assert!(!is_yes("no"));
         assert!(!is_yes("lock the screen"));
     }
+
+    #[test]
+    fn parts_split_requests_not_lists() {
+        assert_eq!(parts("put the terminals on the left screen and chrome on the right screen"), vec!["put the terminals on the left screen", "chrome on the right screen"]);
+        assert_eq!(parts("chrome to screen three and the terminals to screen two").len(), 2);
+        assert_eq!(parts("move chrome to screen 3 and make it fullscreen").len(), 2);
+        assert_eq!(parts("hide screen two and then make the main screen bigger").len(), 2);
+        assert_eq!(parts("grab the 5 terminals and move them to screen 4, put chrome on 2 and make it fullscreen, hide 5").len(), 5);
+        assert_eq!(parts("set up work: terminals left, browser middle, YouTube up-right").len(), 4);
+        // lists stay one request
+        for one in ["hide screens 2, 3 and 4", "swap screens 1 and 2", "can you remove screen number four and three?", "put chrome and spotify on screen 2", "move everything from screen 2 to screen 5 and 6", "uh close the left one, the screen", "can you close down screen number two."] {
+            assert_eq!(parts(one).len(), 1, "{one}: {:?}", parts(one));
+        }
+    }
+
 }

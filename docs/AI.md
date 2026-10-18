@@ -723,7 +723,7 @@ has 6 such plans (`tests/fixtures/audit.tsv`, want `a ; b`: every step, in order
 the words held "and" / "then", and none of that session's requests did ("can you focus youtube in a new window", "can
 we have 2 more screens can we have 4 screens"); every request got the one-step grammar, and the missing actions (a
 screen count, an app on a new screen) did not exist as intents, so the model picked the nearest single one. Since then:
-plans have up to 4 steps (`nlu::PLAN_MAX`); "also", "plus", "afterwards" and two command verbs back to back ("close
+plans have up to 4 steps (`nlu::PLAN_MAX`, 9 since 2026-10-18, docs/VOICE.md "How every command is decided"); "also", "plus", "afterwards" and two command verbs back to back ("close
 this go to the main screen") offer the plan grammar too; a plan of several steps is never filtered by Lara (its steps
 may be of several categories); the composite requests got intents of their own (`vr.screens.count/more/add`,
 `win.screen.open`, `win.screen.gather`); and one toast lists every step's result. The session's 29 requests as an

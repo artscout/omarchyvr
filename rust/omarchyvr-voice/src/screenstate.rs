@@ -385,6 +385,74 @@ pub fn show_window(r: &mut dyn Runner, address: &str, name: &str) -> String {
     }
 }
 
+/// The steps of one plan (or goal): one fresh read after each step, so the next one sees what it did (lesson 70),
+/// and the window a step acted on. A move keeps the focus where it was (`follow = false`, the focus goes back), so
+/// "move chrome to screen 3 and make it fullscreen" made the TERMINAL fullscreen (2026-10-18): a later step on
+/// "the focused window" that names no window first focuses the window the step before moved, opened or focused.
+pub struct Steps {
+    on: bool,
+    last: Option<State>,
+    acted: Option<String>,
+}
+
+impl Steps {
+    /// `on`: a plan of several steps (one step reads nothing extra).
+    pub fn start(r: &mut dyn Runner, on: bool) -> Steps {
+        Steps { on, last: if on { State::read(r).ok() } else { None }, acted: None }
+    }
+
+    /// Before a step. `focused_step`: it acts on the focused window and names none (fullscreen, float, close).
+    pub fn aim(&mut self, r: &mut dyn Runner, focused_step: bool) {
+        let (Some(a), Some(s)) = (self.acted.as_ref(), self.last.as_ref()) else { return };
+        if !focused_step || s.win(a).is_none_or(|w| w.focus == 0) {
+            return;
+        }
+        let _ = windows::focus_address(r, a);
+        if let Some(w) = self.last.as_mut().and_then(|s| s.screens.iter_mut().flat_map(|x| x.wins.iter_mut()).find(|w| &w.address == a)) {
+            w.focus = 0;
+        }
+    }
+
+    /// After a step: read again; the window it moved (else the one it brought into focus) is the one acted on.
+    pub fn after(&mut self, r: &mut dyn Runner) {
+        if !self.on {
+            return;
+        }
+        let Ok(now) = State::read(r) else { return };
+        if let Some(before) = &self.last {
+            if let Some(a) = acted_on(before, &now) {
+                self.acted = Some(a);
+            }
+        }
+        self.last = Some(now);
+    }
+
+    /// The window the last step acted on (tests, logs).
+    pub fn acted(&self) -> Option<&str> {
+        self.acted.as_deref()
+    }
+}
+
+/// Where a window is: its screen, else its off-screen workspace.
+fn place(s: &State, address: &str) -> Option<(Option<u8>, i64)> {
+    if let Some(n) = s.screen_of(address) {
+        return Some((Some(n), 0));
+    }
+    s.off.iter().find(|(w, _)| w.address == address).map(|(_, ws)| (None, *ws))
+}
+
+/// The window a step acted on, from the reads before and after it: the first one that changed place, else a new
+/// window or one that came into focus.
+pub fn acted_on(before: &State, after: &State) -> Option<String> {
+    let all = |s: &State| -> Vec<Win> { s.screens.iter().flat_map(|x| x.wins.iter().cloned()).chain(s.off.iter().map(|(w, _)| w.clone())).collect() };
+    let now = all(after);
+    if let Some(w) = now.iter().find(|w| place(before, &w.address).is_some_and(|p| Some(p) != place(after, &w.address))) {
+        return Some(w.address.clone());
+    }
+    let was = all(before).into_iter().find(|w| w.focus == 0).map(|w| w.address);
+    now.iter().find(|w| w.focus == 0 && Some(&w.address) != was.as_ref()).map(|w| w.address.clone())
+}
+
 /// Move one window to a workspace by its address. Hyprland 0.56's `window.move` acts on the focused window, so the
 /// window is focused first by address; whether it really moved is checked by the caller's fresh read, never assumed
 /// (a fullscreen window can keep the focus, and then the move would take the wrong window).
@@ -490,6 +558,13 @@ pub mod tests {
                     if let Some(a) = lua.split("address:").nth(1).and_then(|x| x.split('"').next()) {
                         if lua.starts_with("hl.dsp.focus") {
                             self.focused = Some(a.to_string());
+                        }
+                        return Ok("ok".into());
+                    }
+                    if lua.starts_with("hl.dsp.window.fullscreen") {
+                        let f = self.focused.clone();
+                        if let Some(w) = self.wins.iter_mut().find(|w| Some(&w.0) == f.as_ref()) {
+                            w.4 = !w.4;
                         }
                         return Ok("ok".into());
                     }
@@ -792,4 +867,36 @@ mod cases {
         assert_eq!(f.ws_of(CHROME), 5, "{said}");
         assert_eq!(said, "Moved google-chrome to screen 1 (main)");
     }
+
+    #[test]
+    fn the_window_a_step_moved_is_the_one_a_later_window_step_acts_on() {
+        let mut f = Fake::today();
+        let term = "0x607999351940";
+        let chrome = "0x6079996f7dd0";
+        f.focused = Some(term.into());
+        f.wins[0].4 = false;
+        let mut st = Steps::start(&mut f, true);
+        // step 1: chrome to screen 3 (the right one, ws3); the focus goes back to the terminal
+        reach(&mut f, &[(chrome.to_string(), 3)]).unwrap();
+        assert_eq!(f.focused.as_deref(), Some(term));
+        st.after(&mut f);
+        assert_eq!(st.acted(), Some(chrome));
+        // step 2: fullscreen names no window: chrome first
+        st.aim(&mut f, true);
+        windows::dispatch(&mut f, "hl.dsp.window.fullscreen({ mode = \"fullscreen\" })").unwrap();
+        assert!(f.wins.iter().find(|w| w.0 == chrome).unwrap().4, "chrome fullscreen");
+        assert!(!f.wins[0].4, "the terminal untouched");
+        // a step that only focuses another window: that one is acted on next
+        st.after(&mut f);
+        windows::focus_address(&mut f, term).unwrap();
+        st.after(&mut f);
+        assert_eq!(st.acted(), Some(term));
+        // one step: no extra reads
+        let mut g = Fake::today();
+        let mut one = Steps::start(&mut g, false);
+        one.after(&mut g);
+        one.aim(&mut g, true);
+        assert!(g.ran.is_empty(), "{:?}", g.ran);
+    }
+
 }

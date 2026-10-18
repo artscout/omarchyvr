@@ -10,6 +10,8 @@
 //! voice_ai_timeout_s = 4          # optional: how long voice waits for an answer (default 4 local, 8 remote)
 //! voice_ai_gaze = true            # optional: send what you look at with a voice request (default true)
 //! voice_ai_log = true             # optional: ~/.local/state/omarchyvr/logs/ai.log (default true)
+//! voice_ai_fast_path = false      # optional: true = a short command the rules / matcher settle runs without the AI
+//!                                 # (default false: with the AI on, the AI decides every command, docs/VOICE.md)
 //!
 //! [use]                           # optional per-feature choice
 //! voice = "claude"

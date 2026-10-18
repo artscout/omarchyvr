@@ -1210,6 +1210,24 @@ pub struct Outcome {
     pub mid_reasons: Vec<String>,
 }
 
+/// What the model requests of one case cost, from its ai.log entries: system and user characters, prompt tokens and
+/// those evaluated (not from llama-server's cache), summed over the requests.
+pub fn prompt_cost(prompts: &[String]) -> serde_json::Value {
+    let (mut sys, mut user, mut tok, mut eval, mut n) = (0u64, 0u64, 0u64, 0u64, 0u64);
+    for p in prompts {
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(p) else { continue };
+        let g = |k: &str| v.get(k).and_then(serde_json::Value::as_u64).unwrap_or(0);
+        if v.get("sys_chars").is_some() {
+            n += 1;
+        }
+        sys += g("sys_chars");
+        user += g("user_chars");
+        tok += g("prompt_tokens");
+        eval += g("eval_tokens");
+    }
+    serde_json::json!({"requests": n, "sys_chars": sys, "user_chars": user, "prompt_tokens": tok, "eval_tokens": eval})
+}
+
 /// Why a case failed, in one bucket.
 pub fn cause(o: &Outcome) -> String {
     if o.verdict.pass {
@@ -1449,7 +1467,7 @@ pub fn cli(args: &[String]) -> Result<(), String> {
     if let Some(j) = &o.json_out {
         let lines: Vec<String> = outcomes
             .iter()
-            .map(|x| serde_json::json!({"id": x.case.id, "tier": x.case.tier, "split": x.case.split, "say": x.case.say, "pass": x.verdict.pass, "unsafe": x.verdict.unsafe_, "cause": x.cause, "route": x.route, "decision": x.decision, "commands": x.commands, "toasts": x.toasts, "ran": x.ran, "reasons": x.verdict.reasons, "steps_ok": x.steps_ok, "mid_reasons": x.mid_reasons, "ms": x.ms}).to_string())
+            .map(|x| serde_json::json!({"id": x.case.id, "tier": x.case.tier, "split": x.case.split, "say": x.case.say, "pass": x.verdict.pass, "unsafe": x.verdict.unsafe_, "cause": x.cause, "route": x.route, "decision": x.decision, "commands": x.commands, "toasts": x.toasts, "ran": x.ran, "reasons": x.verdict.reasons, "steps_ok": x.steps_ok, "mid_reasons": x.mid_reasons, "ms": x.ms, "cost": prompt_cost(&x.prompts)}).to_string())
             .collect();
         std::fs::write(j, lines.join("\n") + "\n").map_err(|e| format!("{}: {e}", j.display()))?;
     }

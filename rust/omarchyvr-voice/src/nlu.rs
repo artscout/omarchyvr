@@ -18,6 +18,7 @@
 use crate::agent::{self, Context};
 use crate::catalogue::{Catalogue, Intent, SlotType};
 use crate::fuzzy::{self, Cand};
+use crate::remote::Category;
 use crate::windows;
 use std::collections::BTreeMap;
 
@@ -55,14 +56,15 @@ fn slot_order(i: &Intent) -> Vec<(&String, SlotType)> {
     v
 }
 
-/// The fixed system prompt (cached by the server). Built once per catalogue.
-pub fn system_prompt(cat: &Catalogue) -> String {
-    let mut s = String::from(
+/// The shared rules of every system prompt, up to the intent list: the same bytes in the full prompt and in each
+/// category subset ([`system_prompt_for`]), so llama-server's prefix cache keeps them.
+pub fn rules_text() -> String {
+    String::from(
         "You are Max, the voice control of a Linux desktop seen in a VR headset. Speech-to-text is imperfect: words \
          are often misheard. Decide what the user MEANS and answer with one line: an intent id from the list, then \
          your confidence as one digit (9 sure, 6 likely, 3 a guess), then the intent's slots, e.g. \
          `win.ws.goto 9 n=4`. Answer `none 9` if the words are noise, a test (\"can you hear me\"), chatter or no \
-         command. A request with several actions gets up to 4 steps separated by ` ; ` (in order).\n\
+         command. A request with several actions gets one step per action, up to 9 steps separated by ` ; ` (in order).\n\
          Known mishearings (word for word): war/walk/were=work, liz/leaks/least=list, tree/free=three, \
          mars/marks/macs=max, tap=tab, won=one, for=four, to=two, sinema=cinema, winter=window, tight=type, full \
          scream=fullscreen, and do=undo, high=hide, scream(s)=screen(s), write=right, lift=left, of=off.\n\
@@ -90,26 +92,75 @@ pub fn system_prompt(cat: &Catalogue) -> String {
          Movies: \"watch a movie\" / \"movie time\" = vr.preset.cinema; \"play <a title>\" = media.play (a file); \
          vr.preset.exit_cinema only to LEAVE cinema (exit, out of).\n\
          Intents (id: what it does / example phrases):\n",
-    );
+    )
+}
+
+/// The worked examples, ` | ` between them (a subset prompt keeps those whose steps it offers).
+pub const EXAMPLES: &str = "\"list everything that is open\" -> win.list 8 | \"switch to desktop to\" -> win.ws.goto 8 n=2 | \"remind me in 20 minutes to call mom\" -> omarchy.reminder 9 minutes=20 text=\"call mom\" | \"is this thing on\" -> none 9 | \"it's too bright in here\" -> vr.passthrough.dim 7 | \"I lost all my screens\" -> vr.screens.reset 8 | \"leave only screen one\" -> vr.screens.hide_others 8 | \"hide screens 5 and 6\" -> vr.screens.hide 9 screens=\"5,6\" | \"search the web for cheap flights to rome\" -> browser.search 9 q=\"cheap flights to rome\" | \"type see you soon\" -> type.text 9 text=\"see you soon\" | \"bring up the wikipedia tab\" -> browser.tab.focus 9 q=\"wikipedia\" | \"I'd like four more screens\" -> vr.screens.more 8 n=4 | \"let's have five screens\" -> vr.screens.count 9 n=5 | \"spotify on a screen of its own\" -> win.screen.open 9 app=\"spotify\" | \"collect every browser on one screen\" -> win.screen.gather 9 app=\"browsers\" | \"jump to the upper screen\" -> win.screen.goto 9 side=up | \"put the editor on the right\" -> win.screen.put 9 side=right app=\"editor\" | \"spotify over to screen 6\" -> win.screen.put_n 9 screen=6 app=\"spotify\" | \"take the editor from screen 3 to screen 5\" -> win.screen.put_from 9 from=3 screen=5 app=\"editor\" | \"trade screens 4 and 6\" -> win.screen.swap 9 screen=4 b=6 | \"every screen at 60 percent\" -> win.screen.scale 9 screens=all size=60 | \"screen 5 a bit closer\" -> win.screen.adjust 9 screen=5 how=closer | \"play the matrix\" -> media.play 9 q=\"the matrix\" | \"open wikipedia\" -> browser.open 9 site=wikipedia | \"shift that screen a little left\" -> win.screen.nudge 8 side=left | \"one more screen and put spotify on it\" -> vr.screens.more 9 n=1 ; win.screen.open 8 app=\"spotify\" | \"shut this whole workspace\" -> win.ws.close 8 | \"switch to workspace 5 then turn the volume up\" -> win.ws.goto 9 n=5 ; omarchy.volume.up 8 | \"turn the volume to twenty, no, sixty\" -> omarchy.volume.set 9 n=60 | \"send spotify to screen four, no, to screen five\" -> win.screen.put_n 9 screen=5 app=\"spotify\" | \"take the editors to screen 5, firefox on 2 and make it fullscreen, hide 6\" -> win.screen.put_n 9 screen=5 app=\"editors\" ; win.screen.put_n 9 screen=2 app=\"firefox\" ; omarchy.window.fullscreen 9 ; vr.screens.hide 9 screens=\"6\" | \"three screens, the editor left, firefox right, spotify up and the volume at 25\" -> vr.screens.count 9 n=3 ; win.screen.put 9 side=left app=\"editor\" ; win.screen.put 9 side=right app=\"firefox\" ; win.screen.put 9 side=up app=\"spotify\" ; omarchy.volume.set 9 n=25";
+
+/// The fixed system prompt (cached by the server). Built once per catalogue.
+pub fn system_prompt(cat: &Catalogue) -> String {
+    let mut s = rules_text();
     for i in offered(cat) {
-        let mut line = format!("{}", i.id);
-        for (k, t) in slot_order(i) {
-            line += &format!(" {}", slot_hint(k, t));
-        }
-        let gloss = if !i.gloss.is_empty() {
-            i.gloss.clone()
-        } else {
-            i.phrases.iter().take(3).cloned().collect::<Vec<_>>().join(" / ")
-        };
-        s += &format!("{line}: {gloss}{}\n", if agent::intent_safety(i) == "careful" { " (asks yes)" } else { "" });
+        s += &intent_line(i);
     }
+    s += &window_lines();
+    s += &format!("Examples: {EXAMPLES}\n");
+    s
+}
+
+/// One intent of the list: `id slot=... : gloss (asks yes)`.
+fn intent_line(i: &Intent) -> String {
+    let mut line = i.id.to_string();
+    for (k, t) in slot_order(i) {
+        line += &format!(" {}", slot_hint(k, t));
+    }
+    let gloss = if !i.gloss.is_empty() { i.gloss.clone() } else { i.phrases.iter().take(3).cloned().collect::<Vec<_>>().join(" / ") };
+    format!("{line}: {gloss}{}\n", if agent::intent_safety(i) == "careful" { " (asks yes)" } else { "" })
+}
+
+fn window_lines() -> String {
+    let mut s = String::new();
     for (id, gloss, slots) in WINDOW_INTENTS {
         let sl: Vec<String> = slots.iter().map(|(k, v)| format!("{k}={v}")).collect();
         s += &format!("{id} {}: {gloss}\n", sl.join(" "));
     }
-    s += "Examples: \"list everything that is open\" -> win.list 8 | \"switch to desktop to\" -> win.ws.goto 8 n=2 | \"remind me in 20 minutes to call mom\" -> omarchy.reminder 9 minutes=20 text=\"call mom\" | \"is this thing on\" -> none 9 | \"it's too bright in here\" -> vr.passthrough.dim 7 | \"I lost all my screens\" -> vr.screens.reset 8 | \"leave only screen one\" -> vr.screens.hide_others 8 | \"hide screens 5 and 6\" -> vr.screens.hide 9 screens=\"5,6\" | \"search the web for cheap flights to rome\" -> browser.search 9 q=\"cheap flights to rome\" | \"type see you soon\" -> type.text 9 text=\"see you soon\" | \"bring up the wikipedia tab\" -> browser.tab.focus 9 q=\"wikipedia\" | \"I'd like four more screens\" -> vr.screens.more 8 n=4 | \"let's have five screens\" -> vr.screens.count 9 n=5 | \"spotify on a screen of its own\" -> win.screen.open 9 app=\"spotify\" | \"collect every browser on one screen\" -> win.screen.gather 9 app=\"browsers\" | \"jump to the upper screen\" -> win.screen.goto 9 side=up | \"put the editor on the right\" -> win.screen.put 9 side=right app=\"editor\" | \"spotify over to screen 6\" -> win.screen.put_n 9 screen=6 app=\"spotify\" | \"take the editor from screen 3 to screen 5\" -> win.screen.put_from 9 from=3 screen=5 app=\"editor\" | \"trade screens 4 and 6\" -> win.screen.swap 9 screen=4 b=6 | \"every screen at 60 percent\" -> win.screen.scale 9 screens=all size=60 | \"screen 5 a bit closer\" -> win.screen.adjust 9 screen=5 how=closer | \"play the matrix\" -> media.play 9 q=\"the matrix\" | \"open wikipedia\" -> browser.open 9 site=wikipedia | \"shift that screen a little left\" -> win.screen.nudge 8 side=left | \"one more screen and put spotify on it\" -> vr.screens.more 9 n=1 ; win.screen.open 8 app=\"spotify\" | \"shut this whole workspace\" -> win.ws.close 8 | \"switch to workspace 5 then turn the volume up\" -> win.ws.goto 9 n=5 ; omarchy.volume.up 8\n";
-
     s
+}
+
+/// The system prompt with only some categories' intents (Lara first, user decision 2026-10-18): the shared rules
+/// first (the same bytes as [`system_prompt`]), then the intents category by category in the fixed
+/// [`Category::ALL`] order (so two sets that start alike share more of the cache), the window intents with screens
+/// or apps, and the examples whose every step is offered. `cats` empty: [`system_prompt`].
+pub fn system_prompt_for(cat: &Catalogue, cats: &[Category]) -> String {
+    if cats.is_empty() || cats.contains(&Category::Other) {
+        return system_prompt(cat);
+    }
+    let mut s = rules_text();
+    let offered = offered(cat);
+    for c in Category::ALL.iter().filter(|c| cats.contains(c)) {
+        for i in offered.iter().filter(|i| crate::remote::category_of_intent(&i.id) == *c) {
+            s += &intent_line(i);
+        }
+    }
+    // undo and help whatever the categories (their own category may be another)
+    for i in offered.iter().filter(|i| crate::remote::ALWAYS.contains(&i.id.as_str()) && !cats.contains(&crate::remote::category_of_intent(&i.id))) {
+        s += &intent_line(i);
+    }
+    if cats.contains(&Category::Screens) || cats.contains(&Category::Apps) {
+        s += &window_lines();
+    }
+    let ex: Vec<&str> = EXAMPLES.split(" | ").filter(|e| example_steps(e).iter().all(|id| crate::remote::intent_in(id, cats))).collect();
+    if !ex.is_empty() {
+        s += &format!("Examples: {}\n", ex.join(" | "));
+    }
+    s
+}
+
+/// The intent ids of one worked example (`"words" -> a 9 x=1 ; b 8`).
+fn example_steps(e: &str) -> Vec<String> {
+    let Some((_, plan)) = e.rsplit_once("\" -> ") else { return Vec::new() };
+    plan.split(" ; ").filter_map(|st| st.split_whitespace().next().map(str::to_string)).collect()
 }
 
 fn gbnf_str(s: &str) -> String {
@@ -136,8 +187,10 @@ pub fn wants_plan(heard: &str) -> bool {
 /// Verbs that start a command (for [`wants_plan`]).
 const PLAN_VERBS: &[&str] = &["open", "close", "focus", "switch", "put", "start", "stop", "turn", "launch", "search", "type", "take", "mute", "send", "dim", "reload", "play", "pause"];
 
-/// Most steps in a plan.
-pub const PLAN_MAX: usize = 4;
+/// Most steps in a plan (user decision 2026-10-18: real requests are 3 to 9 actions).
+pub const PLAN_MAX: usize = 9;
+/// Answer tokens of a plan request (9 steps of up to ~20 tokens); one step keeps the short limit.
+pub const PLAN_TOKENS: u32 = 200;
 
 /// The grammar; `plan`: up to [`PLAN_MAX`] steps.
 pub fn grammar_steps(cat: &Catalogue, plan: bool) -> String {
@@ -323,6 +376,8 @@ fn user_message_inner(ctx: &Context, cands: &[Cand], heard: &str, strip_titles: 
             }
         }
     }
+    // a sentence sent as a whole: what the rules / the matcher make of each part, a correction
+    s += &ctx.parts;
     // (no "last command" line: a small model copies it instead of reading the request)
     if !cands.is_empty() {
         let h: Vec<String> = cands.iter().map(|c| format!("{} {:.2}", c.id, c.score)).collect();
@@ -479,7 +534,7 @@ impl Decision {
     }
 }
 
-/// A plan: one to three decisions separated by " ; " (or new lines).
+/// A plan: one to [`PLAN_MAX`] decisions separated by " ; " (or new lines).
 pub fn parse_plan(answer: &str) -> Result<Vec<Decision>, String> {
     let mut v = Vec::new();
     for part in answer.split(|c| c == ';' || c == '\n').map(str::trim).filter(|p| !p.is_empty() && !p.starts_with("```")) {
@@ -520,7 +575,7 @@ mod tests {
         assert!(!p.contains("win.ai.switch"));
         // about 4 characters per token: about 2,300 tokens, cached by the server (was ~5,650 with the tool schemas;
         // +9 VR screen intents on 2026-10-15; +6 screen intents and the 2026-10-16 live mishearings)
-        assert!(p.len() < 16300, "{} chars", p.len()); // +the state lines legend and +1 intent huge cinema (2026-10-17 b) // +2 screen placement intents (2026-10-17) // +4 intents: hide screens, hide others, scale, stop session (2026-10-16 b) // +13 screen-number, layout and volume intents (2026-10-16 evening): ~4,100 tokens of 8,192
+        assert!(p.len() < 17000, "{} chars", p.len()); // +4 worked examples of corrections and 4-5 step plans, 9 steps (2026-10-18, +~690) // +the state lines legend and +1 intent huge cinema (2026-10-17 b) // +2 screen placement intents (2026-10-17) // +4 intents: hide screens, hide others, scale, stop session (2026-10-16 b) // +13 screen-number, layout and volume intents (2026-10-16 evening): ~4,100 tokens of 8,192
     }
 
     /// Every rule a GBNF grammar uses is defined (an undefined one makes llama-server answer HTTP 400 to every
@@ -569,7 +624,7 @@ mod tests {
     #[test]
     fn grammar_lists_ids_and_slot_rules() {
         let g = grammar(&cat());
-        assert!(g.starts_with("root ::= one (\" ; \" one){0,3}\none ::= plain | r0"), "{}", &g[..80]);
+        assert!(g.starts_with("root ::= one (\" ; \" one){0,8}\none ::= plain | r0"), "{}", &g[..80]);
         assert!(g.contains("\"vr.preset.cinema\""));
         assert!(g.contains("\"omarchy.reminder\" \" \" c \" minutes=\" num \" text=\" txt"));
         assert!(g.contains("\"move_window\" \" \" c \" window=\" win \" workspace=\" num"));
@@ -689,4 +744,36 @@ mod tests {
         eprintln!("{m}");
         assert!(!m.contains("only 1") && m.contains("screens: "), "{m}");
     }
+
+    #[test]
+    fn plans_have_up_to_nine_steps_and_room_for_them() {
+        let nine = vec!["omarchy.volume.up 9"; 9].join(" ; ");
+        assert_eq!(parse_plan(&nine).unwrap().len(), 9);
+        assert_eq!(parse_plan(&format!("{nine} ; omarchy.volume.down 9")).unwrap().len(), PLAN_MAX);
+        let c = cat();
+        let p = crate::agent::Provider::new("local", crate::agent::Wire::OpenAi, "http://127.0.0.1:9/chat/completions", "m", None, Box::new(crate::agent::Curl));
+        assert_eq!(p.nlu_body("s", "u", &grammar(&c))["max_tokens"], PLAN_TOKENS);
+        assert_eq!(p.nlu_body("s", "u", &grammar_steps(&c, false))["max_tokens"], 48);
+        assert!(system_prompt(&c).contains("up to 9 steps"));
+    }
+
+    #[test]
+    fn a_category_prompt_shares_the_rules_and_keeps_its_own_examples() {
+        let c = cat();
+        let full = system_prompt(&c);
+        let rules = rules_text();
+        assert!(full.starts_with(&rules));
+        let sys = system_prompt_for(&c, &[Category::System]);
+        assert!(sys.starts_with(&rules) && sys.contains("\nomarchy.volume.set n=N:") && !sys.contains("\nvr.preset.cinema:") && sys.contains("\nvoice.undo"), "{}", &sys[rules.len()..]);
+        assert!(sys.contains("omarchy.volume.set 9 n=60") && !sys.contains("win.screen.put_n 9"), "only examples it can answer");
+        assert!(!sys.contains("focus_window"), "window intents only with screens or apps");
+        let sa = system_prompt_for(&c, &[Category::Screens, Category::Apps]);
+        let sa2 = system_prompt_for(&c, &[Category::Apps, Category::Screens]);
+        assert_eq!(sa, sa2, "a fixed category order");
+        assert!(sa.contains("focus_window") && sa.contains("win.screen.put_n 9 screen=5"));
+        assert_eq!(system_prompt_for(&c, &[]), full);
+        assert_eq!(system_prompt_for(&c, &[Category::Other]), full);
+        eprintln!("full {} chars, system {}, screens+apps {}", full.len(), sys.len(), sa.len());
+    }
+
 }
