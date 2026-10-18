@@ -12,7 +12,7 @@ why = "Open Chrome = show the Chrome that is open (on a hidden screen); nothing 
 any = [["focus chrome", "screen 4 shown"], ["focus chrome", "chrome on 1"]]
 allow = ["screen:*:shown", "app:c1:ws"]
 expect = ["terminals stay", "pimax stay"]
-worlds = { easy = "lv4c", medium = "lv6" }
+worlds = { medium = "lv6" }
 says = ["Max open Google Chrome.", "open chrome please", "launch google chrome", "bring up chrome"]
 
 [[goal]]
@@ -23,7 +23,7 @@ src = "live 2026-10-16 18:12"
 why = "Open Chrome here = Chrome (open on a hidden screen) to the screen looked at; a full desk never blocks it. Live: 'No free screen'."
 expect = ["chrome on 1", "focus chrome", "terminals stay"]
 allow = ["screen:*:shown"]
-worlds = { easy = "lv4c", medium = "lv6" }
+worlds = { medium = "lv6" }
 says = ["open google chrome here", "bring chrome here", "open chrome on this screen"]
 
 [[goal]]
@@ -34,7 +34,7 @@ src = "live 2026-10-16 18:15"
 why = "Open Chrome in main = Chrome to the main screen. Live: 'No free screen' twice."
 expect = ["chrome on 1", "focus chrome", "terminals stay"]
 allow = ["screen:*:shown"]
-worlds = { easy = "lv4c", medium = "lv6" }
+worlds = { medium = "lv6" }
 says = ["Open Google Chrome in main", "open chrome on the main screen"]
 
 [[goal]]
@@ -45,7 +45,7 @@ src = "live 2026-10-16 18:15 (written variant)"
 why = "Put Chrome in the middle = Chrome to the main screen (the focus may stay)."
 expect = ["chrome on 1", "terminals stay"]
 allow = ["screen:*:shown"]
-worlds = { easy = "lv4c", medium = "lv6" }
+worlds = { medium = "lv6" }
 says = ["put google chrome in the middle"]
 
 [[goal]]
@@ -57,7 +57,7 @@ src = "user 2026-10-16 18:20: open google chrome and search"
 why = "Open Chrome, then a web search in it; the words never go into a terminal."
 expect = ["tab flights", "terminals stay"]
 allow = ["screen:*:shown", "app:c1:ws"]
-worlds = { easy = "lv4c", medium = "lv6" }
+worlds = { medium = "lv6" }
 says = ["open google chrome and search for cheap flights", "open chrome and then look up cheap flights to lisbon", "launch google chrome and search cheap flights"]
 
 [[goal]]
@@ -68,7 +68,7 @@ src = "live 2026-10-16 18:16"
 why = "An ASR word before the command ('sex', 'sec sec') does not stop it: the next background."
 expect = ["backdrop changed"]
 allow = ["view:*"]
-worlds = { easy = "lv4c", medium = "lv6" }
+worlds = { medium = "lv6" }
 says = ["Max, sex, next background", "Max sec sec next background", "Max, select next background."]
 
 [[goal]]
@@ -79,7 +79,7 @@ src = "live 2026-10-16 18:11"
 why = "The command line = the terminals, to screen 3 (right)."
 expect = ["terminals on 3", "browsers stay", "pimax stay"]
 allow = ["screen:*:shown"]
-worlds = { easy = "lv4c", medium = "lv6" }
+worlds = { medium = "lv6" }
 says = ["Max, move all the command line to the screen number right.", "Max move all terminals to the right screen."]
 
 [[goal]]
@@ -89,7 +89,7 @@ cat = "size"
 src = "live 2026-10-16 18:07"
 why = "Two changes of the screen looked at: bigger and farther."
 expect = ["screen gazed bigger", "screen gazed farther"]
-worlds = { easy = "lv4c", medium = "lv6" }
+worlds = { medium = "lv6" }
 says = ["Max make the screen bigger and far away"]
 
 [[goal]]
@@ -120,5 +120,5 @@ cat = "session"
 src = "live 2026-10-16 18:17"
 why = "Close the work = stop the VR session (after the yes)."
 expect = ["session stopped", "all stay"]
-worlds = { easy = "lv4c", medium = "lv6" }
+worlds = { medium = "lv6" }
 says = ["Max, close the work."]

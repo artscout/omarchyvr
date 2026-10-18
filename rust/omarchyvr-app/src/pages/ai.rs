@@ -235,7 +235,7 @@ fn brain_card(ui: &mut Ui, app: &mut PimaxApp, brain: VoiceBrain) {
             note(ui, "Online needs a provider with a key: add one under Online providers.");
         }
         if brain == VoiceBrain::Claude && app.core.ai.claude_status.as_ref().is_some_and(|s| !s.ok()) {
-            ui.add(egui::Label::new(RichText::new("The Claude CLI is not working: voice commands the offline matcher does not know will not be answered. See the Claude (CLI) card.").size(12.0).color(p.warn_text)).wrap());
+            ui.add(egui::Label::new(RichText::new("The Claude CLI is not working: voice commands will not be answered by the AI (only simple ones the offline matcher is sure of can run). See the Claude (CLI) card.").size(12.0).color(p.warn_text)).wrap());
         }
     });
     ui.add_space(8.0);
@@ -305,20 +305,12 @@ fn voice(ui: &mut Ui, app: &mut PimaxApp, brain: VoiceBrain) {
         if widgets::toggle(ui, &mut on, "AI for voice commands", true).changed() {
             app.core.ai_set_voice_ai(if on { VoiceAi::Fallback } else { VoiceAi::Off });
         }
-        if mode != VoiceAi::Off {
-            let names = [VoiceAi::Fallback.label(), VoiceAi::Always.label()];
-            let cur = usize::from(mode == VoiceAi::Always);
-            if let Some(i) = widgets::selector(ui, icon::MICROPHONE, "When", &names, cur, true) {
-                app.core.ai_set_voice_ai(if i == 1 { VoiceAi::Always } else { VoiceAi::Fallback });
-            }
-        }
         if mode != VoiceAi::Off && brain == VoiceBrain::Online {
             voice_provider(ui, app);
         }
         note(ui, match mode {
             VoiceAi::Off => "Voice commands use the offline matcher only: nothing you say leaves this PC.",
-            VoiceAi::Fallback => "The offline matcher answers first; only a command it does not understand goes to the AI picked for voice control.",
-            VoiceAi::Always => "Every \"Max ...\" command goes to the AI picked for voice control.",
+            VoiceAi::Fallback | VoiceAi::Always => "The AI picked for voice control decides every \"Max ...\" command; the offline matcher only gives it hints.",
         });
         // when a command waits for a spoken "yes" (works with or without the AI)
         let conf = app.core.ai.config.voice_confirm;
@@ -344,7 +336,7 @@ fn voice(ui: &mut Ui, app: &mut PimaxApp, brain: VoiceBrain) {
         if widgets::switch_row(ui, &mut strip, "No window titles", Some("Privacy: window control sends the names of your apps and, unless this is on, their window titles (which can show a file or page name)."), true).changed() {
             app.core.ai_set_strip_titles(strip);
         }
-        egui::CollapsingHeader::new("Advanced").id_salt("ai-advanced").show(ui, |ui| advanced(ui, app, brain));
+        egui::CollapsingHeader::new("Advanced").id_salt("ai-advanced").default_open(app.ui.ai_advanced_open).show(ui, |ui| advanced(ui, app, brain));
         // the voice command audit (omarchyvr-voice audit, dry run): every command and natural phrasings
         let busy = app.core.busy();
         let report = app.core.voice_audit_report();
@@ -452,6 +444,13 @@ fn advanced(ui: &mut Ui, app: &mut PimaxApp, brain: VoiceBrain) {
     }
     if changed {
         app.core.ai_set_advanced(timeout, gaze, log);
+    }
+    // off by default: the AI decides every command; on, a short command the offline matcher is sure of skips it
+    if app.core.ai.config.voice_ai != VoiceAi::Off {
+        let mut fast = app.core.ai.config.voice_ai_fast_path.unwrap_or(false);
+        if widgets::switch_row(ui, &mut fast, "Fast path: simple commands skip the AI", Some("Faster for short commands the offline matcher is sure of (\"volume up\"), but they no longer get the AI's check of what you meant. Off: the AI decides every command."), true).changed() {
+            app.core.ai_set_fast_path(fast);
+        }
     }
     if brain == VoiceBrain::Claude {
         let mut warm = app.core.ai.config.voice_ai_prewarm.unwrap_or(true);

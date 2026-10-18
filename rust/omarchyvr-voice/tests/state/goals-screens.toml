@@ -5,125 +5,123 @@
 id = "hide-left-name"
 why = "Hide a screen named by its side; its apps stay open."
 expect = ["screen 2 hidden", "all stay"]
-worlds = { easy = "e3c", medium = "m4", hard = "h6" }
+worlds = { medium = "m4", hard = "h6" }
 says = ["hide the left screen", "switch off the screen on the left", "uh close the left one, the screen"]
 
 [[goal]]
 id = "hide-up-number-words"
 why = "Number words and fillers: hide screen four (the upper one)."
 expect = ["screen 4 hidden", "all stay"]
-worlds = { easy = "e4", medium = "m4", hard = "h6" }
+worlds = { medium = "m4", hard = "h6" }
 says = ["um can you hide screen number four", "close screen for", "get rid of screen four please"]
 
 [[goal]]
 id = "hide-here"
 why = "Hide the screen the user looks at (gaze on screen 3 here)."
 expect = ["screen 3 hidden", "all stay"]
-worlds = { easy = "e4", medium = "m4", hard = "h6" }
-set = { easy = { gaze = "3:t2" }, medium = { gaze = "3:t2" }, hard = { gaze = "3:t3" } }
+worlds = { medium = "m4", hard = "h6" }
+set = { medium = { gaze = "3:t2" }, hard = { gaze = "3:t3" } }
 says = ["close this screen", "hide this screen please"]
 
 [[goal]]
 id = "hide-three"
 why = "A list of three screens; their apps stay."
 expect = ["screen 2 hidden", "screen 3 hidden", "screen 4 hidden", "all stay"]
-worlds = { easy = "e4", medium = "m4", hard = "h6" }
+worlds = { medium = "m4", hard = "h6" }
 says = ["hide screens 2, 3 and 4", "close screens two three and four"]
 
 [[goal]]
 id = "show-hidden"
 why = "Show the screen that was hidden; its app is there again."
 expect = ["screen 5 shown", "all stay"]
-worlds = { easy = "m6", medium = "h6b", hard = "h6" }
-set = { easy = { hidden = [5], add_apps = ["e1 code 5 ~/pimax-re"] } }
+worlds = { medium = "h6b", hard = "h6" }
 says = ["show screen five again", "bring back the upper left screen", "uh I want screen 5 back"]
 
 [[goal]]
 id = "add-up"
 why = "Add the screen above; nothing moves."
 expect = ["screen 4 shown", "all stay"]
-worlds = { easy = "e4", medium = "m4", hard = "h6c" }
-set = { easy = { preset = "work-3" }, medium = { preset = "work-3" } }
+worlds = { medium = "m4", hard = "h6c" }
+set = { medium = { preset = "work-3" } }
 says = ["add a screen up there", "put a screen above"]
 
 [[goal]]
 id = "count-2"
 why = "Two screens in all."
 expect = ["shown =2", "all stay"]
-worlds = { easy = "e3", medium = "m4", hard = "h6c" }
-set = { easy = { preset = "work-1" }, medium = { preset = "work-1", focus = "t1", gaze = "1:t1" } }
+worlds = { medium = "m4", hard = "h6c" }
+set = { medium = { preset = "work-1", focus = "t1", gaze = "1:t1" } }
 says = ["can we have two screens", "just two screens"]
 
 [[goal]]
 id = "count-6"
 why = "Six screens: every screen shows."
 expect = ["shown 1,2,3,4,5,6", "all stay"]
-worlds = { easy = "m6", medium = "m6", hard = "h6" }
-set = { easy = { preset = "work-1" } }
+worlds = { medium = "m6", hard = "h6" }
 says = ["six screens please", "show all six screens"]
 
 [[goal]]
 id = "one-more"
 why = "One screen more than now."
 expect = ["shown +1", "all stay"]
-worlds = { easy = "e3", medium = "m4", hard = "h6c" }
-set = { easy = { preset = "work-1" }, medium = { preset = "work-1" } }
+worlds = { medium = "m4", hard = "h6c" }
+set = { medium = { preset = "work-1" } }
 says = ["one more screen", "add another screen"]
 
 [[goal]]
 id = "smaller-named"
 why = "Screen 3 smaller; the others keep their size."
 expect = ["screen 3 smaller", "screen 1 same", "screen 2 same"]
-worlds = { easy = "e3", medium = "m4", hard = "h6" }
+worlds = { medium = "m4", hard = "h6" }
 says = ["make screen 3 smaller", "shrink the right screen", "screen three a bit smaller please"]
 
 [[goal]]
 id = "closer-named"
 why = "Screen 2 closer to the user."
 expect = ["screen 2 closer"]
-worlds = { easy = "e3c", medium = "m4", hard = "h6" }
+worlds = { medium = "m4", hard = "h6" }
 says = ["bring screen 2 closer", "move the left screen closer to me"]
 
 [[goal]]
 id = "scale-2-half"
 why = "Only screen 2 to half its size."
 expect = ["screen 2 size x0.5", "screen 1 same"]
-worlds = { easy = "e3c", medium = "m4", hard = "h6" }
+worlds = { medium = "m4", hard = "h6" }
 says = ["make screen two half the size", "screen 2 half as big"]
 
 [[goal]]
 id = "scale-all-double"
 why = "Every shown screen twice as big."
 expect = ["screen all size x2"]
-worlds = { easy = "e3", medium = "m4" , hard = "h6" }
+worlds = { medium = "m4" , hard = "h6" }
 says = ["make all the screens double the size", "make every screen twice as big"]
 
 [[goal]]
 id = "scale-all-75"
 why = "Every shown screen to 75 percent."
 expect = ["screen all size x0.75"]
-worlds = { easy = "e3", medium = "m4", hard = "h6" }
+worlds = { medium = "m4", hard = "h6" }
 says = ["make all screens 75 percent", "all the screens a quarter smaller"]
 
 [[goal]]
 id = "nudge-up"
 why = "The screen looked at moves up."
 expect = ["screen gazed up"]
-worlds = { easy = "e1", medium = "m4", hard = "h6" }
+worlds = { medium = "m4", hard = "h6" }
 says = ["move the screen up a bit", "raise this screen"]
 
 [[goal]]
 id = "goto-3"
 why = "Focus screen 3 (the right one)."
 expect = ["focus 3", "all stay"]
-worlds = { easy = "e3c", medium = "m4s", hard = "h6" }
+worlds = { medium = "m4s", hard = "h6" }
 says = ["go to screen three", "switch to the right screen", "focus screen number 3"]
 
 [[goal]]
 id = "swap-1-2"
 why = "The apps of screens 1 and 2 change places; the screens stay where they are."
 expect = ["swapped 1 2"]
-worlds = { easy = "e3c", medium = "m4", hard = "h6" }
+worlds = { medium = "m4", hard = "h6" }
 says = ["swap screens one and two", "swap the main and the left screen"]
 
 [[goal]]
@@ -131,13 +129,13 @@ id = "whats-on-2"
 cat = "info"
 why = "A question: which apps are on screen 2; nothing changes."
 expect = ["nothing", "said chrome"]
-worlds = { easy = "e3c", medium = "m4", hard = "h6" }
+worlds = { medium = "m4", hard = "h6" }
 says = ["what's on screen number two", "which apps are on the left screen"]
 
 [[goal]]
 id = "reset-screens"
 why = "Every screen back in its place in front."
 expect = ["screen 1 front", "all stay"]
-worlds = { easy = "e3", medium = "m4", hard = "h6" }
-set = { easy = { geom = { "1" = [1.6, 2.0, 70.0, 20.0] } }, medium = { geom = { "1" = [2.0, 2.5, 70.0, 20.0] } }, hard = { geom = { "1" = [2.0, 2.5, -80.0, -15.0] } } }
+worlds = { medium = "m4", hard = "h6" }
+set = { medium = { geom = { "1" = [2.0, 2.5, 70.0, 20.0] } }, hard = { geom = { "1" = [2.0, 2.5, -80.0, -15.0] } } }
 says = ["reset the screens", "put all the screens back where they were"]

@@ -146,7 +146,7 @@ Without the agent (no ai.toml), steps 1-3 still apply, and step 5's question rep
 is close.
 
 - **off**: only the offline catalogue (steps 1-3 and the question of step 5).
-- **fallback** (default):
+- **fallback** (default; since 2026-10-18 the AI decides every command, the paragraph below is the old way and applies only with `voice_ai_fast_path = true`, docs/VOICE.md "How every command is decided"):
   - The offline matcher answers first (steps 1-3). A plain match runs at once, with no model call.
   - A deictic window command such as "Max close this" or "Max send that to workspace 2" can match while your eyes
     rest (fixation under 3 s old) on a window other than the focused one. Then that window is focused first and the
@@ -352,7 +352,7 @@ noise, ai, yes), the fuzzy candidates, the model's decision, what ran, whether i
 ## 10. AI tab integration (for the GUI)
 
 **Keys in ai.toml** (all in `omarchyvr_config::ai`):
-- `voice_ai` (off | fallback | always): show it as a 3-way toggle.
+- `voice_ai` (off | fallback | always): show it as an on/off switch (fallback and always are the same since 2026-10-18); `voice_ai_fast_path` (bool, default off): the Advanced switch "Fast path: simple commands skip the AI".
 - `strip_titles` (bool): a privacy checkbox. Show the section 6 list next to it when the voice provider is remote.
 - `[use] voice` and `default` pick the provider.
 - For the local provider, write `kind = "openai-compatible"`, `base_url = "http://127.0.0.1:8080/v1"` and

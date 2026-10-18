@@ -5,7 +5,7 @@
 //! changes". The whole pipeline (wake word, rules, matcher, Lara, the model, plans and goals) runs against a
 //! [`Sim`] of that World; the end state is what the Sim holds afterwards. The intent name is never scored.
 //!
-//! Goals (`tests/state/goals-*.toml`) expand into cases: the first phrasing in every tier (easy / medium / hard
+//! Goals (`tests/state/goals-*.toml`) expand into cases: the first phrasing in every tier (medium / hard
 //! starting state), the other phrasings in one tier each. Live phrases go mostly to the held-out split, which is
 //! never used for tuning. A run appends one row to `analysis/voice-experiments.csv`; the HTML report shows the
 //! leaderboard of all runs.
@@ -25,6 +25,7 @@ pub const GOALS: &[(&str, &str)] = &[
     ("fresh", include_str!("../tests/state/goals-fresh.toml")),
     ("live-1818", include_str!("../tests/state/goals-live-1818.toml")),
     ("steps", include_str!("../tests/state/goals-steps.toml")),
+    ("long", include_str!("../tests/state/goals-long.toml")),
 ];
 
 // ------------------------------------------------------------------------------------------------ world specs
@@ -325,7 +326,7 @@ struct GoalSpec {
     /// the desk went through, the steps in this order (a later step in the same or a later world).
     #[serde(default)]
     steps: Vec<Vec<String>>,
-    /// tier -> world (a name in worlds.toml), e.g. {easy = "e1", medium = "m3", hard = "h6"}.
+    /// tier -> world (a name in worlds.toml), e.g. {medium = "m3", hard = "h6"}; no easy tier (user 2026-10-18), the loader rejects the key.
     worlds: BTreeMap<String, String>,
     /// Per-tier changes to the world.
     #[serde(default)]
@@ -421,12 +422,21 @@ fn hash(s: &str) -> u64 {
 
 /// Every case of the built-in goal files.
 pub fn load_cases() -> Result<Vec<Case>, String> {
-    let worlds: WorldsFile = toml::from_str(WORLDS).map_err(|e| format!("worlds.toml: {e}"))?;
+    load_cases_from(GOALS, WORLDS)
+}
+
+/// The same from given goal files and worlds text (tests feed it bad files).
+fn load_cases_from(goals: &[(&str, &str)], worlds_text: &str) -> Result<Vec<Case>, String> {
+    let worlds: WorldsFile = toml::from_str(worlds_text).map_err(|e| format!("worlds.toml: {e}"))?;
     let mut out = Vec::new();
-    for (file, text) in GOALS {
+    for (file, text) in goals {
         let g: GoalsFile = toml::from_str(text).map_err(|e| format!("goals-{file}.toml: {e}"))?;
         for goal in g.goal {
-            let tiers: Vec<(String, String)> = ["easy", "medium", "hard"].iter().filter_map(|t| goal.worlds.get(*t).map(|w| (t.to_string(), w.clone()))).collect();
+            // the easy tier is gone (user decision 2026-10-18): fail loudly if a goal brings it back
+            if let Some(bad) = goal.worlds.keys().chain(goal.set.keys()).find(|k| !matches!(k.as_str(), "medium" | "hard")) {
+                return Err(format!("goal {}: tier `{bad}` is not allowed: the state tests have medium and hard tiers only (the easy tier was removed on 2026-10-18)", goal.id));
+            }
+            let tiers: Vec<(String, String)> = ["medium", "hard"].iter().filter_map(|t| goal.worlds.get(*t).map(|w| (t.to_string(), w.clone()))).collect();
             if tiers.is_empty() {
                 return Err(format!("goal {}: no worlds", goal.id));
             }
@@ -1343,8 +1353,6 @@ pub struct Opts {
     pub split: String,
     pub only: Option<String>,
     pub tier: Option<String>,
-    /// No model: the matcher and rules only (fast, for checking the cases and the simulator).
-    pub no_ai: bool,
     pub list: bool,
     pub label: String,
     pub pause_ms: u64,
@@ -1353,7 +1361,7 @@ pub struct Opts {
 }
 
 const HELP: &str = "omarchyvr-voice audit --state [--variant NAME|FILE] [--subset N] [--seed S] [--split dev|held|fresh|all] \
-[--only TEXT] [--tier easy|medium|hard] [--out FILE.html] [--csv FILE] [--json-out FILE] [--no-ai] [--list] [--label TEXT] [--pause-ms MS] [--end-only]\n\
+[--only TEXT] [--tier medium|hard] [--out FILE.html] [--csv FILE] [--json-out FILE] [--list] [--label TEXT] [--pause-ms MS] [--end-only]\n\
 omarchyvr-voice audit --state --snapshot   (the live World as JSON, read-only)";
 
 /// The repository's analysis directory (from the crate's place in the tree), else the current directory.
@@ -1378,7 +1386,6 @@ pub fn parse_opts(args: &[String]) -> Result<Opts, String> {
         split: "all".into(),
         only: None,
         tier: None,
-        no_ai: false,
         list: false,
         label: String::new(),
         pause_ms: 0,
@@ -1402,7 +1409,7 @@ pub fn parse_opts(args: &[String]) -> Result<Opts, String> {
             "--out" => o.out = val(&mut i)?.into(),
             "--csv" => o.csv = val(&mut i)?.into(),
             "--json-out" => o.json_out = Some(val(&mut i)?.into()),
-            "--no-ai" => o.no_ai = true,
+            "--no-ai" => return Err("audit --state: --no-ai was removed: every score runs the whole pipeline (Lara + the AI), user decision 2026-10-18".into()),
             "--list" => o.list = true,
             "--end-only" => o.end_only = true,
             "--label" => o.label = val(&mut i)?,
@@ -1489,7 +1496,9 @@ pub fn run_cases(cases: &[Case], o: &Opts) -> Result<Vec<Outcome>, String> {
     use std::time::Instant;
     let cat = Catalogue::load_default()?;
     let ai_toml = omarchyvr_config::ai::default_path().unwrap_or_else(crate::llm::ai_path);
-    let mut agent = if o.no_ai { None } else { crate::agent::Agent::from_ai_toml(&ai_toml, &cat, "wayvrctl")? };
+    // the audit always runs the whole pipeline (Lara + the AI); with no AI to ask there is nothing to score
+    let agent = crate::agent::Agent::from_ai_toml(&ai_toml, &cat, "wayvrctl")?;
+    let mut agent = Some(agent.ok_or_else(|| format!("audit --state needs the AI: voice_ai is off or no model is set in {}. The state audit scores the whole pipeline (Lara + the AI) and never the rules alone.", ai_toml.display()))?);
     let tmp = std::env::temp_dir().join(format!("omarchyvr-voice-state-{}", std::process::id()));
     std::fs::create_dir_all(&tmp).map_err(|e| format!("{}: {e}", tmp.display()))?;
     let log_path = tmp.join("ai.log");
@@ -1515,8 +1524,15 @@ pub fn run_cases(cases: &[Case], o: &Opts) -> Result<Vec<Outcome>, String> {
         }
         a.dry_run = false;
         a.log = Some(crate::agent::Log { path: log_path.clone(), max_bytes: 512 << 20 });
-        let r = a.prime_now();
-        eprintln!("state audit: model {} warm {:?}", a.provider.describe(), r);
+        match a.prime_now() {
+            Ok(ms) => eprintln!("state audit: model {} warm {ms} ms", a.provider.describe()),
+            Err(e) => {
+                return Err(format!(
+                    "audit --state: the model server for {} does not answer ({e}). Start the local AI (omarchyvr-ai up) or fix the provider; the audit does not score rules alone.",
+                    a.provider.describe()
+                ))
+            }
+        }
     }
     // layouts, the debug flag and other voice files go to a scratch place, never the user's
     std::env::set_var("XDG_STATE_HOME", &tmp);
@@ -1697,11 +1713,10 @@ impl Summary {
 
     pub fn line(&self) -> String {
         format!(
-            "state audit: {}/{} reach the state ({:.0}%); easy {}% medium {}% hard {}%; dev {}% held {}% fresh {}%; live phrases {}/{}; unsafe {}; simulator gaps {}; steps {}/{}; broke mid-way {}; p50 {} ms p95 {} ms",
+            "state audit: {}/{} reach the state ({:.0}%); medium {}% hard {}%; dev {}% held {}% fresh {}%; live phrases {}/{}; unsafe {}; simulator gaps {}; steps {}/{}; broke mid-way {}; p50 {} ms p95 {} ms",
             self.pass,
             self.n,
             pct(self.pass, self.n),
-            self.tier("easy"),
             self.tier("medium"),
             self.tier("hard"),
             self.split("dev"),
@@ -1722,7 +1737,7 @@ impl Summary {
     pub fn csv_row(&self, o: &Opts, git: &str) -> String {
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
         let label = if o.label.is_empty() { o.variant.notes.clone() } else { o.label.clone() };
-        let ai = format!("{}{}", if o.no_ai { "no-ai" } else { "ai" }, if o.end_only { " end-only" } else { "" });
+        let ai = format!("{}{}", "ai", if o.end_only { " end-only" } else { "" });
         format!(
             "{now},{},{git},{},{},{},{:.1},{},{},{},{},{},{},{},{},{},{},{},{},\"{}\",{},{},{},{}",
             o.variant.name,
@@ -1730,7 +1745,7 @@ impl Summary {
             if o.subset > 0 { format!("subset{}s{}", o.subset, o.seed) } else { "full".into() },
             self.n,
             pct(self.pass, self.n),
-            self.tier("easy"),
+            "", // the retired easy column (old rows keep it)
             self.tier("medium"),
             self.tier("hard"),
             self.split("dev"),
@@ -1757,7 +1772,7 @@ pub fn gpu_used_mib() -> Option<u64> {
     String::from_utf8_lossy(&o.stdout).lines().next()?.trim().parse().ok()
 }
 
-pub const CSV_HEAD: &str = "unix_time,variant,git,split,cases_set,n,score,easy,medium,hard,dev,held,unsafe,sim_gaps,p50_ms,p95_ms,est_tokens,vram_mib,mode,label,fresh,steps_pass,steps_n,midway";
+pub const CSV_HEAD: &str = "unix_time,variant,git,split,cases_set,n,score,easy_retired,medium,hard,dev,held,unsafe,sim_gaps,p50_ms,p95_ms,est_tokens,vram_mib,mode,label,fresh,steps_pass,steps_n,midway";
 
 fn append_csv(p: &std::path::Path, row: &str) -> Result<(), String> {
     use std::io::Write;
@@ -1814,11 +1829,11 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{padding:6px 8px;b
 .say{font-size:16px;font-weight:600}pre{background:var(--code);border-radius:8px;padding:8px;white-space:pre-wrap;word-break:break-word;font:12px/1.4 ui-monospace,monospace;margin:6px 0;max-height:340px;overflow:auto}\
 details{margin:6px 0}summary{cursor:pointer;color:var(--dim)}ul{margin:4px 0;padding-left:20px}.bar{height:8px;background:var(--chip);border-radius:4px;overflow:hidden}.bar i{display:block;height:100%;background:var(--pass)}";
     h += "</style></head><body><main>";
-    h += &format!("<h1>Voice state audit</h1><div class=sub>Variant <b>{}</b> ({}), git {}, split {}, {} of {} cases{}. Each case starts from a desk state, runs the words through the whole voice pipeline against a simulator of that desk, and is scored on the end state only. The intent name is not scored.</div>",
-        esc(&opts.variant.name), esc(&opts.variant.notes), esc(git), esc(&opts.split), o.len(), all.len(), if opts.no_ai { ", NO MODEL (matcher and rules only)" } else { "" });
+    h += &format!("<h1>Voice state audit</h1><div class=sub>Variant <b>{}</b> ({}), git {}, split {}, {} of {} cases. Each case starts from a desk state, runs the words through the whole voice pipeline against a simulator of that desk, and is scored on the end state only. The intent name is not scored.</div>",
+        esc(&opts.variant.name), esc(&opts.variant.notes), esc(git), esc(&opts.split), o.len(), all.len());
     h += "<div class=kpis>";
     h += &format!("<div class=kpi><span class=sub>reach the state</span><b class={}>{:.0}%</b>{} of {}</div>", if pct(s.pass, s.n) >= 80.0 { "pass" } else { "fail" }, pct(s.pass, s.n), s.pass, s.n);
-    for t in ["easy", "medium", "hard"] {
+    for t in ["medium", "hard"] {
         if let Some((p, n)) = s.tiers.get(t) {
             h += &format!("<div class=kpi><span class=sub>{t}</span><b>{:.0}%</b>{p} of {n}</div>", pct(*p, *n));
         }
@@ -1849,14 +1864,14 @@ details{margin:6px 0}summary{cursor:pointer;color:var(--dim)}ul{margin:4px 0;pad
     }
     h += "</table></div>";
     // leaderboard
-    h += "<h2>Leaderboard (analysis/voice-experiments.csv)</h2><div class=wrap><table><tr><th>when</th><th>variant</th><th>git</th><th>set</th><th>n</th><th>score</th><th>easy</th><th>med</th><th>hard</th><th>dev</th><th>held</th><th>fresh</th><th>unsafe</th><th>p50 / p95 ms</th><th>VRAM MiB</th><th>label</th></tr>";
+    h += "<h2>Leaderboard (analysis/voice-experiments.csv)</h2><div class=wrap><table><tr><th>when</th><th>variant</th><th>git</th><th>set</th><th>n</th><th>score</th><th>med</th><th>hard</th><th>dev</th><th>held</th><th>fresh</th><th>unsafe</th><th>p50 / p95 ms</th><th>VRAM MiB</th><th>label</th></tr>";
     let mut rows: Vec<Vec<String>> = csv.lines().skip(1).map(|l| split_csv(l)).filter(|r| r.len() >= 20).collect();
     rows.sort_by(|a, b| b[6].parse::<f64>().unwrap_or(0.0).partial_cmp(&a[6].parse::<f64>().unwrap_or(0.0)).unwrap_or(std::cmp::Ordering::Equal));
     for r in rows.iter().take(30) {
         let when = r[0].parse::<u64>().map(fmt_time).unwrap_or_default();
         h += &format!(
-            "<tr><td>{when}</td><td>{}</td><td>{}</td><td>{} {}</td><td>{}</td><td><b>{}%</b></td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{} / {}</td><td>{}</td><td>{} {}</td></tr>",
-            esc(&r[1]), esc(&r[2]), esc(&r[3]), esc(&r[4]), esc(&r[5]), esc(&r[6]), esc(&r[7]), esc(&r[8]), esc(&r[9]), esc(&r[10]), esc(&r[11]), esc(r.get(20).map(String::as_str).unwrap_or("")), esc(&r[12]), esc(&r[14]), esc(&r[15]), esc(&r[17]), esc(&r[18]), esc(&r[19])
+            "<tr><td>{when}</td><td>{}</td><td>{}</td><td>{} {}</td><td>{}</td><td><b>{}%</b></td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{} / {}</td><td>{}</td><td>{} {}</td></tr>",
+            esc(&r[1]), esc(&r[2]), esc(&r[3]), esc(&r[4]), esc(&r[5]), esc(&r[6]), esc(&r[8]), esc(&r[9]), esc(&r[10]), esc(&r[11]), esc(r.get(20).map(String::as_str).unwrap_or("")), esc(&r[12]), esc(&r[14]), esc(&r[15]), esc(&r[17]), esc(&r[18]), esc(&r[19])
         );
     }
     h += "</table></div>";
@@ -1981,11 +1996,15 @@ mod tests {
         for c in &v {
             assert!(!c.expect.is_empty() || !c.any.is_empty(), "{} has no expectation", c.id);
             // every expectation parses (an unknown one would fail every run)
-            for a in c.expect.iter().chain(c.any.iter().flatten()) {
+            for a in c.expect.iter().chain(c.any.iter().flatten()).chain(c.steps.iter().flatten()) {
                 let (_, why, _) = assert_one(a, &c.start, &c.start, &[], false);
                 assert!(!why.starts_with("unknown expectation"), "{}: {a}", c.id);
             }
+            assert!(matches!(c.tier.as_str(), "medium" | "hard"), "{}: tier {}", c.id, c.tier);
         }
+        // the long goals are registered (27 goals, ids lg-*)
+        let lg: std::collections::BTreeSet<&str> = v.iter().filter(|c| c.goal.starts_with("lg-")).map(|c| c.goal.as_str()).collect();
+        assert_eq!(lg.len(), 27, "{lg:?}");
         let held = v.iter().filter(|c| c.split == "held").count();
         let old = v.iter().filter(|c| c.split != "fresh").count();
         assert!(held * 5 >= old, "a held-out split of at least a fifth: {held}");
@@ -1997,6 +2016,17 @@ mod tests {
         assert_eq!(ids.len(), v.len(), "case ids are unique");
         let live_held = v.iter().filter(|c| c.live && c.split == "held").count();
         assert!(live_held * 2 > v.iter().filter(|c| c.live).count(), "live phrases mostly held out");
+    }
+
+    #[test]
+    fn the_easy_tier_is_rejected() {
+        let goal = |extra: &str| format!("[[goal]]\nid = \"x\"\nwhy = \"w\"\nexpect = [\"nothing\"]\n{extra}\nsays = [\"hello\"]\n");
+        let ok = load_cases_from(&[("t", &goal("worlds = { medium = \"m3\" }"))], WORLDS).unwrap();
+        assert!(ok.iter().all(|c| c.tier == "medium"));
+        let e = load_cases_from(&[("t", &goal("worlds = { easy = \"m3\", medium = \"m3\" }"))], WORLDS).unwrap_err();
+        assert!(e.contains("easy tier was removed") && e.contains("goal x"), "{e}");
+        let e = load_cases_from(&[("t", &goal("worlds = { medium = \"m3\" }\nset = { easy = { screens = 4 } }"))], WORLDS).unwrap_err();
+        assert!(e.contains("`easy`"), "{e}");
     }
 
     #[test]
@@ -2024,7 +2054,7 @@ mod tests {
     }
 
     fn case_of(goal: &str) -> Case {
-        load_cases().unwrap().into_iter().find(|c| c.goal == goal && c.tier == "easy").unwrap_or_else(|| panic!("no easy case of {goal}"))
+        load_cases().unwrap().into_iter().find(|c| c.goal == goal && c.tier == "medium").unwrap_or_else(|| panic!("no medium case of {goal}"))
     }
 
     /// The world after a change, as a history entry.

@@ -2,9 +2,9 @@
 //!
 //! ```toml
 //! # no file, or no provider chosen for voice: the built-in `claude-cli` provider (the installed Claude Code CLI,
-//! # model "haiku", no key) answers voice commands that the offline matcher does not understand.
+//! # model "haiku", no key) decides voice commands (the offline rules and matcher only give hints).
 //! default = "claude"              # the provider every feature uses unless [use] says otherwise
-//! voice_ai = "fallback"           # off | fallback (when the offline matcher has no answer) | always
+//! voice_ai = "fallback"           # off | fallback | always (the AI decides every command; both are the same unless voice_ai_fast_path)
 //! strip_titles = false            # privacy: window titles are not sent to a provider
 //! voice_confirm = "none"          # none (default) | dangerous | always: when a voice command waits for "yes"
 //! voice_listen = "long"           # normal | long (default) | very-long: how long voice waits after you stop talking
@@ -197,7 +197,8 @@ impl Drop for Secret {
 pub enum VoiceAi {
     /// Never: only the offline command matcher.
     Off,
-    /// Only when the offline matcher has no answer (the default).
+    /// The AI decides every command (the default); with `voice_ai_fast_path` a short command the offline matcher
+    /// settles runs without it.
     #[default]
     Fallback,
     /// Every command goes to the model.
@@ -226,8 +227,8 @@ impl VoiceAi {
     pub fn label(self) -> &'static str {
         match self {
             VoiceAi::Off => "Off (offline commands only)",
-            VoiceAi::Fallback => "When a command is not understood",
-            VoiceAi::Always => "Always",
+            VoiceAi::Fallback => "AI decides every command",
+            VoiceAi::Always => "AI decides every command (always)",
         }
     }
 }
@@ -930,6 +931,9 @@ pub struct AiConfig {
     pub voice_ai_log: Option<bool>,
     /// Keep one Claude CLI process started ahead for the next command (`voice_ai_prewarm`; None: yes).
     pub voice_ai_prewarm: Option<bool>,
+    /// A short command the rules or the matcher settle runs without the AI (`voice_ai_fast_path`; None: no, the AI
+    /// decides every command; user decision 2026-10-18).
+    pub voice_ai_fast_path: Option<bool>,
     /// With a local voice model: use the online provider when the local server is not running (`voice_online_backup`; None: yes).
     pub voice_online_backup: Option<bool>,
     /// The AI on this PC: one model or two stages (`voice_local`, default simple).
@@ -1122,6 +1126,7 @@ impl AiConfig {
                     "voice_ai_gaze" => c.voice_ai_gaze = Some(parse_bool(v, n, k)?),
                     "voice_ai_log" => c.voice_ai_log = Some(parse_bool(v, n, k)?),
                     "voice_ai_prewarm" => c.voice_ai_prewarm = Some(parse_bool(v, n, k)?),
+                    "voice_ai_fast_path" => c.voice_ai_fast_path = Some(parse_bool(v, n, k)?),
                     "voice_ai_timeout_s" => {
                         let t: f64 = v.split('#').next().unwrap_or("").trim().parse().map_err(|_| format!("line {n}: voice_ai_timeout_s is a number of seconds"))?;
                         if !(t.is_finite() && t > 0.0 && t <= 600.0) {
@@ -1246,6 +1251,9 @@ impl AiConfig {
         }
         if let Some(b) = self.voice_ai_prewarm {
             o += &format!("voice_ai_prewarm = {b}\n");
+        }
+        if let Some(b) = self.voice_ai_fast_path {
+            o += &format!("voice_ai_fast_path = {b}\n");
         }
         if let Some(b) = self.voice_online_backup {
             o += &format!("voice_online_backup = {b}\n");
@@ -1723,6 +1731,12 @@ mod tests {
         let c = sample();
         let text = c.render();
         assert_eq!(AiConfig::parse(&text).unwrap(), c);
+        // the fast path: nothing written by default, saved when set
+        assert!(!text.contains("voice_ai_fast_path"));
+        let mut f = c.clone();
+        f.voice_ai_fast_path = Some(true);
+        assert!(f.render().contains("voice_ai_fast_path = true"));
+        assert_eq!(AiConfig::parse(&f.render()).unwrap().voice_ai_fast_path, Some(true));
         let env = |k: &str| (k == "MY_OPENAI").then(|| "sk-openai-env".to_string());
         // voice: the default (Claude, key in the file)
         let v = c.resolve_with(Feature::Voice, &env, None).unwrap();

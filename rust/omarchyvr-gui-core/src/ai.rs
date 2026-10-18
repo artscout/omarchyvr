@@ -210,6 +210,12 @@ impl AppCore {
         self.ai_save();
     }
 
+    /// "Fast path: simple commands skip the AI": `voice_ai_fast_path` (None in the file: off, the AI decides every command).
+    pub fn ai_set_fast_path(&mut self, on: bool) {
+        self.ai.config.voice_ai_fast_path = on.then_some(true);
+        self.ai_save();
+    }
+
     /// Which AI answers voice commands now.
     pub fn ai_voice_brain(&self) -> VoiceBrain {
         match self.ai.config.provider_for(Feature::Voice) {
@@ -869,6 +875,11 @@ mod tests {
         assert!(std::fs::read_to_string(a.ai_path()).unwrap().contains("voice_ai_prewarm = false"));
         a.ai_set_prewarm(true);
         assert!(!std::fs::read_to_string(a.ai_path()).unwrap().contains("voice_ai_prewarm"));
+        // fast path: default off (nothing written), on is saved and read back
+        a.ai_set_fast_path(true);
+        assert!(std::fs::read_to_string(a.ai_path()).unwrap().contains("voice_ai_fast_path = true"));
+        a.ai_set_fast_path(false);
+        assert!(!std::fs::read_to_string(a.ai_path()).unwrap().contains("voice_ai_fast_path"));
     }
 
     #[test]

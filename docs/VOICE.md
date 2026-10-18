@@ -517,7 +517,10 @@ Dry-run audit (local Lara + Qwen3.5-4B on the GPU, `tests/fixtures/live-2026-10-
 - **Every command goes to the AI** when it is on (`voice_ai = "fallback"` or `"always"`): the rules, the matcher
   and the fuzzy matcher no longer decide alone, they give hints. `voice_ai_fast_path = true` in ai.toml (off by
   default) brings back the old fast path: a short single request the rules or the matcher settle runs without the
-  model (then only several requests or a corrected one go to the model as a whole).
+  model (then only several requests or a corrected one go to the model as a whole). In the app: AI page > Voice
+  settings > Advanced > "Fast path: simple commands skip the AI" (`voice_ai_fast_path`). The old "When: not
+  understood / Always" control is gone: with the AI on, `fallback` and `always` behave the same, so the page only has
+  the AI on/off switch (`voice_ai = "off"` = the offline matcher only) and the fast path switch.
 - **The model down** (not running, timed out, no online backup): what the rules and the matcher settle still runs
   (every part, or nothing), so voice is not dead without the AI. The model saying `none` runs nothing.
 - **"this"** is resolved once, from the gaze read at the start of the command (the request's runner keeps that
@@ -528,7 +531,7 @@ Dry-run audit (local Lara + Qwen3.5-4B on the GPU, `tests/fixtures/live-2026-10-
   runner tracks the window each step acted on.
 - **Measured (state audit, 753 cases, local Qwen3.5-4B, 2026-10-18):**
 
-  | run | overall | easy | medium | hard | medium+hard multi-step | unsafe | p50 / p95 ms |
+  | run | overall | easy (tier removed 2026-10-18) | medium | hard | medium+hard multi-step | unsafe | p50 / p95 ms |
   |---|---|---|---|---|---|---|---|
   | B: rules/matcher first, Lara off | 665 (88.3%) | 89.0% | 88.9% | 86.9% | 81/104 (77.9%) | 0 | 112 / 706 |
   | C: every command to the AI, Lara first | 690 (91.6%) | 94.1% | 91.9% | 88.6% | 97/104 (93.3%) | 0 | 568 / 1353 |
@@ -583,7 +586,7 @@ Dry-run audit (local Lara + Qwen3.5-4B on the GPU, `tests/fixtures/live-2026-10-
 
 ## What decides before the model (general grammar, 2026-10-16)
 
-The rules and the matcher settle about 3 of 4 requests alone (`--no-ai`: 72% of the state cases). All of it is
+The rules and the matcher settle about 3 of 4 requests alone (72% of the state cases, measured on 2026-10-16 with the since removed `--no-ai`; the state audit now always runs Lara and the AI). With the AI on they only give hints (above). All of it is
 grammar, never a test phrase (`leak::tests` checks):
 - **Clauses.** "close screen 2 and make the main one bigger": split at "and" / "then" before a verb; each clause is
   decided on its own (rule, exact phrase, else the model for that clause). A later clause that points back ("put

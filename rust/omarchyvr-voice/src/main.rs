@@ -53,7 +53,7 @@ const HELP: &str = "omarchyvr-voice <command> [options]   local voice-to-text (n
       the built-in tests/fixtures/aibench.tsv, real and mangled transcripts) through the full route (matcher,
       fuzzy, model), nothing executed (hyprctl/gaze are read live). Prints accuracy, asks, wrong actions and
       p50/p95 latency (end of transcript -> decision). --url: another local server (.../v1/chat/completions).
-  audit --state [--variant NAME|FILE] [--subset N --seed S] [--split dev|held|all] [--tier T] [--only TEXT] [--no-ai] [--list] [--snapshot]
+  audit --state [--variant NAME|FILE] [--subset N --seed S] [--split dev|held|all] [--tier medium|hard] [--only TEXT] [--list] [--snapshot]
       THE QUALITY MEASURE: each case starts from a desk state (screens, apps, tabs, gaze), runs the words through the
       whole pipeline against a simulator of that desk and is scored on the end state reached, nothing else changed
       (docs/VOICE-STATE-TESTS.md). Writes analysis/voice-state-audit.html, appends analysis/voice-experiments.csv.
