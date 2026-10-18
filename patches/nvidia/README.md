@@ -1,8 +1,14 @@
 # NVIDIA display patches
 
-Three patches for the NVIDIA open kernel modules (`open-gpu-kernel-modules`, tested on the versions in
-`tested-versions.txt`: today 610.57.04; any other version only on opt-in, see below) that the Dream
-Air's merged 2-head display needs, plus the pacman hooks that re-apply them after a driver update.
+Patches for the NVIDIA open kernel modules (`open-gpu-kernel-modules`).
+
+- **Dream Air on RTX 40 (Ada)**: the three `nvidia-*.patch` files below, for its merged 2-head display (tested on the
+  versions in `tested-versions.txt`: today 610.57.04; any other version only on opt-in, see below), plus the pacman
+  hooks that re-apply them after a driver update.
+- **Crystal Super on RTX 50 (Blackwell, tested on an RTX 5090)**: only `blackwell/nvidia-dp-fec-reread.patch`
+  (595.99.02, applies to 615.71.09). The three Dream Air patches are not needed there: Blackwell has no merged heads.
+  The headset also needs an EDID override, which is not a driver patch (`linux/crystal-super/`). Details:
+  [blackwell/README.md](blackwell/README.md). The Dream Air on Blackwell has not been tried.
 
 | File | What it does |
 |---|---|
@@ -12,6 +18,7 @@ Air's merged 2-head display needs, plus the pacman hooks that re-apply them afte
 | `tested-versions.txt` | the driver versions the patches were tested on (one per line) |
 | `nvidia-patch-reapply.sh` | applies them idempotently to `/usr/src/nvidia-<version>` (`--check`, `--verify`, `--rebuild`, `--allow-untested`) |
 | `nvidia-pimax-patch.hook`, `nvidia-pimax-verify.hook` | pacman hooks (before and after the dkms build) |
+| `blackwell/nvidia-dp-fec-reread.patch` | Crystal Super on RTX 50: re-read the sink's FEC capability so DSC is allowed (the only patch it needs); not applied by the scripts here |
 | `test_nvidia_patch_reapply.sh` | test of the re-apply script on scratch copies, no root |
 
 ## Untested drivers

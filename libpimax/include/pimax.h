@@ -13,7 +13,8 @@ extern "C" {
 #endif
 
 #define PIMAX_VID 0x34a4
-#define PIMAX_PID 0x0044
+#define PIMAX_PID 0x0044               /* Dream Air */
+#define PIMAX_PID_CRYSTAL_SUPER 0x0040 /* same protocol (analysis/crystal-super-capture-20261017.md) */
 #define PIMAX_NUM_IF 4         /* USB interfaces 0..3 */
 #define PIMAX_PATH_MAX 64
 #define PIMAX_REPORT_SIZE 64

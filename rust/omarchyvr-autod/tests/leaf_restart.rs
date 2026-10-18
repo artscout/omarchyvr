@@ -14,13 +14,14 @@ use omarchyvr_components::util::{put, Roots, TempDir};
 use std::os::unix::process::ExitStatusExt;
 use std::process::{Child, Command};
 
+/// The first existing binary. Ubuntu's uutils coreutils is one multicall binary that picks the tool by argv[0] and
+/// exits on the stand-in names, so the single-purpose GNU copies (`gnusleep`, `gnutail`) come first.
+fn first_bin(names: &[&str]) -> String {
+    names.iter().find(|p| std::path::Path::new(p).exists()).map(|s| s.to_string()).expect("coreutils")
+}
+
 fn sleep_bin() -> String {
-    for p in ["/usr/bin/sleep", "/bin/sleep"] {
-        if std::path::Path::new(p).exists() {
-            return p.into();
-        }
-    }
-    panic!("no sleep binary")
+    first_bin(&["/usr/bin/gnusleep", "/usr/bin/sleep", "/bin/sleep"])
 }
 
 /// The stand-ins never leave a system core dump: on 2026-10-17 every run of this test left a core of `/usr/bin/sleep`
@@ -87,7 +88,7 @@ fn a_crashed_leaf_is_respawned_from_its_captured_argv() {
     // the keepalive (`omarchyvr keepalived`) is a hard dependency of monado: the probe reads the real /proc, so the test
     // must run its own stand-in instead of relying on a live keepalive of the machine it runs on
     let ka = bin.join("omarchyvr");
-    std::os::unix::fs::symlink("/usr/bin/tail", &ka).unwrap();
+    std::os::unix::fs::symlink(first_bin(&["/usr/bin/gnutail", "/usr/bin/tail", "/bin/tail"]), &ka).unwrap();
     put(base, "keepalived", "");
     let mut ka_child = Command::new(&ka).current_dir(base).args(["keepalived", "-f"]).spawn().unwrap();
     kids.0.push(ka_child.id());

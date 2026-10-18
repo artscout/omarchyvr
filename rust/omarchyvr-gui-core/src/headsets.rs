@@ -1,6 +1,7 @@
-//! Headset models the app knows: the modules of `pimax-device` (one TOML descriptor per model). Only the Pimax Dream
-//! Air (the SLAM version this stack drives) is real today; the other Pimax headsets are mocks that claim no USB id and
-//! promise no capability, so the layout already has room for them. Nothing here talks to a device.
+//! Headset models the app knows: the modules of `pimax-device` (one TOML descriptor per model). Real today: the Pimax
+//! Dream Air (the SLAM version this stack drives) and, experimental, the Crystal Super (same protocol); the other
+//! Pimax headsets are mocks that claim no USB id and promise no capability, so the layout already has room for them.
+//! Nothing here talks to a device.
 use crate::facts::Facts;
 use pimax_device::Capabilities;
 pub use pimax_device::{Descriptor, Detected, HeadsetModule, Status, Support};
@@ -112,8 +113,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn one_real_model_and_mocks_that_promise_nothing() {
-        assert_eq!(all().iter().filter(|m| !m.is_mock()).count(), 1);
+    fn two_real_models_and_mocks_that_promise_nothing() {
+        assert_eq!(all().iter().filter(|m| !m.is_mock()).count(), 2);
+        assert_eq!(usb_ids(by_id("crystal-super").unwrap().descriptor()), "34a4:0040");
         let d = default_module().descriptor();
         assert_eq!(d.id, "dream-air");
         assert_eq!(usb_ids(d), "34a4:0044");

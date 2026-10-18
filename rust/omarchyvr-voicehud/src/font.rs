@@ -5,12 +5,15 @@ use crate::display::Measure;
 use ab_glyph::{point, Font as _, FontVec, GlyphId, OutlinedGlyph, PxScale, ScaleFont as _};
 use std::path::{Path, PathBuf};
 
-/// Candidates after `--font`, in order.
-pub const DEFAULT_FONTS: [&str; 4] = [
+/// Candidates after `--font`, in order: the Arch paths, then the Debian/Ubuntu ones (`/usr/share/fonts/truetype`).
+pub const DEFAULT_FONTS: [&str; 7] = [
     "/usr/share/fonts/noto/NotoSans-Medium.ttf",
     "/usr/share/fonts/noto/NotoSans-Regular.ttf",
     "/usr/share/fonts/liberation/LiberationSans-Regular.ttf",
     "/usr/share/fonts/TTF/JetBrainsMonoNerdFont-Regular.ttf",
+    "/usr/share/fonts/truetype/noto/NotoSans-Medium.ttf",
+    "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
 ];
 
 /// A loaded font.
@@ -268,7 +271,7 @@ mod tests {
             DEFAULT_FONTS[0],
             "/usr/share/fonts/noto/NotoSans-Medium.ttf"
         );
-        assert_eq!(DEFAULT_FONTS.len(), 4);
+        assert_eq!(DEFAULT_FONTS.len(), 7);
         // on this machine the first one exists, so it is the one in use
         if Path::new(DEFAULT_FONTS[0]).exists() {
             assert_eq!(font().path(), Path::new(DEFAULT_FONTS[0]));

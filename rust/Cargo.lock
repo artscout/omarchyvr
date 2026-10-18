@@ -2206,6 +2206,7 @@ name = "omarchyvr-components"
 version = "0.1.0"
 dependencies = [
  "libc",
+ "pimax-proto",
  "proptest",
 ]
 

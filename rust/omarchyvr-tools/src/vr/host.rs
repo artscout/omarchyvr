@@ -130,8 +130,17 @@ impl Host for RealHost {
         rd.flatten().any(|e| {
             let p = e.path();
             Self::read_trim(&p.join("idVendor")).as_deref() == Some("34a4")
-                && Self::read_trim(&p.join("idProduct")).as_deref() == Some("0044")
+                && Self::read_trim(&p.join("idProduct"))
+                    .and_then(|s| u16::from_str_radix(&s, 16).ok())
+                    .is_some_and(|pid| pimax_proto::model::by_pid(pid).is_some())
         })
+    }
+
+    fn headset_label(&self) -> String {
+        match pimax::discovery::find_headset(&pimax::discovery::Roots::from_env()) {
+            Some((m, _)) if m.id != pimax_proto::DREAM_AIR.id => format!("34a4:{:04x} ({})", m.pid, m.name),
+            _ => "34a4:0044".into(),
+        }
     }
 
     fn camera_ok(&self) -> Option<bool> {

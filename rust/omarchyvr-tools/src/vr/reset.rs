@@ -93,7 +93,7 @@ pub trait ResetHost {
     fn bridge_lines(&mut self) -> Vec<String>;
 }
 
-/// HID chip.
+/// HID chip of the Dream Air (every model: [`hid_present_in`]).
 pub const PID_HID: u16 = 0x0044;
 /// Camera (eYs3d PimaxSensor).
 pub const PID_CAM: u16 = 0x0014;
@@ -564,6 +564,11 @@ pub fn reset_dp(h: &mut dyn ResetHost, clock: &dyn Clock) -> Result<DpOutcome, S
 }
 
 /// USB device 34a4:`pid` is on the bus under `sysfs` (`bus/usb/devices`).
+/// The HID chip of a supported headset model (Dream Air 0044, Crystal Super 0040) is under `sysfs`.
+pub fn hid_present_in(sysfs: &std::path::Path) -> bool {
+    pimax_proto::MODELS.iter().any(|m| usb_present_in(sysfs, m.pid))
+}
+
 pub fn usb_present_in(sysfs: &std::path::Path, pid: u16) -> bool {
     let want = format!("{pid:04x}");
     let Ok(rd) = std::fs::read_dir(sysfs.join("bus/usb/devices")) else {
@@ -597,7 +602,7 @@ pub fn camera_node_in(sysfs: &std::path::Path) -> bool {
 /// Camera state for the preflight: `Some(true)` on USB with its video node, `Some(false)` missing, `None` when the
 /// headset itself (HID) is absent so the camera cannot be judged.
 pub fn camera_ok_in(sysfs: &std::path::Path) -> Option<bool> {
-    if !usb_present_in(sysfs, PID_HID) {
+    if !hid_present_in(sysfs) {
         return None;
     }
     Some(usb_present_in(sysfs, PID_CAM) && camera_node_in(sysfs))
@@ -807,9 +812,12 @@ pub mod real {
         }
         fn open_if0(&mut self) -> Result<(), String> {
             let roots = pimax::discovery::Roots::from_env();
-            let node = pimax::discovery::find_interfaces(&roots)[0]
-                .clone()
-                .ok_or("IF0 hidraw node of 34a4:0044 not found")?;
+            let (model, ifs) = pimax::discovery::find_headset(&roots).ok_or("IF0 hidraw node of 34a4:0044 not found")?;
+            // the restart and exit frames were captured on the Dream Air only
+            if model.id != pimax_proto::DREAM_AIR.id {
+                return Err(format!("Restart headset is not available for the {} yet", model.name));
+            }
+            let node = ifs[0].clone().ok_or("IF0 hidraw node of 34a4:0044 not found")?;
             self.if0 = Some(
                 pimax::hid::open(&node, true).map_err(|e| format!("{}: {e}", node.display()))?,
             );

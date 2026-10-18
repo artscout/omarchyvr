@@ -77,8 +77,13 @@ impl Report {
 
 /// What the checks may ask about the machine.
 pub trait Host {
-    /// Is 34a4:0044 on the USB bus?
+    /// Is a supported headset (34a4:0044 Dream Air, 34a4:0040 Crystal Super) on the USB bus?
     fn usb_headset_present(&self) -> bool;
+    /// How the present headset is named in the checks: `34a4:0044` for the Dream Air, `34a4:0040 (Pimax Crystal
+    /// Super)` for another model.
+    fn headset_label(&self) -> String {
+        "34a4:0044".into()
+    }
     /// How many of the four hidraw interfaces of the headset exist (0..=4).
     fn hidraw_interfaces(&self) -> usize;
     /// `systemctl --user is-active omarchyvr-keepalived` (`active`, `inactive`, `failed`, ...).
@@ -137,20 +142,20 @@ pub fn run_for(host: &dyn Host, connector: &str, service: Option<&Path>) -> Repo
             add(
                 "headset",
                 Level::Ok,
-                "34a4:0044 on USB, 4/4 hidraw interfaces".into(),
+                format!("{} on USB, 4/4 hidraw interfaces", host.headset_label()),
             );
         } else {
             add(
                 "headset",
                 Level::Warn,
-                format!("34a4:0044 on USB but only {n}/4 hidraw interfaces (udev rule linux/70-pimax.rules installed?)"),
+                format!("{} on USB but only {n}/4 hidraw interfaces (udev rule linux/70-pimax.rules installed?)", host.headset_label()),
             );
         }
     } else {
         add(
             "headset",
             Level::Fail,
-            "34a4:0044 not found on USB: check the cable and power; see analysis/usb-stuck-recovery.md".into(),
+            "34a4:0044 not found on USB (nor a Crystal Super, 34a4:0040): check the cable and power; see analysis/usb-stuck-recovery.md".into(),
         );
     }
 

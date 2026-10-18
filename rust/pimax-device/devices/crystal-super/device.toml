@@ -1,51 +1,135 @@
-# Pimax Crystal Super: MOCK. Nothing here is verified on a real unit; the stack does not drive this headset.
-# It exists so the GUI, onboarding and checks already have room for it, and as the template a contributor with this
-# headset fills in (docs/ARCHITECTURE.md "Adding a headset"). No [[hid]] entries: the gate refuses every command.
+# Pimax Crystal Super (Micro-OLED module, P3C10): EXPERIMENTAL. It speaks the Dream Air protocol (58 .. frames on IF0,
+# the same IMU and controller reports); every command below was seen in the Windows capture of 2026-10-17 with
+# Pimax Play 2.0.2.103 (analysis/crystal-super-capture-20261017.md, take names in `source`). Nothing here has run
+# against the headset from Linux yet. Captured but not allowed yet: the IPD motor, the eye-module power, camera
+# exposure (other ranges than the Dream Air), 58 0d 1a 05 03 (standby?).
 
 [device]
 id = "crystal-super"
 name = "Pimax Crystal Super"
 vendor = "pimax"
-status = "mock"
+status = "real"
 usb_vid = 0x34a4
-usb_pids = []                          # unknown: never auto-matched
-usb_pid_candidates = [0x0012, 0x0018, 0x0040, 0x0101]              # UNVERIFIED, from CustomHeadsetOpenVR (analysis/research/portability-and-calibration-gui.md section 5)
-command_interface = 0
+usb_pids = [0x0040]                   # headset HID, 4 interfaces like the Dream Air; pimax-proto/src/model.rs
+usb_aux = [0x0041, 0x0014]            # display bridge MCU (ASCII log), tracking cameras UVC (same id as the Dream Air)
+firmware_seen = ["SLAM 1.9.9.8"]
+command_interface = 0                 # IF0: commands and replies; IF1-IF3 drained (same layout as the Dream Air)
 
 [display]
-status = "unknown"
-mode = []
-refresh_hz = []
-needs = []
-note = "Crystal family protocol not reverse engineered (vronlinux)"
+status = "experimental"
+mode = [7104, 3840]                   # PVR window size (pimax-info.json): two rotated 3552x3840 panels
+refresh_hz = [72, 90]                 # take settings: 58 0d 1a 05 02 48 and 02 5a; Pimax Play's default is 90
+edid_vendor = "PVR"                   # CustomHeadsetOpenVR Crystal Super config (edidVendorId 53826); product unknown
+needs = ["drm_lease"]
+note = "the panel has not been lit from Linux yet; the NVIDIA notes for the 7104x3840 mode probably apply"
 
 [tracking]
-status = "unknown"
-head = "inside_out"
+status = "experimental"
+head = "inside_out"                   # IMU reports 53 31 08 00 on IF2 at ~500/s (take cold2); SLAM not tried
+imu_interface = 2
 
 [controllers]
 status = "unknown"
-slots = []
+slots = [2, 3]                        # take controllers: 58 04 16 02/03 1e, 58 03 50 02/03
 pairing = "unknown"
 
 [eye_tracking]
 status = "unknown"
+usb_vid = 0x2104                      # Tobii, powered on by 58 05 3c 05 00 01 (take cold2)
+usb_pid = 0x0561
 
 [ipd]
 status = "unknown"
-motor = false
+motor = false                         # the motor exists (take ipd: 58 06 5c 05 01 <mm*100 LE>), not enabled yet
 
 [cameras]
 status = "unknown"
 count = 0
 
 [audio]
-status = "unknown"
+status = "unknown"                    # USB audio on the HID device (interfaces 4-7), not DisplayPort as on the Dream Air
 sink_match = []
 source_match = []
 
 [calibration]
+factory = "usb READ_DOC 0x0a, 96 blocks (take cold2)"
 paths = []
 
 [onboarding]
 steps = ["detect", "checks", "fixes", "udev", "done"]
+
+# ---------------------------------------------------------------------------------------------------------------------
+# HID allowlist (IF0 output reports, 64 bytes, zero padded). Only bytes Pimax Play sent in the 2026-10-17 capture.
+# ---------------------------------------------------------------------------------------------------------------------
+
+[[hid]]
+id = "wake"
+bytes = "58 06 1a 05 01 00 00"
+source = "take cold2 t=21.339, reply 4c 04 1a 05 01 07; same frame as the Dream Air"
+
+[[hid]]
+id = "keepalive"
+bytes = "58 04 39 00 {rate:u8} 00"
+params = ["rate=0x00|0x48|0x5a"]      # 0 = exit/stop, 72 Hz, 90 Hz
+source = "take cold2 (0x00 then 0x5a every ~220 ms), take settings (0x48), take sleep-wake (0x00)"
+
+[[hid]]
+id = "app_unlock"
+bytes = "58 05 5b 05 02 02"
+source = "take cold2"
+
+[[hid]]
+id = "panel_on"
+bytes = "58 04 29 00 01"
+source = "takes cold2, ipd, sleep-wake (reply 4c 04 29 00 01 07)"
+
+[[hid]]
+id = "announce_refresh"
+bytes = "58 0d 1a 05 02 {fps:u8}"
+params = ["fps=72|90"]
+source = "take cold2 t=25.962 (0x5a), take settings t=15.037 (0x48)"
+
+[[hid]]
+id = "announce_gpu"
+bytes = "58 0d 1a 05 05"
+source = "take cold2 t=26.058, takes settings, sleep-wake"
+
+[[hid]]
+id = "stop"
+bytes = "58 04 1a 05 04"
+source = "take settings t=13.047 (before the rate change)"
+
+[[hid]]
+id = "read_serial"
+bytes = "58 04 16 {slot:u8} 1e"
+params = ["slot=0|2|3"]               # 0 = headset, 2/3 = controllers
+source = "takes cold2, controllers"
+
+[[hid]]
+id = "read_info"
+bytes = "58 03 50 {slot:u8}"
+params = ["slot=0|2|3"]
+source = "takes cold2, controllers"
+
+[[hid]]
+id = "read_version"
+bytes = "58 03 03 {slot:u8}"
+params = ["slot=0|2|3"]
+source = "takes cold2, controllers"
+
+[[hid]]
+id = "read_module_type"
+bytes = "58 04 3a 05 01"
+source = "take cold2 (reply 4c 05 3a 05 01 05 = Micro-OLED module; CustomHeadsetOpenVR GetSuperModuleType)"
+
+[[hid]]
+id = "read_doc_controller"
+bytes = "58 07 0a {slot:u8} 00 00 00 10"
+params = ["slot=2|3"]
+source = "takes cold1, cold2"
+
+[[hid]]
+id = "read_calib_block"
+bytes = "58 07 0a 00 01 {addr:u16le} 10"
+params = ["addr=0..0xffff"]
+source = "take cold2, 96 blocks"

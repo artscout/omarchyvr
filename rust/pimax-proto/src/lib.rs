@@ -1,4 +1,4 @@
-//! Wire protocol of the Pimax Dream Air (USB 34a4:0044) over HID reports.
+//! Wire protocol of the Pimax Dream Air (USB 34a4:0044) and Crystal Super (34a4:0040) over HID reports.
 //!
 //! Pure functions on 64-byte reports: no I/O, no allocation in the hot decoders, `#![forbid(unsafe_code)]`.
 //! Protocol references: `analysis/init-sequence.md`, `analysis/controllers-linux.md`.
@@ -19,6 +19,7 @@ pub mod controller;
 pub mod frame;
 pub mod imu;
 pub mod log;
+pub mod model;
 pub mod status;
 
 pub use calib::{CalibAssembler, CalibError};
@@ -29,14 +30,15 @@ pub use frame::{
 };
 pub use imu::{decode_imu, ImuSample};
 pub use log::LineSplitter;
+pub use model::{Model, CRYSTAL_SUPER, DREAM_AIR, MODELS};
 pub use status::{parse_status, ControllerStatus};
 
 /// USB vendor id of the headset.
 pub const VID: u16 = 0x34a4;
-/// USB product id of the headset (IF0..IF3).
-pub const PID: u16 = 0x0044;
-/// Product id of the display bridge MCU (ASCII log on EP 0x81).
-pub const PID_BRIDGE: u16 = 0x0043;
+/// USB product id of the Dream Air (IF0..IF3). Other models: [`MODELS`].
+pub const PID: u16 = DREAM_AIR.pid;
+/// Product id of the Dream Air display bridge MCU (ASCII log on EP 0x81).
+pub const PID_BRIDGE: u16 = DREAM_AIR.pid_bridge;
 /// Number of USB interfaces (0..3).
 pub const NUM_IF: usize = 4;
 /// Size of every HID report.

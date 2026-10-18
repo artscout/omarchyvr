@@ -7,7 +7,7 @@ use omarchyvr_tools::{
 const USAGE: &str = "omarchyvr - Pimax Dream Air userspace tool (Rust port of the python scripts in linux/)
 
 usage: omarchyvr <subcommand> [options]
-  keepalived [--no-wake] [--rate-file P]   daemon: wake + 213 ms keepalive, drain IF1-IF3, auto-reconnect
+  keepalived [--no-wake] [--rate-file P] [--video 72|90]   daemon: wake + 213 ms keepalive, drain IF1-IF3, auto-reconnect; --video: panel on at every connect
   probe [seconds] [--passive]              wake/keepalive (unless --passive), identity reads, IMU/log summary
   imu [--json] [--rate HZ] [--no-calib] [--calib F] [--auto-bias S] [--still N] [--seconds T]
       [--kp K] [--ki K] [--axis-mode 0|1]  Mahony orientation from IF2 (read-only); axis mode 1 default
