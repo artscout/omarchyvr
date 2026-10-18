@@ -212,7 +212,8 @@ pub fn run_checks(h: &dyn Host, o: &Opts) -> Report {
     lease(h, &mut r);
     setcap(h, o, &mut r);
     kernel_log(h, &mut r);
-    stale_service(h, &mut r);
+    let running = stale_service(h, &mut r);
+    monado_libs(h, o, running, &mut r);
     lens_conf(
         o,
         find_headset(&devs).and_then(|d| d.serial.as_deref()),
@@ -795,7 +796,56 @@ fn kernel_log(h: &dyn Host, r: &mut Report) {
     }
 }
 
-fn stale_service(h: &dyn Host, r: &mut Report) {
+/// The library a program could not load, from the dynamic loader's own words: either
+/// `error while loading shared libraries: libx.so.1: cannot open ...` (a normal start) or `libx.so.1 => not found`
+/// (the loader's trace mode, `LD_TRACE_LOADED_OBJECTS=1`).
+pub fn missing_library(text: &str) -> Option<String> {
+    if let Some(rest) = text.split("error while loading shared libraries:").nth(1) {
+        let lib = rest.trim_start().split(':').next().unwrap_or("").trim();
+        if !lib.is_empty() {
+            return Some(lib.to_string());
+        }
+    }
+    text.lines().find_map(|l| {
+        let (lib, rest) = l.trim().split_once("=>")?;
+        (rest.trim() == "not found" && !lib.trim().is_empty()).then(|| lib.trim().to_string())
+    })
+}
+
+/// Can the installed `monado-service` load its libraries? The loader's trace mode (`LD_TRACE_LOADED_OBJECTS=1`) lists the
+/// libraries and exits before `main`, so nothing starts (a plain `--help` would start the service: Monado has no such
+/// option). The kernel still applies the file capability, so the loader runs in the same secure mode as at Play: a
+/// `cap_sys_nice` file ignores `$ORIGIN` RUNPATHs, and an install with relative paths passes `getcap` but dies there
+/// (release 0.1.1). Only when no monado-service runs, with a 5 s limit.
+fn monado_libs(h: &dyn Host, o: &Opts, running: bool, r: &mut Report) {
+    let svc = o.monado_build.join("src/xrt/targets/service/monado-service");
+    if !h.exists(&svc) {
+        return; // the setcap check already reports a missing build
+    }
+    let name = "Monado loads its libraries";
+    if running {
+        r.add("monado-libs", name, Level::Ok, "not checked while monado-service runs (it works)", None);
+        return;
+    }
+    let s = svc.display().to_string();
+    match h.run("timeout", &["5", "env", "LD_TRACE_LOADED_OBJECTS=1", &s]) {
+        None => r.add("monado-libs", name, Level::Warn, "could not run the check (timeout is not available)", None),
+        Some(c) => match missing_library(&format!("{}\n{}", c.stderr, c.stdout)) {
+            Some(lib) => r.add(
+                "monado-libs",
+                name,
+                Level::Fail,
+                format!("Monado cannot load its libraries: {lib}; reinstall omarchyvr (run its installer again)"),
+                None,
+            ),
+            None if c.code == Some(124) => r.add("monado-libs", name, Level::Warn, "the library check did not answer within 5 s", None),
+            None => r.add("monado-libs", name, Level::Ok, "Monado finds all its libraries", None),
+        },
+    }
+}
+
+/// Reports whether a monado-service runs.
+fn stale_service(h: &dyn Host, r: &mut Report) -> bool {
     let pids: Vec<String> = h
         .list(Path::new("/proc"))
         .into_iter()
@@ -806,6 +856,7 @@ fn stale_service(h: &dyn Host, r: &mut Report) {
                 == Some("monado-service")
         })
         .collect();
+    let running = !pids.is_empty();
     if pids.is_empty() {
         r.add(
             "stale-service",
@@ -828,6 +879,7 @@ fn stale_service(h: &dyn Host, r: &mut Report) {
             )),
         );
     }
+    running
 }
 
 fn lens_conf(o: &Opts, serial: Option<&str>, r: &mut Report) {

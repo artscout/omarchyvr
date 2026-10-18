@@ -14,7 +14,7 @@
 Pimax only supports Windows. We wanted our Dream Air on Omarchy, so we recorded what Pimax Play sends to the headset
 over USB, figured out the rest, and built the Linux side ourselves.
 
-You get one app. **Play** starts SteamVR and your VR games. **Work** puts your Hyprland desktop around you in the
+You get one app. **Play** starts SteamVR (install it in Steam) and your VR games. **Work** puts your Hyprland desktop around you in the
 headset, on up to six screens, with voice commands. Setup, room setup, settings and fixes all happen in the app.
 
 This is an unofficial community project, not made or supported by Pimax or Omarchy. It is alpha and has been tested
@@ -50,11 +50,10 @@ udev rule and gives Monado realtime priority. Take a snapper snapshot first. Eac
 | Pimax Dream Air | ✓ | the only headset we have |
 | Other Pimax headsets | ✗ | detected, not supported |
 | Omarchy / Arch + Hyprland | ✓ | other Arch setups untested |
-| NVIDIA RTX, driver 610.57.04 | ✓ | tested on an RTX 4090 |
-| NVIDIA, other driver versions | ? | runs unpatched: both eyes show the left half |
+| NVIDIA RTX with `nvidia-open-dkms` 610.57.04 | ✓ | tested on an RTX 4090; VR needs exactly this version for now |
+| NVIDIA, newer drivers | ✗ | both eyes show the left half until we support them |
 | AMD / Intel | ? | no patch needed, never tried |
-| SteamVR games | ✓ | Steam updates can break it |
-| OpenVR / OpenXR games (Monado + xrizer) | ✓ | |
+| SteamVR games | ✓ | install SteamVR in Steam; Steam updates can break it |
 
 Our PC: Omarchy, kernel 7.2.5, Hyprland 0.56, i9-14900KF, 64 GB, RTX 4090 with `nvidia-open-dkms` 610.57.04.
 
@@ -62,7 +61,7 @@ Our PC: Omarchy, kernel 7.2.5, Hyprland 0.56, i9-14900KF, 64 GB, RTX 4090 with `
 
 | Feature | State |
 |---|---|
-| Display | 7104x3840 at 90 Hz (72 Hz too), lens correction from Pimax's own data |
+| Display | 7104x3840 at 90 Hz (72 Hz too), lens correction from a profile fitted on one Dream Air (not yours yet) |
 | Tracking | 6DoF head tracking from the headset cameras; loses it in very fast turns |
 | Controllers | buttons, sticks, vibration, pairing; optical tracking is rough |
 | Room | quick (30 s) or full room setup, SteamVR boundary |
@@ -103,7 +102,7 @@ showed the left half, and the display could freeze. We carry three small kernel 
 tracking (Basalt SLAM on the headset cameras), controllers, eye tracking and hands. Everything is in one build.
 
 **Sound, desk and games.** The speakers get sound over DisplayPort, so the app switches the audio output when VR
-starts. Work runs on our WayVR fork. Games run through SteamVR or Monado with xrizer.
+starts. Work runs on our WayVR fork. Games run through SteamVR, which loads our Monado driver.
 
 <p align="center"><img src="docs/img/architecture.png" alt="How the pieces fit" width="820"></p>
 
@@ -111,7 +110,7 @@ starts. Work runs on our WayVR fork. Games run through SteamVR or Monado with xr
 
 - A Steam, NVIDIA or Hyprland update can break VR overnight. The app's Ready page finds most causes, but some
   fixes need a new build from us.
-- Only one NVIDIA driver version is tested.
+- VR needs `nvidia-open-dkms` 610.57.04 for now. Newer drivers show both eyes the left half.
 - Controllers lose tracking when they leave the cameras' view.
 - Eye tracking accuracy is not final.
 - The hand-tracking models have no licence, so they are only downloaded when you ask for them.

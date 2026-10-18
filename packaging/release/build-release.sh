@@ -110,6 +110,16 @@ cp -a "$L"/basalt/lib/libbasalt.so* "$T/basalt/lib/"
 cp -a "$L/onnxruntime" "$T/onnxruntime"
 rm -rf "$T/onnxruntime/include" "$T/onnxruntime/lib/cmake" "$T/onnxruntime/lib/pkgconfig"
 cp -a "$L"/sherpa-onnx/lib/*.so "$T/sherpa-onnx/lib/"
+# patchelf: install.sh sets the library paths of the installed files with it (installer/runpath.py), so the release
+# needs no pacman dependency for it. A separate GPL-3.0 program (THIRD-PARTY.md): licence text and version travel along.
+mkdir -p "$T/tools"
+cp "$(command -v patchelf)" "$T/tools/patchelf"
+{
+	echo "patchelf $(patchelf --version | awk '{print $NF}') (https://github.com/NixOS/patchelf), GPL-3.0-or-later, Arch package binary, unmodified."
+	echo "Shipped only so that install.sh can set the library paths (RUNPATH) of the installed files. Source: the URL above, the tag of this version."
+	echo
+	cat /usr/share/licenses/patchelf/COPYING 2>/dev/null || echo "(licence text: https://www.gnu.org/licenses/gpl-3.0.txt)"
+} >"$T/tools/PATCHELF-LICENSE.txt"
 cp "$L/wayvr/wayvr" "$L/wayvr/wayvrctl" "$T/wayvr/"
 [[ -f $L/wayvr/libopenvr_api.so ]] && cp "$L/wayvr/libopenvr_api.so" "$T/wayvr/" || die "no libopenvr_api.so for WayVR"
 cp -a "$STAGE/share/omarchyvr/data" "$TREE/share/omarchyvr/data"

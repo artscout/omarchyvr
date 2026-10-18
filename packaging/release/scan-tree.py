@@ -17,7 +17,7 @@ MODEL_EXT = {".onnx", ".gguf", ".safetensors", ".ggml", ".tflite", ".pt", ".pth"
 # upstream code and libraries we only repackage: their strings (author e-mails, test keys in OpenSSL-like libraries) are
 # not ours to scrub, so only the checks for OUR private data run on them (serials, machine values, eye bytes, calibration,
 # the builder's paths)
-THIRD_PARTY = ("lib/omarchyvr/deps/", "lib/omarchyvr/onnxruntime/", "lib/omarchyvr/sherpa-onnx/", "lib/omarchyvr/basalt/")
+THIRD_PARTY = ("lib/omarchyvr/deps/", "lib/omarchyvr/onnxruntime/", "lib/omarchyvr/sherpa-onnx/", "lib/omarchyvr/basalt/", "lib/omarchyvr/tools/")
 MODEL_NAME = re.compile(r"(?i)hand-tracking-models|grayscale_detection|hand_regression")
 
 

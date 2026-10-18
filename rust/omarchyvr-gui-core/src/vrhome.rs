@@ -191,7 +191,8 @@ mod tests {
         assert_eq!(names[0], "Work");
         assert_eq!(names[1], "Games with SteamVR");
         assert!(names.contains(&"Half-Life: Alyx (SteamVR)"), "{names:?}");
-        assert!(names.contains(&"Dungeons of Eternity (xrizer)"), "{names:?}");
+        // no games.toml in the demo: a game without its own entry follows the default, which is SteamVR (the release ships no xrizer)
+        assert!(names.contains(&"Dungeons of Eternity (SteamVR)"), "{names:?}");
         assert!(names.last().unwrap().starts_with("Exit VR"));
     }
 

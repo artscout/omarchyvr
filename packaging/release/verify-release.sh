@@ -68,13 +68,14 @@ for b in "${OVR_BINS[@]}"; do [[ -x $R/bin/$b ]] || missing+="bin/$b "; done
 for f in lib/omarchyvr/monado/src/xrt/targets/openxr/libopenxr_monado.so lib/omarchyvr/monado/steamvr-monado/driver.vrdrivermanifest \
 	lib/omarchyvr/monado/steamvr-monado/bin/linux64/driver_monado.so lib/omarchyvr/monado/steamvr-monado/bin/linux64/pimax_rttime_preload.so \
 	lib/omarchyvr/monado/CMakeCache.txt lib/omarchyvr/basalt/lib/libbasalt.so lib/omarchyvr/sherpa-onnx/lib/libsherpa-onnx-c-api.so \
-	lib/omarchyvr/wayvr/wayvr lib/omarchyvr/wayvr/wayvrctl lib/omarchyvr/wayvr/libopenvr_api.so share/omarchyvr/data/COMMIT install.sh uninstall.sh; do
+	lib/omarchyvr/wayvr/wayvr lib/omarchyvr/wayvr/wayvrctl lib/omarchyvr/wayvr/libopenvr_api.so lib/omarchyvr/tools/patchelf lib/omarchyvr/tools/PATCHELF-LICENSE.txt installer/runpath.py share/omarchyvr/data/COMMIT install.sh uninstall.sh; do
 	[[ -e $R/$f ]] || missing+="$f "
 done
 ls "$R"/lib/omarchyvr/monado/src/xrt/targets/libmonado/libmonado.so.* >/dev/null 2>&1 || missing+="libmonado.so.* "
 ls "$R"/lib/omarchyvr/onnxruntime/lib/libonnxruntime.so.* >/dev/null 2>&1 || missing+="libonnxruntime.so.* "
 [[ -z $missing ]] && ok "layout: ${#OVR_BINS[@]} binaries and every runtime file" || bad "layout: missing $missing"
 grep -q '^PIMAX_CAM:BOOL=ON$' "$R/lib/omarchyvr/monado/CMakeCache.txt" 2>/dev/null && ok "Monado options: PIMAX_CAM=ON in the shipped cache copy" || bad "PIMAX_CAM is not ON in the shipped cache copy"
+if "$R/lib/omarchyvr/tools/patchelf" --version >/dev/null 2>&1; then ok "the bundled patchelf runs (the installer sets the library paths with it)"; else bad "lib/omarchyvr/tools/patchelf does not run"; fi
 if "$R/bin/omarchyvr" --help >/dev/null 2>&1 || "$R/bin/omarchyvr" help >/dev/null 2>&1; then ok "bin/omarchyvr starts from the relocated tree"; else echo "warn bin/omarchyvr did not print help here"; fi
 
 echo

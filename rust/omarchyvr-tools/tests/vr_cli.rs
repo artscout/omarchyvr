@@ -87,6 +87,9 @@ impl Fixture {
         let drm = root.join("sys/class/drm/card1-DP-1");
         fs::create_dir_all(&drm).unwrap();
         fs::write(drm.join("status"), "connected\n").unwrap();
+        // these tests run the Monado path (monado-service); the default of a fresh install is SteamVR
+        fs::create_dir_all(root.join("home/.config/omarchyvr")).unwrap();
+        fs::write(root.join("home/.config/omarchyvr/games.toml"), "runtime = \"monado\"\n").unwrap();
         // fake tools
         script(
             &root.join("bin/systemctl"),

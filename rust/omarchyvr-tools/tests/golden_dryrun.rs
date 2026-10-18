@@ -34,6 +34,9 @@ fn world(tag: &str) -> PathBuf {
     let drm = root.join("sys/class/drm/card1-DP-1");
     fs::create_dir_all(&drm).unwrap();
     fs::write(drm.join("status"), "connected\n").unwrap();
+    // these goldens are the Monado path (monado-service); the default of a fresh install is SteamVR
+    fs::create_dir_all(home.join(".config/omarchyvr")).unwrap();
+    fs::write(home.join(".config/omarchyvr/games.toml"), "runtime = \"monado\"\n").unwrap();
     // fake tools
     script(&root.join("bin/systemctl"), "#!/bin/bash\necho active\n");
     script(
