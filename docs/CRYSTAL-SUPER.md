@@ -96,7 +96,8 @@ Quad views and eye-tracked foveated rendering for Vulkan games (Falcon BMS) on t
 
 ## Without the faceplate: the omarchyvr stack
 
-`omarchyvr keepalived`, Monado (`forks/monado`, the Pimax driver knows the Crystal Super's USB id) with
+`omarchyvr keepalived`, Monado (`forks/monado` with `linux/crystal-super/monado-crystal-super.patch`, which lets the
+Pimax driver take the Crystal Super's USB id) with
 `PIMAX_LENS_CONF` pointing at a `lens.conf` with `lut = <pimax-lens make-lut of the headset's PVR dump>`, the camera
 broker and `pimax-ctrltrack live --factory` with `PIMAX_CAM_CALIB` = the headset's factory calibration
 (`slam/device_calibration_<serial>.xml` from a Pimax Play install). 3DoF, the picture and the Pimax controllers work;
