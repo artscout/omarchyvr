@@ -34,6 +34,14 @@ The warning shown in the app: the patch is untested driver code; the headset pic
 fail; the desktop stays working either way because the normal module is built as the fallback; a restore snapshot is
 taken first.
 
+## Ported versions
+
+A version listed in `patches/nvidia/ported-versions.txt` (today `615.78.08`) has its own patches in `patches/nvidia/<version>/`.
+They apply with `--fuzz=0` and the patched modules were compile-checked, but were never run on the headset, so the version is
+still untested: it needs the opt-in. With the opt-in the script uses the port and does not retry with `--fuzz=2` (a failed
+`--fuzz=0` there means the source changed again: the stock module is built and the banner says so). The status file gets
+`port=ported`. What changed in the port and the hardware test plan: [NVIDIA-615.md](NVIDIA-615.md).
+
 ## The status file
 
 `/var/lib/omarchyvr/nvidia-patch-status` (world-readable, written by every run that patches or refuses; `--check` writes

@@ -177,6 +177,11 @@ if [[ " $GPUS " == *" nvidia "* ]]; then
 		# (app: setup screen > NVIDIA driver patch > "Allow the patch on untested NVIDIA drivers")
 		NV_PLAN=patch
 		NV_WHY="NVIDIA $NV_VER is NOT a tested version ($NVIDIA_TESTED_VERSIONS): the patch is applied only if you allow it in the app (off by default). Please send a report from the app (Help > Report a problem) so support can be added."
+		# a version the patches were ported to (patches/nvidia/ported-versions.txt): compile-checked, still not hardware-tested
+		if [[ -r $REPO/patches/nvidia/ported-versions.txt ]] &&
+			[[ " $(sed 's/#.*//' "$REPO/patches/nvidia/ported-versions.txt" | tr -s ' \t\n' ' ') " == *" $NV_VER "* ]]; then
+			NV_WHY="NVIDIA $NV_VER is NOT a tested version ($NVIDIA_TESTED_VERSIONS), but the patches were ported to it (compile-checked, not tested on hardware): they are applied only if you allow it in the app (off by default)."
+		fi
 	else
 		NV_PLAN=patch
 		NV_WHY="NVIDIA $NV_VER open modules: tested"

@@ -272,10 +272,29 @@ do_apply() {
 			step "NVIDIA $v (NOT tested): the patch is NOT applied; the stock module stays (the desktop works, the headset picture will not)"
 			info "To patch it anyway: turn on 'Allow the patch on untested NVIDIA drivers' in the app (the setup screen, NVIDIA driver patch card) and press Run setup again."
 		fi
-		for f in nvidia-patch-reapply.sh nvidia-2h1or-viewport.patch nvidia-2h1or-flip-fix.patch nvidia-evo-makeroom-bounded-wait.patch tested-versions.txt; do
+		for f in nvidia-patch-reapply.sh nvidia-2h1or-viewport.patch nvidia-2h1or-flip-fix.patch nvidia-evo-makeroom-bounded-wait.patch tested-versions.txt ported-versions.txt; do
 			[[ -f $d/patches/nvidia/$f ]] || continue
 			place "$d/patches/nvidia/$f" "$LIBDIR/$f" "$([[ $f == *.sh ]] && echo 755 || echo 644)" "nvidia patch set" || true
 		done
+		# per-version patches (patches/nvidia/<version>/<name>.patch override the default set for that driver version)
+		for pv in "$d"/patches/nvidia/[0-9]*/; do
+			[[ -d $pv ]] || continue
+			for f in "$pv"nvidia-*.patch; do
+				[[ -f $f ]] || continue
+				place "$f" "$LIBDIR/$(basename "$pv")/$(basename "$f")" 644 "nvidia patch set (ported to $(basename "$pv"))" || true
+			done
+		done
+		if [[ -f $d/patches/nvidia/ported-versions.txt && $tested == no ]]; then
+			local plist
+			plist=$(sed 's/#.*//' "$d/patches/nvidia/ported-versions.txt" | tr -s ' \t\n' ' ')
+			if [[ " $plist " == *" $v "* ]]; then
+				if [[ $allow == yes ]]; then
+					info "patches ported to $v are used (compile-checked, NOT tested on hardware)"
+				else
+					info "patches ported to $v exist (compile-checked, NOT tested on hardware); they are used once you allow untested drivers"
+				fi
+			fi
+		fi
 		place "$d/patches/nvidia/nvidia-pimax-patch.hook" "$HOOK_PATCH" 644 "pacman hook: re-apply after driver updates" || true
 		place "$d/patches/nvidia/nvidia-pimax-verify.hook" "$HOOK_VERIFY" 644 "pacman hook: verify, stock fallback" || true
 		# the user's choice, read by the pacman hook on later driver updates (parsed, never sourced)
@@ -406,13 +425,16 @@ restore_stock_source() {
 	[[ -n $pdir ]] || pdir=$(find_patch_dir "$LIBDIR" "${OVR_HOME:+$OVR_HOME/.local/share/omarchyvr/data/patches/nvidia}" "${OVR_DATA:+$OVR_DATA/patches/nvidia}") || pdir=""
 	local touched=("${PATCH_TOUCHED[@]}")
 	if [[ -n $pdir ]]; then
-		mapfile -t touched < <(for n in "${PATCH_NAMES[@]}"; do sed -n 's|^+++ b/||p' "$pdir/$n" | sed 's/\t.*//'; done | sort -u)
+		# the patch of this driver version: <pdir>/<version>/<name> when it exists (ported versions), else <pdir>/<name>
+		local ver=${src##*/nvidia-}
+		pf() { if [[ -f $pdir/$ver/$1 ]]; then echo "$pdir/$ver/$1"; else echo "$pdir/$1"; fi; }
+		mapfile -t touched < <(for n in "${PATCH_NAMES[@]}"; do sed -n 's|^+++ b/||p' "$(pf "$n")" | sed 's/\t.*//'; done | sort -u)
 		chunks=$(mktemp -d)
 		for ((i = ${#PATCH_NAMES[@]} - 1; i >= 0; i--)); do
 			n=${PATCH_NAMES[$i]}
 			mkdir -p "$chunks/$i"
 			# one chunk per file: a patch that is only partly in (some files restored from backups) still reverses file by file
-			awk -v d="$chunks/$i" '/^diff --git /{k++} k>0{print > (d "/" k ".diff")}' "$pdir/$n"
+			awk -v d="$chunks/$i" '/^diff --git /{k++} k>0{print > (d "/" k ".diff")}' "$(pf "$n")"
 			for c in "$chunks/$i"/*.diff; do
 				[[ -f $c ]] || continue
 				rel=$(sed -n 's|^+++ b/||p' "$c" | sed 's/\t.*//' | head -n1)
