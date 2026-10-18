@@ -4,6 +4,8 @@
 //! dot=on          # the small gaze dot in Work (WayVR): visual only. on (default) | off
 //! gaze_mouse=off  # the ONE gaze input switch: on = your eyes move the pointer and can click (and voice "this"
 //!                 # may use the window you look at). off (default) = the gaze is only a visual point.
+//! learn=on        # learn a gaze correction from your clicks (WayVR gaze_learn; learning never makes input).
+//!                 # on (default) | off. Only active while eye tracking runs.
 //! calibration=auto  # which eye calibration: auto (default: yours once you calibrated, else the built-in one) |
 //!                   # builtin (the developer's test calibration) | own (your own; none until you calibrate)
 //! ```
@@ -66,13 +68,15 @@ pub struct EyeSettings {
     /// The one gaze input switch (default off): the eyes move the pointer and can click; voice "this" may use the
     /// window looked at. Off: the gaze is only a visual point.
     pub mouse: bool,
+    /// Learn a gaze correction from clicks (default on; never makes input, only active with eye tracking on).
+    pub learn: bool,
     /// Which eye calibration to use.
     pub calibration: CalMode,
 }
 
 impl Default for EyeSettings {
     fn default() -> Self {
-        EyeSettings { dot: true, mouse: false, calibration: CalMode::Auto }
+        EyeSettings { dot: true, mouse: false, learn: true, calibration: CalMode::Auto }
     }
 }
 
@@ -87,6 +91,7 @@ impl EyeSettings {
             match k.trim() {
                 "dot" => s.dot = on || !matches!(v, "off" | "false" | "0" | "no"),
                 "gaze_mouse" => s.mouse = on,
+                "learn" => s.learn = on || !matches!(v, "off" | "false" | "0" | "no"),
                 // "targeting" (the old developer key) is ignored on purpose: migrated to off
                 "calibration" => {
                     s.calibration = match v {
@@ -105,9 +110,10 @@ impl EyeSettings {
     pub fn render(&self) -> String {
         let f = |b: bool| if b { "on" } else { "off" };
         format!(
-            "# written by the Pimax app (Eye tracking); gaze_mouse=off: the gaze is only a visual point\ndot={}\ngaze_mouse={}\ncalibration={}\n",
+            "# written by the Pimax app (Eye tracking); gaze_mouse=off: the gaze is only a visual point\ndot={}\ngaze_mouse={}\nlearn={}\ncalibration={}\n",
             f(self.dot),
             f(self.mouse),
+            f(self.learn),
             self.calibration.word()
         )
     }
@@ -148,9 +154,17 @@ mod tests {
 
     #[test]
     fn defaults_are_dot_on_and_no_gaze_mouse() {
-        assert_eq!(EyeSettings::parse(""), EyeSettings { dot: true, mouse: false, calibration: CalMode::Auto });
+        assert_eq!(EyeSettings::parse(""), EyeSettings { dot: true, mouse: false, learn: true, calibration: CalMode::Auto });
         assert_eq!(EyeSettings::parse("junk\ndot=off\n"), EyeSettings { dot: false, ..EyeSettings::default() });
         assert_eq!(EyeSettings::parse("gaze_mouse = on # explicit\n"), EyeSettings { mouse: true, ..EyeSettings::default() });
+    }
+
+    #[test]
+    fn learn_defaults_on_and_round_trips() {
+        assert!(EyeSettings::parse("").learn && EyeSettings::parse("dot=on\n").learn);
+        assert!(!EyeSettings::parse("learn = off # no\n").learn);
+        assert!(EyeSettings::parse("learn=on\n").learn);
+        assert!(EyeSettings::default().render().contains("learn=on\n"));
     }
 
     #[test]
@@ -164,7 +178,7 @@ mod tests {
 
     #[test]
     fn render_round_trips_and_saves() {
-        let s = EyeSettings { dot: false, mouse: true, calibration: CalMode::Builtin };
+        let s = EyeSettings { dot: false, mouse: true, learn: false, calibration: CalMode::Builtin };
         assert_eq!(EyeSettings::parse(&s.render()), s);
         let d = std::env::temp_dir().join(format!("pimax-eye-conf-{}", std::process::id()));
         let p = d.join("omarchyvr/eye.conf");

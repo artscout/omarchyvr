@@ -645,7 +645,8 @@ pub fn start(o: &DeskOptions, d: &Deps, sp: &dyn Spawner) -> CliResult {
         Ok(None) => {}
         Err(e) => verr!("omarchyvr desk: WARNING: the app's WayVR settings were not applied: {e}"),
     }
-    match super::eye_desk::apply_conf(&o.wayvr_home, o.eye_mode, &omarchyvr_config::eye::EyeSettings::load(&omarchyvr_config::eye::default_path())) {
+    match super::eye_desk::apply_conf(&o.wayvr_home, o.eye_mode, &omarchyvr_config::eye::EyeSettings::load(&omarchyvr_config::eye::default_path()),
+        &super::eye_desk::calibration_key(&super::eye_desk::calibration_path(&|k| std::env::var(k).ok()))) {
         Ok(n) => {
             if let Some(n) = n.or_else(|| o.eye_note.clone()) {
                 vout!("omarchyvr desk: {n}");
