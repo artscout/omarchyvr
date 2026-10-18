@@ -686,10 +686,14 @@ fn tracking_card(ui: &mut Ui, app: &mut PimaxApp, mode: &(String, Dev)) {
         }
     });
     if app.core.live.service.is_some() {
-        let gyro = if app.core.live.log.gyro_ready { "calibrated" } else { "calibrating" };
+        let hint = omarchyvr_gui_core::monlog::gyro_hint(&app.core.live.log);
+        let gyro = if hint.is_some() { "not measured yet" } else if app.core.live.log.gyro_ready { "calibrated" } else { "calibrating" };
         widgets::setting(ui, "Gyro", None, |ui| {
             ui.label(RichText::new(gyro).size(12.0).color(p.dim));
         });
+        if let Some(h) = hint {
+            widgets::status(ui, h, p.warn);
+        }
     }
 }
 
