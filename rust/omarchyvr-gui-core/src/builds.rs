@@ -37,6 +37,8 @@ pub struct Markers {
     pub ae_law: bool,
     /// `PIMAX_CTRL_TRACK_HYST` (the steadier controller fuser and its kill switch; status only).
     pub ctrl_hyst: bool,
+    /// `PIMAX_SLAM_DRIFT_HOLD` (the head drift governor and its kill switch; status only).
+    pub drift_hold: bool,
 }
 
 impl Markers {
@@ -63,7 +65,7 @@ impl Markers {
     }
 }
 
-const NEEDLES: [&[u8]; 12] = [
+const NEEDLES: [&[u8]; 13] = [
     b"PIMAX_SLAM\0",
     b"held from the tracker",
     b"PIMAX_EYE\0",
@@ -76,6 +78,7 @@ const NEEDLES: [&[u8]; 12] = [
     b"PIMAX_ANCHOR_GLIDE",
     b"PIMAX_CAM_AE_LAW",
     b"PIMAX_CTRL_TRACK_HYST",
+    b"PIMAX_SLAM_DRIFT_HOLD",
 ];
 
 /// Scan a binary in chunks (it is ~150 MB) for the marker strings.
@@ -116,6 +119,7 @@ pub fn scan_markers(m: &dyn Machine, path: &Path) -> Option<Markers> {
         anchor_glide: found[9],
         ae_law: found[10],
         ctrl_hyst: found[11],
+        drift_hold: found[12],
     })
 }
 

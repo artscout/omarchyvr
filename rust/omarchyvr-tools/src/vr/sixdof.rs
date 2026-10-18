@@ -310,6 +310,7 @@ pub fn apply_ctrl_angle_live(runtime_dir: &Path, session_dir: &Path, deg: i32) -
 /// * `--old-exposure`: `PIMAX_CAM_AE_LAW=old`, the previous camera exposure law (1a).
 /// * `--no-room-glide`: `PIMAX_ANCHOR_GLIDE=0`, room corrections snap again instead of gliding (1b).
 /// * `--no-ctrl-steady`: `PIMAX_CTRL_TRACK_HYST=0`, the controller fuser's old 80 ms optical window (1d).
+/// * `--no-drift-hold`: `PIMAX_SLAM_DRIFT_HOLD=0`, the head position follows the tracker again (no drift governor).
 ///
 /// Without a flag the saved setting applies (setup.toml). The caller's own environment wins (a variable already set
 /// is left alone).
@@ -318,27 +319,29 @@ pub struct TrackingSwitches {
     pub new_exposure: bool,
     pub room_glide: bool,
     pub ctrl_steady: bool,
+    pub drift_hold: bool,
 }
 
-/// The three switches' flags, with their Monado environment variable and the value that turns the feature off.
-pub const TRACKING_FLAGS: [(&str, &str, &str); 3] = [
+/// The four switches' flags, with their Monado environment variable and the value that turns the feature off.
+pub const TRACKING_FLAGS: [(&str, &str, &str); 4] = [
     ("--old-exposure", "PIMAX_CAM_AE_LAW", "old"),
     ("--no-room-glide", "PIMAX_ANCHOR_GLIDE", "0"),
     ("--no-ctrl-steady", "PIMAX_CTRL_TRACK_HYST", "0"),
+    ("--no-drift-hold", "PIMAX_SLAM_DRIFT_HOLD", "0"),
 ];
 
 /// Parse [`TRACKING_FLAGS`] and push the kill-switch variables onto `vr.extra_env`. Without its flag a switch takes
 /// the saved setting (setup.toml of the active profile, `omarchyvr_config::tracking`; the app's switches), else on.
 pub fn parse_tracking_switches(a: &mut Args, env: &dyn Fn(&str) -> Option<String>, vr: &mut StartOptions) -> TrackingSwitches {
     let saved = omarchyvr_config::tracking::saved(&omarchyvr_config::Store::from_env(env));
-    let mut off = [false; 3];
+    let mut off = [false; 4];
     for (i, (flag, var, val)) in TRACKING_FLAGS.iter().enumerate() {
         off[i] = a.flag(flag) || saved[i] == Some(false);
         if off[i] && env(var).is_none() {
             vr.extra_env.push((var.to_string(), val.to_string()));
         }
     }
-    TrackingSwitches { new_exposure: !off[0], room_glide: !off[1], ctrl_steady: !off[2] }
+    TrackingSwitches { new_exposure: !off[0], room_glide: !off[1], ctrl_steady: !off[2], drift_hold: !off[3] }
 }
 
 /// The controller tracker as a process to spawn (not an XR client: reads the broker, writes the pose file Monado reads).
@@ -463,15 +466,16 @@ mod tests {
             (vr, t)
         };
         let (vr, t) = run(&[], &[]);
-        assert_eq!(t, TrackingSwitches { new_exposure: true, room_glide: true, ctrl_steady: true });
+        assert_eq!(t, TrackingSwitches { new_exposure: true, room_glide: true, ctrl_steady: true, drift_hold: true });
         for (_, var, _) in TRACKING_FLAGS {
             assert_eq!(get(&vr, var), None, "{var}: on by default, nothing pushed");
         }
-        let (vr, t) = run(&["--old-exposure", "--no-room-glide", "--no-ctrl-steady"], &[]);
-        assert_eq!(t, TrackingSwitches { new_exposure: false, room_glide: false, ctrl_steady: false });
+        let (vr, t) = run(&["--old-exposure", "--no-room-glide", "--no-ctrl-steady", "--no-drift-hold"], &[]);
+        assert_eq!(t, TrackingSwitches { new_exposure: false, room_glide: false, ctrl_steady: false, drift_hold: false });
         assert_eq!(get(&vr, "PIMAX_CAM_AE_LAW"), Some("old"));
         assert_eq!(get(&vr, "PIMAX_ANCHOR_GLIDE"), Some("0"));
         assert_eq!(get(&vr, "PIMAX_CTRL_TRACK_HYST"), Some("0"));
+        assert_eq!(get(&vr, "PIMAX_SLAM_DRIFT_HOLD"), Some("0"));
         let (vr, _) = run(&["--no-room-glide"], &[("PIMAX_ANCHOR_GLIDE", "1")]);
         assert_eq!(get(&vr, "PIMAX_ANCHOR_GLIDE"), None, "the caller's own wins");
     }

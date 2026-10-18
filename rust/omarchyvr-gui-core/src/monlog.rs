@@ -63,6 +63,12 @@ pub struct SixDofLog {
     pub errors: Vec<String>,
     /// The last few state-change lines, newest last.
     pub recent: Vec<String>,
+    /// The drift governor's last hold: cm the tracker slid without movement (`6DoF drift:` line).
+    pub drift_last_cm: Option<f64>,
+    /// Seconds that slide took.
+    pub drift_last_secs: Option<f64>,
+    /// Session total of held drift in cm.
+    pub drift_total_cm: Option<f64>,
 }
 
 /// Eye tracking in the runtime.
@@ -267,6 +273,19 @@ impl MonadoLog {
             if corr.is_some() {
                 s.correction = corr;
             }
+            return true;
+        }
+        if let Some(rest) = after(t, "6DoF drift: ") {
+            // "head tracking slid 12 cm without movement in 10 s; held (session total 150 cm)"
+            if let Some(i) = rest.find("slid ") {
+                let r = &rest[i + 5..];
+                s.drift_last_cm = r.split_whitespace().next().and_then(|w| w.parse().ok()).or(s.drift_last_cm);
+                s.drift_last_secs = float_before(r, " s;").or(s.drift_last_secs);
+            }
+            if let Some(tot) = after(rest, "session total ") {
+                s.drift_total_cm = tot.split_whitespace().next().and_then(|w| w.parse().ok()).or(s.drift_total_cm);
+            }
+            push_capped(&mut s.recent, t, 8);
             return true;
         }
         if let Some(rest) = after(t, "6DoF supervisor: ") {
@@ -533,6 +552,23 @@ mod tests {
         assert!(m.gyro_ready);
         assert_eq!(m.clients, 3);
         assert_eq!(m.apps, vec!["omarchyvr-passthrough", "wayvr", "libmonado"]);
+    }
+
+    #[test]
+    fn drift_hold_line() {
+        let line = "6DoF drift: head tracking slid 12 cm without movement in 10 s; held (session total 150 cm)";
+        for l in [line.to_string(), format!(" INFO [slam_poll_locked] {line}")] {
+            let mut m = MonadoLog::default();
+            m.feed(&l);
+            let s = &m.sixdof;
+            assert_eq!((s.drift_last_cm, s.drift_last_secs, s.drift_total_cm), (Some(12.0), Some(10.0), Some(150.0)), "{l}");
+            assert_eq!(s.recent.len(), 1);
+        }
+        let mut m = MonadoLog::default();
+        assert_eq!(m.sixdof.drift_total_cm, None);
+        m.feed("6DoF drift: head tracking slid 3 cm without movement in 10 s; held (session total 7 cm)");
+        m.feed("6DoF drift: head tracking slid 9 cm without movement in 10 s; held (session total 16 cm)");
+        assert_eq!((m.sixdof.drift_last_cm, m.sixdof.drift_total_cm), (Some(9.0), Some(16.0)));
     }
 
     #[test]

@@ -142,6 +142,7 @@ impl GuiState {
                 "new_exposure" => s.toggles.new_exposure = on,
                 "room_glide" => s.toggles.room_glide = on,
                 "ctrl_steady" => s.toggles.ctrl_steady = on,
+                "drift_hold" => s.toggles.drift_hold = on,
                 "screens" => s.toggles.screens = crate::screens::clamp(v.trim().parse().unwrap_or(0)),
                 "scale_pct" => s.scale_pct = v.trim().parse::<u16>().ok().filter(|x| (50..=200).contains(x)).unwrap_or(100),
                 _ => {}
@@ -167,7 +168,7 @@ impl GuiState {
     pub fn render(&self) -> String {
         let t = &self.toggles;
         format!(
-            "# Pimax app state (written by omarchyvr-app)\nonboarded = {}\nsetup_stage = {}\neye_visual = true\neye = {}\nsixdof = {}\nctrl_track = {}\nhands = {}\nhands_roles = {}\nhands_chosen = {}\npassthrough = {}\nvoice = {}\nhz = {}\nperf = {}\nanchor = {}\npreset = {}\ncontrollers_work = {}\ncontrollers_play = {}\nctrl_angle = {}\nnew_exposure = {}\nroom_glide = {}\nctrl_steady = {}\nscreens = {}\nscale_pct = {}\nautostart = {}\nlast_mode = {}\nlast_result = {}\nlast_at = {}\nargv_at = {}\ndev_mode = {}\nnvidia_allow_untested = {}\nheadset = {}\ncolours = {}\n{}",
+            "# Pimax app state (written by omarchyvr-app)\nonboarded = {}\nsetup_stage = {}\neye_visual = true\neye = {}\nsixdof = {}\nctrl_track = {}\nhands = {}\nhands_roles = {}\nhands_chosen = {}\npassthrough = {}\nvoice = {}\nhz = {}\nperf = {}\nanchor = {}\npreset = {}\ncontrollers_work = {}\ncontrollers_play = {}\nctrl_angle = {}\nnew_exposure = {}\nroom_glide = {}\nctrl_steady = {}\ndrift_hold = {}\nscreens = {}\nscale_pct = {}\nautostart = {}\nlast_mode = {}\nlast_result = {}\nlast_at = {}\nargv_at = {}\ndev_mode = {}\nnvidia_allow_untested = {}\nheadset = {}\ncolours = {}\n{}",
             self.onboarded,
             self.setup.name(),
             t.eye,
@@ -188,6 +189,7 @@ impl GuiState {
             t.new_exposure,
             t.room_glide,
             t.ctrl_steady,
+            t.drift_hold,
             t.screens,
             self.scale_pct,
             self.autostart,
@@ -243,7 +245,7 @@ mod tests {
         let s = GuiState {
             setup: SetupStage::Restart,
             onboarded: true,
-            toggles: DeskToggles { eye: false, sixdof: true, ctrl_track: true, hands: true, hands_roles: true, passthrough: true, voice: true, hz90: true, perf: false, anchor: true, preset: crate::launcher::Preset::Cinema, eye_default_on: false, screens: 2, ctrl_work: CtrlMode::Off, ctrl_play: CtrlMode::WhenHeld, ctrl_angle: -12, new_exposure: false, room_glide: false, ctrl_steady: false, tracking_flags: false, preset_flag: false },
+            toggles: DeskToggles { eye: false, sixdof: true, ctrl_track: true, hands: true, hands_roles: true, passthrough: true, voice: true, hz90: true, perf: false, anchor: true, preset: crate::launcher::Preset::Cinema, eye_default_on: false, screens: 2, ctrl_work: CtrlMode::Off, ctrl_play: CtrlMode::WhenHeld, ctrl_angle: -12, new_exposure: false, room_glide: false, ctrl_steady: false, drift_hold: false, tracking_flags: false, preset_flag: false },
             page: Some(Page::Tools),
             scale_pct: 130,
             autostart: true,

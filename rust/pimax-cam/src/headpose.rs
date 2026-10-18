@@ -662,6 +662,8 @@ pub struct HeadParams {
     pub tau_rest_s: f64,
     /// See `tau_rest_s`.
     pub rest_speed: f64,
+    /// Drift governor: tracker translation the accelerometer cannot explain is held ([`crate::drift`]).
+    pub drift: crate::drift::DriftParams,
 }
 
 impl Default for HeadParams {
@@ -705,6 +707,7 @@ impl Default for HeadParams {
             fuse_auto: true,
             tau_rest_s: 0.4,
             rest_speed: 0.3,
+            drift: crate::drift::DriftParams::default(),
         }
     }
 }
@@ -719,8 +722,9 @@ impl HeadParams {
     /// `PIMAX_SLAM_STILL_REZERO` (0 = the old drop to 3DoF on a still reset, for A/B only),
     /// `PIMAX_SLAM_FUSE` (0 = off, or `alpha,alpha_y,beta,vel_w,fast_speed`), `PIMAX_SLAM_TAU_REST_MS` (0 = off),
     /// `PIMAX_SLAM_BIG_CORR_MM` (log threshold), `PIMAX_FUSE_AUTO` (0 = fixed fusion weights),
-    /// `PIMAX_HEAD_TILT` (0 = no gravity tilt correction, else its time constant in ms) overrides; for A/B only,
-    /// the defaults are automatic.
+    /// `PIMAX_HEAD_TILT` (0 = no gravity tilt correction, else its time constant in ms),
+    /// `PIMAX_SLAM_DRIFT_HOLD` (0 = the tracker's unexplained translation reaches the output, the app switch
+    /// "Hold the head when it does not move" off) overrides; the defaults are automatic.
     pub fn from_env() -> HeadParams {
         let mut p = HeadParams::default();
         if let Some(v) = env_f64("PIMAX_SLAM_SMOOTH") {
@@ -757,6 +761,9 @@ impl HeadParams {
         }
         if let Some(v) = env_f64("PIMAX_SLAM_BIG_CORR_MM") {
             p.big_corr_m = v.clamp(1.0, 1000.0) / 1000.0;
+        }
+        if let Some(v) = env_f64("PIMAX_SLAM_DRIFT_HOLD") {
+            p.drift.on = v != 0.0;
         }
         if let Some(v) = env_f64("PIMAX_SLAM_FREEZE") {
             p.freeze = v != 0.0;
@@ -796,9 +803,10 @@ impl HeadParams {
         };
         format!(
             "6DoF output: PIMAX_HEAD_TILT gravity tilt correction {tilt}; PIMAX_FUSE_AUTO fusion weights {auto}; \
-             still = desk-quiet ({:.2} deg/s, {:.1} s)",
+             still = desk-quiet ({:.2} deg/s, {:.1} s); PIMAX_SLAM_DRIFT_HOLD drift hold {}",
             self.still_gyro_std.to_degrees(),
-            self.still_enter_window_ns as f64 / 1e9
+            self.still_enter_window_ns as f64 / 1e9,
+            if self.drift.on { "on (unexplained tracker translation held)" } else { "off" }
         )
     }
 }
@@ -904,6 +912,8 @@ pub struct HeadTracker {
     /// Every correction (offline analysis; `None` = off).
     pub corr_log: Option<Vec<CorrEvent>>,
     big_q: VecDeque<CorrEvent>,
+    /// Drift governor (tracker translation without accelerometer evidence is held).
+    pub drift: crate::drift::DriftGov,
 }
 
 impl HeadTracker {
@@ -919,7 +929,9 @@ impl HeadTracker {
         }
         sup.set_still_params(p.still);
         let out = sup.update(0, None);
+        let drift = crate::drift::DriftGov::new(p.drift.clone(), head_in_imu);
         HeadTracker {
+            drift,
             sup,
             pred: Predictor::new(PredictorParams {
                 fuse_alpha: p.fuse[0],
@@ -969,6 +981,7 @@ impl HeadTracker {
     /// Feed one IMU sample.
     pub fn push_imu(&mut self, s: ImuSample) {
         self.pred.push_imu(s);
+        self.drift.push_imu(&s, self.pred.gyro_bias);
     }
 
     /// Supervisor update with the tracker's newest pose (or `None`); repeated timestamps are ignored by both.
@@ -996,10 +1009,11 @@ impl HeadTracker {
             q3dof: v.q3dof,
         });
         self.sup.set_tilt(self.tilt);
-        let o = self.sup.update(now_ns.max(0) as u64, ts);
+        let mut o = self.sup.update(now_ns.max(0) as u64, ts);
         if o.events & events::RESET_WANTED != 0 {
             self.pred.clear_vio();
             self.head_hist.clear();
+            self.drift.reset();
             // A fresh tracker world starts gravity aligned (Basalt initialises its attitude from the
             // accelerometer): its correction starts from zero when it takes over. Until then the held attitude
             // carries the old correction (and the last tracked output is still evaluated with it).
@@ -1031,8 +1045,20 @@ impl HeadTracker {
                 learn,
             );
             if tracking_before && o.state == TrackState::Tracking {
+                if still {
+                    self.drift.reset();
+                } else if let Some(b) = self.pred.latest() {
+                    let at = self.pred.last_imu_ns().unwrap_or(b.ts_ns).max(b.ts_ns);
+                    let q_now = self.pred.propagate(&b, at).0.q;
+                    if let Some(d) = self.drift.on_pose(&b, q_now, self.sup.world_from_slam().1) {
+                        self.sup.shift_world(d);
+                        o.world_from_slam = self.sup.world_from_slam();
+                    }
+                }
                 self.out = o.clone();
                 self.update_tilt(&v);
+            } else {
+                self.drift.reset();
             }
         }
         self.out = o.clone();
@@ -1795,19 +1821,23 @@ mod tests {
     fn truth(t: f64) -> (Vec3, Quat, Vec3, Vec3, Vec3) {
         let r = 0.8;
         let wc = 0.35; // rad/s around the circle
+        // Walking bobs the head: 1.5 cm at the step rate (1.8 Hz), about 1.9 m/s² (a walk without it would be a
+        // glide no accelerometer could tell from tracker drift, crate::drift).
+        let ws = 2.0 * std::f64::consts::PI * 1.8;
+        let bob = 0.015;
         let p = [
             r * (wc * t).sin(),
-            1.6 + 0.03 * (1.3 * t).sin(),
+            1.6 + 0.03 * (1.3 * t).sin() + bob * (ws * t).sin(),
             r * (wc * t).cos() - r,
         ];
         let v = [
             r * wc * (wc * t).cos(),
-            0.03 * 1.3 * (1.3 * t).cos(),
+            0.03 * 1.3 * (1.3 * t).cos() + bob * ws * (ws * t).cos(),
             -r * wc * (wc * t).sin(),
         ];
         let a = [
             -r * wc * wc * (wc * t).sin(),
-            -0.03 * 1.69 * (1.3 * t).sin(),
+            -0.03 * 1.69 * (1.3 * t).sin() - bob * ws * ws * (ws * t).sin(),
             -r * wc * wc * (wc * t).cos(),
         ];
         // yaw(t) = 0.6 sin(0.9 t) + 0.2 t ; pitch(t) = 0.25 sin(1.7 t)
@@ -2453,6 +2483,416 @@ mod tests {
                 h.pred.vel_noise_ms.sqrt(),
             );
         }
+    }
+
+    /// One line of a `head-imu.csv`.
+    #[derive(Clone, Copy)]
+    enum LogLine {
+        I(ImuSample),
+        V(i64, Vec3, Quat),
+    }
+
+    fn load_head_imu(path: &str) -> Vec<LogLine> {
+        let text = std::fs::read_to_string(path).expect("read log");
+        let mut lines = Vec::new();
+        for l in text.lines() {
+            let f: Vec<&str> = l.split(',').collect();
+            let num = |i: usize| f.get(i).and_then(|x| x.trim().parse::<f64>().ok());
+            match f.first() {
+                Some(&"I") if f.len() == 8 => {
+                    let (Some(ts), Some(ax), Some(ay), Some(az), Some(gx), Some(gy), Some(gz)) =
+                        (f[1].parse::<i64>().ok(), num(2), num(3), num(4), num(5), num(6), num(7))
+                    else {
+                        continue;
+                    };
+                    lines.push(LogLine::I(ImuSample { ts_ns: ts, accel: [ax, ay, az], gyro: [gx, gy, gz] }));
+                }
+                Some(&"V") if f.len() == 9 => {
+                    let v: Vec<f64> = (2..9).filter_map(num).collect();
+                    if let (Ok(ts), 7) = (f[1].parse::<i64>(), v.len()) {
+                        lines.push(LogLine::V(ts, [v[0], v[1], v[2]], [v[3], v[4], v[5], v[6]]));
+                    }
+                }
+                _ => {}
+            }
+        }
+        lines
+    }
+
+    /// Per tracked query of a replay: (time ns, output head position, tracker head position with the alignment
+    /// the output started with, governor motion evidence (0 while turning), |a| spread).
+    struct DriftReplay {
+        out: Vec<(i64, Vec3, Vec3, f64, f64)>,
+        h: HeadTracker,
+    }
+
+    /// Replay a log through the output as the driver runs it (velocity from a central difference, 3DoF from the
+    /// gyro), with `p`. The tracker head is also mapped with the FIRST alignment, so drift is measurable.
+    fn replay_drift(lines: &[LogLine], p: HeadParams, dbg: Option<(i64, i64)>) -> DriftReplay {
+        let head_in_imu = [0.049, -0.015, 0.030];
+        let vios: Vec<(i64, Vec3)> = lines
+            .iter()
+            .filter_map(|l| match l {
+                LogLine::V(t, p, _) => Some((*t, *p)),
+                _ => None,
+            })
+            .collect();
+        let vel_at = |k: usize| -> Vec3 {
+            if k == 0 || k + 1 >= vios.len() {
+                return [0.0; 3];
+            }
+            let dt = (vios[k + 1].0 - vios[k - 1].0) as f64 / 1e9;
+            if !(0.01..0.15).contains(&dt) {
+                return [0.0; 3];
+            }
+            geom::scale(geom::sub(vios[k + 1].1, vios[k - 1].1), 1.0 / dt)
+        };
+        let mut h = HeadTracker::new(SupervisorParams::default(), p, head_in_imu);
+        let (mut now, mut k, mut n_imu) = (0i64, 0usize, 0u64);
+        let mut q3: Option<Quat> = None;
+        let mut q3_hist: VecDeque<(i64, Quat)> = VecDeque::new();
+        let mut last_imu: Option<i64> = None;
+        let mut last_vio: Option<(Vec3, Quat)> = None;
+        let mut first_w: Option<(Vec3, Quat)> = None;
+        let mut out = Vec::new();
+        let (mut agg, mut printed) = ([0.0f64; 4], false);
+        for l in lines {
+            match l {
+                LogLine::I(s) => {
+                    h.push_imu(*s);
+                    if let (Some(q), Some(t0)) = (q3, last_imu) {
+                        let dt = ((s.ts_ns - t0) as f64 / 1e9).clamp(0.0, 0.01);
+                        let w = geom::sub(s.gyro, h.pred.gyro_bias);
+                        let qn = qnorm(qmul(q, qexp(geom::scale(w, dt))));
+                        q3 = Some(qn);
+                        q3_hist.push_back((s.ts_ns, qn));
+                        if q3_hist.len() > 500 {
+                            q3_hist.pop_front();
+                        }
+                    }
+                    last_imu = Some(s.ts_ns);
+                    now = now.max(s.ts_ns);
+                    n_imu += 1;
+                    if n_imu % 11 == 0 {
+                        h.update(now, None);
+                        let r = h.head(now, now, &rel3(q3.unwrap_or(QUAT_ID)));
+                        if h.output().state == TrackState::Tracking {
+                            let w0 = *first_w.get_or_insert(h.sup.world_from_slam());
+                            if let Some((pos, q)) = last_vio {
+                                let hs = geom::add(pos, qrot(qnorm(q), head_in_imu));
+                                let tr = geom::add(qrot(w0.1, hs), w0.0);
+                                out.push((now, r.pos, tr, if h.drift.turning() { 0.0 } else { h.drift.evidence() }, h.drift.shake()));
+                            }
+                        }
+                    }
+                }
+                LogLine::V(ts, pos, q) => {
+                    if q3.is_none() {
+                        q3 = Some(qnorm(*q));
+                    }
+                    let q3_at = q3_hist.iter().rev().find(|(t, _)| *t <= *ts).map(|(_, q)| *q).or(q3).unwrap();
+                    let v = VioSample { ts_ns: *ts, pos: *pos, q: *q, vel: vel_at(k), q3dof: q3_at };
+                    k += 1;
+                    h.update(now, Some(v));
+                    last_vio = Some((*pos, *q));
+                    if let Some((a, b)) = dbg {
+                        if (a..b).contains(ts) {
+                            let (u, al, _) = h.drift.last;
+                            let (st, held) = h.drift.last_step;
+                            let c = if u <= al { 0 } else if u >= h.drift.p.band_hi { 1 } else { 2 };
+                            agg[c] += st;
+                            agg[3] += held;
+                        }
+                        if *ts >= b && !printed {
+                            printed = true;
+                            eprintln!("    unexplained path: permitted by evidence {:.3} m, faster than the band {:.3} m, in the band {:.3} m (held {:.3} m)", agg[0], agg[1], agg[2], agg[3]);
+                        }
+                        if (a..b).contains(ts) && k % 6 == 0 && std::env::var("PIMAX_REPLAY_VERBOSE").is_ok() {
+                            let (u, al, rem) = h.drift.last;
+                            eprintln!("    {:.2} s: u {:.3} allowed {:.3} removed {:.3} L {:.3} shake {:.3} turning {}", (*ts - a) as f64 / 1e9, u, al, rem, h.drift.evidence(), h.drift.shake(), h.drift.turning());
+                        }
+                    }
+                }
+            }
+        }
+        DriftReplay { out, h }
+    }
+
+    /// The drift session of 2026-10-18 (head-imu.csv kept in the private lab data), before and after the drift
+    /// governor: `PIMAX_REPLAY_HEAD_IMU=<file> cargo test --release --lib -p pimax-cam replay_drift_hold --
+    /// --ignored --nocapture`. Times are CLOCK_MONOTONIC seconds of that session (`PIMAX_REPLAY_T0` = the first
+    /// IMU sample's wall time as hh:mm:ss, default 11:57:58).
+    #[test]
+    #[ignore]
+    fn replay_drift_hold() {
+        let Ok(path) = std::env::var("PIMAX_REPLAY_HEAD_IMU") else {
+            eprintln!("PIMAX_REPLAY_HEAD_IMU not set");
+            return;
+        };
+        let lines = load_head_imu(&path);
+        let t_first = lines.iter().find_map(|l| match l { LogLine::I(s) => Some(s.ts_ns), _ => None }).unwrap();
+        let t0_hms = std::env::var("PIMAX_REPLAY_T0").unwrap_or_else(|_| "11:57:58".into());
+        let secs = |hms: &str| -> f64 {
+            let v: Vec<f64> = hms.split(':').map(|x| x.parse().unwrap()).collect();
+            v[0] * 3600.0 + v[1] * 60.0 + v[2]
+        };
+        let at = |hms: &str| -> i64 { t_first + ((secs(hms) - secs(&t0_hms)) * 1e9) as i64 };
+        let segs = [
+            ("whole take 11:58:08-12:06:15", at("11:58:08"), at("12:06:15")),
+            ("quiet 12:05:31-12:05:51", at("12:05:31"), at("12:05:51")),
+            ("fast turns 12:00:28-12:01:38", at("12:00:28"), at("12:01:38")),
+            ("headset taken off 12:06:15-12:06:27", at("12:06:15"), at("12:06:27")),
+        ];
+        let variants = [
+            ("before (no drift hold)", HeadParams { drift: crate::drift::DriftParams { on: false, ..Default::default() }, ..HeadParams::default() }),
+            ("after (drift hold)", HeadParams::default()),
+        ];
+        let tune: Vec<f64> = std::env::var("PIMAX_DRIFT_TUNE").ok().map(|v| v.split(',').filter_map(|x| x.parse().ok()).collect()).unwrap_or_default();
+        let mut variants = variants.to_vec();
+        if tune.len() == 4 {
+            let mut p = HeadParams::default();
+            (p.drift.noise, p.drift.band_lo, p.drift.band_hi, p.drift.turn_noise) = (tune[0], tune[1], tune[2], tune[3]);
+            variants.push(("after (tuned)", p));
+        }
+        for (name, p) in variants {
+            let dbg = std::env::var("PIMAX_REPLAY_DEBUG").ok().map(|v| { let w: Vec<&str> = v.split('-').collect(); (at(w[0]), at(w[1])) });
+            let r = replay_drift(&lines, p, if name.starts_with("after") { dbg } else { None });
+            let near = |t: i64| r.out.iter().min_by_key(|o| (o.0 - t).abs()).copied().unwrap();
+            eprintln!("{name}: held {:.2} m path on {} of {} poses; {:?}", r.h.drift.stats.held_m, r.h.drift.stats.held_poses, r.h.drift.stats.poses, r.h.output().reason);
+            for (sn, a, b) in segs {
+                let (o0, o1) = (near(a), near(b));
+                let d_out = geom::sub(o1.1, o0.1);
+                let d_tr = geom::sub(o1.2, o0.2);
+                let dt = (o1.0 - o0.0) as f64 / 1e9;
+                eprintln!(
+                    "  {sn}: output moved ({:+.3} {:+.3} {:+.3}) = {:.3} m ({:.1} cm/s); tracker ({:+.3} {:+.3} {:+.3}) = {:.3} m",
+                    d_out[0], d_out[1], d_out[2], geom::norm(d_out), 100.0 * geom::norm(d_out) / dt.max(1e-3),
+                    d_tr[0], d_tr[1], d_tr[2], geom::norm(d_tr)
+                );
+            }
+            // Real motion: 0.5 s steps where the IMU shows it (evidence speed or walking permit), and how much of the
+            // tracker's head displacement the output kept there.
+            let (mut kept, mut tr_sum, mut n) = (0.0, 0.0, 0);
+            let mut i = 0;
+            while i + 45 < r.out.len() {
+                let (a, b) = (r.out[i], r.out[i + 45]);
+                let ev = r.out[i..i + 45].iter().map(|o| o.3).fold(0.0, f64::max);
+                let shake = r.out[i..i + 45].iter().map(|o| o.4).fold(0.0, f64::max);
+                                let dtr = geom::sub(b.2, a.2);
+                if (ev > 0.2 || shake > 0.4) && geom::norm(dtr) > 0.03 {
+                    let dout = geom::sub(b.1, a.1);
+                    kept += geom::dot(dout, dtr) / geom::norm(dtr);
+                    tr_sum += geom::norm(dtr);
+                    n += 1;
+                }
+                i += 45;
+            }
+            eprintln!("  real motion (accelerometer: world spread > 0.2 m/s² while not turning or |a| spread > 0.4; tracker moved > 3 cm in 0.5 s): {n} steps, output kept {:.0} % of the tracker's {:.2} m", 100.0 * kept / tr_sum.max(1e-9), tr_sum);
+        }
+    }
+
+    /// A seated or walking body for the drift governor tests: the neck at `neck(t)` (position, velocity,
+    /// acceleration; world y-up) and the head yawing by `yaw(t)` (angle, rate, acceleration) about it. The true
+    /// neck sits 1-2 cm off the governor's model of it.
+    struct Body {
+        neck: Box<dyn Fn(f64) -> (Vec3, Vec3, Vec3)>,
+        yaw: Box<dyn Fn(f64) -> (f64, f64, f64)>,
+    }
+
+    const GOV_HEAD: Vec3 = [0.049, -0.015, 0.030];
+    const TRUE_NECK_IN_HEAD: Vec3 = [0.0, -0.11, 0.095];
+
+    impl Body {
+        /// IMU position, orientation, velocity, angular velocity, acceleration (world).
+        fn imu(&self, t: f64) -> (Vec3, Quat, Vec3, Vec3, Vec3) {
+            let (n, nv, na) = (self.neck)(t);
+            let (th, thd, thdd) = (self.yaw)(t);
+            let q = qmul(qyaw(th), [(-0.15f64 / 2.0).sin(), 0.0, 0.0, (-0.15f64 / 2.0).cos()]);
+            let w = [0.0, thd, 0.0];
+            let al = [0.0, thdd, 0.0];
+            let r = qrot(q, geom::scale(geom::add(GOV_HEAD, TRUE_NECK_IN_HEAD), -1.0));
+            let p = geom::add(n, r);
+            let v = geom::add(nv, geom::cross(w, r));
+            let a = geom::add(na, geom::add(geom::cross(al, r), geom::cross(w, geom::cross(w, r))));
+            (p, q, v, w, a)
+        }
+        fn head(&self, t: f64) -> Vec3 {
+            let (p, q, ..) = self.imu(t);
+            geom::add(p, qrot(q, GOV_HEAD))
+        }
+    }
+
+    /// Run `body` for `secs` with a tracker that slides by `drift(t)` (world m), IMU noise like a worn head
+    /// (0.002 rad/s white plus a 0.3-0.45 deg/s tremor: never desk-still; 0.02 m/s² per axis), tracker noise 1 mm, poses 25 Hz delivered 25 ms late. Returns
+    /// (time, output head, true head) per 90 Hz query once tracking.
+    fn gov_run(p: HeadParams, body: &Body, secs: f64, drift: &dyn Fn(f64) -> Vec3) -> (Vec<(f64, Vec3, Vec3)>, HeadTracker) {
+        let sp = SupervisorParams { acquire_poses: 3, ..Default::default() };
+        let mut h = HeadTracker::new(sp, p, GOV_HEAD);
+        let mut seed = 21u64;
+        let mut pending: VecDeque<(f64, VioSample)> = VecDeque::new();
+        let (mut next_vio, mut next_q) = (0.0, 0.0);
+        let mut out = Vec::new();
+        let mut i = 0i64;
+        while (i as f64) * 0.001 < secs {
+            let t = i as f64 * 0.001;
+            let now = i * 1_000_000;
+            let (_, q, _, w, a) = body.imu(t);
+            let n = |s: &mut u64, k: f64| [k * gauss(s), k * gauss(s), k * gauss(s)];
+            h.push_imu(ImuSample {
+                ts_ns: now,
+                gyro: geom::add(geom::add(qrot(qconj(q), w), n(&mut seed, 0.002)), [0.008 * (9.0 * t).sin(), 0.007 * (6.3 * t + 1.0).sin(), 0.006 * (11.0 * t).sin()]),
+                accel: geom::add(qrot(qconj(q), geom::sub(a, G_WORLD)), n(&mut seed, 0.02)),
+            });
+            if t >= next_vio {
+                let (pp, qq, vv, _, _) = body.imu(t);
+                let d = drift(t);
+                let dv = geom::scale(geom::sub(drift(t + 0.01), drift(t - 0.01)), 50.0);
+                pending.push_back((t + 0.025, VioSample {
+                    ts_ns: now,
+                    pos: geom::add(geom::add(pp, d), n(&mut seed, 0.001)),
+                    q: qq,
+                    vel: geom::add(vv, dv),
+                    q3dof: qq,
+                }));
+                next_vio += 0.04;
+            }
+            let s = if pending.front().is_some_and(|(due, _)| *due <= t) { pending.pop_front().map(|x| x.1) } else { None };
+            h.update(now, s);
+            if t >= next_q {
+                let mut r = rel3(q);
+                r.ang_vel = w;
+                let o = h.head(now, now, &r);
+                if h.output().state == TrackState::Tracking {
+                    out.push((t, o.pos, body.head(t)));
+                }
+                next_q += 1.0 / 90.0;
+            }
+            i += 1;
+        }
+        (out, h)
+    }
+
+    /// Output and true head displacement between `t0` and `t1` (s).
+    fn gov_disp(out: &[(f64, Vec3, Vec3)], t0: f64, t1: f64) -> (Vec3, Vec3) {
+        let at = |t: f64| *out.iter().min_by(|a, b| (a.0 - t).abs().partial_cmp(&(b.0 - t).abs()).unwrap()).unwrap();
+        let (a, b) = (at(t0), at(t1));
+        (geom::sub(b.1, a.1), geom::sub(b.2, a.2))
+    }
+
+    fn drift_off() -> HeadParams {
+        HeadParams { drift: crate::drift::DriftParams { on: false, ..Default::default() }, ..HeadParams::default() }
+    }
+
+    /// Raised-cosine move of `d` (m, along `dir`) from `t0` over `dur` s: position, velocity, acceleration.
+    fn smooth_move(t: f64, t0: f64, dur: f64, d: f64, dir: Vec3) -> (Vec3, Vec3, Vec3) {
+        let pi = std::f64::consts::PI;
+        let (x, v, a) = if t <= t0 {
+            (0.0, 0.0, 0.0)
+        } else if t >= t0 + dur {
+            (d, 0.0, 0.0)
+        } else {
+            let u = pi * (t - t0) / dur;
+            (0.5 * d * (1.0 - u.cos()), 0.5 * d * (pi / dur) * u.sin(), 0.5 * d * (pi / dur).powi(2) * u.cos())
+        };
+        (geom::scale(dir, x), geom::scale(dir, v), geom::scale(dir, a))
+    }
+
+    fn seated() -> Box<dyn Fn(f64) -> (Vec3, Vec3, Vec3)> {
+        // breathing sway: 4 mm at 0.25 Hz
+        Box::new(|t: f64| {
+            let w = 2.0 * std::f64::consts::PI * 0.25;
+            ([0.004 * (w * t).sin(), 1.2, 0.0], [0.004 * w * (w * t).cos(), 0.0, 0.0], [-0.004 * w * w * (w * t).sin(), 0.0, 0.0])
+        })
+    }
+
+    fn no_turn() -> Box<dyn Fn(f64) -> (f64, f64, f64)> {
+        Box::new(|t: f64| (0.3 + 0.02 * (0.7 * t).sin(), 0.014 * (0.7 * t).cos(), -0.0098 * (0.7 * t).sin()))
+    }
+
+    #[test]
+    fn drift_hold_keeps_a_quiet_seated_head_in_place() {
+        let body = Body { neck: seated(), yaw: no_turn() };
+        // Basalt's slide of 2026-10-18 12:05:31: 2.6 cm/s sideways, a little up.
+        let drift = |t: f64| if t > 5.0 { [0.026 * (t - 5.0), 0.004 * (t - 5.0), 0.0] } else { [0.0; 3] };
+        let (on, h) = gov_run(HeadParams::default(), &body, 26.0, &drift);
+        let (off, _) = gov_run(drift_off(), &body, 26.0, &drift);
+        let (d_on, d_true) = gov_disp(&on, 6.0, 26.0);
+        let (d_off, _) = gov_disp(&off, 6.0, 26.0);
+        let e_on = geom::norm(geom::sub(d_on, d_true));
+        let e_off = geom::norm(geom::sub(d_off, d_true));
+        eprintln!("quiet seated, tracker sliding 2.6 cm/s for 20 s: output slid {:.1} cm with the hold, {:.1} cm without; held {:.2} m", e_on * 100.0, e_off * 100.0, h.drift.stats.held_m);
+        assert!(e_off > 0.45, "{e_off}");
+        assert!(e_on < 0.03, "output slid {e_on} m");
+        assert!(h.drift.stats.held_m > 0.4);
+    }
+
+    fn fast_turns() -> Box<dyn Fn(f64) -> (f64, f64, f64)> {
+        // looking left and right: +-60 deg at 0.5 Hz (peak 3.3 rad/s, 190 deg/s)
+        Box::new(|t: f64| {
+            let w = 2.0 * std::f64::consts::PI * 0.5;
+            let a = 60f64.to_radians();
+            (a * (w * t).sin(), a * w * (w * t).cos(), -a * w * w * (w * t).sin())
+        })
+    }
+
+    #[test]
+    fn drift_hold_bounds_a_seated_head_turning_fast_and_keeps_the_arc() {
+        let body = Body { neck: seated(), yaw: fast_turns() };
+        // 1.2 m right and 0.84 m up in 70 s, as in the 12:00:28 fast turns: 1.7 / 1.2 cm/s, in bursts while turning.
+        let drift = |t: f64| {
+            let s = if t > 4.0 { t - 4.0 + 0.3 * (2.0 * std::f64::consts::PI * 0.5 * t).sin() } else { 0.0 };
+            [0.017 * s, 0.012 * s, 0.0]
+        };
+        let (on, h) = gov_run(HeadParams::default(), &body, 34.0, &drift);
+        let (off, _) = gov_run(drift_off(), &body, 34.0, &drift);
+        let (d_on, d_true) = gov_disp(&on, 4.0, 34.0);
+        let (d_off, _) = gov_disp(&off, 4.0, 34.0);
+        let e_on = geom::norm(geom::sub(d_on, d_true));
+        let e_off = geom::norm(geom::sub(d_off, d_true));
+        // The head still swings on its arc around the neck (about 2 x 0.13 m x sin 60 deg side to side).
+        let xs: Vec<f64> = on.iter().filter(|o| o.0 > 30.0).map(|o| o.1[0] - o.2[0]).collect();
+        let swing_out = on.iter().filter(|o| o.0 > 30.0).map(|o| o.1[2]).fold(f64::MIN, f64::max)
+            - on.iter().filter(|o| o.0 > 30.0).map(|o| o.1[2]).fold(f64::MAX, f64::min);
+        let swing_true = on.iter().filter(|o| o.0 > 30.0).map(|o| o.2[2]).fold(f64::MIN, f64::max)
+            - on.iter().filter(|o| o.0 > 30.0).map(|o| o.2[2]).fold(f64::MAX, f64::min);
+        let x_spread = xs.iter().cloned().fold(f64::MIN, f64::max) - xs.iter().cloned().fold(f64::MAX, f64::min);
+        eprintln!(
+            "fast turns, tracker sliding 2.1 cm/s for 30 s: output slid {:.1} cm with the hold, {:.1} cm without; arc swing {:.1} cm (true {:.1}); error spread {:.1} cm; held {:.2} m",
+            e_on * 100.0, e_off * 100.0, swing_out * 100.0, swing_true * 100.0, x_spread * 100.0, h.drift.stats.held_m
+        );
+        assert!(e_off > 0.55, "{e_off}");
+        assert!(e_on < 0.08, "output slid {e_on} m");
+        assert!((swing_out - swing_true).abs() < 0.03, "arc {swing_out} vs {swing_true}");
+    }
+
+    #[test]
+    fn drift_hold_lets_real_leans_walks_and_standing_up_through() {
+        let cases: Vec<(&str, Box<dyn Fn(f64) -> (Vec3, Vec3, Vec3)>, f64, f64, f64)> = vec![
+            ("lean forward 20 cm in 1 s", Box::new(|t| { let (p, v, a) = smooth_move(t, 3.0, 1.0, 0.20, [0.0, 0.0, -1.0]); (geom::add(p, [0.0, 1.2, 0.0]), v, a) }), 3.0, 5.0, 0.9),
+            ("lean sideways 25 cm in 1.5 s", Box::new(|t| { let (p, v, a) = smooth_move(t, 3.0, 1.5, 0.25, [1.0, 0.0, 0.0]); (geom::add(p, [0.0, 1.2, 0.0]), v, a) }), 3.0, 5.5, 0.85),
+            ("stand up 45 cm in 1.2 s", Box::new(|t| { let (p, v, a) = smooth_move(t, 3.0, 1.2, 0.45, [0.0, 1.0, 0.0]); (geom::add(p, [0.0, 1.2, 0.0]), v, a) }), 3.0, 5.0, 0.9),
+            ("walk 2.1 m in 3 s (head bob)", Box::new(|t| {
+                let (p, v, a) = smooth_move(t, 3.0, 3.0, 2.1, [0.0, 0.0, -1.0]);
+                let on = (3.0..6.0).contains(&t);
+                let ws = 2.0 * std::f64::consts::PI * 1.8;
+                let b = if on { 0.015 } else { 0.0 };
+                (geom::add(p, [0.0, 1.6 + b * (ws * t).sin(), 0.0]), geom::add(v, [0.0, b * ws * (ws * t).cos(), 0.0]), geom::add(a, [0.0, -b * ws * ws * (ws * t).sin(), 0.0]))
+            }), 2.5, 7.0, 0.95),
+        ];
+        for (name, neck, t0, t1, keep) in cases {
+            let body = Body { neck, yaw: no_turn() };
+            let (out, h) = gov_run(HeadParams::default(), &body, t1 + 0.5, &|_| [0.0; 3]);
+            let (d_out, d_true) = gov_disp(&out, t0, t1);
+            let kept = geom::dot(d_out, d_true) / geom::dot(d_true, d_true);
+            eprintln!("{name}: output moved {:.1} cm of {:.1} cm ({:.0} %), held {:.1} cm", geom::norm(d_out) * 100.0, geom::norm(d_true) * 100.0, kept * 100.0, h.drift.stats.held_m * 100.0);
+            assert!(kept > keep && kept < 1.05, "{name}: kept {kept}");
+        }
+        // A slow lean (10 cm in 2 s) is the hard case: its acceleration (0.12 m/s² peak) is barely above a worn
+        // head's own; report how much passes.
+        let body = Body { neck: Box::new(|t| { let (p, v, a) = smooth_move(t, 3.0, 2.0, 0.10, [0.0, 0.0, -1.0]); (geom::add(p, [0.0, 1.2, 0.0]), v, a) }), yaw: no_turn() };
+        let (out, _) = gov_run(HeadParams::default(), &body, 6.0, &|_| [0.0; 3]);
+        let (d_out, d_true) = gov_disp(&out, 3.0, 5.5);
+        eprintln!("slow lean 10 cm in 2 s: output moved {:.1} cm of {:.1} cm", geom::norm(d_out) * 100.0, geom::norm(d_true) * 100.0);
     }
 
     /// Desk-still run: 3DoF orientation that shimmers by `shim` rad, then a pickup at `pick_s`.

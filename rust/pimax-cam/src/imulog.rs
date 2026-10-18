@@ -8,6 +8,10 @@
 //! minutes (default 10) and afterwards only while `$XDG_RUNTIME_DIR/omarchyvr-imu-log.on` exists (the tracking
 //! recorder creates it for the length of a take).
 //!
+//! Every start keeps the earlier logs ([`rotate`]): the previous one becomes `head-imu.<YYYYmmdd-HHMMSS>.csv` (its
+//! own last write time, local) and `head-imu.csv.prev` links to it; the newest [`KEEP`] old logs are kept (about
+//! 45 MB each for the first 10 minutes). Before 2026-10-18 every start overwrote the only copy.
+//!
 //! Format (text, one line each):
 //! * `I,ts_ns,ax,ay,az,gx,gy,gz`: IMU frame, m/s² and rad/s, `CLOCK_MONOTONIC` ns, exactly as fed to the tracker;
 //! * `V,ts_ns,px,py,pz,qx,qy,qz,qw`: a tracker pose; `ts_ns` is its camera frame time on the same clock, which
@@ -50,8 +54,9 @@ impl HeadImuLog {
         HeadImuLog::start(Path::new(&p), minutes, flag_path())
     }
 
-    /// Log to `path`: always for `minutes`, then while `flag` exists.
+    /// Log to `path`: always for `minutes`, then while `flag` exists. An earlier log at `path` is kept ([`rotate`]).
     pub fn start(path: &Path, minutes: f64, flag: Option<PathBuf>) -> Option<HeadImuLog> {
+        let _ = rotate(path, KEEP);
         let f = std::fs::File::create(path).ok()?;
         let (tx, rx) = sync_channel::<Msg>(8192);
         let span_ns = (minutes.max(0.0) * 60e9) as i64;
@@ -122,6 +127,75 @@ impl HeadImuLog {
     }
 }
 
+/// Old logs kept next to the current one.
+pub const KEEP: usize = 3;
+
+/// Local time stamp `YYYYmmdd-HHMMSS` of a file's modification time (libc localtime_r).
+fn stamp_of(path: &Path) -> Option<String> {
+    let t = std::fs::metadata(path).ok()?.modified().ok()?;
+    let secs = t.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs() as libc::time_t;
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    // SAFETY: valid pointers to a local time_t and tm.
+    if unsafe { libc::localtime_r(&secs, &mut tm) }.is_null() {
+        return None;
+    }
+    Some(format!(
+        "{:04}{:02}{:02}-{:02}{:02}{:02}",
+        tm.tm_year + 1900,
+        tm.tm_mon + 1,
+        tm.tm_mday,
+        tm.tm_hour,
+        tm.tm_min,
+        tm.tm_sec
+    ))
+}
+
+/// Keep an existing log at `path` (`dir/name.csv`): rename it to `dir/name.<stamp>.csv`, point `dir/name.csv.prev` at
+/// it (a symlink), and delete all but the newest `keep` stamped copies. Returns the kept file. Errors leave the old
+/// file where it is (the new log then replaces it, as before).
+pub fn rotate(path: &Path, keep: usize) -> Option<PathBuf> {
+    if !path.is_file() || std::fs::metadata(path).ok()?.len() == 0 {
+        return None;
+    }
+    let dir = path.parent()?;
+    let name = path.file_name()?.to_str()?;
+    let stem = name.strip_suffix(".csv").unwrap_or(name);
+    let stamp = stamp_of(path)?;
+    let mut dest = dir.join(format!("{stem}.{stamp}.csv"));
+    let mut n = 1;
+    while dest.exists() {
+        dest = dir.join(format!("{stem}.{stamp}-{n}.csv"));
+        n += 1;
+    }
+    std::fs::rename(path, &dest).ok()?;
+    let prev = dir.join(format!("{name}.prev"));
+    let _ = std::fs::remove_file(&prev);
+    let _ = std::os::unix::fs::symlink(dest.file_name()?, &prev);
+    // The stamped copies sort by time; the newest `keep` stay.
+    let prefix = format!("{stem}.");
+    let mut old: Vec<PathBuf> = std::fs::read_dir(dir)
+        .ok()?
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| {
+            p.file_name().and_then(|f| f.to_str()).is_some_and(|f| {
+                f.starts_with(&prefix) && f.ends_with(".csv") && f.as_bytes().get(prefix.len()).is_some_and(|c| c.is_ascii_digit())
+            })
+        })
+        .collect();
+    // Oldest first: by write time, then by the collision number of copies stamped in the same second.
+    let key = |p: &PathBuf| {
+        let t = std::fs::metadata(p).and_then(|m| m.modified()).ok();
+        let f = p.file_name().and_then(|f| f.to_str()).unwrap_or("");
+        let n: u32 = f.trim_end_matches(".csv").rsplit_once('-').and_then(|(_, x)| (x.len() < 6).then(|| x.parse().ok()).flatten()).unwrap_or(0);
+        (t, n)
+    };
+    old.sort_by_key(key);
+    while old.len() > keep.max(1) {
+        let _ = std::fs::remove_file(old.remove(0));
+    }
+    Some(dest)
+}
+
 /// A parsed head IMU log.
 #[derive(Clone, Debug, Default)]
 pub struct HeadImu {
@@ -176,6 +250,35 @@ mod tests {
         assert_eq!(h.vio_ts, vec![1_010_000_000]);
         let ts: Vec<i64> = h.imu.iter().map(|x| x.0).collect();
         assert_eq!(ts, vec![1_000_000_000, 5_000_000_000]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn every_start_keeps_the_last_three_logs() {
+        let dir = std::env::temp_dir().join(format!("pimax-imulog-rot-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("head-imu.csv");
+        assert_eq!(rotate(&p, KEEP), None, "nothing to keep");
+        for i in 0..5 {
+            std::fs::write(&p, format!("session {i}\n")).unwrap();
+            // within the same second the copies get -1, -2, ...
+            let kept = rotate(&p, KEEP).unwrap();
+            assert!(!p.exists());
+            assert_eq!(std::fs::read_to_string(&kept).unwrap(), format!("session {i}\n"));
+            let prev = dir.join("head-imu.csv.prev");
+            assert_eq!(std::fs::read_to_string(&prev).unwrap(), format!("session {i}\n"), "prev = the newest");
+        }
+        let mut names: Vec<String> = std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name().into_string().unwrap()).collect();
+        names.sort();
+        let stamped: Vec<&String> = names.iter().filter(|n| n.starts_with("head-imu.2")).collect();
+        assert_eq!(stamped.len(), 3, "{names:?}");
+        let texts: Vec<String> = stamped.iter().map(|n| std::fs::read_to_string(dir.join(n)).unwrap()).collect();
+        assert!(texts.contains(&"session 4\n".to_string()) && !texts.contains(&"session 0\n".to_string()), "{texts:?}");
+        // start() rotates by itself
+        std::fs::write(&p, "session 5\n").unwrap();
+        drop(HeadImuLog::start(&p, 1.0, None).unwrap());
+        assert_eq!(std::fs::read_to_string(dir.join("head-imu.csv.prev")).unwrap(), "session 5\n");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

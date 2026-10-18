@@ -30,7 +30,7 @@ pub const DESK_CTRL_AIM: &str = "head";
 
 /// Usage of `omarchyvr desk`.
 pub const USAGE: &str = "usage: omarchyvr desk <command> [options]
-  start [--no-passthrough] [--eye|--no-eye] [--6dof [--ctrl-track] [--hands [--hands-roles]]] [--controllers when-held|always|off] [--ctrl-angle DEG] [--old-exposure] [--no-room-glide] [--no-ctrl-steady] [--voice [--voice-hud]] [--no-perf] [--preset work-4|focus-3|work-5|work-6|cinema|cinema-huge|none] [--screens 1-6] [--anchor] [--no-auto-recover] [--settle SECS] [--passthrough-bin P] [--wayvr-bin P] [--wayvr-home DIR]
+  start [--no-passthrough] [--eye|--no-eye] [--6dof [--ctrl-track] [--hands [--hands-roles]]] [--controllers when-held|always|off] [--ctrl-angle DEG] [--old-exposure] [--no-room-glide] [--no-ctrl-steady] [--no-drift-hold] [--voice [--voice-hud]] [--no-perf] [--preset work-4|focus-3|work-5|work-6|cinema|cinema-huge|none] [--screens 1-6] [--anchor] [--no-auto-recover] [--settle SECS] [--passthrough-bin P] [--wayvr-bin P] [--wayvr-home DIR]
         [--voice-bin P] [--voice-hud-bin P] [--wayvrctl-bin P] [--perf-bin P] [--pimax-bin P]
         [+ the options of `omarchyvr vr start`: --fps, --monado-build, --connector, --dry-run, --force, --no-notify, ...]
       monado-service (like `omarchyvr vr start`), then omarchyvr-passthrough run (the main OpenXR app), then WayVR as an
@@ -59,6 +59,7 @@ pub const USAGE: &str = "usage: omarchyvr desk <command> [options]
       Tracking switches (all on by default, docs/TRACKING-STABILITY.md): --old-exposure = the previous camera exposure
       law (PIMAX_CAM_AE_LAW=old); --no-room-glide = room corrections snap instead of gliding (PIMAX_ANCHOR_GLIDE=0);
       --no-ctrl-steady = the controller fuser's old 80 ms optical window (PIMAX_CTRL_TRACK_HYST=0).
+      --no-drift-hold = the head position follows the tracker even when the accelerometer says it is still (PIMAX_SLAM_DRIFT_HOLD=0).
       Controller rays aim where you look (PIMAX_CTRL_AIM=head for Monado; set PIMAX_CTRL_AIM=level to keep the old
       straight-ahead rays); hand placement: PIMAX_CTRL_REST (desk default, legacy), see analysis/hands-desk.md.
       --hands (with --6dof): camera hand tracking (Mercury) on the one Monado build, when it has the hands code and the models

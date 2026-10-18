@@ -31,6 +31,7 @@ pub mod capi_ae;
 pub mod capi_slam;
 pub mod check;
 pub mod clock;
+pub mod drift;
 pub mod frame;
 pub mod geom;
 pub mod headpose;

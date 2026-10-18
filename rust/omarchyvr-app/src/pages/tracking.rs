@@ -59,6 +59,15 @@ fn head(ui: &mut Ui, app: &mut PimaxApp) {
             if app.core.live.log.camera.light_low {
                 widgets::status(ui, omarchyvr_gui_core::monlog::LIGHT_LOW_TEXT, p.warn);
             }
+            let sd = &app.core.live.log.sixdof;
+            if let Some(total) = sd.drift_total_cm {
+                let text = format!(
+                    "Head tracking slid {:.0} cm without movement; held ({:.0} cm this session)",
+                    sd.drift_last_cm.unwrap_or(0.0),
+                    total
+                );
+                widgets::status(ui, &text, if total >= 50.0 { p.warn } else { p.dim });
+            }
         }
     });
 }
