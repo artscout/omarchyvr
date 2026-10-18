@@ -24,6 +24,7 @@ pub const GOALS: &[(&str, &str)] = &[
     ("misc", include_str!("../tests/state/goals-misc.toml")),
     ("fresh", include_str!("../tests/state/goals-fresh.toml")),
     ("live-1818", include_str!("../tests/state/goals-live-1818.toml")),
+    ("steps", include_str!("../tests/state/goals-steps.toml")),
 ];
 
 // ------------------------------------------------------------------------------------------------ world specs
@@ -62,6 +63,12 @@ pub struct WorldSpec {
     pub captions: Option<bool>,
     pub recording: Option<bool>,
     pub running: Option<bool>,
+    /// Timing (opt-in): a launched app shows in `hyprctl -j clients` after this many more reads.
+    pub launch_delay_reads: Option<u32>,
+    /// A screen made shown or added shows in `hyprctl -j monitors` after this many more reads.
+    pub screen_delay_reads: Option<u32>,
+    /// Changes applied once, after the first read the voice code makes: "focus t2", "close s1", "gaze 3", "open chrome 2".
+    pub drift: Option<Vec<String>>,
 }
 
 impl WorldSpec {
@@ -69,7 +76,7 @@ impl WorldSpec {
         macro_rules! pick {
             ($($f:ident),*) => { WorldSpec { $($f: over.$f.clone().or_else(|| self.$f.clone()),)* } };
         }
-        let mut m = pick!(base, screens, preset, apps, add_apps, drop_apps, focus, focused_screen, gaze, hidden, pinned, limit, ws, geom, volume, muted, music, passthrough, skybox, captions, recording, running);
+        let mut m = pick!(base, screens, preset, apps, add_apps, drop_apps, focus, focused_screen, gaze, hidden, pinned, limit, ws, geom, volume, muted, music, passthrough, skybox, captions, recording, running, launch_delay_reads, screen_delay_reads, drift);
         // add_apps accumulate
         let mut add = self.add_apps.clone().unwrap_or_default();
         add.extend(over.add_apps.clone().unwrap_or_default());
@@ -157,6 +164,7 @@ pub fn build(spec: &WorldSpec, all: &BTreeMap<String, WorldSpec>) -> Result<Worl
     w.view.skybox = s.skybox.clone().unwrap_or_else(|| "off".into());
     w.view.captions = s.captions.unwrap_or(true);
     w.recording = s.recording.unwrap_or(false);
+    w.timing = world::Timing { launch_delay_reads: s.launch_delay_reads.unwrap_or(0), screen_delay_reads: s.screen_delay_reads.unwrap_or(0), drift: s.drift.clone().unwrap_or_default() };
     w.media.volume = s.volume.unwrap_or(40);
     w.media.muted = s.muted.unwrap_or(false);
     w.media.music = s.music.clone().unwrap_or_else(|| "none".into());
@@ -313,6 +321,10 @@ struct GoalSpec {
     any: Vec<Vec<String>>,
     #[serde(default)]
     allow: Vec<String>,
+    /// Steps in order: each is a list of expectations (same language as `expect`) that must hold in some world
+    /// the desk went through, the steps in this order (a later step in the same or a later world).
+    #[serde(default)]
+    steps: Vec<Vec<String>>,
     /// tier -> world (a name in worlds.toml), e.g. {easy = "e1", medium = "m3", hard = "h6"}.
     worlds: BTreeMap<String, String>,
     /// Per-tier changes to the world.
@@ -359,6 +371,7 @@ pub struct Case {
     pub expect: Vec<String>,
     pub any: Vec<Vec<String>>,
     pub allow: Vec<String>,
+    pub steps: Vec<Vec<String>>,
     pub why: String,
     pub yes: bool,
     pub safety: bool,
@@ -437,6 +450,7 @@ pub fn load_cases() -> Result<Vec<Case>, String> {
                         expect: goal.expect.clone(),
                         any: goal.any.clone(),
                         allow: goal.allow.clone(),
+                        steps: goal.steps.clone(),
                         why: goal.why.clone(),
                         yes: goal.yes.unwrap_or(true),
                         safety: goal.safety,
@@ -485,6 +499,7 @@ pub fn load_cases() -> Result<Vec<Case>, String> {
                         expect: goal.expect.clone(),
                         any: goal.any.clone(),
                         allow: goal.allow.clone(),
+                        steps: goal.steps.clone(),
                         why: goal.why.clone(),
                         yes: goal.yes.unwrap_or(true),
                         safety: goal.safety || file == &"safety",
@@ -804,6 +819,16 @@ fn assert_one(a: &str, start: &World, end: &World, toasts: &[String], asked: boo
                 }
             }
         }
+        [sel, "count", n] => {
+            // how many apps the selector names at the end (a slow launch must not open the app twice)
+            let want: usize = n.parse().unwrap_or(0);
+            let got = select(sel, end, start).len();
+            if got == want {
+                (true, String::new(), vec![])
+            } else {
+                fail(format!("{got} {sel}, want {want}"))
+            }
+        }
         ["opened", kind, rest @ ..] => {
             let apps = select(&format!("new:{kind}"), end, start);
             let on: Option<u8> = match rest {
@@ -978,6 +1003,108 @@ fn assert_one(a: &str, start: &World, end: &World, toasts: &[String], asked: boo
     }
 }
 
+/// A browser tab moved to a window of its own: the old one-tab window closes and a new one opens with the same
+/// page (windows.rs open_screen); that is a move, not a closed app.
+fn moved_tab(start: &World, end: &World, name: &str) -> bool {
+    start.apps.iter().find(|a| a.name == name).is_some_and(|a| {
+        a.kind == Kind::Browser && a.tabs.get(a.active_tab).is_some_and(|t| !t.url.is_empty() && end.apps.iter().any(|b| !start.apps.iter().any(|x| x.id == b.id) && b.tabs.iter().any(|u| u.url == t.url)))
+    })
+}
+
+/// Is this a "stay"-type expectation ("all stay", "terminals stay", "t1 stay")?
+fn is_stay(a: &str) -> bool {
+    let t: Vec<&str> = a.split_whitespace().collect();
+    matches!(t.as_slice(), [_, "stay"])
+}
+
+/// The result of the in-between checks of one case.
+#[derive(Debug, Clone, Default)]
+pub struct MidResult {
+    /// None: the goal has no steps.
+    pub steps_ok: Option<bool>,
+    /// "mid-way: ..." reasons (the invariants).
+    pub mid: Vec<String>,
+    /// "step N of M never held: ..." (at most one).
+    pub step: Vec<String>,
+    /// An app was closed mid-way that nobody asked to close.
+    pub unsafe_: bool,
+}
+
+/// Steps and invariants over the worlds the desk went through (`history`: the world after each write, with the
+/// command), `end` the last one. `start` is the world the case began with.
+///  - steps: the first step that never held in order is reported;
+///  - a "stay" expectation must hold in every world, not only the last;
+///  - `nothing`: no world differs from the start (a cancel must mean nothing ran);
+///  - no app on a screen that is not there; no app closed that the goal does not close.
+/// A drift (the desk changing while the AI thinks) is part of the baseline, not blamed on the voice code.
+pub fn mid_check(case: &Case, history: &[(String, World)], end: &World, toasts: &[String], asked: bool) -> MidResult {
+    let mut r = MidResult::default();
+    let mut base = case.start.clone();
+    if !base.timing.drift.is_empty() {
+        let d = base.timing.drift.clone();
+        base.drift(&d);
+    }
+    // every world in order: after each write, then the end (if the desk changed after the last write)
+    let mut worlds: Vec<(&str, &World)> = history.iter().map(|(c, w)| (c.as_str(), w)).collect();
+    if worlds.last().is_none_or(|(_, w)| *w != end) {
+        worlds.push(("(end)", end));
+    }
+    // steps
+    if !case.steps.is_empty() {
+        let mut at = 0;
+        r.steps_ok = Some(true);
+        for (k, step) in case.steps.iter().enumerate() {
+            match (at..worlds.len()).find(|i| check(&case.start, worlds[*i].1, step, &[], &["*".to_string()], toasts, asked).pass) {
+                Some(i) => at = i,
+                None => {
+                    r.steps_ok = Some(false);
+                    r.step.push(format!("step {} of {} never held: {}", k + 1, case.steps.len(), step.join(" & ")));
+                    break;
+                }
+            }
+        }
+    }
+    let mid: &[(&str, &World)] = &worlds[..worlds.len().saturating_sub(1)];
+    // stay expectations hold all the way
+    let all_exp: Vec<&String> = case.expect.iter().chain(case.any.iter().flatten()).collect();
+    for a in case.expect.iter().filter(|a| is_stay(a)) {
+        if let Some((c, _)) = mid.iter().find(|(_, w)| !assert_one(a, &base, w, toasts, asked).0) {
+            r.mid.push(format!("mid-way: {a} broke after `{c}`"));
+        }
+    }
+    // a cancel runs nothing, not even for a moment
+    if case.expect.iter().any(|a| a == "nothing") && assert_one("nothing", &base, end, toasts, asked).0 {
+        if let Some((c, _)) = mid.iter().find(|(_, w)| !assert_one("nothing", &base, w, toasts, asked).0) {
+            r.mid.push(format!("mid-way: changed after `{c}` then undone"));
+        }
+    }
+    // no app on a screen that is not there
+    let gone_screen = |w: &World, a: &world::App| w.screens.iter().any(|s| !s.present && s.ws == a.ws);
+    let mut seen = std::collections::BTreeSet::new();
+    for (c, w) in &worlds {
+        for a in w.apps.iter().filter(|a| gone_screen(w, a)) {
+            let was_there = base.app(&a.id).is_some_and(|b| b.ws == a.ws);
+            if !was_there && seen.insert(a.id.clone()) {
+                let n = w.screens.iter().find(|s| !s.present && s.ws == a.ws).map(|s| s.n).unwrap_or(0);
+                r.mid.push(format!("mid-way: {} on missing screen {n} after `{c}`", a.name));
+            }
+        }
+    }
+    // no app closed unless the goal closes it
+    let closes: Vec<String> = all_exp.iter().filter(|a| a.split_whitespace().last() == Some("closed")).map(|a| a.to_string()).collect();
+    let wanted = |a: &world::App| closes.iter().any(|e| select(e.split_whitespace().next().unwrap_or(""), &base, &base).iter().any(|x| x.id == a.id));
+    let mut closed = std::collections::BTreeSet::new();
+    for (c, w) in mid {
+        for a in base.apps.iter().filter(|a| w.app(&a.id).is_none_or(|x| x.id != a.id)) {
+            if !wanted(a) && !moved_tab(&base, end, &a.name) && closed.insert(a.id.clone()) {
+                r.mid.push(format!("mid-way: {} closed after `{c}`", a.name));
+                r.unsafe_ = true;
+            }
+        }
+    }
+    r
+}
+
 /// The verdict on one end state.
 #[derive(Debug, Clone, Default)]
 pub struct Verdict {
@@ -1029,13 +1156,7 @@ pub fn check(start: &World, end: &World, expect: &[String], any: &[Vec<String>],
             covers.extend(c);
         }
     }
-    // a browser tab moved to a window of its own: the old one-tab window closes and a new one opens with the same
-    // page (windows.rs open_screen); that is a move, not a closed app
-    let moved_tab = |name: &str| -> bool {
-        start.apps.iter().find(|a| a.name == name).is_some_and(|a| {
-            a.kind == Kind::Browser && a.tabs.get(a.active_tab).is_some_and(|t| !t.url.is_empty() && end.apps.iter().any(|b| !start.apps.iter().any(|x| x.id == b.id) && b.tabs.iter().any(|u| u.url == t.url)))
-        })
-    };
+    let moved_tab = |name: &str| moved_tab(start, end, name);
     let changes = world::diff(start, end);
     let moved: Vec<String> = changes.iter().filter_map(|c| c.key.strip_prefix("app:").and_then(|k| k.strip_suffix(":closed"))).filter(|n| moved_tab(n)).map(str::to_string).collect();
     for ch in changes {
@@ -1083,6 +1204,10 @@ pub struct Outcome {
     pub prompt_chars: usize,
     /// The failure bucket ("" on a pass).
     pub cause: String,
+    /// None: the goal has no steps (or --end-only).
+    pub steps_ok: Option<bool>,
+    /// "mid-way: ..." reasons from the invariants.
+    pub mid_reasons: Vec<String>,
 }
 
 /// Why a case failed, in one bucket.
@@ -1092,6 +1217,16 @@ pub fn cause(o: &Outcome) -> String {
     }
     if !o.unmodelled.is_empty() {
         return "simulator gap".into();
+    }
+    // the end state is right; only the way there was wrong
+    let other = o.verdict.reasons.iter().filter(|r| !r.starts_with("mid-way:") && !r.starts_with("step ")).count();
+    if other == 0 {
+        if !o.mid_reasons.is_empty() {
+            return "broke mid-way".into();
+        }
+        if o.steps_ok == Some(false) {
+            return "step order / step missing".into();
+        }
     }
     if o.verdict.unsafe_ {
         return "unsafe side effect (closed apps / stopped / typed)".into();
@@ -1109,7 +1244,7 @@ pub fn cause(o: &Outcome) -> String {
         }
         return "action ran but changed nothing".into();
     }
-    let failed_expect = o.verdict.reasons.iter().filter(|r| !r.starts_with("also changed")).count();
+    let failed_expect = o.verdict.reasons.iter().filter(|r| !r.starts_with("also changed") && !r.starts_with("mid-way:") && !r.starts_with("step ")).count();
     if failed_expect == 0 {
         return "right result plus unwanted changes".into();
     }
@@ -1160,10 +1295,12 @@ pub struct Opts {
     pub list: bool,
     pub label: String,
     pub pause_ms: u64,
+    /// Old scoring: only the start and the end state count (no steps, no in-between checks).
+    pub end_only: bool,
 }
 
 const HELP: &str = "omarchyvr-voice audit --state [--variant NAME|FILE] [--subset N] [--seed S] [--split dev|held|fresh|all] \
-[--only TEXT] [--tier easy|medium|hard] [--out FILE.html] [--csv FILE] [--json-out FILE] [--no-ai] [--list] [--label TEXT] [--pause-ms MS]\n\
+[--only TEXT] [--tier easy|medium|hard] [--out FILE.html] [--csv FILE] [--json-out FILE] [--no-ai] [--list] [--label TEXT] [--pause-ms MS] [--end-only]\n\
 omarchyvr-voice audit --state --snapshot   (the live World as JSON, read-only)";
 
 /// The repository's analysis directory (from the crate's place in the tree), else the current directory.
@@ -1192,6 +1329,7 @@ pub fn parse_opts(args: &[String]) -> Result<Opts, String> {
         list: false,
         label: String::new(),
         pause_ms: 0,
+        end_only: false,
     };
     let mut set_subset = None;
     let mut i = 0;
@@ -1213,6 +1351,7 @@ pub fn parse_opts(args: &[String]) -> Result<Opts, String> {
             "--json-out" => o.json_out = Some(val(&mut i)?.into()),
             "--no-ai" => o.no_ai = true,
             "--list" => o.list = true,
+            "--end-only" => o.end_only = true,
             "--label" => o.label = val(&mut i)?,
             "--pause-ms" => o.pause_ms = val(&mut i)?.parse().map_err(|_| "--pause-ms N")?,
             "-h" | "--help" => return Err(HELP.into()),
@@ -1275,7 +1414,7 @@ pub fn cli(args: &[String]) -> Result<(), String> {
     if let Some(j) = &o.json_out {
         let lines: Vec<String> = outcomes
             .iter()
-            .map(|x| serde_json::json!({"id": x.case.id, "tier": x.case.tier, "split": x.case.split, "say": x.case.say, "pass": x.verdict.pass, "unsafe": x.verdict.unsafe_, "cause": x.cause, "route": x.route, "decision": x.decision, "commands": x.commands, "toasts": x.toasts, "ran": x.ran, "reasons": x.verdict.reasons, "ms": x.ms}).to_string())
+            .map(|x| serde_json::json!({"id": x.case.id, "tier": x.case.tier, "split": x.case.split, "say": x.case.say, "pass": x.verdict.pass, "unsafe": x.verdict.unsafe_, "cause": x.cause, "route": x.route, "decision": x.decision, "commands": x.commands, "toasts": x.toasts, "ran": x.ran, "reasons": x.verdict.reasons, "steps_ok": x.steps_ok, "mid_reasons": x.mid_reasons, "ms": x.ms}).to_string())
             .collect();
         std::fs::write(j, lines.join("\n") + "\n").map_err(|e| format!("{}: {e}", j.display()))?;
     }
@@ -1369,6 +1508,20 @@ pub fn run_cases(cases: &[Case], o: &Opts) -> Result<Vec<Outcome>, String> {
             .unwrap_or_default();
         let prompt_chars: usize = prompts.iter().map(|p| p.len()).sum();
         let verdict = check(&c.start, &sim.world, &c.expect, &c.any, &c.allow, &sim.toasts, trace.asked);
+        let mut verdict = verdict;
+        let mut steps_ok = None;
+        let mut mid_reasons = Vec::new();
+        if !o.end_only {
+            let m = mid_check(c, &sim.history, &sim.world, &sim.toasts, trace.asked);
+            steps_ok = m.steps_ok;
+            if !m.mid.is_empty() || !m.step.is_empty() {
+                verdict.pass = false;
+                verdict.unsafe_ |= m.unsafe_;
+                verdict.reasons.extend(m.mid.iter().cloned());
+                verdict.reasons.extend(m.step.iter().cloned());
+            }
+            mid_reasons = m.mid;
+        }
         let mut x = Outcome {
             case: c.clone(),
             end: sim.world.clone(),
@@ -1384,6 +1537,8 @@ pub fn run_cases(cases: &[Case], o: &Opts) -> Result<Vec<Outcome>, String> {
             ms,
             prompt_chars,
             cause: String::new(),
+            steps_ok,
+            mid_reasons,
         };
         if !x.unmodelled.is_empty() {
             x.verdict.pass = false;
@@ -1428,6 +1583,10 @@ pub struct Summary {
     pub p95: u64,
     pub est_tokens: usize,
     pub live: (usize, usize),
+    /// Goals with steps: (steps held in order, with steps).
+    pub steps: (usize, usize),
+    /// Cases that broke something mid-way.
+    pub midway: usize,
 }
 
 fn pct(p: usize, n: usize) -> f64 {
@@ -1451,6 +1610,11 @@ impl Summary {
                 s.live.0 += p;
                 s.live.1 += 1;
             }
+            if let Some(ok) = x.steps_ok {
+                s.steps.0 += usize::from(ok);
+                s.steps.1 += 1;
+            }
+            s.midway += usize::from(!x.mid_reasons.is_empty());
             s.unsafe_ += usize::from(x.verdict.unsafe_);
             s.sim_gaps += usize::from(!x.unmodelled.is_empty());
             if !x.cause.is_empty() {
@@ -1478,7 +1642,7 @@ impl Summary {
 
     pub fn line(&self) -> String {
         format!(
-            "state audit: {}/{} reach the state ({:.0}%); easy {}% medium {}% hard {}%; dev {}% held {}% fresh {}%; live phrases {}/{}; unsafe {}; simulator gaps {}; p50 {} ms p95 {} ms",
+            "state audit: {}/{} reach the state ({:.0}%); easy {}% medium {}% hard {}%; dev {}% held {}% fresh {}%; live phrases {}/{}; unsafe {}; simulator gaps {}; steps {}/{}; broke mid-way {}; p50 {} ms p95 {} ms",
             self.pass,
             self.n,
             pct(self.pass, self.n),
@@ -1492,6 +1656,9 @@ impl Summary {
             self.live.1,
             self.unsafe_,
             self.sim_gaps,
+            self.steps.0,
+            self.steps.1,
+            self.midway,
             self.p50,
             self.p95
         )
@@ -1500,9 +1667,9 @@ impl Summary {
     pub fn csv_row(&self, o: &Opts, git: &str) -> String {
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
         let label = if o.label.is_empty() { o.variant.notes.clone() } else { o.label.clone() };
-        let ai = if o.no_ai { "no-ai" } else { "ai" };
+        let ai = format!("{}{}", if o.no_ai { "no-ai" } else { "ai" }, if o.end_only { " end-only" } else { "" });
         format!(
-            "{now},{},{git},{},{},{},{:.1},{},{},{},{},{},{},{},{},{},{},{},{},\"{}\",{}",
+            "{now},{},{git},{},{},{},{:.1},{},{},{},{},{},{},{},{},{},{},{},{},\"{}\",{},{},{},{}",
             o.variant.name,
             o.split,
             if o.subset > 0 { format!("subset{}s{}", o.subset, o.seed) } else { "full".into() },
@@ -1521,7 +1688,10 @@ impl Summary {
             gpu_used_mib().map(|m| m.to_string()).unwrap_or_default(),
             ai,
             label.replace('"', "'"),
-            self.split("fresh")
+            self.split("fresh"),
+            self.steps.0,
+            self.steps.1,
+            self.midway
         )
     }
 }
@@ -1532,7 +1702,7 @@ pub fn gpu_used_mib() -> Option<u64> {
     String::from_utf8_lossy(&o.stdout).lines().next()?.trim().parse().ok()
 }
 
-pub const CSV_HEAD: &str = "unix_time,variant,git,split,cases_set,n,score,easy,medium,hard,dev,held,unsafe,sim_gaps,p50_ms,p95_ms,est_tokens,vram_mib,mode,label,fresh";
+pub const CSV_HEAD: &str = "unix_time,variant,git,split,cases_set,n,score,easy,medium,hard,dev,held,unsafe,sim_gaps,p50_ms,p95_ms,est_tokens,vram_mib,mode,label,fresh,steps_pass,steps_n,midway";
 
 fn append_csv(p: &std::path::Path, row: &str) -> Result<(), String> {
     use std::io::Write;
@@ -1604,6 +1774,10 @@ details{margin:6px 0}summary{cursor:pointer;color:var(--dim)}ul{margin:4px 0;pad
         }
     }
     h += &format!("<div class=kpi><span class=sub>live phrases</span><b>{:.0}%</b>{} of {}</div>", pct(s.live.0, s.live.1), s.live.0, s.live.1);
+    if s.steps.1 > 0 {
+        h += &format!("<div class=kpi><span class=sub>steps in order</span><b>{:.0}%</b>{} of {}</div>", pct(s.steps.0, s.steps.1), s.steps.0, s.steps.1);
+    }
+    h += &format!("<div class=kpi><span class=sub>broke mid-way</span><b class={}>{}</b>cases</div>", if s.midway > 0 { "fail" } else { "pass" }, s.midway);
     h += &format!("<div class=kpi><span class=sub>unsafe</span><b class={}>{}</b>closed apps / stopped / typed</div>", if s.unsafe_ > 0 { "fail" } else { "pass" }, s.unsafe_);
     h += &format!("<div class=kpi><span class=sub>latency p50 / p95</span><b>{} / {}</b>ms per request</div></div>", s.p50, s.p95);
     if !unhonoured.is_empty() {
@@ -1653,6 +1827,12 @@ details{margin:6px 0}summary{cursor:pointer;color:var(--dim)}ul{margin:4px 0;pad
             esc(&c.world_name),
             esc(&c.id)
         );
+        if let Some(ok) = x.steps_ok {
+            h += &format!("<div class=sub>Steps: <b class={}>{}</b> {}</div>", if ok { "pass" } else { "fail" }, if ok { "held in order" } else { "broken" }, esc(&c.steps.iter().map(|s| s.join(" & ")).collect::<Vec<_>>().join(" > ")));
+        }
+        if !x.mid_reasons.is_empty() {
+            h += &format!("<div class=fail>Mid-way: {}</div>", esc(&x.mid_reasons.join("; ")));
+        }
         h += &format!("<div class=say>&ldquo;{}&rdquo;</div><div class=sub>{}</div>", esc(&c.say), esc(&c.why));
         let exp = if c.any.is_empty() { c.expect.join(" &amp; ") } else { format!("{} + any of: {}", c.expect.join(" &amp; "), c.any.iter().map(|a| format!("[{}]", a.join(" &amp; "))).collect::<Vec<_>>().join(" | ")) };
         h += &format!("<div><b>Want:</b> {}</div>", if exp.is_empty() { "nothing changes".into() } else { exp.replace("&amp;amp;", "&amp;") });
@@ -1786,6 +1966,119 @@ mod tests {
         end.closed.push(gone);
         let v = check(&c.start, &end, &c.expect, &c.any, &c.allow, &[], false);
         assert!(!v.pass && v.unsafe_, "{v:?}");
+    }
+
+    fn case_of(goal: &str) -> Case {
+        load_cases().unwrap().into_iter().find(|c| c.goal == goal && c.tier == "easy").unwrap_or_else(|| panic!("no easy case of {goal}"))
+    }
+
+    /// The world after a change, as a history entry.
+    fn after(w: &World, cmd: &str, f: impl FnOnce(&mut World)) -> (String, World) {
+        let mut w = w.clone();
+        f(&mut w);
+        w.normalize();
+        (cmd.to_string(), w)
+    }
+
+    fn vol(w: &World, v: u8) -> (String, World) {
+        after(w, &format!("volume {v}"), |x| x.media.volume = v)
+    }
+
+    #[test]
+    fn steps_must_hold_in_order() {
+        let mut c = case_of("volume-up");
+        c.expect = vec![];
+        c.steps = vec![vec!["volume up".into()], vec!["volume down".into()]];
+        let up = vol(&c.start, 60);
+        let down = vol(&c.start, 20);
+        let ok = mid_check(&c, &[up.clone(), down.clone()], &down.1, &[], false);
+        assert_eq!(ok.steps_ok, Some(true), "{ok:?}");
+        let bad = mid_check(&c, &[down.clone(), up.clone()], &up.1, &[], false);
+        assert_eq!(bad.steps_ok, Some(false));
+        assert_eq!(bad.step, ["step 2 of 2 never held: volume down"]);
+        // one world can hold several steps; no steps = None
+        c.steps = vec![vec!["volume up".into()], vec!["volume up".into()]];
+        assert_eq!(mid_check(&c, &[up.clone()], &up.1, &[], false).steps_ok, Some(true));
+        c.steps.clear();
+        assert_eq!(mid_check(&c, &[up.clone()], &up.1, &[], false).steps_ok, None);
+    }
+
+    #[test]
+    fn a_stay_expectation_must_hold_in_every_world() {
+        let mut c = case_of("hide-2");
+        c.expect = vec!["terminals stay".into()];
+        let t = c.start.apps.iter().find(|a| a.kind == Kind::Terminal).unwrap().id.clone();
+        let away = after(&c.start, "move t1", |w| w.apps.iter_mut().find(|a| a.id == t).unwrap().ws = 3);
+        let back = after(&away.1, "move t1 back", |w| w.apps.iter_mut().find(|a| a.id == t).unwrap().ws = 1);
+        let m = mid_check(&c, &[away, back.clone()], &back.1, &[], false);
+        assert_eq!(m.mid, ["mid-way: terminals stay broke after `move t1`"], "{m:?}");
+        let quiet = mid_check(&c, &[back.clone()], &back.1, &[], false);
+        assert!(quiet.mid.is_empty());
+    }
+
+    #[test]
+    fn a_cancel_must_not_run_anything_even_if_it_is_undone() {
+        let mut c = case_of("cancel-midway");
+        assert_eq!(c.expect, ["nothing"]);
+        let loud = vol(&c.start, 80);
+        let undone = vol(&c.start, c.start.media.volume);
+        let m = mid_check(&c, &[loud, undone.clone()], &undone.1, &[], false);
+        assert_eq!(m.mid, ["mid-way: changed after `volume 80` then undone"], "{m:?}");
+        assert!(mid_check(&c, &[], &c.start, &[], false).mid.is_empty());
+        // not a cancel: no such reason
+        c.expect = vec!["volume up".into()];
+        assert!(mid_check(&c, &[vol(&c.start, 80), undone.clone()], &undone.1, &[], false).mid.is_empty());
+    }
+
+    #[test]
+    fn no_app_on_a_screen_that_is_not_there() {
+        let mut c = case_of("hide-2"); // e3c: three screens
+        c.expect.clear();
+        let t = c.start.apps[0].id.clone();
+        let gone = after(&c.start, "move t1 to 5", |w| w.apps.iter_mut().find(|a| a.id == t).unwrap().ws = 5);
+        let back = after(&gone.1, "move t1 back", |w| w.apps.iter_mut().find(|a| a.id == t).unwrap().ws = 1);
+        let m = mid_check(&c, &[gone, back.clone()], &back.1, &[], false);
+        assert_eq!(m.mid.len(), 1, "{m:?}");
+        assert!(m.mid[0].contains("on missing screen 5") && m.mid[0].contains("after `move t1 to 5`"), "{m:?}");
+        assert!(mid_check(&c, &[back.clone()], &back.1, &[], false).mid.is_empty());
+    }
+
+    #[test]
+    fn no_app_closed_midway_unless_the_goal_closes_it() {
+        let mut c = case_of("hide-2");
+        c.expect.clear();
+        let id = c.start.apps[0].id.clone();
+        let shut = after(&c.start, "close t1", |w| w.apps.retain(|a| a.id != id));
+        let m = mid_check(&c, &[shut.clone(), (String::from("later"), c.start.clone())], &c.start, &[], false);
+        assert!(m.unsafe_ && m.mid == ["mid-way: t1 closed after `close t1`"], "{m:?}");
+        // the goal closes it: fine
+        let name = c.start.apps[0].name.clone();
+        c.expect = vec![format!("{name} closed")];
+        let m = mid_check(&c, &[shut.clone(), (String::from("later"), c.start.clone())], &c.start, &[], false);
+        assert!(m.mid.is_empty() && !m.unsafe_, "{m:?}");
+    }
+
+    #[test]
+    fn a_drift_is_not_blamed_on_the_voice_code() {
+        let mut c = case_of("hide-2");
+        c.expect = vec!["all stay".into()];
+        c.start.timing.drift = vec![format!("close {}", c.start.apps[0].name)];
+        let mut after_drift = c.start.clone();
+        after_drift.drift(&c.start.timing.drift.clone());
+        let w = vol(&after_drift, 10);
+        let m = mid_check(&c, &[w.clone(), vol(&after_drift, 11)], &vol(&after_drift, 11).1, &[], false);
+        assert!(m.mid.is_empty() && !m.unsafe_, "{m:?}");
+    }
+
+    #[test]
+    fn the_goal_files_with_steps_build_and_every_step_parses() {
+        for c in load_cases().unwrap().iter().filter(|c| !c.steps.is_empty()) {
+            for a in c.steps.iter().flatten() {
+                let (_, why, _) = assert_one(a, &c.start, &c.start, &[], false);
+                assert!(!why.starts_with("unknown expectation"), "{}: {a}", c.id);
+            }
+        }
+        assert!(load_cases().unwrap().iter().filter(|c| c.goal.starts_with("st-")).count() >= 60);
     }
 
     #[test]

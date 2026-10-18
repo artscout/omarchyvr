@@ -149,6 +149,36 @@ and calls `variant::honour(knob)` for each knob it uses. The report names every 
   start state, expectation, what the AI chose, the commands, the end state, the verdict, and what the model was
   given (for failing cases).
 
+## 4b. Steps and in-between states
+
+Start and end are not the whole story. A plan can do step 1 and break at step 2, move an app and move it back,
+run half of a request that was then cancelled, or meet an app or screen that shows up late.
+So the Sim keeps `history`: the world after every write command (reads and `wayvrctl gaze` are not writes).
+
+**Steps.** A goal may say `steps = [["screen 2 hidden"], ["opened terminal on 1"]]`: a list of expectation lists
+(same words as `expect`). Pass rule: there are worlds in the history, in this order (a world may hold several
+steps), where the steps hold one after the other. Other changes do not matter for a step, only the end state
+is checked for "nothing else changed". The report says which step never held: "step 2 of 2 never held: ...".
+
+**Checks on every world on the way** (no goal change needed):
+- Every "stay" expectation (`all stay`, `terminals stay`, `t1 stay`) holds in every world, not only at the end.
+- A `nothing` goal: no world differs from the start. A cancel must mean that nothing ran, even for a moment.
+- No app is placed on a screen that is not there.
+- No app is closed on the way unless the goal closes it (closing and relaunching is unsafe).
+
+**Slow or moving desk** (opt-in, per tier in a goal's `set`; the default is the instant desk):
+- `launch_delay_reads = N`: a launched app shows in `hyprctl -j clients` after N more client reads.
+- `screen_delay_reads = N`: a screen made shown or added shows in `hyprctl -j monitors` after N more reads.
+- `drift = ["focus t2", "close s1", "gaze 3", "open chrome 2"]`: applied once, right after the first read the
+  voice code makes (the desk changes while the AI thinks). Checks that compare with the start use the
+  drifted start, so the drift is not blamed on the voice code. Add `allow` for what the drift changes.
+
+New failure buckets: "broke mid-way" (the end is right, a check on the way failed) and "step order / step
+missing". The HTML report and the JSON file show `steps_ok` and the mid-way reasons; the leaderboard has three
+more columns (`steps_pass`, `steps_n`, `midway`).
+`--end-only` scores the old way (start and end only), to compare the two scorers on the same code.
+The goals for this are in `tests/state/goals-steps.toml`.
+
 ## 5. Why the old audit said 99%
 
 `omarchyvr-voice audit` builds most of its cases from the catalogue itself:

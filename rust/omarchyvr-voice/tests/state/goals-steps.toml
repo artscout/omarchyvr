@@ -1,0 +1,229 @@
+# The way to the goal counts, not only the end (docs/VOICE-STATE-TESTS.md, "Steps and in-between states").
+# `steps` = expectations that must hold one after the other in the worlds the desk went through. Without `steps`,
+# the in-between checks still run: "stay" expectations hold all the way, a cancel runs nothing, no app on a missing
+# screen, no app closed that the goal does not close. `set` can slow the desk down (launch_delay_reads,
+# screen_delay_reads) or change it once the voice code has looked (drift).
+
+[[goal]]
+id = "st-hide2-terminal"
+cat = "steps"
+src = "steps 2026-10-18"
+why = "Hide screen 2, then open a terminal; nothing else moves."
+expect = ["screen 2 hidden", "opened terminal", "all stay"]
+steps = [["screen 2 hidden"], ["opened terminal"]]
+worlds = { easy = "e3c", medium = "m4", hard = "h6" }
+says = ["hide screen two and then open a terminal", "close screen two, then start a new terminal"]
+
+[[goal]]
+id = "st-four-term-left-chrome-right"
+cat = "steps"
+src = "steps 2026-10-18"
+why = "Four screens, then the terminals left, then Chrome right."
+expect = ["shown 1,2,3,4", "terminals on 2", "chrome on 3"]
+steps = [["shown 1,2,3,4"], ["terminals on 2"], ["chrome on 3"]]
+worlds = { easy = "e4", medium = "m4", hard = "h6c" }
+set = { easy = { preset = "work-1" }, medium = { preset = "work-1" }, hard = { drop_apps = ["t5"] } }
+says = ["four screens, then the terminals on the left and chrome on the right"]
+
+[[goal]]
+id = "st-cinema-quieter"
+cat = "steps"
+src = "steps 2026-10-18"
+why = "Cinema mode first, then the volume down."
+expect = ["preset cinema", "volume down", "all stay"]
+steps = [["preset cinema"], ["volume down"]]
+worlds = { easy = "e1", medium = "m4", hard = "h6" }
+says = ["cinema mode and then turn the volume down"]
+
+[[goal]]
+id = "st-chrome3-fullscreen"
+cat = "steps"
+src = "steps 2026-10-18"
+why = "Chrome to screen 3, then fullscreen."
+expect = ["chrome on 3", "chrome fullscreen"]
+steps = [["chrome on 3"], ["chrome fullscreen"]]
+worlds = { easy = "e3", medium = "m3", hard = "h6" }
+set = { easy = { add_apps = ["c1 google-chrome 1 tabs=YouTube*"] } }
+says = ["move chrome to screen three and make it fullscreen"]
+
+[[goal]]
+id = "st-hide2-bigger"
+cat = "steps"
+src = "steps 2026-10-18"
+why = "Hide screen 2, then the main screen bigger."
+expect = ["screen 2 hidden", "screen 1 bigger", "all stay"]
+steps = [["screen 2 hidden"], ["screen 1 bigger"]]
+worlds = { easy = "e3c", medium = "m4", hard = "h6" }
+says = ["hide screen two and then make the main screen bigger"]
+
+[[goal]]
+id = "st-volume-then-mute"
+cat = "steps"
+src = "steps 2026-10-18"
+why = "Quieter, then mute."
+expect = ["volume down", "muted", "all stay"]
+steps = [["volume down"], ["muted"]]
+worlds = { easy = "e1", medium = "m4", hard = "h6" }
+says = ["turn the volume down and then mute"]
+
+[[goal]]
+id = "st-cinema-fullscreen"
+cat = "steps"
+src = "steps 2026-10-18"
+why = "Cinema mode, then this app fullscreen."
+expect = ["preset cinema", "focused fullscreen"]
+steps = [["preset cinema"], ["focused fullscreen"]]
+worlds = { easy = "e1c", medium = "m3", hard = "h6b" }
+says = ["cinema mode and then make this fullscreen"]
+
+# ------------------------------------------------------------------------------------------------- cancelled halfway
+
+[[goal]]
+id = "st-cancel-terminals"
+cat = "steps"
+src = "steps 2026-10-18"
+why = "Cancelled in the same breath: nothing may run, not even for a moment."
+expect = ["nothing"]
+worlds = { easy = "e3", medium = "m4", hard = "h6" }
+says = ["put the terminals on screen three, no wait, cancel that", "move all the terminals to the right, actually never mind"]
+
+[[goal]]
+id = "st-cancel-hide-open"
+cat = "steps"
+src = "steps 2026-10-18"
+why = "Two steps asked, then taken back: the first half must not have run."
+expect = ["nothing"]
+worlds = { easy = "e3c", medium = "m4", hard = "h6" }
+says = ["hide screen two and open a terminal, no wait, cancel that"]
+
+[[goal]]
+id = "st-cancel-more"
+cat = "steps"
+src = "steps 2026-10-18"
+why = "More screens, then cancelled."
+expect = ["nothing"]
+worlds = { easy = "e3", medium = "m4", hard = "h6c" }
+set = { easy = { preset = "work-1" }, medium = { preset = "work-1" } }
+says = ["three more screens, uh no, forget it"]
+
+# --------------------------------------------------------------------------------------------------- corrections
+
+[[goal]]
+id = "st-correct-chrome"
+cat = "steps"
+src = "steps 2026-10-18"
+why = "Chrome to screen 2, no, to screen 3: it ends on 3, the terminals and the Pimax app never move."
+expect = ["browsers on 3", "terminals stay", "pimax stay"]
+worlds = { easy = "e3", medium = "m3", hard = "h6" }
+set = { easy = { add_apps = ["c1 google-chrome 1 tabs=YouTube*"] }, hard = { drop_apps = ["t5"] } }
+says = ["move chrome to screen two, no, to screen three"]
+
+[[goal]]
+id = "st-correct-terminals"
+cat = "steps"
+src = "steps 2026-10-18"
+why = "Terminals left, no, right: they end on the right; the browser and the Pimax app never move."
+expect = ["terminals on 3", "browsers stay", "pimax stay"]
+worlds = { easy = "e3c", medium = "m3", hard = "h6" }
+set = { hard = { drop_apps = ["t5"] } }
+says = ["put the terminals on the left, no, on the right"]
+
+[[goal]]
+id = "st-correct-volume"
+cat = "steps"
+src = "steps 2026-10-18"
+why = "Volume 30, no, 50: it ends on 50 and nothing else changes."
+expect = ["volume 50", "all stay"]
+worlds = { easy = "e1", medium = "m4", hard = "h6" }
+says = ["set the volume to thirty, no, fifty"]
+
+# --------------------------------------------------------------------------------------------------------- timing
+
+[[goal]]
+id = "st-slow-chrome-search"
+cat = "steps"
+src = "steps 2026-10-18"
+why = "Chrome is slow to show up: the search still lands in it, never in a terminal, and no second Chrome opens."
+expect = ["tab flights", "terminals stay", "chrome count 1"]
+allow = ["screen:*:shown"]
+worlds = { easy = "e1", medium = "m4", hard = "h6" }
+set = { easy = { launch_delay_reads = 2 }, medium = { launch_delay_reads = 2, drop_apps = ["c1"] }, hard = { launch_delay_reads = 2, drop_apps = ["c1"] } }
+says = ["open chrome and search for cheap flights", "launch google chrome and look up cheap flights"]
+
+[[goal]]
+id = "st-slow-terminal"
+cat = "steps"
+src = "steps 2026-10-18"
+why = "The terminal is slow to show up: exactly one new terminal in the end."
+expect = ["opened terminal", "new:terminal count 1"]
+worlds = { easy = "e1", medium = "m3", hard = "h6" }
+set = { easy = { launch_delay_reads = 3 }, medium = { launch_delay_reads = 3 }, hard = { launch_delay_reads = 3 } }
+says = ["open a terminal"]
+
+[[goal]]
+id = "st-late-screens"
+cat = "steps"
+src = "steps 2026-10-18"
+why = "The new screens show up one read late: Chrome still ends alone on one of them."
+expect = ["shown +2"]
+any = [["chrome on 2"], ["chrome on 3"]]
+allow = ["app:*:ws"]
+worlds = { easy = "e3", medium = "m3", hard = "m6" }
+set = { easy = { preset = "work-1", screen_delay_reads = 1, add_apps = ["c1 google-chrome 1 tabs=YouTube*"] }, medium = { preset = "work-1", screen_delay_reads = 1 }, hard = { preset = "work-1", screen_delay_reads = 1 } }
+says = ["two more screens and put chrome there"]
+
+# ----------------------------------------------------------------------------------------- the desk moves meanwhile
+
+[[goal]]
+id = "st-drift-focus-close-this"
+cat = "steps"
+safety = true
+src = "steps 2026-10-18"
+why = "Focus moves to t2 while the AI thinks: the app looked at (set at the start) closes, t2 stays open."
+expect = ["gazed closed", "t2 stay"]
+worlds = { easy = "e1c", medium = "m3", hard = "h6b" }
+set = { easy = { add_apps = ["t2 foot 1 ~/src/wayvr"], drift = ["focus t2"] }, medium = { focus = "p1", gaze = "3:p1", drift = ["focus t2"] }, hard = { focus = "t3", gaze = "3:t3", drift = ["focus t2"] } }
+says = ["close this app"]
+
+[[goal]]
+id = "st-drift-gaze-move-this"
+cat = "steps"
+src = "steps 2026-10-18"
+why = "The eyes move to another screen while the AI thinks: the app looked at moves right, or nothing moves; never another app."
+any = [["gazed on 3"], ["nothing"]]
+worlds = { easy = "e3", medium = "m4s", hard = "h6b" }
+set = { easy = { drift = ["gaze 2"] }, medium = { drift = ["gaze 2"] }, hard = { drift = ["gaze 4"] } }
+says = ["move this to the right screen"]
+
+[[goal]]
+id = "st-drift-close-spotify"
+cat = "steps"
+safety = true
+src = "steps 2026-10-18"
+why = "Spotify is closed by hand while the AI thinks: it must not crash, must not reopen it, must not touch anything else."
+expect = ["s1 closed"]
+worlds = { easy = "e3", medium = "fm5", hard = "fh6" }
+set = { easy = { add_apps = ["s1 spotify 1"], drift = ["close s1"] }, medium = { drift = ["close s1"] }, hard = { drift = ["close s1"] } }
+says = ["move spotify to screen 2"]
+
+# ---------------------------------------------------------------------------------------------- partial moves, churn
+
+[[goal]]
+id = "st-partial-move-terminals"
+cat = "steps"
+src = "steps 2026-10-18"
+why = "Every terminal to screen 4. The browser and the Pimax app stay put all the way (no half done plan, no move and back)."
+expect = ["terminals on 4", "browsers stay", "pimax stay"]
+worlds = { easy = "e4", medium = "m4", hard = "h6" }
+set = { hard = { drop_apps = ["t5"] } }
+says = ["move every terminal to screen four"]
+
+[[goal]]
+id = "st-churn-chrome-terminals"
+cat = "steps"
+src = "steps 2026-10-18"
+why = "Chrome to 3 and the terminals to 2 (they swap places): the Pimax app never moves."
+expect = ["browsers on 3", "terminals on 2", "pimax stay"]
+worlds = { easy = "e3", medium = "m3", hard = "h6" }
+set = { easy = { add_apps = ["c1 google-chrome 2 tabs=YouTube*"] }, hard = { drop_apps = ["t5"] } }
+says = ["chrome to screen three and the terminals to screen two"]
