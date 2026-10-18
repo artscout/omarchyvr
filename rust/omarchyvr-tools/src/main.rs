@@ -24,6 +24,7 @@ usage: omarchyvr <subcommand> [options]
   info [--controllers]                     serial, version, interfaces
   vr start|stop|status|steam-options       one-click VR: preflight + monado-service (omarchyvr vr help)
   desk start|stop|status [--no-passthrough] [--eye]   desk mode: Monado + passthrough (main app) + WayVR overlay (omarchyvr desk help)
+  eye learn status|forget, eye check       learning from clicks and the quick eye check in Work (docs/EYE.md)
   home status|games|plan|go|run|panel|set   the VR home in the headset: Work, SteamVR, games, room setup, exit (omarchyvr home help, docs/VR-HOME.md)
   auto status|events|pause|resume|wake|sleep|pair left|right|set-mode [desk|game] [--runtime monado|steamvr] [--preset P]
                                            control the auto-mode daemon omarchyvr-autod (docs/AUTO-MODE.md)
@@ -57,6 +58,7 @@ fn run() -> CliResult {
         "info" => info::run(a),
         "vr" => omarchyvr_tools::vr::run(a),
         "desk" => omarchyvr_tools::vr::desk::run(a),
+        "eye" => omarchyvr_tools::vr::eye_learn::run(a),
         "home" => omarchyvr_tools::vr::home::run(a),
         "mount-shared" => mount_shared::run(a),
         "import-previous" => import_cmd::run(a),

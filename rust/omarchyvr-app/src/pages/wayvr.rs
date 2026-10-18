@@ -117,6 +117,10 @@ pub fn body(ui: &mut Ui, app: &mut PimaxApp) {
         switch_row(ui, &mut s.auto_arrange, "Auto-arrange apps", Some("Off (default): apps stay on the screen where you opened them and move only when you ask (\"move left\"). On: a new app of another kind is sent to its own screen."), true);
         switch_row(ui, &mut s.hide_grab_help, "Hide grab hint", None, true);
         switch_row(ui, &mut s.controllers_in_work, "Controllers in Work", Some("Off = hands only."), true);
+        let mut steady = s.click_steady_px > 0.0;
+        if switch_row(ui, &mut steady, "Steady clicks", Some("A click stays where you pressed until the laser moves clearly. Stops shaky clicks turning into drags."), true).changed() {
+            s.click_steady_px = if steady { 32.0 } else { 0.0 };
+        }
         switch_row(ui, &mut s.controller_models, "Controller models", Some("A 3D controller in each hand in Work, like SteamVR shows; the pointer ray leaves its front tip."), true);
         switch_row(ui, &mut s.controller_axes, "Pointer and grip axes", Some("Debug: coloured axes on the controllers, to check the pointer in the headset."), true);
         widgets::setting(ui, "Push / pull speed", None, |ui| {

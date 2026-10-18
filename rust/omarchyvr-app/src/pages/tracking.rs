@@ -94,6 +94,10 @@ fn controllers(ui: &mut Ui, app: &mut PimaxApp) {
         if r.changed() {
             app.core.set_controllers_in_work(use_ctrl);
         }
+        let mut steady = app.core.wayvr.settings.click_steady_px > 0.0;
+        if switch_row(ui, &mut steady, "Steady clicks", Some("A click stays where you pressed until the laser moves clearly. Stops shaky clicks turning into drags. Takes effect at the next Work start."), true).changed() {
+            app.core.set_click_steady(steady);
+        }
         ctrl_angle(ui, app);
     });
 }
@@ -237,6 +241,40 @@ fn eyes(ui: &mut Ui, app: &mut PimaxApp) {
         let mut mouse = app.core.eye_settings.mouse;
         if switch_row(ui, &mut mouse, "Eyes as a mouse", Some("Your eyes move the pointer and can click. Off (default): your eyes only show a dot. Takes effect at the next Work start."), app.core.toggles.eye).changed() {
             app.core.set_eye_mouse(mouse);
+        }
+        // learning from clicks: never input; the quick check and "forget" talk to the running session
+        let mut learn = app.core.eye_settings.learn;
+        if switch_row(ui, &mut learn, "Learn from my clicks", Some("Each click teaches the eye tracker where you really looked. Your eyes still never click unless Eyes as a mouse is on. Takes effect at the next Work start."), app.core.toggles.eye).changed() {
+            app.core.set_eye_learn(learn);
+        }
+        let work_runs = app.core.live.alive("wayvr") || app.core.demo;
+        if work_runs {
+            app.core.eye_learn_refresh();
+        }
+        let learn_text = match (app.core.eye_learn_text(), work_runs) {
+            (Some(t), _) => t,
+            (None, true) => "Asking the session...".into(),
+            (None, false) => "Start Work to see what it learned".into(),
+        };
+        widgets::status(ui, &learn_text, p.dim);
+        ui.horizontal_wrapped(|ui| {
+            let busy = app.core.task_busy("gazecheck");
+            let r = widgets::ibutton(ui, icon::CHECK_CIRCLE, "Quick eye check", work_runs && !busy && app.core.toggles.eye);
+            let r = if work_runs { r.on_hover_text("Shows a dot in front of you in the headset: look at it for a moment. Takes up to 8 seconds.") } else { r.on_disabled_hover_text("Start Work first") };
+            if r.clicked() {
+                app.core.eye_quick_check();
+            }
+            let r = widgets::ibutton(ui, icon::ARROWS_CLOCKWISE, "Forget what it learned", work_runs && !app.core.task_busy("gazelearn"));
+            let r = if work_runs { r.on_hover_text("Throws away the lessons of the running session.") } else { r.on_disabled_hover_text("Start Work first") };
+            if r.clicked() {
+                app.core.eye_learn_forget();
+            }
+        });
+        if !work_runs {
+            widgets::status(ui, "Start Work first", p.dim);
+        }
+        if let Some((t, ok)) = app.core.eye_check.clone() {
+            widgets::status(ui, &t, if ok { p.ok } else { p.warn });
         }
         // which start list and which calibration: in plain words, with the switch between the built-in test calibration and yours
         let own = app.core.facts.eye_calibration;

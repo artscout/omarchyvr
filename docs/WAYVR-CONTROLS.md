@@ -89,3 +89,9 @@ By default, pointing at a screen (controller or hand) leaves the real desktop cu
 press the trigger or grab. App: Desktop page > Next desk start > "Pointing moves the cursor" (`pointing_moves_cursor`
 in `wayvr-desk.conf`, default off). It is written as WayVR `focus_follows_mouse_mode` (the inverse) in
 `conf.d/50-pimax-app.yaml`, and the WayVR fork's own default is now `true` too. Gaze never moves it (Tracking > Eyes).
+
+## Steady clicks (2026-10-18)
+A click press holds its point until the laser has moved more than N pixels, so shaky hands do not turn a click into
+a drag. App: Tracking > Controllers > "Steady clicks" (also Desktop > Next desk start). Setting `click_steady_px` in
+`wayvr-desk.conf` (default 32, 0 = off), written as `click_steady_px` in `conf.d/50-pimax-app.yaml`; WayVR reads it at
+start. See docs/EYE.md for the gaze learning that shares the click.

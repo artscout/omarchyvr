@@ -238,3 +238,40 @@ Steps 5-8 need "Eyes as a mouse" on (otherwise `wayvrctl gaze` answers `tracking
 9. Run `omarchyvr desk start --no-eye`: no dot; `55-eye.yaml` sets every gaze key false (even with an old
    `20-gaze.yaml` in conf.d). `wayvrctl gaze` gives `"tracking":false`.
 10. Run `omarchyvr desk start --eye`: eye tracking on, still only the dot (no pointer) unless "Eyes as a mouse" is on.
+
+## Learning from clicks, hold-to-refine and the quick check (2026-10-18)
+
+WayVR can learn a small correction of the gaze from your clicks, so the gaze point lands closer to where you really
+look. The method is ported from Frametop (MIT, github.com/Frametop/frametop, `gaze/gazecal.py` `LiveCorrection`);
+any accuracy numbers Frametop publishes are theirs, not ours.
+
+**Safety rule (unchanged): by default the eyes never click.** Learning only moves the gaze point WayVR shows (the
+dot); it never makes input. Lessons also come from clicks of a controller laser (passive: they only teach). The eyes
+click only with the one switch "Eyes as a mouse" (`gaze_mouse`).
+
+| what | app control | where it is saved | WayVR key (written by omarchyvr) |
+|---|---|---|---|
+| Learn from my clicks | Tracking > Eyes > "Learn from my clicks" (default on) | `learn=on\|off` in `eye.conf` | `gaze_learn`: `learn` AND eye tracking on |
+| Hold-to-refine gaze clicks | part of "Eyes as a mouse", no switch of its own | `gaze_mouse` in `eye.conf` | `gaze_refine` = `gaze_mouse` (WayVR: effective only with `gaze_pointer`) |
+| Calibration fingerprint | automatic | the user's `eye-calibration.toml` | `gaze_learn_key`: first 12 hex of a 64-bit FNV-1a hash of the file, `""` without a file; lessons with another key are discarded |
+| Steady clicks | Tracking > Controllers and Desktop > "Steady clicks" (default on) | `click_steady_px` in `wayvr-desk.conf` | `click_steady_px: 32` (0 = off) in `conf.d/50-pimax-app.yaml` |
+
+`conf.d/55-eye.yaml` stays the ONE writer of the gaze keys (`rust/omarchyvr-tools/src/vr/eye_desk.rs`), rewritten at
+every start; with eye tracking off, or `gaze_mouse` off, `gaze_pointer`, `gaze_target`, `gaze_over_controllers` and
+`gaze_refine` are false in every mode. Changes take effect at the next Work start.
+
+**Steady clicks:** a click press holds its point until the laser has moved more than 32 px, so a shaky click does not
+turn into a drag.
+
+**Quick eye check** (Tracking > Eyes, Work must run): a dot appears 1.5 m ahead in the headset and a toast says "Look
+at the dot in front of you" (the same in-headset toast as the Exit Work prompt; there is no speech output installed).
+WayVR waits up to 8 s for a steady look and answers how far off the gaze was before and after the learned correction
+("Your eyes were 2.1 deg off; now 0.4 deg") or why it could not ("no gaze", "not steady", "timed out", "learning off").
+**Forget what it learned** clears the lessons.
+
+CLI (the engine behind the app, for agents and tests): `omarchyvr eye learn status [--json]`,
+`omarchyvr eye learn forget`, `omarchyvr eye check [--json]`; they call `wayvrctl gaze-learn status --json`,
+`wayvrctl gaze-learn forget` and `wayvrctl gaze-check --json`.
+
+Files: lessons in `$XDG_STATE_HOME/omarchyvr/gaze-lessons.json` (fallback `~/.local/state/omarchyvr/`); settings in
+`~/.config/omarchyvr/eye.conf` and `wayvr-desk.conf`.

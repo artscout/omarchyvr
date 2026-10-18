@@ -38,6 +38,7 @@ pub mod desk;
 pub mod dump;
 pub mod edid;
 pub mod eye_desk;
+pub mod eye_learn;
 pub mod game_check;
 pub mod gate;
 pub mod hand_models;
