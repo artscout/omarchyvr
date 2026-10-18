@@ -1,9 +1,14 @@
 #!/bin/bash
 # SPDX-License-Identifier: MIT OR Apache-2.0
 #
-# omarchyvr installer: the only command a user types after `git clone --recursive` (./install.sh at the repo root).
+# omarchyvr installer: the only command a user types (./install.sh in the unpacked release, or at the root of a
+# `git clone --recursive`).
 #
 #   ./install.sh [options]
+#
+# Two modes. PREBUILT (the default inside an unpacked release tarball: MANIFEST.txt sits next to this script) checks the
+# files against MANIFEST.txt and copies the ready-made set (no compiler, no 40 GB); FROM SOURCE (the default in a git
+# clone, or --from-source) builds everything as below. Both end in the same installed layout and the same steps 4-7.
 #
 # 1. checks the machine (distro, compositor, GPU and driver, Secure Boot, disk, packages, headset), read-only;
 # 2. builds everything at nice 19 with 8 jobs: the Rust workspace, Monado (forks/monado, every feature in one build),
@@ -18,6 +23,10 @@
 # Options:
 #   --prefix DIR        install into DIR instead of ~/.local (a staging install: no user config, units, autostart,
 #                       OpenXR/SteamVR registration or root job; they are printed as WOULD lines)
+#   --from-source       build from the forks even inside a release tarball (needs a git clone with the forks)
+#   --stage-only        maintainers (packaging/release/build-release.sh): build into --prefix, copy the set there and
+#                       stop: no user config, units, registration, downloads, root job or app (implies --prefix, --no-lab-data)
+#   --no-lab-data       never link private lab data (a release is built from the public stand-ins only)
 #   --no-root           never run the root job (the app's wizard runs it later)
 #   --dry-run-root      print exactly what the root job would do, change nothing as root
 #   --nvidia auto|yes|no  patch the NVIDIA driver: auto = only on a tested version with a supported headset plugged
@@ -51,10 +60,14 @@ if [[ -r $REPO/patches/nvidia/tested-versions.txt ]]; then
 fi
 
 PREFIX="$HOME/.local" NO_ROOT=0 DRY_ROOT=0 NVIDIA_MODE=auto LAB_DATA="" GPU_SPEECH=0 HAND_MODELS=0 AI_MODELS=0 NV_ALLOW_UNTESTED=no
-NO_DL=0 INSTALL_PKGS=0 OPEN_APP=1 JOBS=8 DRY=0
+NO_DL=0 INSTALL_PKGS=0 OPEN_APP=1 JOBS=8 DRY=0 MODE=auto STAGE_ONLY=0 NO_LAB=0
 while [[ $# -gt 0 ]]; do
 	case $1 in
 	--prefix) PREFIX=$(realpath -m "${2:?}"); shift ;;
+	--from-source) MODE=source ;;
+	--prebuilt) MODE=prebuilt ;;
+	--stage-only) STAGE_ONLY=1; NO_LAB=1; NO_ROOT=1; OPEN_APP=0 ;;
+	--no-lab-data) NO_LAB=1 ;;
 	--no-root) NO_ROOT=1 ;;
 	--dry-run-root) DRY_ROOT=1 ;;
 	--nvidia) NVIDIA_MODE=${2:?}; shift ;;
@@ -68,7 +81,7 @@ while [[ $# -gt 0 ]]; do
 	--install-packages) INSTALL_PKGS=1 ;;
 	--no-app) OPEN_APP=0 ;;
 	-j) JOBS=${2:?}; shift ;;
-	-h | --help) sed -n '3,39p' "$0"; exit 0 ;;
+	-h | --help) sed -n '3,49p' "$0"; exit 0 ;;
 	*) die "unknown option $1 (see --help)" ;;
 	esac
 	shift
@@ -78,6 +91,12 @@ done
 
 STAGING=0
 [[ "$PREFIX" == "$HOME/.local" ]] || STAGING=1
+[[ $MODE != auto ]] || MODE=$(release_mode "$REPO")
+[[ $STAGE_ONLY == 0 || $STAGING == 1 ]] || die "--stage-only needs --prefix DIR"
+[[ $STAGE_ONLY == 0 || $MODE == source ]] || die "--stage-only builds from source"
+if [[ $MODE == prebuilt ]]; then
+	[[ -f $REPO/MANIFEST.txt && -d $REPO/lib/omarchyvr ]] || die "--prebuilt needs an unpacked release (MANIFEST.txt and lib/omarchyvr next to install.sh)"
+fi
 BIN="$PREFIX/bin"
 LIBDIR="$PREFIX/lib/omarchyvr"
 SHARE="$PREFIX/share/omarchyvr"
@@ -120,7 +139,12 @@ if [[ $STAGING == 0 && ! -s "$CONF/omarchyvr/headset-calibration.xml" ]]; then
 fi
 manifest_init
 
-say "omarchyvr install from $REPO ($(git -C "$REPO" describe --always --dirty 2>/dev/null || echo '?'))"
+if [[ $MODE == prebuilt ]]; then
+	VERSION=$(manifest_field "$REPO" version) COMMIT=$(manifest_field "$REPO" commit)
+	say "omarchyvr install of the prebuilt release $VERSION (commit ${COMMIT:0:9}) from $REPO"
+else
+	say "omarchyvr install from $REPO ($(git -C "$REPO" describe --always --dirty 2>/dev/null || echo '?'))"
+fi
 note "prefix $PREFIX$([[ $STAGING == 1 ]] && echo ' (staging: no user config, no root job)'), build dir $CACHE"
 
 # ==== 1. requirements (read only) ===================================================================================
@@ -208,18 +232,25 @@ elif [[ $NV_PLAN == patch ]]; then
 	note "headset display: not found (no EDID with the Pimax id): the EDID override step is skipped"
 fi
 FREE_GB=$(df -BG --output=avail "$(dirname "$CACHE")" | tail -1 | tr -dc 0-9)
-note "disk: ${FREE_GB} GB free for the build (needs about 40 GB)"
-[[ ${FREE_GB:-0} -ge 40 ]] || REQ_FAIL+=("not enough disk space: ${FREE_GB} GB free, 40 GB needed")
-[[ -f "$REPO/forks/monado/CMakeLists.txt" && -f "$REPO/forks/wayvr/Cargo.toml" ]] ||
-	REQ_FAIL+=("the forks are missing: clone with --recursive (or: git submodule update --init --recursive)")
+if [[ $MODE == prebuilt ]]; then
+	NEED_GB=3
+	note "disk: ${FREE_GB} GB free (the prebuilt set needs about $NEED_GB GB)"
+else
+	NEED_GB=40
+	note "disk: ${FREE_GB} GB free for the build (needs about 40 GB)"
+fi
+[[ ${FREE_GB:-0} -ge $NEED_GB ]] || REQ_FAIL+=("not enough disk space: ${FREE_GB} GB free, $NEED_GB GB needed")
+if [[ $MODE == source ]]; then
+	[[ -f "$REPO/forks/monado/CMakeLists.txt" && -f "$REPO/forks/wayvr/Cargo.toml" ]] ||
+		REQ_FAIL+=("the forks are missing: clone with --recursive (or: git submodule update --init --recursive)")
+fi
 
-BUILD_PKGS=(git base-devel cmake ninja rust clang pkgconf python patch eigen opencv onetbb boost boost-libs fmt lz4
-	vulkan-headers vulkan-icd-loader glslang shaderc hidapi libusb sdl2-compat gstreamer gst-plugins-base libjpeg-turbo
-	libbsd bluez-libs wayland wayland-protocols libdrm libxkbcommon libx11 libxcb libxrandr openxr pipewire dbus
-	systemd-libs alsa-lib fontconfig libepoxy qt6-base)
+# the lists live in lib.sh: from source needs the build packages; the prebuilt set needs only the runtime ones
+if [[ $MODE == prebuilt ]]; then BUILD_PKGS=("${OVR_RUNTIME_PKGS[@]}"); else BUILD_PKGS=("${OVR_BUILD_PKGS[@]}"); fi
 RUN_PKGS=(polkit)
-[[ $HAND_MODELS == 1 ]] && BUILD_PKGS+=(git-lfs)
+[[ $HAND_MODELS == 1 && $MODE == source ]] && BUILD_PKGS+=(git-lfs)
 MISSING_BUILD=$(pacman -T "${BUILD_PKGS[@]}" 2>/dev/null | tr '\n' ' ' || true)
+[[ -z ${OVR_SKIP_PACKAGES:-} || $STAGING == 0 ]] || MISSING_BUILD="" # tests only (staging): the host's packages do not matter
 # rehearsals only (staging): OVR_ALLOW_MISSING="boost" builds without those packages and skips what needs them
 SKIP_BASALT=0
 if [[ $STAGING == 1 && -n ${OVR_ALLOW_MISSING:-} ]]; then
@@ -234,11 +265,11 @@ fi
 MISSING_RUN=$(pacman -T "${RUN_PKGS[@]}" 2>/dev/null | tr '\n' ' ' || true)
 if [[ -n ${MISSING_BUILD// /} ]]; then
 	if [[ $INSTALL_PKGS == 1 && $STAGING == 0 ]]; then
-		say "Installing the missing build packages (one password prompt): $MISSING_BUILD"
+		say "Installing the missing $([[ $MODE == prebuilt ]] && echo runtime || echo build) packages (one password prompt): $MISSING_BUILD"
 		# shellcheck disable=SC2086
 		pkexec /usr/bin/pacman -S --needed --noconfirm $MISSING_BUILD || die "pacman failed"
 	else
-		REQ_FAIL+=("missing build packages: $MISSING_BUILD (rerun with --install-packages, or install them with pacman)")
+		REQ_FAIL+=("missing $([[ $MODE == prebuilt ]] && echo runtime || echo build) packages: $MISSING_BUILD (rerun with --install-packages, or install them with pacman)")
 	fi
 fi
 pacman -Q steam >/dev/null 2>&1 || note "Steam is not installed: install it (multilib) and SteamVR in Steam to play games; the desk works without"
@@ -255,14 +286,25 @@ if [[ $STAGING == 0 ]]; then
 	for p in monado-service vrserver wayvr; do pgrep -x "$p" >/dev/null 2>&1 && RUNNING+="$p "; done
 fi
 
-# ==== 2. sources: lab data, pinned upstreams =========================================================================
+# ==== 2. prebuilt: check the files; from source: lab data and pinned upstreams ======================================
+if [[ $MODE == prebuilt ]]; then
+	say "2/7 Checking the release files against MANIFEST.txt"
+	verify_release "$REPO" || die "the release files do not match MANIFEST.txt (a damaged download?): download it again and compare the .sha256 file. Nothing was changed."
+	note "all files match MANIFEST.txt"
+	[[ -z $RUNNING ]] || die "a VR session is running ($RUNNING): nothing is installed during a session. Stop VR in the app and run ./install.sh again."
+	vr_free
+fi
+if [[ $MODE == source ]]; then # steps 2 and 3 (sources, build): skipped by the prebuilt release
 say "2/7 Sources"
-if [[ -z $LAB_DATA ]]; then
+if [[ $NO_LAB == 1 ]]; then LAB_DATA=""
+elif [[ -z $LAB_DATA ]]; then
 	for c in "${PIMAX_LAB_DATA:-}" "$REPO/.claude/lab/repo" "$HOME/omarchyvr/.claude/lab/repo"; do
 		[[ -n $c && -d $c ]] && { LAB_DATA=$c; break; }
 	done
 fi
-if [[ -n $LAB_DATA && -d $LAB_DATA ]]; then
+if [[ $NO_LAB == 1 ]]; then
+	note "lab data: not linked (--no-lab-data / --stage-only): the eye cold-start list is the public BASE list"
+elif [[ -n $LAB_DATA && -d $LAB_DATA ]]; then
 	note "lab data: $LAB_DATA (the eye cold-start list; linked into the tree before the build)"
 	"$REPO/tools/lab-data.sh" link "$LAB_DATA" | sed 's/^/    /'
 else
@@ -305,14 +347,13 @@ say "3/7 Building (nice 19, $JOBS jobs; log: $LOG)"
 : >"$LOG"
 # Nothing is built while a VR session runs (builds take the CPU and the graphics card from the compositor and made VR
 # drop frames: docs/research/perf-2026-10-17.md); checked before every step, a session may start during the build.
-vr_free() {
-	[[ ${OMARCHYVR_ALLOW_DURING_VR:-0} == 1 ]] && return 0
-	local what
-	what=$("$REPO/tools/vr-busy.sh") && return 0
-	die "a VR session is running (${what#busy: }): nothing is built during a session (it makes VR drop frames). Stop VR in the app and run ./install.sh again (the finished parts of the build are reused)."
-}
+# vr_free is in lib.sh
 build() { local what=$1; shift; vr_free; note "$what"; if ! heavy "$@" >>"$LOG" 2>&1; then tail -30 "$LOG" >&2; die "$what failed (full log: $LOG)"; fi; }
 export CARGO_TARGET_DIR="$CARGO_TARGET"
+# OVR_CMAKE_EXTRA="-DA=b|-DC=d": extra CMake arguments for Basalt and Monado (packaging/release: path remapping,
+# --as-needed). Empty for every normal build.
+CMAKE_EXTRA=()
+if [[ -n ${OVR_CMAKE_EXTRA:-} ]]; then IFS='|' read -ra CMAKE_EXTRA <<<"$OVR_CMAKE_EXTRA"; fi
 HASH=$(git -C "$REPO" rev-parse --short=9 HEAD)
 build "Rust workspace (every binary, and the static libraries Monado links)" \
 	env PIMAX_GIT_HASH="$HASH" cargo build --manifest-path "$REPO/rust/Cargo.toml" --release --locked --workspace -j "$JOBS"
@@ -332,7 +373,7 @@ if [[ $SKIP_BASALT == 1 ]]; then
 	warn "Basalt: skipped in this rehearsal (boost headers missing on this PC)"
 elif [[ ! -f "$BASALT_PREFIX/lib/libbasalt.so" ]] || [[ "$(cat "$BASALT_PREFIX/.commit" 2>/dev/null)" != "$BASALT_COMMIT" ]]; then
 	build "Basalt ${BASALT_COMMIT:0:9} (6DoF; the longest step)" cmake -S "$CACHE/src/basalt" -B "$CACHE/basalt-build" -G Ninja \
-		-DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_INSTALL_PREFIX="$BASALT_PREFIX" -DBASALT_BUILD_SHARED_LIBRARY_ONLY=ON
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_INSTALL_PREFIX="$BASALT_PREFIX" -DBASALT_BUILD_SHARED_LIBRARY_ONLY=ON "${CMAKE_EXTRA[@]}"
 	build "Basalt (compile)" ninja -C "$CACHE/basalt-build" -j "$JOBS"
 	build "Basalt (install)" ninja -C "$CACHE/basalt-build" install
 	echo "$BASALT_COMMIT" >"$BASALT_PREFIX/.commit"
@@ -353,7 +394,8 @@ build "Monado (forks/monado, configure)" cmake -S "$REPO/forks/monado" -B "$MONA
 	-DPIMAX_LIBPIMAX_DIR="$REPO/libpimax" -DPIMAX_RUST_TARGET_DIR="$REL" \
 	-DPIMAX_CAM_DIR="$REPO/rust/pimax-cam" -DPIMAX_EYE_DIR="$REPO/rust/pimax-eye" -DPIMAX_HANDS_DIR="$REPO/rust/pimax-hands" \
 	-DPIMAX_LENS_DIR="$REPO/rust/pimax-lens" \
-	-DONNXRuntime_ROOT_DIR="$ORT_DIR" -DONNXRuntime_INCLUDE_DIR="$ORT_DIR/include" -DONNXRuntime_LIBRARY="$ORT_DIR/lib/libonnxruntime.so"
+	-DONNXRuntime_ROOT_DIR="$ORT_DIR" -DONNXRuntime_INCLUDE_DIR="$ORT_DIR/include" -DONNXRuntime_LIBRARY="$ORT_DIR/lib/libonnxruntime.so" \
+	"${CMAKE_EXTRA[@]}"
 # the fresh cache must match the tested build's options (installer/monado-cache.expect)
 BAD=0
 while IFS= read -r l; do
@@ -408,12 +450,46 @@ if [[ $GPU_SPEECH == 1 ]]; then
 	record dir "$LIBDIR/whisper.cpp" REBUILD "whisper.cpp ${WHISPER_COMMIT:0:9} (Vulkan)"
 fi
 
+fi # end of the from-source steps 2 and 3
+
 # ==== 4. install the set (together) =================================================================================
 say "4/7 Installing into $PREFIX"
 if [[ -n $RUNNING ]]; then
 	die "a VR session is running ($RUNNING): the set is built but not installed. Stop VR in the app and run ./install.sh again (it reuses the build)."
 fi
 mkdir -p "$BIN"
+if [[ $MODE == prebuilt ]]; then
+	# the release holds the finished set in the layout of the installed prefix: bin/, lib/omarchyvr/*, share/omarchyvr/data
+	HASH=${COMMIT:0:9}
+	for b in "${OVR_BINS[@]}"; do
+		[[ -x $REPO/bin/$b ]] || die "the release lacks bin/$b"
+		put "$REPO/bin/$b" "$BIN/$b" 755 REBUILD "omarchyvr $HASH (release $VERSION)"
+	done
+	cap_keep_begin "$SERVICE"
+	for t in "$REPO"/lib/omarchyvr/*/; do
+		t=$(basename "$t")
+		install_tree "$REPO/lib/omarchyvr/$t" "$LIBDIR/$t" REBUILD "$t (release $VERSION)"
+	done
+	CAP_STATE=$(cap_keep_end "$SERVICE")
+	case $CAP_STATE in
+	unchanged | kept) note "realtime permission (cap_sys_nice): kept (monado-service has the same bytes)" ;;
+	changed) note "Monado changed: its realtime permission is set again with one password (the app offers it at its next start)" ;;
+	esac
+	# the files that hold absolute paths are written here, for this prefix (never shipped)
+	write_runtime_json "$MONADO_BUILD" || die "the release lacks libopenxr_monado.so"
+	note "OpenXR runtime manifest: $MONADO_BUILD/openxr_monado-dev.json"
+	for m in "${OVR_MARKERS[@]}"; do
+		[[ $(grep -ac -- "$m" "$SERVICE" || true) -gt 0 ]] || die "Monado marker '$m' missing from $SERVICE: refusing this release"
+	done
+	note "Monado markers: all ${#OVR_MARKERS[@]} present"
+	[[ -f "$MONADO_BUILD/steamvr-monado/driver.vrdrivermanifest" ]] || die "the release lacks the SteamVR driver"
+	rm -rf "$DATA.new"
+	cp -a "$REPO/share/omarchyvr/data" "$DATA.new"
+	rm -rf "$DATA"
+	mv "$DATA.new" "$DATA"
+	record dir "$DATA" REBUILD "repository data $HASH"
+fi
+if [[ $MODE == source ]]; then
 for b in "${OVR_BINS[@]}"; do put "$REL/$b" "$BIN/$b" 755 REBUILD "omarchyvr $HASH"; done
 for b in wayvr wayvrctl; do put "$CACHE/wayvr-target/release/$b" "$LIBDIR/wayvr/$b" 755 REBUILD "WayVR $(git -C "$REPO/forks/wayvr" rev-parse --short HEAD)"; done
 # WayVR's OpenVR overlay code links libopenvr_api.so (no RUNPATH, not a system library): it goes next to wayvr, where
@@ -435,6 +511,11 @@ git -C "$REPO" rev-parse HEAD >"$DATA.new/COMMIT"
 rm -rf "$DATA"
 mv "$DATA.new" "$DATA"
 record dir "$DATA" REBUILD "repository data $HASH"
+fi
+if [[ $STAGE_ONLY == 1 ]]; then
+	say "stage done: the set is in $PREFIX (bin, lib/omarchyvr, share/omarchyvr/data); nothing else was touched"
+	exit 0
+fi
 
 if [[ $STAGING == 1 ]]; then
 	DRY=1

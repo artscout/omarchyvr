@@ -85,4 +85,17 @@ mod tests {
         assert_eq!(c.pimax_cam(), Some(true));
         assert_eq!(c.bool("X"), Some(false));
     }
+
+    #[test]
+    fn prebuilt_release_ships_a_path_free_cache() {
+        // packaging/release/build-release.sh keeps only PIMAX_/XRT_ options, the build type and the generator
+        let c = CMakeCache::parse(
+            "# omarchyvr release 0.1.0: the Monado build options (filtered copy of CMakeCache.txt, no paths)\n\
+             CMAKE_BUILD_TYPE:STRING=RelWithDebInfo\nCMAKE_GENERATOR:INTERNAL=Ninja\nPIMAX_CAM:BOOL=ON\nXRT_BUILD_DRIVER_PIMAX:BOOL=ON\n",
+        );
+        assert_eq!(c.pimax_cam(), Some(true));
+        assert_eq!(c.bool("XRT_BUILD_DRIVER_PIMAX"), Some(true));
+        assert_eq!(c.source_dir(), None, "no source tree: the build is a release");
+        assert_eq!(c.generator(), Some("Ninja"));
+    }
 }
