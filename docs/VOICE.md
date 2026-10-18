@@ -65,6 +65,24 @@ Nothing leaves the machine unless you set up a remote LLM yourself.
   back.
 - **Help.** "Max, help" or "Max, what can I say" shows a short list.
 
+## Listening: how long Max waits (`voice_listen`, 2026-10-18)
+
+Long commands ("put the terminals on 4, chrome on 2 fullscreen, hide 5 and turn the volume down") have natural pauses.
+The **Listening** selector on the app's AI page (Quick / Long / Very long) sets how long the listener waits after you stop
+talking before it ends the command. It is saved as `voice_listen` in `~/.config/omarchyvr/ai.toml` and read by
+`omarchyvr-voice listen` when it starts (the Work session starts it with plain `listen`, so no start argument is recorded;
+change it, then restart voice or Work).
+
+| `voice_listen` | silence that ends an utterance (`--endpoint-ms`) | after a dangling word like "and", "on" (`--hangover-ms`) | held cut-off sentence joins the next one within |
+|---|---|---|---|
+| `normal` (Quick) | 480 ms | 1120 ms | 6 s |
+| `long` (default) | 750 ms | 1500 ms | 8 s |
+| `very-long` | 1100 ms | 2000 ms | 10 s |
+
+`--endpoint-ms` and `--hangover-ms` on the command line win over the setting. The follow-up time replaces the catalogue's
+`[wake] followup_s` only while that is still the built-in 6 s; a value you set in `voice-intents.toml` stays. Longer waits
+mean a command starts a little later after you stop talking.
+
 ## Presets (desk mode layouts)
 `omarchyvr desk start` now uses **cinema by default**:
 - use `--preset work-3|work-1|assistant` to start in another preset;

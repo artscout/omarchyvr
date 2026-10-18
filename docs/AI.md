@@ -75,6 +75,7 @@ server only). The first-run setup does not offer a cloud model; it is added on t
 ```toml
 voice_ai = "fallback"        # off | fallback | always
 voice_confirm = "none"       # none | dangerous | always: when a command waits for a spoken "yes" (AI page: Confirm)
+voice_listen = "long"        # normal | long | very-long: how long voice waits after you stop talking (AI page: Listening)
 strip_titles = false         # true: window titles never leave the machine (class + workspace only)
 default = "local"
 
