@@ -53,6 +53,14 @@ def main(a):
     if ls.USER in ("build", "builder", "root", "user"):
         ls.USER = ""
     s = ls.Scan()
+    # binaries embed the shipped reference calibration (include_bytes!, e.g. the factory XML with deviceUID "reference"
+    # in pimax-cam and Monado): a byte-identical copy of an allowed file is cut out before the scan, anything else stays
+    refs = []
+    for r, sha in ls.CALIB_REFERENCE.items():
+        rb = open(os.path.join(repo, r), "rb").read()
+        if hashlib.sha256(rb).hexdigest() != sha:
+            print(f"scan-tree: the reference file {r} in the clone differs from the allowed one"); return 1
+        refs.append(rb)
     n = 0
     for d, _, fs in os.walk(root):
         for f in sorted(fs):
@@ -79,6 +87,8 @@ def main(a):
             if rel.startswith(THIRD_PARTY):
                 s.blob(rel, b)
             elif b[:4] == b"\x7fELF" or b"\x00" in b[:4096] or rel.endswith(".gz"):
+                for rb in refs:
+                    b = b.replace(rb, b"")
                 s.blob(rel, b)
                 txt = "\n".join(m.decode("ascii") for m in re.findall(rb"[\x20-\x7e]{16,}", b))
                 for m in ls.KEY.finditer(txt):

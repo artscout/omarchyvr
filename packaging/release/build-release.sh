@@ -76,8 +76,8 @@ WAYVR_COMMIT=$(git -C "$CLONE/forks/wayvr" rev-parse HEAD)
 # ---- 2. build in a staging prefix with the installer's own steps --------------------------------------------------
 say "2/8 Build (installer/install.sh --stage-only; Rust workspace, Basalt, Monado, WayVR, speech library)"
 # no build path may reach a binary: Rust and C/C++ both remap the clone, the staging prefix and the home directory
-export RUSTFLAGS="--remap-path-prefix=$HOME=/build-home --remap-path-prefix=$CLONE=/src --remap-path-prefix=$STAGE=/stage"
-MAP="-ffile-prefix-map=$CLONE=/src -ffile-prefix-map=$STAGE=/stage -ffile-prefix-map=$HOME=/build-home"
+export RUSTFLAGS="--remap-path-prefix=$WORK=/work --remap-path-prefix=$HOME=/build-home --remap-path-prefix=$CLONE=/src --remap-path-prefix=$STAGE=/stage"
+MAP="-ffile-prefix-map=$WORK=/work -ffile-prefix-map=$CLONE=/src -ffile-prefix-map=$STAGE=/stage -ffile-prefix-map=$HOME=/build-home"
 # --as-needed (Arch's own packaging default) keeps libraries nothing uses (OpenCV's GUI and video modules) out of
 # NEEDED, so they are not bundled
 export OVR_CMAKE_EXTRA="-DCMAKE_C_FLAGS=$MAP|-DCMAKE_CXX_FLAGS=$MAP|-DCMAKE_EXE_LINKER_FLAGS=-Wl,--as-needed|-DCMAKE_SHARED_LINKER_FLAGS=-Wl,--as-needed"
