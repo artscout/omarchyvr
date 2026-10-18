@@ -3,6 +3,9 @@
 Maintainer side (the command line is fine here). Users never build: they download `omarchyvr-<version>-x86_64.tar.zst`
 from GitHub Releases, unpack it and run `./install.sh` ([INSTALL.md](INSTALL.md)).
 
+Release notes: [v0.1.3](releases/v0.1.3.md), [v0.1.0](releases/v0.1.0.md) (0.1.1 and 0.1.2 were packaging fixes of
+the prebuilt release; their notes are on the GitHub Releases page).
+
 ## What a release is
 
 One tarball with a finished build, made in a clean Arch Linux container from a committed commit and the public stand-ins
