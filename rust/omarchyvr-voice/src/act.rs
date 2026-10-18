@@ -1850,6 +1850,7 @@ impl Runner for Real {
         true
     }
     fn run(&mut self, argv: &[String], capture: bool) -> Result<String, String> {
+        use std::io::Read as _;
         use std::process::{Command, Stdio};
         let (prog, args) = argv.split_first().ok_or("empty command")?;
         if prog == "wtype" {
@@ -1869,10 +1870,25 @@ impl Runner for Real {
         if capture {
             cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
             let mut child = cmd.spawn().map_err(|e| format!("{}: {e}", prog.display()))?;
+            // the pipes are read on threads: a helper the command forks (wl-copy) can keep them open after it exits,
+            // and a plain read would then wait forever (live 2026-10-18: every later command queued behind it)
+            let pipe = |p: Option<Box<dyn std::io::Read + Send>>| {
+                let (tx, rx) = std::sync::mpsc::channel();
+                if let Some(mut p) = p {
+                    std::thread::spawn(move || {
+                        let mut b = Vec::new();
+                        let _ = p.read_to_end(&mut b);
+                        let _ = tx.send(b);
+                    });
+                }
+                rx
+            };
+            let out_rx = pipe(child.stdout.take().map(|p| Box::new(p) as Box<dyn std::io::Read + Send>));
+            let err_rx = pipe(child.stderr.take().map(|p| Box::new(p) as Box<dyn std::io::Read + Send>));
             let t0 = Instant::now();
-            loop {
+            let status = loop {
                 match child.try_wait() {
-                    Ok(Some(_)) => break,
+                    Ok(Some(s)) => break s,
                     Ok(None) if t0.elapsed() > Duration::from_secs(8) => {
                         let _ = child.kill();
                         let _ = child.wait();
@@ -1882,13 +1898,16 @@ impl Runner for Real {
                     Ok(None) => std::thread::sleep(Duration::from_millis(if t0.elapsed() < Duration::from_millis(100) { 1 } else { 20 })),
                     Err(e) => return Err(e.to_string()),
                 }
-            }
-            let out = child.wait_with_output().map_err(|e| e.to_string())?;
-            if out.status.success() {
-                Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+            };
+            // the command has exited: its output is complete unless a forked helper still holds the pipe
+            let grace = Duration::from_millis(500);
+            let stdout = out_rx.recv_timeout(grace).unwrap_or_default();
+            let stderr = err_rx.recv_timeout(Duration::from_millis(50)).unwrap_or_default();
+            if status.success() {
+                Ok(String::from_utf8_lossy(&stdout).into_owned())
             } else {
-                let err = String::from_utf8_lossy(&out.stderr);
-                Err(format!("{} ({})", out.status, err.lines().last().unwrap_or("").trim()))
+                let err = String::from_utf8_lossy(&stderr);
+                Err(format!("{status} ({})", err.lines().last().unwrap_or("").trim()))
             }
         } else {
             cmd.stdout(Stdio::null()).stderr(Stdio::null());
@@ -2039,6 +2058,18 @@ mod tests {
     }
     fn dry() -> DryRun {
         DryRun { quiet: true, skyboxes: vec!["mountain_lake".into()], ..Default::default() }
+    }
+
+    #[test]
+    fn a_forked_helper_holding_the_pipe_does_not_hang_a_captured_run() {
+        // like wl-copy: the command exits at once, a child it forked keeps stdout open for 5 s
+        let mut r = Real::new(PathBuf::from("/nonexistent"), String::new(), false, false);
+        let t0 = Instant::now();
+        let out = r.run(&["sh".into(), "-c".into(), "(sleep 5) & echo hi".into()], true);
+        assert!(t0.elapsed() < Duration::from_secs(2), "took {:?}", t0.elapsed());
+        assert_eq!(out.as_deref(), Ok(""), "the output is cut short, never waited for");
+        // a normal command still gives its whole output
+        assert_eq!(r.run(&["sh".into(), "-c".into(), "echo hi".into()], true).as_deref(), Ok("hi\n"));
     }
 
     #[test]
