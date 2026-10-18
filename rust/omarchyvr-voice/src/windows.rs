@@ -62,6 +62,10 @@ pub struct Client {
     pub grouped: Vec<String>,
     /// 0 = focused now, 1 = the one before, ...
     pub focus: i64,
+    /// Floating (not tiled).
+    pub floating: bool,
+    /// Fullscreen or maximized (hyprctl `fullscreen` != 0).
+    pub fullscreen: bool,
 }
 
 /// `0x...` and nothing else (an address is put into a dispatch string).
@@ -88,6 +92,8 @@ fn client_from(v: &Value) -> Option<Client> {
             .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
             .unwrap_or_default(),
         focus: v.get("focusHistoryID").and_then(Value::as_i64).unwrap_or(i64::MAX),
+        floating: v.get("floating").and_then(Value::as_bool).unwrap_or(false),
+        fullscreen: v.get("fullscreen").and_then(Value::as_i64).unwrap_or(0) != 0,
     })
 }
 

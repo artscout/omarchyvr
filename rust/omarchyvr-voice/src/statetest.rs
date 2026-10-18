@@ -1141,6 +1141,23 @@ impl crate::act::Runner for ReadOnly {
     fn skyboxes(&mut self) -> Vec<String> {
         Vec::new()
     }
+    fn screens_state(&mut self) -> String {
+        std::fs::read_to_string(crate::act::screens_state_path()).unwrap_or_default()
+    }
+}
+
+/// `omarchyvr-voice ai-state [WORDS...]`: what the voice AI is told about the live desktop for these words. Reads
+/// only (hyprctl -j, wayvrctl gaze, the screens state file); prints the compact user message of the local model and
+/// the state of the Claude request, with sizes.
+pub fn ai_state(words: &str, cat: &crate::catalogue::Catalogue) -> String {
+    let mut gaze: Box<dyn crate::agent::GazeSource> = Box::new(crate::agent::WayvrctlGaze { wayvrctl: "wayvrctl".into() });
+    let actor = crate::act::Actor::new(cat.clone(), Some("wayvrctl".into()), Default::default());
+    let ctx = crate::agent::Context::collect(words, &mut ReadOnly, Some(&mut gaze), &mut crate::agent::HostProbe, &actor, &Default::default(), false);
+    let cands = crate::nlu::hints(cat, &crate::command::words(words));
+    let (user, _) = crate::nlu::user_message(&ctx, &cands, words, false);
+    let (claude, _) = crate::claude::state_text(&ctx, false, crate::agent::CONTEXT_WINDOWS);
+    let size = |t: &str| format!("{} chars, ~{} tokens", t.chars().count(), t.chars().count() / 4);
+    format!("--- local model user message ({}) ---\n{user}\n--- Claude state ({}) ---\n{claude}", size(&user), size(&claude))
 }
 
 /// Options of `omarchyvr-voice audit --state`.
