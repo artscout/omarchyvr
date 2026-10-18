@@ -7,12 +7,18 @@ vr.preset.cinema_huge	I want a really huge cinema screen
 vr.preset.cinema_huge	give me the biggest cinema you can
 vr.screens.count	give me three screens	n=3
 vr.screens.more	open two more screens	n=2
-vr.preset.work3	switch to the work layout
+vr.preset.work4	switch to the work layout
+vr.preset.work4	go to the four screens layout
+vr.preset.focus3	give me the focus layout
+vr.preset.focus3	go into focus mode
+vr.preset.work5	switch to the five screens layout
+vr.preset.work5	go to work five
+vr.preset.work6	go to the six screens layout
 vr.screens.hide_others	close the other two screens	# user rule 2026-10-16: hides, no app closes
 vr.preset.work1	i only need one screen
 vr.preset.work1	just one flat screen please
-vr.preset.assistant	turn on assistant mode
-vr.preset.assistant	go into assistant mode
+vr.preset.work6	turn on assistant mode
+vr.preset.work6	go into assistant mode
 vr.passthrough.on	let me see my room
 vr.passthrough.on	show me the real room
 vr.passthrough.off	hide my room

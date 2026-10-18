@@ -14,7 +14,7 @@ Nothing leaves the machine unless you set up a remote LLM yourself.
   (the "max" within the first 3 words), and the rest of the sentence must be a whole command. Normal talk, captions,
   and sentences that only contain a command or "max" ("set it to max", "I told Max to switch...") never trigger.
 - **Command-word mishearings** are fixed by an alias table (`ALIASES` in `rust/omarchyvr-voice/src/command.rs`):
-  war/walk/wok/worth = work, tree/free = three, won = one, cinemas/sinema = cinema. "Time Max War Three" runs work-3.
+  war/walk/wok/worth = work, tree/free = three, won = one, cinemas/sinema = cinema. "Time Max War Three" runs focus-3.
 - **Close is good enough.** Beyond the alias table, a fuzzy, sound-aware matcher scores every phrase ("liz windows"
   and "leaks list windows" both run list windows); a clear winner runs at once, a plausible one is asked about ("Did
   you mean "list windows"? Say yes"), and with the voice AI on, everything else goes to the model with the best
@@ -82,6 +82,25 @@ change it, then restart voice or Work).
 `--endpoint-ms` and `--hangover-ms` on the command line win over the setting. The follow-up time replaces the catalogue's
 `[wake] followup_s` only while that is still the built-in 6 s; a value you set in `voice-intents.toml` stays. Longer waits
 mean a command starts a little later after you stop talking.
+
+## Locked screen layouts by voice (user decision 2026-10-18)
+In Work the VR screens never move. You switch between fixed layouts by name (screens: 1 main, 2 left, 3 right,
+4 up, 5 up-left, 6 up-right; geometry in [SCREENS.md](SCREENS.md)):
+- "Max, work four" / "work mode" / "work" = `work-4`, the default (1, 2, 3, 4). "focus mode" / "work three" = `focus-3`
+  (1, 2, 3, smaller and closer). "work five" / "five screens layout" = `work-5` (1, 2, 3, 5, 6). "work six" /
+  "six screens layout" / "assistant mode" = `work-6` (all six). "cinema" and "huge cinema" as before; "exit cinema"
+  goes back to the layout from before (work-4 when unknown). "one screen" / "close the other windows" only hides the other
+  screens (the layout stays; no app closes).
+- "Max, recenter" (also "recenter the screens", "screens in front of me") moves the WHOLE layout in front of you
+  (`omarchyvr desk recenter`). "No Work session is running" when there is none.
+- Moving, resizing or resetting one screen ("move this left", "make the screen bigger", "bring screen 2 closer",
+  "put screen 2 left of screen 3", "reset the screens", "half the size") answers **"The screens are locked. Say a layout
+  name, or recenter."** and runs nothing. The phrases still match (so the answer is instant) but the intents are hidden
+  from the voice AI (`Intent::ai_hidden`; its tools, prompts and examples no longer mention them). Apps still move
+  between screens ("terminals on 3", "swap screens 2 and 3" swaps their apps).
+- Locked is the default. `desk_locked: false` in `<wayvr home>/config/wayvr/conf.d/60-preset.yaml` unlocks the old
+  geometry commands (`Catalogue::load_default`).
+
 
 ## Presets (desk mode layouts)
 `omarchyvr desk start` now uses **cinema by default**:
@@ -159,9 +178,11 @@ override. `@...` actions are built into `omarchyvr-voice act`.
 | say "Max ..." | does | intent (row) |
 |---|---|---|
 | cinema / cinema mode / movie mode / movie time / switch to cinema / switch to cinema mode / go to cinema mode / cinema preset / modo cine / cine | `@preset cinema` | vr.preset.cinema (vr) |
-| work / work mode / work three / work 3 / work mode three / three screens / 3 screens / work with three screens / switch to work / switch to work mode / modo trabajo / tres pantallas | `@preset work-3` | vr.preset.work3 (vr) |
-| work one / work 1 / work mode one / one screen / 1 screen / single screen / work with one screen / una pantalla | `@preset work-1` | vr.preset.work1 (vr) |
-| assistant / assistant mode / switch to assistant / modo asistente | `@preset assistant` | vr.preset.assistant (vr) |
+| work four / work 4 / work / work mode / work layout / four screens layout / switch to work mode / modo trabajo | `@preset work-4` (the default layout: main, left, right, up) | vr.preset.work4 (vr) |
+| focus mode / focus layout / focus three / work three / work 3 / three screens layout / work with three screens | `@preset focus-3` (main, left, right; smaller and closer) | vr.preset.focus3 (vr) |
+| work five / work 5 / five screens layout | `@preset work-5` (1, 2, 3, 5, 6) | vr.preset.work5 (vr) |
+| work six / work 6 / six screens layout / all screens layout / assistant / assistant mode / modo asistente | `@preset work-6` (all six screens) | vr.preset.work6 (vr) |
+| work one / work 1 / work mode one / one screen / 1 screen / single screen / work with one screen / una pantalla | `omarchyvr desk screens hide others` (only the main screen shows; the layout stays) | vr.preset.work1 (vr) |
 
 ### Passthrough and background
 
@@ -181,7 +202,7 @@ override. `@...` actions are built into `omarchyvr-voice act`.
 | say "Max ..." | does | intent (row) |
 |---|---|---|
 | reset screens / reset the screens / screens back / bring the screens back / bring back the screens / where are my screens / resetea las pantallas | `{wayvrctl} reset-screens` | vr.screens.reset (vr) |
-| recenter / recenter view / recenter the view / center the view / recentra / recentra la vista / centra la vista | `{wayvrctl} recenter` | vr.recenter (vr) |
+| recenter / recenter the screens / center the screens / screens in front of me / in front of me / recentra | `omarchyvr desk recenter`: the whole screen layout comes in front of you, its shape unchanged (toast: "Screens recentered in front of you") | vr.recenter (vr) |
 | use controllers / use the controllers / prioritize controllers / prioritise controllers / turn on controllers / turn on the controllers / controllers first / controllers as pointer / controllers over hands / prioriza los mandos / usa los mandos | `{wayvrctl} controllers on` | vr.input.controllers (vr) |
 | hands only / prioritize hands / prioritise hands / turn off controllers / turn off the controllers / hands first / use my hands / use hands / hands as pointer / hands over controllers / prioriza las manos / usa las manos | `{wayvrctl} controllers off` | vr.input.hands (vr) |
 | show fps / fps / show performance / show frame rate / fps on / muestra fps | `{wayvrctl} panel-modify perf perf_box set-visible 1` | vr.fps.show (vr) |
@@ -280,7 +301,7 @@ left", "cycle windows", "float window" are now "app" phrases):
 | move all the terminals to one window / put all the browsers on one screen | every app of that kind joins the one in use; the other apps stay | win.screen.gather |
 | go to / focus (in) the main window | the main (middle) VR screen | win.screen.goto |
 | new window / new screen (with VR screens) | the next free VR screen (left, right, up): the first whose workspace has no app; all busy = an empty workspace here | win.ws.new |
-| move this left / right / up / down (the VR screen itself, in space), bring it closer / push it away, zoom in / zoom out | `wayvrctl screen-nudge` on the looked-at (else focused) screen ([SCREENS.md](SCREENS.md)) | win.screen.nudge / closer / farther / bigger / smaller |
+| move this left / right / up / down, bring it closer / push it away, zoom in / zoom out, bigger / smaller, screen N closer, put screen N left of screen M, bring this screen here, reset the screens | **locked** (2026-10-18): answers "The screens are locked. Say a layout name, or recenter." and runs nothing; the phrases still match, the voice AI no longer sees these tools | win.screen.nudge / adjust / closer / farther / bigger / smaller / place / here, vr.screens.reset |
 | send this to the left / right / up / main screen, move this app to the left screen | sends the app you are looking at (else the focused one) to that VR screen | win.screen.move |
 | put everything in its own window / organize / separate everything | sorts the apps by kind onto the VR screens (terminals, browser, Pimax app, the rest) | win.organize |
 | put everything back together / merge everything | every app back on the main screen | win.together |
@@ -358,7 +379,7 @@ screen 4.
 |---|---|---|
 | close screen 2 / close down screen number two / remove screen number four and three / shut down screens 4 and 3 / hide screens 2, 3 and 5 / close window 2 / close this screen | those VR screens HIDE (`omarchyvr desk screens hide 4,3`); their apps stay open and come back with the screen ("add a screen on the right", "4 screens"). Never closes an app | vr.screens.hide |
 | close everything / close the screens / close all the screens / close the other two screens | every screen but the main one hides; no app closes | vr.screens.hide_others |
-| make all these screens half the size / make all the screens double the size / all screens 75 percent / make screen 2 half the size | every VR screen (or the one named) scaled to that size (`wayvrctl screen-nudge --step`: half = 1/2, double = x2, a percent) | win.screen.scale |
+| make all these screens half the size / make all the screens double the size / all screens 75 percent / make screen 2 half the size | locked (2026-10-18): the locked toast; was: every VR screen (or the one named) scaled to that size (`wayvrctl screen-nudge --step`: half = 1/2, double = x2, a percent) | win.screen.scale |
 | move all the terminals to screen number three / put chrome on screen five | the apps of that kind or name to screen N (the screen number always reaches the action) | win.screen.put_n |
 | move this screen number one to the right | screen 1 itself moves right in space | win.screen.adjust |
 | move it in front of me (the screen) / bring the screen in front of me | the screens back in front of your head | vr.screens.reset |

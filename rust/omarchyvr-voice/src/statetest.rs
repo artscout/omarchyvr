@@ -148,15 +148,14 @@ pub fn build(spec: &WorldSpec, all: &BTreeMap<String, WorldSpec>) -> Result<Worl
         sc.present = sc.n <= n;
     }
     w.session.running = s.running.unwrap_or(true);
-    let preset = s.preset.clone().unwrap_or_else(|| if n >= 3 { "work-3".into() } else { "work-1".into() });
+    let preset = s.preset.clone().unwrap_or_else(|| if n >= 3 { "work-4".into() } else { "work-1".into() });
     // the preset's show rule and layout (omarchyvr-tools preset.rs / screens.rs)
-    let (limit, pinned, width, distance, curv, pt): (u8, Vec<u8>, f32, f32, f32, &str) = match preset.as_str() {
-        "cinema" => (1, vec![], 3.2, 3.5, 0.35, "dim"),
-        "cinema-huge" => (1, vec![], 11.0, 8.0, 0.2, "off"),
+    // (the old "work-3", "work-1" and "assistant" stay as start states of the older worlds: one screen / every screen on demand)
+    let (limit, pinned, width, distance, curv, pt) = world::layout_of(&preset).unwrap_or(match preset.as_str() {
         "work-3" => (3, vec![2, 3], 1.6, 2.0, 0.0, "normal"),
         "work-1" => (1, vec![], 2.0, 2.2, 0.0, "normal"),
         _ => (6, vec![], 2.0, 2.5, 0.15, "normal"),
-    };
+    });
     w.session.preset = preset.clone();
     w.show.limit = s.limit.unwrap_or(limit);
     w.show.pinned = s.pinned.clone().unwrap_or(pinned).into_iter().filter(|p| *p <= n).collect();
@@ -1509,7 +1508,9 @@ pub fn run_cases(cases: &[Case], o: &Opts) -> Result<Vec<Outcome>, String> {
     use crate::act::Actor;
     use crate::catalogue::Catalogue;
     use std::time::Instant;
-    let cat = Catalogue::load_default()?;
+    // the Work screens are locked in every state test (user decision 2026-10-18), whatever this PC's WayVR config says
+    let mut cat = Catalogue::load_default()?;
+    cat.lock_screens();
     let ai_toml = omarchyvr_config::ai::default_path().unwrap_or_else(crate::llm::ai_path);
     // the audit always runs the whole pipeline (Lara + the AI); with no AI to ask there is nothing to score
     let agent = crate::agent::Agent::from_ai_toml(&ai_toml, &cat, "wayvrctl")?;
@@ -1903,7 +1904,8 @@ details{margin:6px 0}summary{cursor:pointer;color:var(--dim)}ul{margin:4px 0;pad
     h += "</table></div>";
     h += &format!("<h2>Why the old audit said 99%</h2><p>{}</p><p class=sub>The intent audit (<code>omarchyvr-voice audit</code>, tests/fixtures/*.tsv) stays as a fast smoke test of the matcher and the model's intent choice. It is not the quality measure: this page is.</p>", esc(&old_audit_note()));
     // the fixed system prompt once
-    if let Ok(cat) = crate::catalogue::Catalogue::load_default() {
+    if let Ok(mut cat) = crate::catalogue::Catalogue::load_default() {
+        cat.lock_screens();
         h += &format!("<details><summary>The fixed system prompt the action model gets (every request)</summary><pre>{}</pre></details>", esc(&crate::nlu::system_prompt(&cat)));
     }
     h += "<h2>Cases (failures first)</h2>";
@@ -2195,7 +2197,8 @@ mod tests {
     #[test]
     fn the_simulated_tools_reach_the_goals_they_are_for() {
         // the planner's dry run: the right tool, applied by the simulator, reaches the case's goal
-        let cat = crate::catalogue::Catalogue::from_texts(crate::catalogue::BUILTIN, None).unwrap();
+        let mut cat = crate::catalogue::Catalogue::from_texts(crate::catalogue::BUILTIN, None).unwrap();
+        cat.lock_screens();
         let all = load_cases().unwrap();
         let get = |goal: &str, tier: &str| all.iter().find(|c| c.goal == goal && c.tier == tier).unwrap_or_else(|| panic!("{goal} {tier}")).clone();
         let s = |kv: &[(&str, &str)]| kv.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect::<BTreeMap<String, String>>();

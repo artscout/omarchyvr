@@ -885,7 +885,8 @@ fn tab_url(r: &mut dyn Runner) -> Option<String> {
     std::thread::sleep(std::time::Duration::from_millis(120));
     let url = r.run(&["wl-paste".into(), "-n".into()], true).ok().map(|u| u.trim().to_string());
     if let Some(old) = saved.filter(|o| !o.is_empty()) {
-        let _ = r.run(&["wl-copy".into(), "--".into(), old], true);
+        // not captured: wl-copy forks a helper that holds the clipboard (and any pipe) open (live 2026-10-18: Max hung)
+        let _ = r.run(&["wl-copy".into(), "--".into(), old], false);
     }
     url.filter(|u| (u.starts_with("https://") || u.starts_with("http://")) && u.len() < 2000 && !u.chars().any(char::is_whitespace))
 }

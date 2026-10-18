@@ -243,7 +243,7 @@ mod tests {
         let s = GuiState {
             setup: SetupStage::Restart,
             onboarded: true,
-            toggles: DeskToggles { eye: false, sixdof: true, ctrl_track: true, hands: true, hands_roles: true, passthrough: true, voice: true, hz90: true, perf: false, anchor: true, preset: crate::launcher::Preset::Cinema, eye_default_on: false, screens: 2, ctrl_work: CtrlMode::Off, ctrl_play: CtrlMode::WhenHeld, ctrl_angle: -12, new_exposure: false, room_glide: false, ctrl_steady: false, tracking_flags: false },
+            toggles: DeskToggles { eye: false, sixdof: true, ctrl_track: true, hands: true, hands_roles: true, passthrough: true, voice: true, hz90: true, perf: false, anchor: true, preset: crate::launcher::Preset::Cinema, eye_default_on: false, screens: 2, ctrl_work: CtrlMode::Off, ctrl_play: CtrlMode::WhenHeld, ctrl_angle: -12, new_exposure: false, room_glide: false, ctrl_steady: false, tracking_flags: false, preset_flag: false },
             page: Some(Page::Tools),
             scale_pct: 130,
             autostart: true,

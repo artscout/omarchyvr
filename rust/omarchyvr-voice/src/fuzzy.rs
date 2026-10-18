@@ -341,7 +341,7 @@ mod tests {
         for (heard, want) in [
             ("liz windows", "win.list"),
             ("leaks list windows", "win.list"),
-            ("war three", "vr.preset.work3"),
+            ("war three", "vr.preset.focus3"),
             ("cinema mod", "vr.preset.cinema"),
             ("next tap", "win.tab.next"),
             ("volume app", "omarchy.volume.up"),

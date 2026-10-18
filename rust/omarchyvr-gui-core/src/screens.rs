@@ -101,9 +101,86 @@ impl crate::app::AppCore {
     }
 }
 
+/// The status line of the layout picker (Desktop page): `running` = Work runs now.
+pub fn layout_status(layout: crate::launcher::Preset, running: bool) -> String {
+    let l = layout.label();
+    let screens = match layout {
+        crate::launcher::Preset::Work4 => " (screens 1-4)",
+        crate::launcher::Preset::Focus3 => " (screens 1-3)",
+        crate::launcher::Preset::Work5 => " (screens 1-3, 5 and 6)",
+        crate::launcher::Preset::Work6 => " (screens 1-6)",
+        _ => "",
+    };
+    if running {
+        format!("{l} is on. The screens are locked; say \"Max, recenter\" or press Recenter screens to bring them in front of you.")
+    } else {
+        format!("Layout: {l}{screens} at the next Work start. The screens are locked in place.")
+    }
+}
+
+/// What the launcher printed, as one plain line (the last non-empty line of stdout or stderr).
+fn last_line(o: &std::process::Output) -> String {
+    let text = String::from_utf8_lossy(&o.stdout).to_string() + &String::from_utf8_lossy(&o.stderr);
+    text.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("").trim().to_string()
+}
+
+impl crate::app::AppCore {
+    /// Run `omarchyvr desk <args>` in the background (layout switch, recenter); the result goes to `layout_result`.
+    fn desk_live(&mut self, args: Vec<String>, ok_text: String) {
+        if self.demo {
+            self.layout_result = Some((true, format!("demo: would run omarchyvr desk {}", args.join(" "))));
+            return;
+        }
+        let bin = self.launcher_bin();
+        self.task(Some("layout-live"), move || {
+            let out = std::process::Command::new(&bin).arg("desk").args(&args).output();
+            let res = match out {
+                Ok(o) if o.status.success() => {
+                    let l = last_line(&o);
+                    (true, if l.is_empty() { ok_text } else { l })
+                }
+                Ok(o) => {
+                    let l = last_line(&o);
+                    (false, if l.is_empty() { "The launcher gave no reason.".to_string() } else { l })
+                }
+                Err(e) => (false, format!("Could not run {}: {e}", bin.display())),
+            };
+            Box::new(move |c: &mut crate::app::AppCore| c.layout_result = Some(res))
+        });
+    }
+
+    /// Choose a layout: saved as the setting; while Work runs also applied now (`omarchyvr desk preset NAME`).
+    pub fn layout_choose(&mut self, p: crate::launcher::Preset, running: bool) {
+        self.toggles.preset = p;
+        self.layout_result = None;
+        if running {
+            self.desk_live(vec!["preset".into(), p.name().into()], format!("{} is on", p.label()));
+        }
+    }
+
+    /// The Recenter screens button (`omarchyvr desk recenter`).
+    pub fn layout_recenter(&mut self) {
+        self.layout_result = None;
+        self.desk_live(vec!["recenter".into()], "Screens recentered in front of you".into());
+    }
+
+    /// A live layout command runs now.
+    pub fn layout_busy(&self) -> bool {
+        self.task_busy("layout-live")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn layout_status_lines() {
+        use crate::launcher::Preset;
+        assert!(layout_status(Preset::Work4, false).starts_with("Layout: Work 4 (screens 1-4) at the next Work start."));
+        assert!(layout_status(Preset::Work4, true).contains("Max, recenter"));
+        assert!(layout_status(Preset::Cinema, false).contains("Cinema at the next"));
+    }
 
     #[test]
     fn readiness_lines() {

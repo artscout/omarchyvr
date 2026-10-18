@@ -154,17 +154,8 @@ fn auto_body(ui: &mut Ui, app: &mut PimaxApp) {
             if let Some(i) = widgets::seg_row(ui, "Game runtime", None, &["Monado + xrizer", "SteamVR (start it yourself)"], rt, true) {
                 app.core.auto_cmd(AutoCmd::SetMode { mode: None, runtime: Some(if i == 1 { "steamvr" } else { "monado" }.into()), preset: None });
             }
-            let names: Vec<&str> = Preset::ALL
-                .iter()
-                .map(|pr| match pr {
-                    Preset::None => "None",
-                    Preset::Cinema => "Cinema",
-                    Preset::CinemaHuge => "Huge cinema",
-                    Preset::Work => "Work",
-                    Preset::Assistant => "Assistant",
-                })
-                .collect();
-            let cur = Preset::ALL.iter().position(|pr| s.preset == pr.name()).unwrap_or(usize::MAX);
+            let names: Vec<&str> = Preset::ALL.iter().map(|pr| pr.label()).collect();
+            let cur = Preset::ALL.iter().position(|pr| Preset::parse(&s.preset) == *pr).unwrap_or(usize::MAX);
             if let Some(i) = widgets::seg_row(ui, "Preset", Some("Changes here last until the daemon restarts; ~/.config/omarchyvr/auto.toml keeps them for good."), &names, cur, true) {
                 app.core.auto_cmd(AutoCmd::SetMode { mode: None, runtime: None, preset: Some(Preset::ALL[i].name().into()) });
             }

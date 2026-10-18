@@ -394,6 +394,8 @@ pub struct AppCore {
     pub(crate) speaker_test_from: Option<usize>,
     /// Status line.
     pub message: String,
+    /// The last live layout switch or recenter (Desktop page): (ok, plain words).
+    pub layout_result: Option<(bool, String)>,
     /// Confirmation to show.
     pub pending: Option<Pending>,
     /// Running tool session.
@@ -557,6 +559,7 @@ impl AppCore {
             speaker_result: None,
             speaker_test_from: None,
             message: String::new(),
+            layout_result: None,
             pending: None,
             session_tool: None,
             onboarding: OnboardingView::default(),
@@ -722,6 +725,7 @@ impl AppCore {
         self.toggles.eye_default_on = self.facts.caps.no_eye;
         // a launcher that knows --ctrl-angle and the tracking switches gets them at every start
         self.toggles.tracking_flags = self.facts.caps.tracking;
+        self.toggles.preset_flag = self.facts.caps.preset;
         self.adopt_start_argv();
         // a build may have appeared: the plans are worked out again (the old ones stay in use meanwhile)
         self.plans_fresh.clear();

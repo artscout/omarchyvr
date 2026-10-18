@@ -44,7 +44,7 @@ pub fn body(ui: &mut Ui, app: &mut PimaxApp) {
                         _ => icon::SQUARES_FOUR,
                     };
                     let tip = match c {
-                        Ctl::ResetScreens => "wayvrctl reset-screens: the screens back in the default layout around you (2 rows of 3, none overlapping from where you are; same as double-click B)",
+                        Ctl::ResetScreens => "wayvrctl desk-recenter: the whole layout in front of you, yaw only, same shape. Screens never move otherwise.",
                         Ctl::SwitchSet(0) => "wayvrctl switch-set 0",
                         Ctl::SwitchSet(_) => "wayvrctl switch-set 1",
                         _ => "wayvrctl show-hide",

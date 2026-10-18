@@ -58,8 +58,8 @@ says = ["two more screens and put chrome there"]
 
 [[goal]]
 id = "hide-2-and-bigger"
-why = "Hide screen 2 and make the main screen bigger."
-expect = ["screen 2 hidden", "screen 1 bigger", "all stay"]
+why = "Screens are locked in Work (user 2026-10-18): the screen part is answered with the locked toast, the rest still happens. Was: Hide screen 2 and make the main screen bigger."
+expect = ["screen 2 hidden", "all stay", "said screens are locked"]
 worlds = { medium = "m4", hard = "h6" }
 says = ["close screen 2 and make the main one bigger", "hide the left screen, then make the main screen bigger"]
 
@@ -67,7 +67,7 @@ says = ["close screen 2 and make the main one bigger", "hide the left screen, th
 id = "exit-cinema-room-on"
 why = "Leave cinema mode and see the room again."
 expect = ["passthrough normal", "all stay"]
-any = [["preset work-3"], ["preset work-1"], ["preset assistant"]]
+any = [["preset work-4"], ["preset focus-3"], ["preset work-6"]]
 worlds = { medium = "mcin", hard = "h6c" }
 says = ["let's exit cinema mode and turn the passthrough back on", "out of cinema mode and show me the room"]
 

@@ -89,7 +89,7 @@ says = ["show fps", "show the performance"]
 
 [[goal]]
 id = "assistant"
-why = "Assistant mode: every screen on demand and captions."
-expect = ["preset assistant", "all stay"]
+why = "Assistant mode is the six-screen work layout."
+expect = ["preset work-6", "all stay"]
 worlds = { medium = "mcin", hard = "h6c" }
 says = ["turn on assistant mode", "go into assistant mode"]

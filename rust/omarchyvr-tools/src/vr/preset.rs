@@ -1,35 +1,48 @@
-//! Desk presets: `omarchyvr desk start [--preset cinema|cinema-huge|work-3|work-1|assistant|none]` (cinema is the default) and the
-//! live switch `omarchyvr desk preset NAME [--dry-run]` (used by voice commands).
+//! Desk layouts (presets): `omarchyvr desk start [--preset NAME]` (work-4 is the default) and the live switch
+//! `omarchyvr desk preset NAME [--dry-run]` (voice "Max, focus mode", the app's Layout picker).
 //!
-//! At start a preset is written to `<wayvr home>/config/wayvr/conf.d/60-preset.yaml` (rewritten on every start,
-//! removed with `--preset none`) and adds launcher options; once WayVR runs, the screen layout is applied over IPC.
-//! The live switch rewrites the same file and applies everything without restarting anything:
-//! * the backdrop through the passthrough control socket (`omarchyvr-passthrough ctl`: dim / normal);
-//! * the screens through `wayvrctl desk-layout N` (WayVR `aac483a`+): the first N screens in an arc, the rest hidden;
-//! * work-3: Hyprland has a single output here, so the two side screens are WayVR app panels (`wayvrctl
-//!   process-launch`, Wayland apps running inside WayVR's own compositor), from `~/.config/omarchyvr/work-panels.conf`
-//!   (`left = foot`, `right = nautilus --new-window`; default: a `foot` terminal on each side). Panels that already
-//!   run are not started again; work-1 and cinema hide them (they keep running).
+//! **Locked, fixed layouts (user decisions 2026-10-18, docs/SCREENS.md).** The VR screens never move by themselves
+//! and cannot be moved by hand or by voice: WayVR's `desk_locked` (written `true` into every preset's conf.d file)
+//! refuses grab/move/resize, `screen-nudge` / `screen-place`, and every auto-reset of a desk screen, and places the
+//! screens around a stored **layout anchor** (yaw + position, `<wayvr home>/config/wayvr/desk-anchor.conf`), not
+//! around the head. `omarchyvr desk recenter` (voice "Max, recenter", the app's Recenter screens) sets the anchor
+//! from the head now: the whole layout comes in front of the user with its shape kept. The next Work start puts the
+//! layout where it was (first ever start: in front of the head).
 //!
-//! * with VR screens (Hyprland outputs `PIMAX-*`, `desk start --screens N`, see `screens`) there are no app panels:
-//!   `wayvrctl desk-screens --place --hide-others` (at start, or with `desk preset NAME --replace`; a plain live switch
-//!   leaves screens that are already placed where they are and only shows/hides) puts the main screen in front of the head and the others left,
-//!   right and above it, and the preset's show state (`$XDG_RUNTIME_DIR/omarchyvr-screens.state`) says which are shown:
-//!   cinema, cinema-huge and work-1 the main screen only, work-3 main + left + right, assistant every screen with an app.
+//! The geometry of every layout is ONE table, [`Preset::layout`] (sent to WayVR as `desk-screens --place --width W
+//! --distance D --curvature C`; WayVR's `viewlayout::default_layout` puts the screens edge to edge around main,
+//! 1.5 deg apart as seen from the anchor, each turned to face the user). Screen numbers: 1 main, 2 left, 3 right,
+//! 4 up, 5 up-left, 6 up-right.
 //!
-//! | preset | screens | curvature | size | passthrough |
+//! | layout | screens shown | width x distance | curvature | passthrough |
 //! |---|---|---|---|---|
-//! | cinema (default) | 1, 3.2 m wide at 3.5 m | 0.35 | big | dimmed (gain 0.35) |
-//! | cinema-huge (`imax`, `huge-cinema`, `theater`) | 1, 11 m wide at 8 m (68 deg) | 0.2 | huge | off (black), backdrop off |
-//! | work-3 (`work`) | 3: desktop + 2 app panels, 1.6 m at 2 m | flat | | normal |
-//! | work-1 | 1, 2 m at 2.2 m | flat | | normal |
-//! | assistant | all, 2 m at 2.5 m | 0.15 | | normal, + voice captions at start |
+//! | work-4 (default; `work`) | 1 2 3 4 | 1.6 m at 2.0 m | flat | normal |
+//! | focus-3 (`focus`; old `work-3`) | 1 2 3 | 1.2 m at 1.3 m | flat | normal |
+//! | work-5 | 1 2 3 5 6 | 1.6 m at 2.0 m | flat | normal |
+//! | work-6 (old `assistant`) | 1-6 | 1.6 m at 2.0 m | flat | normal |
+//! | cinema (old `work-1`) | 1 | 3.2 m at 3.5 m | 0.35 | dimmed (gain 0.35) |
+//! | cinema-huge (`imax`, `huge-cinema`, `theater`) | 1 | 11 m at 8 m (68 deg) | 0.2 | off (black), backdrop off |
+//!
+//! Old names parse as aliases of the closest layout: `work-3` -> focus-3 (three screens), `work-1` -> cinema (one
+//! screen), `assistant` -> work-6 (every screen; `--preset assistant` still turns the voice captions on at start).
+//!
+//! At start the preset is written to `<wayvr home>/config/wayvr/conf.d/60-preset.yaml` (rewritten on every start,
+//! removed with `--preset none`, which only `desk start` takes) and adds launcher options; once WayVR runs the layout
+//! is applied over IPC. The live switch rewrites the same file and applies everything without restarting anything:
+//! * the backdrop through the passthrough control socket (`omarchyvr-passthrough ctl`: dim / normal / off);
+//! * with VR screens (Hyprland outputs `PIMAX-*`, `desk start --screens N`, see `screens`): `wayvrctl desk-screens
+//!   --place --hide-others` with the layout's numbers; the show state (`$XDG_RUNTIME_DIR/omarchyvr-screens.state`)
+//!   pins exactly the layout's screens; the outputs a layout needs are made at start (`--screens` is raised to them);
+//! * a session with one output only: `wayvrctl desk-layout N` (an arc) and, for 3+ screens, WayVR app panels
+//!   (`wayvrctl process-launch`, from `~/.config/omarchyvr/work-panels.conf`, default a `foot` terminal on each side).
+//!   Panels that already run are not started again; cinema hides them (they keep running).
 //!
 //! cinema-huge: a mid-theatre seat, 11 m wide at 8 m, 68 degrees ([`huge_size`]). It needs the WayVR fork with the
 //! 20 m caps (branch `no-auto-reset`); with an older WayVR set [`WAYVR_MAX_WIDTH`] to 6.0. docs/CINEMA.md.
 //!
 //! `default_curvature` in the YAML applies to screens without a saved curvature; the live layout sets it on every
 //! shown screen. `screen_max_height` (capture size) only changes at the next start.
+use super::screens::Slot;
 use crate::args::Args;
 use crate::CliError;
 use std::path::{Path, PathBuf};
@@ -37,19 +50,24 @@ use std::path::{Path, PathBuf};
 /// File name in conf.d (after the launcher's 10-40 files and the Pimax app's 50-pimax-app.yaml: a preset wins).
 pub const CONF_NAME: &str = "60-preset.yaml";
 
-/// The preset used when `desk start` gets no `--preset`.
-pub const DEFAULT: Preset = Preset::Cinema;
+/// The layout used when `desk start` gets no `--preset` (user decision 2026-10-18: Work 4).
+pub const DEFAULT: Preset = Preset::Work4;
 
-/// A desk preset.
+/// A desk layout.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Preset {
+    /// 1 main in front, 2 left, 3 right (turned toward you), 4 up above the main; medium screens.
+    Work4,
+    /// Three medium screens close to you in a gentle arc (1 main, 2 left, 3 right).
+    Focus3,
+    /// Main, left, right, up-left, up-right.
+    Work5,
+    /// All six screens.
+    Work6,
+    /// One big curved screen, the room dimmed.
     Cinema,
     /// A huge cinema: the main screen as big as WayVR allows, ~68 degrees wide, the room black ([`huge_size`]).
     CinemaHuge,
-    /// Three screens (the old `work` name).
-    Work3,
-    Work1,
-    Assistant,
 }
 
 /// cinema-huge, the wish: a mid-theatre seat, an 11 m screen 8 m away (68 degrees of view). One source of truth.
@@ -70,17 +88,25 @@ pub fn huge_size() -> (f32, f32) {
     (r(HUGE_TARGET_WIDTH * k), r(HUGE_TARGET_DISTANCE * k))
 }
 
-/// The screen layout of a preset (`wayvrctl desk-layout`).
+/// The screen layout of a preset: the one geometry table.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Layout {
-    /// Screens shown (0 = all).
+    /// The screens shown, by slot (screen numbers: 1 main, 2 left, 3 right, 4 up, 5 up-left, 6 up-right).
+    pub slots: &'static [Slot],
+    /// Screens shown (= `slots.len()`; `wayvrctl desk-layout N` in a one-output session).
     pub screens: u32,
     pub curvature: f32,
     /// Width of each screen, metres.
     pub width: f32,
-    /// Distance from the head, metres.
+    /// Distance from the head (the layout anchor), metres.
     pub distance: f32,
 }
+
+const MAIN: &[Slot] = &[Slot::Main];
+const FOUR: &[Slot] = &[Slot::Main, Slot::Left, Slot::Right, Slot::Up];
+const THREE: &[Slot] = &[Slot::Main, Slot::Left, Slot::Right];
+const FIVE: &[Slot] = &[Slot::Main, Slot::Left, Slot::Right, Slot::UpLeft, Slot::UpRight];
+const SIX: &[Slot] = &[Slot::Main, Slot::Left, Slot::Right, Slot::Up, Slot::UpLeft, Slot::UpRight];
 
 impl Preset {
     /// The horizontal field of view in degrees a screen of `width` metres at `distance` metres fills.
@@ -88,34 +114,54 @@ impl Preset {
         2.0 * (width / 2.0 / distance).atan().to_degrees()
     }
 
-    pub const ALL: [Preset; 5] = [Preset::Cinema, Preset::CinemaHuge, Preset::Work3, Preset::Work1, Preset::Assistant];
+    pub const ALL: [Preset; 6] = [Preset::Work4, Preset::Focus3, Preset::Work5, Preset::Work6, Preset::Cinema, Preset::CinemaHuge];
 
-    /// `none` -> None. `work` is an alias of `work-3`.
+    /// `none` -> None. Aliases: `work` = work-4, `focus` = focus-3, and the old names (`work-3` = focus-3,
+    /// `work-1` = cinema, `assistant` = work-6).
     pub fn parse(s: &str) -> Result<Option<Self>, CliError> {
-        Ok(match s {
+        Ok(match s.trim().to_ascii_lowercase().as_str() {
             "none" => None,
-            "cinema" => Some(Self::Cinema),
+            "work-4" | "work4" | "work_4" | "work" | "work-mode" | "four" => Some(Self::Work4),
+            "focus-3" | "focus3" | "focus_3" | "focus" | "work-3" | "work3" => Some(Self::Focus3),
+            "work-5" | "work5" | "work_5" | "five" => Some(Self::Work5),
+            "work-6" | "work6" | "work_6" | "six" | "all" | "assistant" | "llm" => Some(Self::Work6),
+            "cinema" | "movie" | "work-1" | "work1" => Some(Self::Cinema),
             "cinema-huge" | "cinema_huge" | "cinemahuge" | "huge-cinema" | "huge_cinema" | "huge" | "imax" | "theater" | "theatre" => {
                 Some(Self::CinemaHuge)
             }
-            "work-3" | "work3" | "work" => Some(Self::Work3),
-            "work-1" | "work1" => Some(Self::Work1),
-            "assistant" | "llm" => Some(Self::Assistant),
             _ => {
                 return Err(CliError::usage(format!(
-                    "--preset: none, cinema, cinema-huge (imax), work-3 (work), work-1 or assistant, not {s}"
+                    "--preset: work-4 (default), focus-3, work-5, work-6, cinema, cinema-huge (imax) or none, not {s}"
                 )))
             }
         })
     }
 
+    /// The old `assistant` name also turned the voice captions on at start; it still does.
+    pub fn captions_alias(s: &str) -> bool {
+        matches!(s.trim().to_ascii_lowercase().as_str(), "assistant" | "llm")
+    }
+
     pub fn name(self) -> &'static str {
         match self {
+            Self::Work4 => "work-4",
+            Self::Focus3 => "focus-3",
+            Self::Work5 => "work-5",
+            Self::Work6 => "work-6",
             Self::Cinema => "cinema",
             Self::CinemaHuge => "cinema-huge",
-            Self::Work3 => "work-3",
-            Self::Work1 => "work-1",
-            Self::Assistant => "assistant",
+        }
+    }
+
+    /// The name people see ("Work 4", "Huge cinema").
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Work4 => "Work 4",
+            Self::Focus3 => "Focus 3",
+            Self::Work5 => "Work 5",
+            Self::Work6 => "Work 6",
+            Self::Cinema => "Cinema",
+            Self::CinemaHuge => "Huge cinema",
         }
     }
 
@@ -124,10 +170,12 @@ impl Preset {
         let body = match self {
             Self::Cinema => "default_curvature: 0.35\n",
             Self::CinemaHuge => "default_curvature: 0.2\n",
-            Self::Work3 | Self::Work1 => "default_curvature: 0.0\nscreen_max_height: 2160\n",
-            Self::Assistant => "default_curvature: 0.15\n",
+            Self::Work4 | Self::Focus3 | Self::Work5 | Self::Work6 => "default_curvature: 0.0\nscreen_max_height: 2160\n",
         };
-        format!("# omarchyvr desk --preset {} (rewritten every start and by `omarchyvr desk preset`)\n{body}", self.name())
+        format!(
+            "# omarchyvr desk --preset {} (rewritten every start and by `omarchyvr desk preset`)\n{body}# locked layouts: screens never move by themselves or by hand; `desk recenter` moves the whole layout\ndesk_locked: true\n",
+            self.name()
+        )
     }
 
     /// Extra `omarchyvr-passthrough run` arguments.
@@ -154,33 +202,35 @@ impl Preset {
         self == Self::CinemaHuge
     }
 
-    /// The preset's size only holds if the screens are placed again: a plain live switch leaves placed screens alone.
-    pub fn always_place(self) -> bool {
-        self == Self::CinemaHuge
+    /// The Hyprland outputs this layout needs (`desk start --screens` is raised to it): the highest screen number.
+    pub fn outputs_needed(self) -> u8 {
+        self.layout().slots.iter().map(|s| super::screens::number_of(*s) as u8).max().unwrap_or(1)
     }
 
-    /// The preset turns the voice captions on.
-    pub fn voice(self) -> bool {
-        self == Self::Assistant
-    }
-
+    /// THE geometry table (docs/SCREENS.md "Locked layouts").
     pub fn layout(self) -> Layout {
-        let l = |screens, curvature, width, distance| Layout { screens, curvature, width, distance };
+        let l = |slots: &'static [Slot], curvature, width, distance| Layout { slots, screens: slots.len() as u32, curvature, width, distance };
         match self {
-            Self::Cinema => l(1, 0.35, 3.2, 3.5),
-            Self::CinemaHuge => l(1, HUGE_CURVATURE, huge_size().0, huge_size().1),
-            Self::Work3 => l(3, 0.0, 1.6, 2.0),
-            Self::Work1 => l(1, 0.0, 2.0, 2.2),
-            Self::Assistant => l(0, 0.15, 2.0, 2.5),
+            Self::Work4 => l(FOUR, 0.0, 1.6, 2.0),
+            Self::Focus3 => l(THREE, 0.0, 1.2, 1.3),
+            Self::Work5 => l(FIVE, 0.0, 1.6, 2.0),
+            Self::Work6 => l(SIX, 0.0, 1.6, 2.0),
+            Self::Cinema => l(MAIN, 0.35, 3.2, 3.5),
+            Self::CinemaHuge => l(MAIN, HUGE_CURVATURE, huge_size().0, huge_size().1),
         }
     }
 }
 
-/// Remove and parse `--preset NAME`; without it the default preset (cinema).
+/// Remove and parse `--preset NAME`; without it the default layout (work-4).
 pub fn parse_opt(a: &mut Args) -> Result<Option<Preset>, CliError> {
+    Ok(parse_opt_captions(a)?.0)
+}
+
+/// [`parse_opt`], and whether the name was the old `assistant` (voice captions on).
+pub fn parse_opt_captions(a: &mut Args) -> Result<(Option<Preset>, bool), CliError> {
     match a.opt("--preset")? {
-        Some(v) => Preset::parse(&v),
-        None => Ok(Some(DEFAULT)),
+        Some(v) => Ok((Preset::parse(&v)?, Preset::captions_alias(&v))),
+        None => Ok((Some(DEFAULT), false)),
     }
 }
 
@@ -262,16 +312,17 @@ pub enum Step {
 }
 
 /// What `omarchyvr desk preset P` does, in order. `screens`: the VR screens' visibility under this preset (Some when
-/// the session has `PIMAX-*` outputs): then `desk-screens` replaces the arc and the app panels.
-pub fn live_steps(p: Preset, panels: &[Panel], screens: Option<&[(super::screens::Slot, String, bool)]>, place: bool) -> Vec<Step> {
+/// the session has `PIMAX-*` outputs): then `desk-screens` replaces the arc and the app panels. The layout is always
+/// placed with its own numbers: WayVR (locked) builds it around the layout anchor, so a switch never moves the
+/// layout to where the head looks now; only `desk recenter` does that.
+pub fn live_steps(p: Preset, panels: &[Panel], screens: Option<&[(super::screens::Slot, String, bool)]>) -> Vec<Step> {
     let mut v = vec![Step::Passthrough(p.passthrough_ctl())];
     if p.skybox_off() {
         v.push(Step::Wayvrctl(vec!["skybox".into(), "off".into()]));
     }
-    let place = place || p.always_place();
     let l = p.layout();
     if let Some(vis) = screens.filter(|s| s.len() > 1) {
-        v.push(Step::Wayvrctl(super::screens::desk_screens_args(vis, place.then_some((l.width, l.distance, l.curvature)), true)));
+        v.push(Step::Wayvrctl(super::screens::desk_screens_args(vis, Some((l.width, l.distance, l.curvature)), true)));
         return v;
     }
     if l.screens >= 3 {
@@ -339,13 +390,12 @@ pub fn apply_live(
     pt_sock: &Path,
     panels: &[Panel],
     screens: Option<&[(super::screens::Slot, String, bool)]>,
-    place: bool,
     dry_run: bool,
     out: &mut dyn FnMut(&str),
 ) -> Result<(), String> {
     use std::process::{Command, Stdio};
     let mut failures = Vec::new();
-    let steps = live_steps(p, panels, screens, place);
+    let steps = live_steps(p, panels, screens);
     let mut launched = false;
     for s in &steps {
         match s {
@@ -428,17 +478,62 @@ mod tests {
         let mut a = Args(vec!["--preset".into(), "cinema".into(), "--eye".into()]);
         assert_eq!(parse_opt(&mut a).unwrap(), Some(Preset::Cinema));
         assert_eq!(a.0, ["--eye"]);
-        assert_eq!(parse_opt(&mut Args(vec![])).unwrap(), Some(Preset::Cinema), "cinema is the default");
+        assert_eq!(parse_opt(&mut Args(vec![])).unwrap(), Some(Preset::Work4), "work-4 is the default (2026-10-18)");
+        assert_eq!(DEFAULT, Preset::Work4);
         assert_eq!(Preset::parse("none").unwrap(), None);
-        assert_eq!(Preset::parse("work").unwrap(), Some(Preset::Work3));
-        assert_eq!(Preset::parse("work-1").unwrap(), Some(Preset::Work1));
-        assert_eq!(Preset::parse("llm").unwrap(), Some(Preset::Assistant));
+        for (n, p) in [
+            ("work", Preset::Work4),
+            ("work4", Preset::Work4),
+            ("focus", Preset::Focus3),
+            ("Focus-3", Preset::Focus3),
+            ("work5", Preset::Work5),
+            ("work6", Preset::Work6),
+            // the old names: the closest new layout
+            ("work-3", Preset::Focus3),
+            ("work3", Preset::Focus3),
+            ("work-1", Preset::Cinema),
+            ("assistant", Preset::Work6),
+            ("llm", Preset::Work6),
+        ] {
+            assert_eq!(Preset::parse(n).unwrap(), Some(p), "{n}");
+        }
+        assert!(Preset::captions_alias("assistant") && !Preset::captions_alias("work-6"));
+        let mut a = Args(vec!["--preset".into(), "assistant".into()]);
+        assert_eq!(parse_opt_captions(&mut a).unwrap(), (Some(Preset::Work6), true));
         assert_eq!(parse_opt(&mut Args(vec!["--preset=disco".into()])).unwrap_err().code, 2);
         for p in Preset::ALL {
             assert_eq!(Preset::parse(p.name()).unwrap(), Some(p));
+            assert!(!p.label().is_empty());
         }
-        assert!(Preset::Assistant.voice() && !Preset::Work3.voice());
         assert_eq!(Preset::Cinema.passthrough_args(), ["--gain", "0.35"]);
+    }
+
+    #[test]
+    fn the_geometry_table() {
+        use Slot::*;
+        let row = |p: Preset| {
+            let l = p.layout();
+            (l.slots.to_vec(), l.screens, l.width, l.distance, l.curvature)
+        };
+        assert_eq!(row(Preset::Work4), (vec![Main, Left, Right, Up], 4, 1.6, 2.0, 0.0));
+        assert_eq!(row(Preset::Focus3), (vec![Main, Left, Right], 3, 1.2, 1.3, 0.0));
+        assert_eq!(row(Preset::Work5), (vec![Main, Left, Right, UpLeft, UpRight], 5, 1.6, 2.0, 0.0));
+        assert_eq!(row(Preset::Work6), (vec![Main, Left, Right, Up, UpLeft, UpRight], 6, 1.6, 2.0, 0.0));
+        assert_eq!(row(Preset::Cinema), (vec![Main], 1, 3.2, 3.5, 0.35));
+        assert_eq!(row(Preset::CinemaHuge), (vec![Main], 1, 11.0, 8.0, 0.2));
+        // the outputs a layout needs: the highest screen number in it
+        let need: Vec<u8> = Preset::ALL.iter().map(|p| p.outputs_needed()).collect();
+        assert_eq!(need, [4, 3, 6, 6, 1, 1]);
+        // focus-3 is closer than work-4 but about as wide on the eye
+        let (f, w) = (Preset::Focus3.layout(), Preset::Work4.layout());
+        assert!(f.distance < w.distance && (Preset::fov_deg(f.width, f.distance) - Preset::fov_deg(w.width, w.distance)).abs() < 10.0);
+        // every work layout is flat and passthrough normal; every conf locks the screens
+        for p in Preset::ALL {
+            assert!(p.conf().contains("\ndesk_locked: true\n"), "{p:?}");
+            if p.layout().screens > 1 {
+                assert_eq!((p.layout().curvature, p.passthrough_ctl()), (0.0, "normal"), "{p:?}");
+            }
+        }
     }
 
     #[test]
@@ -447,11 +542,9 @@ mod tests {
             assert_eq!(Preset::parse(n).unwrap(), Some(Preset::CinemaHuge), "{n}");
         }
         assert_eq!(Preset::CinemaHuge.name(), "cinema-huge");
-        assert!(Preset::ALL.contains(&Preset::CinemaHuge));
-        // inside the WayVR caps (ipc/events.rs clamps width 0.3..6 and distance 0.4..8)
         let l = Preset::CinemaHuge.layout();
         assert_eq!((l.screens, l.width, l.distance, l.curvature), (1, 11.0, 8.0, 0.2));
-        assert!(l.width <= WAYVR_MAX_WIDTH && l.distance <= 8.0 && l.distance >= 0.4);
+        assert!(l.width <= WAYVR_MAX_WIDTH && l.distance >= 0.4);
         // the same angle as the wish (11 m at 8 m = 68 degrees), 65..75 degrees
         let fov = Preset::fov_deg(l.width, l.distance);
         let wish = Preset::fov_deg(HUGE_TARGET_WIDTH, HUGE_TARGET_DISTANCE);
@@ -460,9 +553,9 @@ mod tests {
         assert!(fov > Preset::fov_deg(normal.width, normal.distance) + 10.0);
         assert_eq!(Preset::CinemaHuge.passthrough_args(), ["--off"]);
         assert_eq!(Preset::CinemaHuge.passthrough_ctl(), "off");
-        assert!(Preset::CinemaHuge.conf().contains("default_curvature: 0.2") && !Preset::CinemaHuge.voice());
-        // the live steps: room black, backdrop off, one screen placed even without --replace
-        let s = live_steps(Preset::CinemaHuge, &[], None, false);
+        assert!(Preset::CinemaHuge.conf().contains("default_curvature: 0.2"));
+        // the live steps: room black, backdrop off, one screen
+        let s = live_steps(Preset::CinemaHuge, &[], None);
         assert_eq!(s.len(), 3);
         assert_eq!(s[0], Step::Passthrough("off"));
         assert_eq!(s[1], Step::Wayvrctl(vec!["skybox".into(), "off".into()]));
@@ -471,14 +564,13 @@ mod tests {
             Step::Wayvrctl(["desk-layout", "1", "--curvature", "0.2", "--width", "11", "--distance", "8"].map(String::from).to_vec())
         );
         // with VR screens: placed (--place) with the huge numbers, the others hidden
-        use crate::vr::screens::Slot;
         let vis = vec![(Slot::Main, "SUNSHINE".to_string(), true), (Slot::Left, "PIMAX-LEFT".to_string(), false)];
-        let s = live_steps(Preset::CinemaHuge, &[], Some(&vis), false);
+        let s = live_steps(Preset::CinemaHuge, &[], Some(&vis));
         let Step::Wayvrctl(a) = &s[2] else { panic!("{s:?}") };
         let line = a.join(" ");
         assert!(line.starts_with("desk-screens --place --width 11 --distance 8 --curvature 0.2 --hide-others"), "{line}");
-        // other presets keep skybox alone and place only on request
-        assert!(!live_steps(Preset::Cinema, &[], Some(&vis), false).iter().any(|s| matches!(s, Step::Wayvrctl(a) if a[0] == "skybox" || a.contains(&"--place".to_string()))));
+        // only the huge cinema turns the backdrop off
+        assert!(!live_steps(Preset::Cinema, &[], Some(&vis)).iter().any(|s| matches!(s, Step::Wayvrctl(a) if a[0] == "skybox")));
         // the conf round-trips
         let d = crate::vr::test_dir("preset-huge");
         write_conf(&d, Some(Preset::CinemaHuge)).unwrap();
@@ -489,13 +581,16 @@ mod tests {
     fn conf_files_are_written_read_back_and_removed() {
         let d = crate::vr::test_dir("preset");
         let f = d.join("config/wayvr/conf.d").join(CONF_NAME);
-        write_conf(&d, Some(Preset::Work1)).unwrap();
+        write_conf(&d, Some(Preset::Focus3)).unwrap();
         let t = std::fs::read_to_string(&f).unwrap();
-        assert!(t.contains("default_curvature: 0.0") && t.contains("screen_max_height: 2160"));
-        assert_eq!(read_conf(&d), Some(Preset::Work1));
+        assert!(t.contains("default_curvature: 0.0") && t.contains("screen_max_height: 2160") && t.contains("desk_locked: true"));
+        assert_eq!(read_conf(&d), Some(Preset::Focus3));
         write_conf(&d, Some(Preset::Cinema)).unwrap();
         assert!(std::fs::read_to_string(&f).unwrap().contains("default_curvature: 0.35"));
         assert_eq!(read_conf(&d), Some(Preset::Cinema));
+        // an old file (work-3) reads back as its new layout
+        std::fs::write(&f, "# omarchyvr desk --preset work-3 (old)\ndefault_curvature: 0.0\n").unwrap();
+        assert_eq!(read_conf(&d), Some(Preset::Focus3));
         write_conf(&d, None).unwrap();
         assert!(!f.exists());
         assert_eq!(read_conf(&d), None);
@@ -521,54 +616,56 @@ mod tests {
     }
 
     #[test]
-    fn live_steps_per_preset() {
+    fn live_steps_per_preset_with_one_output() {
         let panels = parse_panels(None);
-        let s = live_steps(Preset::Work3, &panels, None, true);
+        let s = live_steps(Preset::Focus3, &panels, None);
         assert_eq!(s[0], Step::Passthrough("normal"));
         assert!(matches!(&s[1], Step::Panel(p) if p.name == "work-left"));
         assert!(matches!(&s[2], Step::Panel(p) if p.name == "work-right"));
         assert_eq!(
             s[3],
-            Step::Wayvrctl(["desk-layout", "3", "--curvature", "0", "--width", "1.6", "--distance", "2"].map(String::from).to_vec())
+            Step::Wayvrctl(["desk-layout", "3", "--curvature", "0", "--width", "1.2", "--distance", "1.3"].map(String::from).to_vec())
         );
-        let s = live_steps(Preset::Cinema, &panels, None, true);
+        let s = live_steps(Preset::Cinema, &panels, None);
         assert_eq!(s.len(), 2);
         assert_eq!(s[0], Step::Passthrough("dim"));
         assert!(matches!(&s[1], Step::Wayvrctl(a) if a[1] == "1" && a[3] == "0.35"));
-        assert!(!live_steps(Preset::Work1, &panels, None, true).iter().any(|s| matches!(s, Step::Panel(_))));
-        assert!(matches!(live_steps(Preset::Assistant, &panels, None, true).last(), Some(Step::Wayvrctl(a)) if a[1] == "0"));
+        // two panels at most (left and right), whatever the layout's count
+        assert_eq!(live_steps(Preset::Work6, &panels, None).iter().filter(|s| matches!(s, Step::Panel(_))).count(), 2);
     }
 
     #[test]
-    fn with_vr_screens_the_preset_places_them_and_starts_no_panels() {
-        use crate::vr::screens::Slot;
+    fn with_vr_screens_the_layout_is_placed_with_its_numbers_and_starts_no_panels() {
         let vis = vec![
             (Slot::Main, "SUNSHINE".to_string(), true),
             (Slot::Left, "PIMAX-LEFT".to_string(), true),
             (Slot::Right, "PIMAX-RIGHT".to_string(), true),
-            (Slot::Up, "PIMAX-UP".to_string(), false),
+            (Slot::Up, "PIMAX-UP".to_string(), true),
+            (Slot::UpLeft, "PIMAX-UPLEFT".to_string(), false),
         ];
-        let s = live_steps(Preset::Work3, &parse_panels(None), Some(&vis), true);
+        let s = live_steps(Preset::Work4, &parse_panels(None), Some(&vis));
         assert_eq!(s.len(), 2);
         assert!(!s.iter().any(|x| matches!(x, Step::Panel(_))));
         let Step::Wayvrctl(a) = &s[1] else { panic!() };
-        assert_eq!(a[0], "desk-screens");
-        assert!(a.contains(&"--place".to_string()) && a.contains(&"--hide-others".to_string()) && a.contains(&"up=PIMAX-UP:hide".to_string()));
+        assert_eq!(a.join(" "), "desk-screens --place --width 1.6 --distance 2 --curvature 0 --hide-others main=SUNSHINE left=PIMAX-LEFT right=PIMAX-RIGHT up=PIMAX-UP up-left=PIMAX-UPLEFT:hide");
+        // every switch places (WayVR builds it around the layout anchor; never around the head)
+        for p in Preset::ALL {
+            assert!(live_steps(p, &[], Some(&vis)).iter().any(|s| matches!(s, Step::Wayvrctl(a) if a[0] == "desk-screens" && a[1] == "--place")), "{p:?}");
+        }
         // only the main output: the old arc
         let one = vec![(Slot::Main, "SUNSHINE".to_string(), true)];
-        assert!(matches!(live_steps(Preset::Work1, &[], Some(&one), true).last(), Some(Step::Wayvrctl(a)) if a[0] == "desk-layout"));
+        assert!(matches!(live_steps(Preset::Cinema, &[], Some(&one)).last(), Some(Step::Wayvrctl(a)) if a[0] == "desk-layout"));
     }
 
     #[test]
     fn dry_run_prints_and_touches_nothing() {
         let mut lines = Vec::new();
         apply_live(
-            Preset::Work3,
+            Preset::Focus3,
             Path::new("/nonexistent/wayvrctl"),
             Path::new("/nonexistent/pt.sock"),
             &parse_panels(None),
             None,
-            true,
             true,
             &mut |l| lines.push(l.to_string()),
         )
@@ -586,15 +683,21 @@ mod tests {
         assert_eq!(o.preset, Some(Preset::Cinema));
         let pt = plan(&o).into_iter().find(|s| s.name == "passthrough").unwrap();
         assert_eq!(pt.args, ["run", "--gain", "0.35"]);
+        // the old assistant: every screen, and the captions
         let o = parse(&["--preset", "assistant"]);
+        assert_eq!(o.preset, Some(Preset::Work6));
         assert!(o.voice);
         assert!(plan(&o).iter().any(|s| s.name == "voicecap"));
-        // no --preset: cinema
+        // no --preset: work-4, passthrough normal
         let o = parse(&[]);
-        assert_eq!(o.preset, Some(Preset::Cinema));
+        assert_eq!(o.preset, Some(Preset::Work4));
         assert!(!o.voice);
+        assert_eq!(plan(&o).into_iter().find(|s| s.name == "passthrough").unwrap().args, ["run"]);
         let o = parse(&["--preset", "none"]);
         assert!(o.preset.is_none());
-        assert_eq!(plan(&o).into_iter().find(|s| s.name == "passthrough").unwrap().args, ["run"]);
+        // the outputs follow the layout: work-5 needs up-right (6) even with --screens 4
+        assert_eq!(parse(&["--preset", "work-5", "--screens", "4"]).screens, 6);
+        assert_eq!(parse(&["--preset", "focus-3", "--screens", "2"]).screens, 3);
+        assert_eq!(parse(&["--preset", "cinema", "--screens", "2"]).screens, 2, "never lowered");
     }
 }

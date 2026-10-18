@@ -16,8 +16,8 @@
 //! * **Screens on demand.** [`watch`] (`omarchyvr desk screens watch`, a leaf process of the session) follows Hyprland's
 //!   event socket: a VR screen is shown while its workspace has an app or it has the focus ("new window" focuses the
 //!   next free screen), and hidden (still running) otherwise. Presets set a limit and pinned screens in the state file
-//!   (`$XDG_RUNTIME_DIR/omarchyvr-screens.state`): cinema, cinema-huge and work-1 show the main screen only, work-3 the main screen plus
-//!   left and right, assistant and none every screen on demand. Voice ("new window", "move this left", "go to the
+//!   (`$XDG_RUNTIME_DIR/omarchyvr-screens.state`): each layout pins exactly its own screens (work-4: 1-4, focus-3: 1-3, cinema: the main one; preset.rs), plus
+//!   and none every screen on demand. Voice ("new window", "move this left", "go to the
 //!   left screen") lifts the limit again. The focused screen always shows. A preset never closes, kills or moves
 //!   an app: a screen it hides keeps its apps.
 //! * **Layout inside a screen** ([`layout_plan`], run by the watcher whenever apps open or move): one app alone fills
@@ -771,7 +771,7 @@ pub fn remove_all(h: &mut dyn Hypr, dry_run: bool, session_running: bool) -> Rep
 pub struct ShowState {
     /// Most screens shown, the main one included (1 = only the main screen).
     pub limit: u8,
-    /// Shown even without an app (work-3: left and right).
+    /// Shown even without an app (a layout's own screens: work-4 pins left, right and up).
     pub pinned: Vec<Slot>,
     /// Apps of different kinds never share a screen ([`layout_plan`]). OFF by default (user rule 2026-10-17: screens
     /// and apps move only at command time; the app's "Auto-arrange apps" switch turns it on for a session). On after
@@ -814,15 +814,12 @@ impl ShowState {
         )
     }
 
-    /// The state a preset sets: (limit, pinned). A preset only changes what is shown: a live switch keeps `sort`
-    /// ([`ShowState::switch_to`]).
+    /// The state a layout sets (locked layouts, 2026-10-18): exactly its screens, pinned (shown even when empty), the
+    /// limit = their count (work-4 pins 2, 3, 4; cinema shows the main screen only). A layout only changes what is
+    /// shown: a live switch keeps `sort` ([`ShowState::switch_to`]).
     pub fn for_preset(p: super::preset::Preset) -> ShowState {
-        use super::preset::Preset;
-        match p {
-            Preset::Cinema | Preset::CinemaHuge | Preset::Work1 => ShowState { limit: 1, pinned: Vec::new(), sort: false, hidden: Vec::new() },
-            Preset::Work3 => ShowState { limit: 3, pinned: vec![Slot::Left, Slot::Right], sort: false, hidden: Vec::new() },
-            Preset::Assistant => ShowState::default(),
-        }
+        let l = p.layout();
+        ShowState { limit: l.slots.len() as u8, pinned: l.slots.iter().copied().filter(|s| *s != Slot::Main).collect(), sort: false, hidden: Vec::new() }
     }
 
     /// A live preset switch from this state: the preset's limit and pinned screens, the sort setting kept.
@@ -853,17 +850,29 @@ pub fn write_state(p: &Path, s: &ShowState) -> std::io::Result<()> {
 pub fn visibility(mons: &[Mon], apps: &HashMap<i64, usize>, st: &ShowState) -> Vec<(Slot, String, bool)> {
     let Some(main) = main_output(mons) else { return Vec::new() };
     let mut v = vec![(Slot::Main, main.name.clone(), true)];
+    let present: Vec<(Slot, &Mon)> =
+        EXTRA.into_iter().filter_map(|slot| mons.iter().find(|m| Some(m.name.as_str()) == slot.output() && !m.disabled).map(|m| (slot, m))).collect();
+    // pinned screens first (a layout's own screens: work-5's up-left/up-right before an up screen with an app), then
+    // the busy ones, in slot order, within the limit; the focused one always
+    let mut on: Vec<Slot> = Vec::new();
     let mut shown = 1u8;
-    for slot in EXTRA {
-        let Some(m) = mons.iter().find(|m| Some(m.name.as_str()) == slot.output() && !m.disabled) else { continue };
-        let busy = apps.get(&m.active_ws).copied().unwrap_or(0) > 0;
-        let want = st.pinned.contains(&slot) || busy || m.focused;
-        // hidden by voice: off even with the focus on it (its apps stay open)
-        let on = !st.hidden.contains(&slot) && ((want && shown < st.limit) || m.focused);
-        if on {
-            shown += 1;
+    for pass in 0..2 {
+        for (slot, m) in &present {
+            if on.contains(slot) || st.hidden.contains(slot) {
+                continue;
+            }
+            let busy = apps.get(&m.active_ws).copied().unwrap_or(0) > 0;
+            let want = if pass == 0 { st.pinned.contains(slot) } else { busy || m.focused };
+            if want && shown < st.limit {
+                on.push(*slot);
+                shown += 1;
+            }
         }
-        v.push((slot, m.name.clone(), on));
+    }
+    for (slot, m) in present {
+        // hidden by voice: off even with the focus on it (its apps stay open)
+        let show = !st.hidden.contains(&slot) && (on.contains(&slot) || m.focused);
+        v.push((slot, m.name.clone(), show));
     }
     v
 }
@@ -1974,14 +1983,14 @@ mod tests {
         // the focused empty screen ("new window") shows too
         mons[3].focused = true;
         assert!(visibility(&mons, &apps, &st)[1].2);
-        // work-1 / cinema: the main screen only, plus the focused screen (you never type into a hidden screen)
-        let one = ShowState::for_preset(super::super::preset::Preset::Work1);
+        // cinema: the main screen only, plus the focused screen (you never type into a hidden screen)
+        let one = ShowState::for_preset(super::super::preset::Preset::Cinema);
         assert_eq!(visibility(&mons, &apps, &one).iter().map(|x| x.2).collect::<Vec<_>>(), [true, true, false, false]);
         mons[3].focused = false;
         assert_eq!(visibility(&mons, &apps, &one).iter().filter(|x| x.2).count(), 1);
         mons[3].focused = true;
-        // work-3: left and right pinned, even empty; up never
-        let w3 = ShowState::for_preset(super::super::preset::Preset::Work3);
+        // focus-3: left and right pinned, even empty; up never (not even with an app)
+        let w3 = ShowState::for_preset(super::super::preset::Preset::Focus3);
         let mut busy_up = apps.clone();
         busy_up.insert(13, 2);
         let v = visibility(&mons, &busy_up, &w3);
@@ -1993,6 +2002,29 @@ mod tests {
         assert_eq!(desk_screens_args(&v, Some((1.6, 2.0, 0.0)), true)[1..9], ["--place", "--width", "1.6", "--distance", "2", "--curvature", "0", "--hide-others"]);
         // no outputs of ours: only the main screen
         assert_eq!(visibility(&desktop(), &apps, &st).len(), 1);
+    }
+
+    #[test]
+    fn a_layout_shows_exactly_its_own_screens() {
+        use super::super::preset::Preset;
+        let mons = six();
+        // an app on every extra screen: a layout still shows only its own screens (the focus aside)
+        let apps: HashMap<i64, usize> = mons.iter().map(|m| (m.active_ws, 1)).collect();
+        let none: HashMap<i64, usize> = HashMap::new();
+        let shown = |p: Preset, apps: &HashMap<i64, usize>| -> Vec<usize> {
+            visibility(&mons, apps, &ShowState::for_preset(p)).iter().filter(|x| x.2).map(|x| number_of(x.0)).collect()
+        };
+        for a in [&apps, &none] {
+            assert_eq!(shown(Preset::Work4, a), [1, 2, 3, 4]);
+            assert_eq!(shown(Preset::Focus3, a), [1, 2, 3]);
+            // work-5: up-left and up-right, never the up screen with its app (pinned ones come first)
+            assert_eq!(shown(Preset::Work5, a), [1, 2, 3, 5, 6]);
+            assert_eq!(shown(Preset::Work6, a), [1, 2, 3, 4, 5, 6]);
+            assert_eq!(shown(Preset::Cinema, a), [1]);
+            assert_eq!(shown(Preset::CinemaHuge, a), [1]);
+        }
+        let w4 = ShowState::for_preset(Preset::Work4);
+        assert_eq!((w4.limit, w4.pinned.clone()), (4, vec![Slot::Left, Slot::Right, Slot::Up]));
     }
 
     #[test]

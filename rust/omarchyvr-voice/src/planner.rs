@@ -178,7 +178,10 @@ pub fn tool_line(i: &Intent) -> String {
 }
 
 /// Rules of one category (only the categories offered get theirs: shorter prompts, fewer wrong turns).
-fn rules_of(c: Category) -> &'static str {
+fn rules_of(c: Category, locked: bool) -> String {
+    if c == Category::Screens && locked {
+        return "VR screens by number: 1 main, 2 left, 3 right, 4 up, 5 up-left, 6 up-right; \"here\" = the screen looked at. Close / remove / hide / shut down screen N = vr.screens.hide screens=\"N,M\" (it hides the screen; apps stay open); close everything / close the screens = vr.screens.hide_others. \"N screens\" = vr.screens.count; \"N more screens\" = vr.screens.more. Apps by kind or name to screen N = win.screen.put_n; to a side = win.screen.put; THIS app = win.screen.move / win.screen.move_n. Screens are locked: move / resize / scale / reset a screen = none. win.ws.close closes every app of a workspace: only when the user asks to close the window (workspace) itself, never for a screen.".into();
+    }
     match c {
         Category::Screens => "VR screens by number: 1 main, 2 left, 3 right, 4 up, 5 up-left, 6 up-right; \"here\" = the screen looked at. \
 Close / remove / hide / shut down screen N = vr.screens.hide screens=\"N,M\" (it hides the screen; apps stay open); close everything / \
@@ -197,6 +200,7 @@ vr.screens.reset. win.ws.close closes every app of a workspace: only when the us
         Category::System => "Volume, music, battery, reminders. \"play <a title>\" = media.play (a file).",
         Category::Other => "",
     }
+    .into()
 }
 
 /// The fixed system prompt for these categories and tools (cached by [`key`] by the caller).
@@ -223,9 +227,9 @@ an app or a screen the user did not name.\n",
         s += "First write one line `target: <the state the user wants, a few words>`, then the steps.\n";
     }
     for c in cats {
-        let r = rules_of(*c);
+        let r = rules_of(*c, cat.screens_locked);
         if !r.is_empty() {
-            s += r;
+            s += &r;
             s.push('\n');
         }
     }

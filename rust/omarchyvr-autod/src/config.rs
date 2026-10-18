@@ -52,8 +52,9 @@ impl Runtime {
     }
 }
 
-/// Desk presets (implemented by `omarchyvr desk start --preset`).
-pub const PRESETS: [&str; 7] = ["none", "cinema", "cinema-huge", "work", "work-3", "work-1", "assistant"];
+/// Desk layouts (implemented by `omarchyvr desk start --preset`; `none` = the launcher default, work-4). The old names
+/// (work-3, work-1, assistant) stay valid: the launcher reads them as focus-3, cinema and work-6.
+pub const PRESETS: [&str; 11] = ["none", "work-4", "focus-3", "work-5", "work-6", "cinema", "cinema-huge", "work", "work-3", "work-1", "assistant"];
 
 /// All settings. Times in seconds.
 #[derive(Debug, Clone, PartialEq)]
@@ -64,7 +65,7 @@ pub struct Config {
     pub auto_start: bool,
     pub mode: Mode,
     pub game_runtime: Runtime,
-    /// `none`, `cinema`, `cinema-huge`, `work`, `assistant`.
+    /// `none`, a layout name (`work-4`, `focus-3`, `work-5`, `work-6`, `cinema`, `cinema-huge`) or an old alias.
     pub preset: String,
     /// Desk/vr start flags.
     pub sixdof: bool,

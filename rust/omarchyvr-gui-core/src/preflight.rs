@@ -187,7 +187,7 @@ pub fn evaluate(
     if t.anchor && !caps.anchor {
         unsupported.push("--anchor");
     }
-    if t.preset != crate::launcher::Preset::None && !caps.preset {
+    if t.preset != crate::launcher::Preset::Work4 && !caps.preset {
         unsupported.push("--preset");
     }
     if launcher_missing {
