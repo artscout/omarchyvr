@@ -298,6 +298,78 @@ pub fn hypr_lists_pid(json: &str, pid: u32) -> bool {
     })
 }
 
+/// What a `hyprctl -j clients` answer proves about `pid` (pure): `Some(true)` it lists a window of it,
+/// `Some(false)` it is a client list with other clients but none of `pid`, `None` it proves nothing (not a JSON list,
+/// an empty list: a compositor still starting or restarting lists no one).
+pub fn hypr_verdict(json: &str, pid: u32) -> Option<bool> {
+    let t = json.trim_start();
+    if !t.starts_with('[') || !t.contains("\"pid\":") {
+        return None;
+    }
+    Some(hypr_lists_pid(t, pid))
+}
+
+/// Consecutive "the desktop lists no window of it" answers before the window process is replaced.
+pub const DESKTOP_MISSES: u32 = 3;
+/// Seconds between those checks.
+const DESKTOP_RECHECK_SECS: f64 = 2.0;
+
+/// What to do after one answer of the desktop check.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DesktopAct {
+    /// The desktop lists the window: nothing to do.
+    Fine,
+    /// The desktop could not be asked (not Hyprland, hyprctl failed or timed out, no clients): never act on it.
+    Unknown,
+    /// A miss (`n` in a row, fewer than [`DESKTOP_MISSES`]): ask again in [`DESKTOP_RECHECK_SECS`].
+    Recheck(u32),
+    /// [`DESKTOP_MISSES`] misses in a row and no replacement yet since the app started: replace the window process.
+    Replace,
+    /// The same, but one replacement was already made: leave it alone (a second replacement would not help).
+    Leave,
+}
+
+/// The fail-safe around replacing a window process the desktop does not show (pure, tested): only on
+/// [`DESKTOP_MISSES`] consecutive clear misses, never on an unknown answer, at most once per app start.
+#[derive(Debug, Default)]
+pub struct DesktopGuard {
+    misses: u32,
+    replaced: bool,
+}
+
+impl DesktopGuard {
+    /// A new window process: its misses start at zero (the one-replacement budget is kept).
+    pub fn new_window(&mut self) {
+        self.misses = 0;
+    }
+
+    pub fn answer(&mut self, a: Option<bool>) -> DesktopAct {
+        match a {
+            None => {
+                self.misses = 0;
+                DesktopAct::Unknown
+            }
+            Some(true) => {
+                self.misses = 0;
+                DesktopAct::Fine
+            }
+            Some(false) => {
+                self.misses += 1;
+                if self.misses < DESKTOP_MISSES {
+                    return DesktopAct::Recheck(self.misses);
+                }
+                self.misses = 0;
+                if self.replaced {
+                    DesktopAct::Leave
+                } else {
+                    self.replaced = true;
+                    DesktopAct::Replace
+                }
+            }
+        }
+    }
+}
+
 /// Has `pid` a window on the desktop? Asks the compositor; `None` when it cannot be asked (not Hyprland, no answer
 /// within 2 s). The ack file cannot tell: a window process whose surface the compositor never mapped (or dropped)
 /// still draws and answers "show yourself", and winit cannot map it again (`Visible(true)` does nothing on Wayland).
@@ -319,8 +391,8 @@ fn desktop_has_window(pid: u32) -> Option<bool> {
     }
     let mut out = String::new();
     std::io::Read::read_to_string(&mut c.stdout.take()?, &mut out).ok()?;
-    // an answer without any client list (an error text) proves nothing
-    out.trim_start().starts_with('[').then(|| hypr_lists_pid(&out, pid))
+    // an answer without any client list (an error text, an empty list) proves nothing
+    hypr_verdict(&out, pid)
 }
 
 /// Seconds after the first frame, and after a second start, before the desktop is asked whether the window is there.
@@ -454,6 +526,8 @@ pub fn run(demo: bool, renderer: Option<Renderer>) -> i32 {
     let mut restarts: Vec<Instant> = Vec::new();
     let mut respawns: Vec<Instant> = Vec::new();
     let mut display_retries = 0u32;
+    // replacing a window process the desktop does not show: fail-safe, once per app start (DesktopGuard)
+    let mut desk_guard = DesktopGuard::default();
     let exit = loop {
         let (renderer, x11) = chain[idx];
         // login autostart can run before the compositor's socket exists: wait for it (up to a minute) rather than
@@ -500,6 +574,8 @@ pub fn run(demo: bool, renderer: Option<Renderer>) -> i32 {
         // when to ask the desktop whether the window is really there (after the first frame, after a second start)
         let mut desktop_check: Option<Instant> = None;
         let mut had_window = false;
+        let mut desktop_given_up = false;
+        desk_guard.new_window();
         let status = loop {
             match child.try_wait() {
                 Ok(Some(st)) => break Some(st),
@@ -535,12 +611,24 @@ pub fn run(demo: bool, renderer: Option<Renderer>) -> i32 {
                 had_window = true;
                 desktop_check = Some(Instant::now() + Duration::from_secs_f64(env_secs("PIMAX_DESKTOP_CHECK_SECS", DESKTOP_CHECK_SECS)));
             }
-            if desktop_check.is_some_and(|t| Instant::now() >= t) && !asked && ended_why.is_none() {
+            if desktop_check.is_some_and(|t| Instant::now() >= t) && !asked && ended_why.is_none() && !desktop_given_up {
                 desktop_check = None;
-                if desktop_has_window(pid) == Some(false) {
-                    log::error!("the window process {pid} draws but the desktop has no window of it: ending it and starting a new one");
-                    ended_why = Some(Why::NoWindow);
-                    signal_child(&child, libc::SIGKILL);
+                match desk_guard.answer(desktop_has_window(pid)) {
+                    DesktopAct::Fine => {}
+                    DesktopAct::Unknown => log::info!("desktop check: Hyprland could not be asked about window process {pid} (not Hyprland, no answer, or no clients listed); leaving it alone"),
+                    DesktopAct::Recheck(n) => {
+                        log::warn!("desktop check: Hyprland lists no window of process {pid} ({n} of {DESKTOP_MISSES} checks in a row); asking again in {DESKTOP_RECHECK_SECS} s");
+                        desktop_check = Some(Instant::now() + Duration::from_secs_f64(DESKTOP_RECHECK_SECS));
+                    }
+                    DesktopAct::Replace => {
+                        log::error!("desktop check: the window process {pid} draws but Hyprland listed no window of it {DESKTOP_MISSES} times in a row: ending it (SIGKILL) and starting a new one (the only replacement this app start)");
+                        ended_why = Some(Why::NoWindow);
+                        signal_child(&child, libc::SIGKILL);
+                    }
+                    DesktopAct::Leave => {
+                        desktop_given_up = true;
+                        log::error!("desktop check: Hyprland lists no window of process {pid}, but a window process was already replaced once since the app started; leaving this one alone (closing and opening the app starts a new one)");
+                    }
                 }
             }
             if tick.is_multiple_of(3) && !asked && ended_why.is_none() {
@@ -740,6 +828,40 @@ mod tests {
         assert!(!hypr_lists_pid(json, 2174), "the window process of the bug: drawing, but no client");
         assert!(!hypr_lists_pid(json, 7395), "a prefix of another pid is not it");
         assert!(!hypr_lists_pid("[]", 1));
+        assert_eq!(hypr_verdict(json, 653846), Some(true));
+        assert_eq!(hypr_verdict(json, 2174), Some(false));
+        assert_eq!(hypr_verdict("[]", 2174), None, "an empty list proves nothing");
+        assert_eq!(hypr_verdict("  [\n]\n", 2174), None);
+        assert_eq!(hypr_verdict("HYPRLAND_INSTANCE_SIGNATURE invalid", 2174), None, "an error text proves nothing");
+        assert_eq!(hypr_verdict("", 2174), None);
+    }
+
+    #[test]
+    fn the_desktop_check_is_fail_safe() {
+        let mut g = DesktopGuard::default();
+        // hyprctl failing / not Hyprland / no clients: never acts, however often
+        for _ in 0..20 {
+            assert_eq!(g.answer(None), DesktopAct::Unknown);
+        }
+        // one or two misses only ask again; an unknown or a hit in between starts the count over
+        assert_eq!(g.answer(Some(false)), DesktopAct::Recheck(1));
+        assert_eq!(g.answer(Some(false)), DesktopAct::Recheck(2));
+        assert_eq!(g.answer(None), DesktopAct::Unknown);
+        assert_eq!(g.answer(Some(false)), DesktopAct::Recheck(1));
+        assert_eq!(g.answer(Some(true)), DesktopAct::Fine);
+        assert_eq!(g.answer(Some(false)), DesktopAct::Recheck(1));
+        assert_eq!(g.answer(Some(false)), DesktopAct::Recheck(2));
+        // three in a row: replaced, once
+        assert_eq!(g.answer(Some(false)), DesktopAct::Replace);
+        g.new_window();
+        assert_eq!(g.answer(Some(false)), DesktopAct::Recheck(1), "a new window process starts its own count");
+        assert_eq!(g.answer(Some(false)), DesktopAct::Recheck(2));
+        assert_eq!(g.answer(Some(false)), DesktopAct::Leave, "at most one replacement per app start");
+        g.new_window();
+        for _ in 0..DESKTOP_MISSES - 1 {
+            g.answer(Some(false));
+        }
+        assert_eq!(g.answer(Some(false)), DesktopAct::Leave);
     }
 
     #[test]
