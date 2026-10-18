@@ -28,7 +28,7 @@ pub fn prompt(c: &Catalogue) -> String {
          or {\"intent\": \"none\"} if nothing fits. Never invent ids or slots. Slot types: number = 1..999, \
          word = one plain word, text/name = a few plain words.\n\nIntents:\n",
     );
-    for i in c.enabled() {
+    for i in c.ai_enabled() {
         let slots: Vec<String> = i.slots.iter().map(|(k, t)| format!("{k}:{}", format!("{t:?}").to_lowercase())).collect();
         s += &format!(
             "- {} e.g. \"{}\"{}\n",

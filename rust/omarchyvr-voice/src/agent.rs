@@ -756,9 +756,8 @@ pub fn asked_for(id: &str, w: &[String]) -> bool {
     match id {
         // ("zoom in" / "bigger" are a bigger VR screen, never a fullscreen app)
         "omarchy.window.fullscreen" | "omarchy.window.tiled_fullscreen" | "omarchy.window.maximize" => has(&["fullscreen", "full", "maximize", "maximise", "whole"]),
-        "vr.preset.work3" | "vr.preset.work1" => has(&["mode", "preset", "layout", "single", "flat", "one"]) || w.windows(2).any(|p| p[0] == "work" && p[1].parse::<u8>().is_ok()),
+        "vr.preset.work4" | "vr.preset.focus3" | "vr.preset.work5" | "vr.preset.work6" | "vr.preset.work1" => has(&["mode", "preset", "layout", "single", "flat", "one"]) || w.windows(2).any(|p| p[0] == "work" && p[1].parse::<u8>().is_ok()),
         "vr.preset.cinema" | "vr.preset.cinema_huge" => has(&["cinema", "movie", "film", "theater", "theatre", "huge"]),
-        "vr.preset.assistant" => has(&["assistant"]),
         "vr.screens.reset" => has(&["reset", "lost", "misplaced", "front", "recenter", "gone", "back"]),
         "vr.screens.count" => w.windows(2).any(|p| p[0].parse::<u8>().is_ok() && matches!(p[1].as_str(), "screens" | "screen" | "windows")),
         _ => true,
@@ -1586,7 +1585,7 @@ pub fn intent_safety(i: &Intent) -> &'static str {
 /// Every tool the model may call: the enabled, non-"never" catalogue intents, then the window and query tools.
 pub fn tools(cat: &Catalogue) -> Vec<Tool> {
     let mut v = Vec::new();
-    for i in cat.enabled() {
+    for i in cat.ai_enabled() {
         let safety = intent_safety(i);
         if safety == "never" || NOT_TOOLS.contains(&i.id.as_str()) {
             continue;
@@ -2224,7 +2223,7 @@ impl Agent {
             cache: crate::remote::StateCache::new(crate::remote::StateCache::default_path()),
             history: VecDeque::new(),
             class_system: crate::remote::classify_system(),
-            act_system: crate::remote::act_system(),
+            act_system: crate::remote::act_system_for(cat.screens_locked),
             router: None,
             catalogue: cat.clone(),
             last_claude: None,
@@ -4353,7 +4352,7 @@ mod tests {
         let (p, _) = repair_plan(plan, "I only want screens one and two, put all the terminals on one and hide the rest", &all);
         assert_eq!(p[1].slots["screens"], "3,4,5,6");
         // a fullscreen, a preset or a workspace close nobody asked for
-        let plan = vec![d("omarchy.window.fullscreen 9"), d("vr.preset.work3 9"), d("win.ws.close 9"), d("win.screen.put_n 9 screen=2 app=\"chrome\"")];
+        let plan = vec![d("omarchy.window.fullscreen 9"), d("vr.preset.focus3 9"), d("win.ws.close 9"), d("win.screen.put_n 9 screen=2 app=\"chrome\"")];
         let (p, notes) = repair_plan(plan, "set up my work: chrome on two, hide the others", &all);
         assert_eq!(p.len(), 1, "{notes:?}");
         // asked: they stay

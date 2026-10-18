@@ -7,7 +7,7 @@ omarchyvr desk: would start, in this order:
   1a. VR screens: 6 (the main desktop output + PIMAX-LEFT, PIMAX-RIGHT, PIMAX-UP, PIMAX-UPLEFT, PIMAX-UPRIGHT as headless outputs of its size, created before Monado; hyprctl eval 'hl.monitor(...)', hyprctl output create headless)
   1. monado-service ($ROOT/build/src/xrt/targets/service/monado-service)
   2. $ROOT/home/.local/bin/pimax-ctrltrack live --source broker:$ROOT/run/omarchyvr-cam-broker.sock  (log $ROOT/session/ctrltrack.log)
-  3. $ROOT/home/.local/bin/omarchyvr-passthrough run --gain 0.35 --source broker  (log $ROOT/session/passthrough.log)
+  3. $ROOT/home/.local/bin/omarchyvr-passthrough run --source broker  (log $ROOT/session/passthrough.log)
        XR_RUNTIME_JSON=$ROOT/build/openxr_monado-dev.json
        IPC_IGNORE_VERSION=1
        PIMAX_CAM_SOURCE=broker

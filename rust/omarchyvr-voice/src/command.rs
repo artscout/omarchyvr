@@ -918,11 +918,11 @@ mod tests {
             assert_eq!(wake(t, w), Heard::WakeOnly, "{t:?}");
         }
         assert_eq!(wake("Time Max War Three", w), Heard::Command(vec!["work".into(), "3".into()]));
-        is(&c, "Time Max War Three", "vr.preset.work3");
+        is(&c, "Time Max War Three", "vr.preset.focus3");
         is(&c, "Max, cinema", "vr.preset.cinema");
         is(&c, "max sinema", "vr.preset.cinema");
-        is(&c, "Max work tree", "vr.preset.work3");
-        is(&c, "Max walk free", "vr.preset.work3");
+        is(&c, "Max work tree", "vr.preset.focus3");
+        is(&c, "Max walk free", "vr.preset.focus3");
         is(&c, "Max work won", "vr.preset.work1");
         is(&c, "Pimax cinemas", "vr.preset.cinema");
     }
@@ -990,13 +990,22 @@ mod tests {
             is(&c, t, "vr.preset.exit_cinema");
         }
         is(&c, "Max, cinema mode", "vr.preset.cinema");
-        for t in ["Pimax work mode", "pimax work", "Pimax, work three", "pimax work 3", "Pimax three screens", "pimax switch to work mode", "Pimax tres pantallas"] {
-            is(&c, t, "vr.preset.work3");
+        for t in ["Pimax work mode", "pimax work", "Pimax, work four", "pimax work 4", "Pimax four screens layout", "pimax switch to work mode", "Pimax modo trabajo"] {
+            is(&c, t, "vr.preset.work4");
+        }
+        for t in ["Pimax focus mode", "Pimax, work three", "pimax work 3", "Pimax three screens layout", "pimax focus layout", "Pimax focus three"] {
+            is(&c, t, "vr.preset.focus3");
+        }
+        for t in ["Pimax work five", "pimax work 5", "Pimax five screens layout"] {
+            is(&c, t, "vr.preset.work5");
+        }
+        for t in ["Pimax work six", "pimax six screens layout", "Pimax all screens layout"] {
+            is(&c, t, "vr.preset.work6");
         }
         for t in ["Pimax work one", "pimax one screen", "Pimax single screen", "pimax work 1"] {
             is(&c, t, "vr.preset.work1");
         }
-        is(&c, "Pimax assistant mode", "vr.preset.assistant");
+        is(&c, "Pimax assistant mode", "vr.preset.work6");
     }
 
     #[test]

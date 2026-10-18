@@ -49,9 +49,9 @@ says = ["move chrome to screen three and make it fullscreen"]
 id = "st-hide2-bigger"
 cat = "steps"
 src = "steps 2026-10-18"
-why = "Hide screen 2, then the main screen bigger."
-expect = ["screen 2 hidden", "screen 1 bigger", "all stay"]
-steps = [["screen 2 hidden"], ["screen 1 bigger"]]
+why = "Screens are locked in Work (user 2026-10-18): the screen part is answered with the locked toast, the rest still happens. Was: Hide screen 2, then the main screen bigger."
+expect = ["screen 2 hidden", "all stay", "said screens are locked"]
+steps = [["screen 2 hidden"], ["said screens are locked"]]
 worlds = { medium = "m4", hard = "h6" }
 says = ["hide screen two and then make the main screen bigger"]
 

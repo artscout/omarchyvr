@@ -80,33 +80,54 @@ run = ["@preset", "exit-cinema"]
 safety = "safe"
 source = "user request 2026-10-16"
 
+# Fixed, locked Work layouts (user decision 2026-10-18): the screens never move; a layout is switched by name.
+# Screen numbers: 1 main, 2 left, 3 right, 4 up, 5 up-left, 6 up-right. `omarchyvr desk preset NAME` (docs/SCREENS.md).
 [[intent]]
-id = "vr.preset.work3"
-phrases = ["work", "work mode", "work three", "work 3", "work mode three", "three screens", "3 screens", "work with three screens", "switch to work", "switch to work mode", "work layout", "switch to work layout", "modo trabajo", "tres pantallas"]
-gloss = "work mode: the 3-screen work layout"
-run = ["@preset", "work-3"]
+id = "vr.preset.work4"
+phrases = ["work four", "work 4", "work mode four", "work mode 4", "work", "work mode", "work layout", "four screens layout", "4 screens layout", "work with four screens", "switch to work", "switch to work mode", "switch to work layout", "modo trabajo"]
+gloss = "work layout, the default: 4 screens (main, left, right, up)"
+run = ["@preset", "work-4"]
 safety = "safe"
 source = "vr"
-say = "Work mode, 3 screens"
+say = "Work 4"
+
+[[intent]]
+id = "vr.preset.focus3"
+phrases = ["focus mode", "focus layout", "focus three", "focus 3", "focus mode three", "work three", "work 3", "work mode three", "three screens layout", "3 screens layout", "work with three screens", "switch to focus", "switch to focus mode", "modo enfoque"]
+gloss = "focus layout: 3 smaller screens close by (main, left, right)"
+run = ["@preset", "focus-3"]
+safety = "safe"
+source = "vr"
+say = "Focus 3"
+
+[[intent]]
+id = "vr.preset.work5"
+phrases = ["work five", "work 5", "work mode five", "work mode 5", "five screens layout", "5 screens layout", "work with five screens", "switch to work five"]
+gloss = "work layout with 5 screens (1, 2, 3, 5, 6)"
+run = ["@preset", "work-5"]
+safety = "safe"
+source = "vr"
+say = "Work 5"
+
+[[intent]]
+id = "vr.preset.work6"
+phrases = ["work six", "work 6", "work mode six", "work mode 6", "six screens layout", "6 screens layout", "all screens layout", "all the screens layout", "work with six screens", "assistant", "assistant mode", "switch to assistant", "modo asistente"]
+gloss = "work layout with all 6 screens, assistant mode"
+run = ["@preset", "work-6"]
+safety = "safe"
+source = "vr"
+say = "Work 6"
 
 [[intent]]
 id = "vr.preset.work1"
 phrases = ["work one", "work 1", "work mode one", "one screen", "1 screen", "single screen", "work with one screen", "una pantalla", "only one screen", "just one screen", "close the other windows", "close other windows", "close all the other windows", "hide the other windows", "only this window", "just this window", "show one screen only", "show only one screen", "cierra las otras ventanas"]
-# "close the other windows" (user decision 2026-10-15): show one screen only; it never closes workspaces or apps
-gloss = "1 flat screen, single screen; close/hide the other screens or windows"
-run = ["@preset", "work-1"]
+# "close the other windows" (user decision 2026-10-15): show one screen only; it never closes workspaces or apps.
+# Since 2026-10-18 it does not change the layout: only the main screen shows.
+gloss = "show only the main screen (the layout stays); close/hide the other screens or windows"
+run = ["{pimax}", "desk", "screens", "hide", "others"]
+output = true
 safety = "safe"
 source = "vr"
-say = "Work mode, 1 screen"
-
-[[intent]]
-id = "vr.preset.assistant"
-phrases = ["assistant", "assistant mode", "switch to assistant", "modo asistente"]
-gloss = "all screens + captions, assistant mode"
-run = ["@preset", "assistant"]
-safety = "safe"
-source = "vr"
-say = "Assistant mode"
 
 [[intent]]
 id = "vr.passthrough.on"
@@ -173,7 +194,7 @@ source = "vr"
 
 [[intent]]
 id = "vr.screens.reset"
-phrases = ["reset screens", "reset the screens", "screens back", "bring the screens back", "bring back the screens", "where are my screens", "in front of me", "resetea las pantallas"]
+phrases = ["reset screens", "reset the screens", "screens back", "bring the screens back", "bring back the screens", "where are my screens", "resetea las pantallas"]
 gloss = "screens lost or misplaced: bring them back in front"
 run = ["{wayvrctl}", "reset-screens"]
 safety = "safe"
@@ -182,11 +203,12 @@ say = "Screens reset"
 
 [[intent]]
 id = "vr.recenter"
-phrases = ["recenter", "recenter view", "recenter the view", "center the view", "recentra", "recentra la vista", "centra la vista"]
-run = ["{wayvrctl}", "recenter"]
+phrases = ["recenter", "recenter view", "recenter the view", "recenter the screens", "recenter screens", "recenter the layout", "center the view", "center the screens", "centre the screens", "screens in front of me", "the screens in front of me", "in front of me", "recentra", "recentra la vista", "recentra las pantallas", "centra la vista"]
+gloss = "move the whole screen layout in front of you (keeps its shape)"
+run = ["{pimax}", "desk", "recenter"]
+output = true
 safety = "safe"
 source = "vr"
-say = "Recentered"
 
 [[intent]]
 id = "vr.input.controllers"

@@ -101,8 +101,8 @@ says = ["hide screens three, four and five but keep everything open", "uh Max, h
 id = "lg-sort-then-size"
 cat = "long"
 src = "long 2026-10-18"
-why = "Terminals on 2, browsers on 3, then screen 2 bigger and screen 3 smaller. Code, Spotify and the Pimax app stay put."
-expect = ["terminals on 2", "browsers on 3", "screen 2 bigger", "screen 3 smaller", "p1 stay", "s1 stay", "e1 stay"]
+why = "Screens are locked in Work (user 2026-10-18): the screen part is answered with the locked toast, the rest still happens. Was: Terminals on 2, browsers on 3, then screen 2 bigger and screen 3 smaller. Code, Spotify and the Pimax app stay put."
+expect = ["terminals on 2", "browsers on 3", "p1 stay", "s1 stay", "e1 stay", "said screens are locked"]
 worlds = { medium = "ml5", hard = "hl6" }
 says = ["put the terminals on two and chrome on three, make screen two bigger and screen three smaller", "uh Max, terminals on screen 2, the browser on 3, two bigger and three smaller", "terminals to two, chrome to three, then screen two a bit bigger, screen three smaller"]
 
@@ -111,8 +111,8 @@ says = ["put the terminals on two and chrome on three, make screen two bigger an
 id = "lg-swap-hide-bigger"
 cat = "long"
 src = "long 2026-10-18"
-why = "Swap screens 2 and 3, hide screen 4, make the main screen bigger. Only the apps of 2 and 3 change places."
-expect = ["swapped 2 3", "screen 4 hidden", "screen 1 bigger", "t1 stay", "p1 stay"]
+why = "Screens are locked in Work (user 2026-10-18): the screen part is answered with the locked toast, the rest still happens. Was: Swap screens 2 and 3, hide screen 4, make the main screen bigger. Only the apps of 2 and 3 change places."
+expect = ["swapped 2 3", "screen 4 hidden", "t1 stay", "p1 stay", "said screens are locked"]
 worlds = { medium = "ml5", hard = "hl6" }
 says = ["swap screens two and three, hide screen four and make the main screen bigger", "uh Max, switch two and three around, hide four, and make screen one bigger", "swap 2 and 3, close screen 4, main screen bigger"]
 

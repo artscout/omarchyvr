@@ -286,7 +286,7 @@ impl State {
 }
 
 /// The default preset of a session (`omarchyvr desk start`), when voice has not switched yet.
-pub const DEFAULT_PRESET: &str = "cinema";
+pub const DEFAULT_PRESET: &str = "work-4";
 
 /// What the passthrough/skybox look like for a backdrop: (passthrough line, skybox arg for wayvrctl).
 pub fn backdrop_plan(name: &str, skybox_dir: &str) -> (&'static str, String) {
@@ -1566,7 +1566,7 @@ impl Actor {
         // the last preset step whose previous value is not itself a cinema mode (cinema -> huge -> exit = the mode before)
         let Some(k) = self.state.history.iter().rposition(|(k, v)| k == "preset" && !is_cinema(v)) else {
             self.state.history.retain(|(k, v)| !(k == "preset" && is_cinema(v)));
-            return self.preset("work-3".into(), false, "Work mode", r);
+            return self.preset(DEFAULT_PRESET.into(), false, "Work 4", r);
         };
         let later: Vec<(String, String)> = self.state.history.split_off(k);
         // the preset sets its own passthrough again (cinema dimmed or turned it off)
@@ -2060,6 +2060,41 @@ mod tests {
         DryRun { quiet: true, skyboxes: vec!["mountain_lake".into()], ..Default::default() }
     }
 
+    fn locked_actor() -> Actor {
+        let mut c = Catalogue::from_texts(BUILTIN, None).unwrap();
+        c.lock_screens();
+        Actor::new(c, Some("wayvrctl".into()), State::default())
+    }
+
+    #[test]
+    fn locked_screens_answer_every_geometry_request_with_the_toast_and_run_nothing() {
+        let t = Instant::now();
+        for said in ["make the screen bigger", "move this left", "bring screen 2 closer", "reset the screens", "make the screen smaller", "push it away", "put screen 2 left of screen 3", "bring this screen here"] {
+            let mut a = locked_actor();
+            let mut r = dry();
+            a.hear(&format!("Max, {said}"), t, &mut r);
+            // (only reads remain: the screen numbers flash for any screen words, "this" reads the gaze)
+            let lines: Vec<&String> = r.lines.iter().filter(|l| !l.contains("screen-numbers") && !l.contains("wayvrctl gaze")).collect();
+            assert_eq!(lines, [&format!("toast: {}", crate::catalogue::LOCKED_MSG)], "{said}");
+        }
+    }
+
+    #[test]
+    fn layouts_and_recenter_by_voice() {
+        let t = Instant::now();
+        for (said, preset) in [("work four", "work-4"), ("focus mode", "focus-3"), ("five screens layout", "work-5"), ("work six", "work-6"), ("cinema", "cinema")] {
+            let mut a = locked_actor();
+            let mut r = dry();
+            a.hear(&format!("Max, {said}"), t, &mut r);
+            let lines: Vec<&String> = r.lines.iter().filter(|l| !l.contains("screen-numbers")).collect();
+            assert_eq!(*lines[0], format!("would run: omarchyvr desk preset {preset}"), "{said}");
+        }
+        let mut a = locked_actor();
+        let mut r = dry();
+        assert_eq!(a.hear("Max, recenter", t, &mut r).as_deref(), Some("vr.recenter"));
+        assert_eq!(r.lines[0], "would run: omarchyvr desk recenter");
+    }
+
     #[test]
     fn a_forked_helper_holding_the_pipe_does_not_hang_a_captured_run() {
         // like wl-copy: the command exits at once, a child it forked keeps stdout open for 5 s
@@ -2100,16 +2135,16 @@ mod tests {
         let mut a = actor();
         let mut r = dry();
         let t = Instant::now();
-        assert_eq!(a.hear("Pimax, work three", t, &mut r).as_deref(), Some("vr.preset.work3"));
-        assert_eq!(r.lines[0], "would run: omarchyvr desk preset work-3");
-        assert_eq!(r.lines[1], "toast: Work mode, 3 screens");
-        assert_eq!(a.state.preset.as_deref(), Some("work-3"));
-        a.hear("Pimax one screen", t, &mut r);
+        assert_eq!(a.hear("Pimax, work three", t, &mut r).as_deref(), Some("vr.preset.focus3"));
+        assert_eq!(r.lines[0], "would run: omarchyvr desk preset focus-3");
+        assert_eq!(r.lines[1], "toast: Focus 3");
+        assert_eq!(a.state.preset.as_deref(), Some("focus-3"));
+        a.hear("Pimax cinema", t, &mut r);
         r.lines.clear();
         a.hear("Pimax undo", t, &mut r);
-        assert_eq!(r.lines[0], "would run: omarchyvr desk preset work-3");
+        assert_eq!(r.lines[0], "would run: omarchyvr desk preset focus-3");
         a.hear("Pimax go back", t, &mut r);
-        assert_eq!(a.state.preset.as_deref(), Some("cinema"), "back to the session default");
+        assert_eq!(a.state.preset.as_deref(), Some("work-4"), "back to the session default");
         r.lines.clear();
         a.hear("Pimax undo", t, &mut r);
         assert_eq!(r.lines, ["toast: Nothing to undo"]);
@@ -2120,7 +2155,7 @@ mod tests {
         let mut a = actor();
         let mut r = dry();
         let t = Instant::now();
-        a.hear("Pimax, work three", t, &mut r);
+        a.hear("Pimax, work four", t, &mut r);
         a.hear("Pimax, background black", t, &mut r);
         r.lines.clear();
         assert_eq!(a.hear("Pimax, huge cinema", t, &mut r).as_deref(), Some("vr.preset.cinema_huge"));
@@ -2133,14 +2168,14 @@ mod tests {
         r.lines.clear();
         a.hear("Pimax, imax", t, &mut r);
         assert_eq!(r.lines[0], "would run: omarchyvr desk preset cinema-huge");
-        // normal cinema from the huge one, then exit: back to work-3, not to cinema
+        // normal cinema from the huge one, then exit: back to work-4, not to cinema
         a.hear("Pimax, cinema mode", t, &mut r);
         assert_eq!(a.state.preset.as_deref(), Some("cinema"));
         a.hear("Pimax, huge cinema", t, &mut r);
         r.lines.clear();
         assert_eq!(a.hear("Pimax, exit cinema", t, &mut r).as_deref(), Some("vr.preset.exit_cinema"));
-        assert_eq!(r.lines[0], "would run: omarchyvr desk preset work-3");
-        assert_eq!(a.state.preset.as_deref(), Some("work-3"));
+        assert_eq!(r.lines[0], "would run: omarchyvr desk preset work-4");
+        assert_eq!(a.state.preset.as_deref(), Some("work-4"));
         assert!(a.state.before_huge.is_none());
         // exiting when no cinema is on
         r.lines.clear();
@@ -2155,7 +2190,7 @@ mod tests {
             preset_toast("Cinema mode", out),
             "Cinema mode. Still open on hidden screens: left (google-chrome), right (pimax). Say \"go to the left screen\""
         );
-        assert_eq!(preset_toast("Work mode, 3 screens", "omarchyvr desk: preset work-3\n"), "Work mode, 3 screens");
+        assert_eq!(preset_toast("Work 4", "omarchyvr desk: preset work-4\n"), "Work 4");
         // the sort switch and the limit share the state file with the launcher; other lines are kept
         let st = "# VR screens shown\nlimit = 1\npinned = \nsort = on\n";
         let off = screens_state_set(st, "sort", "off");
@@ -2168,7 +2203,9 @@ mod tests {
         let mut a = actor();
         let mut r = dry();
         let t = Instant::now();
-        // the session starts in cinema: dimmed
+        // cinema dims the room: the cycle starts from dimmed
+        a.hear("Pimax cinema", t, &mut r);
+        r.lines.clear();
         a.hear("Pimax next background", t, &mut r);
         assert_eq!(a.state.backdrop.as_deref(), Some("black"));
         assert_eq!(r.lines[0], "would send to the passthrough socket: off");
@@ -2512,7 +2549,7 @@ mod tests {
 
     #[test]
     fn state_file_round_trip_and_toast_format() {
-        let s = State { preset: Some("work-3".into()), backdrop: Some("sky".into()), history: vec![("preset".into(), "cinema".into())], before_huge: Some("sky".into()) };
+        let s = State { preset: Some("work-4".into()), backdrop: Some("sky".into()), history: vec![("preset".into(), "cinema".into())], before_huge: Some("sky".into()) };
         assert_eq!(State::from_text(&s.to_text()), s);
         let j: serde_json::Value = serde_json::from_str(&toast_json("Max", "hi \"x\"")).unwrap();
         assert_eq!(j["messageType"], 1);

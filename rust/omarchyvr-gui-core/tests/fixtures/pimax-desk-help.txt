@@ -1,5 +1,5 @@
 usage: omarchyvr desk <command> [options]
-  start [--no-passthrough] [--eye] [--6dof [--ctrl-track]] [--voice [--voice-hud]] [--no-perf] [--controllers when-held|always|off] [--ctrl-angle DEG] [--old-exposure] [--no-room-glide] [--no-ctrl-steady] [--settle SECS] [--passthrough-bin P] [--wayvr-bin P] [--wayvr-home DIR]
+  start [--no-passthrough] [--eye] [--6dof [--ctrl-track]] [--voice [--voice-hud]] [--no-perf] [--preset NAME] [--controllers when-held|always|off] [--ctrl-angle DEG] [--old-exposure] [--no-room-glide] [--no-ctrl-steady] [--settle SECS] [--passthrough-bin P] [--wayvr-bin P] [--wayvr-home DIR]
         [--voice-bin P] [--voice-hud-bin P] [--wayvrctl-bin P] [--perf-bin P]
         [+ the options of `omarchyvr vr start`: --fps, --monado-build, --connector, --dry-run, --force, --no-notify, ...]
       monado-service (like `omarchyvr vr start`), then omarchyvr-passthrough run (the main OpenXR app), then WayVR as an

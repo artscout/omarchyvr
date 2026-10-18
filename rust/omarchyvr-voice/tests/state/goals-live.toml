@@ -35,7 +35,7 @@ id = "hide-others"
 cat = "hide"
 src = "live 2026-10-16 15:59"
 why = "Close everything = only the main screen shows; every app stays open (user rule 2026-10-16). Live: nothing happened."
-any = [["shown 1", "all stay"], ["preset work-1", "all stay"]]
+any = [["shown 1", "all stay"], ["preset cinema", "all stay"]]
 worlds = { medium = "m4", hard = "h6" }
 live = ["close everything", "closed everything.", "clot screens", "close the other two screens"]
 says = ["close all the screens", "just the main screen please", "hide all the other screens"]
@@ -44,8 +44,8 @@ says = ["close all the screens", "just the main screen please", "hide all the ot
 id = "scale-all-half"
 cat = "size"
 src = "live 2026-10-16 15:50"
-why = "ALL shown screens to half their size. Live: only the main screen got one step smaller."
-expect = ["screen all size x0.5"]
+why = "Screens are locked in Work (user 2026-10-18): safety test, the request changes nothing and is answered with the locked toast. Was: ALL shown screens to half their size. Live: only the main screen got one step smaller."
+expect = ["nothing", "said screens are locked"]
 worlds = { medium = "m4s", hard = "h6" }
 live = ["can you make all these screens half the size?", "all of them. Can you make Max, can you make all of these screens half the size?"]
 says = ["make all the screens half as big", "shrink every screen to half"]
@@ -78,8 +78,8 @@ says = ["shut down the session", "exit VR", "close work"]
 id = "bigger"
 cat = "size"
 src = "live 2026-10-16 15:49"
-why = "The screen looked at grows. Live: right."
-expect = ["screen gazed bigger"]
+why = "Screens are locked in Work (user 2026-10-18): safety test, the request changes nothing and is answered with the locked toast. Was: The screen looked at grows. Live: right."
+expect = ["nothing", "said screens are locked"]
 worlds = { medium = "m4s", hard = "h6c" }
 live = ["can you make the screen bigger?"]
 says = ["zoom in", "make the screen larger"]
@@ -88,8 +88,8 @@ says = ["zoom in", "make the screen larger"]
 id = "nudge-right"
 cat = "place"
 src = "live 2026-10-16 15:49"
-why = "The screen looked at moves right (around the head). Live: right."
-expect = ["screen gazed right"]
+why = "Screens are locked in Work (user 2026-10-18): safety test, the request changes nothing and is answered with the locked toast. Was: The screen looked at moves right (around the head). Live: right."
+expect = ["nothing", "said screens are locked"]
 worlds = { medium = "m4s", hard = "h6c" }
 live = ["can you move it to the right more?", "can you move uh one of the screens to the right"]
 says = ["move the screen to the right"]
@@ -98,8 +98,8 @@ says = ["move the screen to the right"]
 id = "screen1-right"
 cat = "place"
 src = "live 2026-10-16 15:49"
-why = "Screen 1 itself moves right. Live: the request was lost (wake word)."
-expect = ["screen 1 right"]
+why = "Screens are locked in Work (user 2026-10-18): safety test, the request changes nothing and is answered with the locked toast. Was: Screen 1 itself moves right. Live: the request was lost (wake word)."
+expect = ["nothing", "said screens are locked"]
 worlds = { medium = "m4s", hard = "h6" }
 live = ["Max, can you move this screen number one to the right?"]
 says = ["move screen one to the right"]
@@ -108,8 +108,8 @@ says = ["move screen one to the right"]
 id = "front"
 cat = "place"
 src = "live 2026-10-16 15:50"
-why = "The main screen was moved to the side; bring it back in front of the head. Live: made the app fullscreen (the wake cut dropped the words)."
-expect = ["screen 1 front"]
+why = "Screens are locked in Work (user 2026-10-18): safety test, the request changes nothing and is answered with the locked toast. Was: The main screen was moved to the side; bring it back in front of the head. Live: made the app fullscreen (the wake cut dropped the words)."
+any = [["nothing", "said screens are locked"], ["event recenter", "all stay"]]
 worlds = { medium = "m4s", hard = "h6c" }
 set = { medium = { geom = { "1" = [2.0, 2.5, -30.0, 0.0] } }, hard = { geom = { "1" = [3.2, 3.5, -30.0, 0.0] } } }
 live = ["can you move it in front of me, Max, the screen.", "move the screen in front of me"]
@@ -119,8 +119,8 @@ says = ["bring the screen in front of me", "put the screen back in front"]
 id = "lost-screens"
 cat = "place"
 src = "live 2026-10-16 (earlier session)"
-why = "The screen is behind the user: bring it back in front."
-expect = ["screen 1 front"]
+why = "Screens are locked in Work (user 2026-10-18): safety test, the request changes nothing and is answered with the locked toast. Was: The screen is behind the user: bring it back in front."
+any = [["nothing", "said screens are locked"], ["event recenter", "all stay"]]
 worlds = { medium = "m4s", hard = "h6c" }
 set = { medium = { geom = { "1" = [2.0, 2.5, 150.0, 0.0] }, gaze = "none" }, hard = { geom = { "1" = [3.2, 3.5, 150.0, 0.0] }, gaze = "none" } }
 live = ["uh show me the window i don't see any window"]
@@ -234,8 +234,8 @@ says = ["put on cinema mode", "i want to watch a movie"]
 id = "work-mode"
 cat = "preset"
 src = "live 2026-10-16"
-why = "Work mode: the 3-screen layout."
-expect = ["preset work-3", "all stay"]
+why = "Work mode: the 4-screen work layout (the default)."
+expect = ["preset work-4", "all stay"]
 worlds = { medium = "mcin", hard = "h6c" }
 live = ["put it in work mode"]
 says = ["switch to the work layout"]
@@ -275,8 +275,8 @@ says = ["put all the terminals on one screen"]
 id = "farther"
 cat = "place"
 src = "live 2026-10-16 (earlier session)"
-why = "The screen looked at goes farther away. Live: 'make it far away' made the app wider."
-expect = ["screen gazed farther"]
+why = "Screens are locked in Work (user 2026-10-18): safety test, the request changes nothing and is answered with the locked toast. Was: The screen looked at goes farther away. Live: 'make it far away' made the app wider."
+expect = ["nothing", "said screens are locked"]
 worlds = { medium = "m4s", hard = "h6c" }
 live = ["make it far away"]
 says = ["push the screen back"]
@@ -285,8 +285,8 @@ says = ["push the screen back"]
 id = "this-bigger"
 cat = "size"
 src = "live 2026-10-16 (earlier session)"
-why = "'Make this bigger' while looking at a screen: that screen grows. Live: the app got much wider."
-any = [["screen gazed bigger"], ["focused fullscreen"]]
+why = "Screens are locked in Work (user 2026-10-18): 'make this bigger' never resizes the screen; the locked toast, or the app looked at goes fullscreen. Was: that screen grows. Live: the app got much wider."
+any = [["nothing", "said screens are locked"], ["focused fullscreen"]]
 worlds = { medium = "m4s", hard = "h6c" }
 live = ["make this bigger"]
 

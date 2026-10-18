@@ -92,13 +92,13 @@ pub struct Session {
     pub running: bool,
     /// work | play | off
     pub mode: String,
-    /// cinema | work-3 | work-1 | assistant
+    /// work-4 | focus-3 | work-5 | work-6 | cinema | cinema-huge
     pub preset: String,
 }
 
 impl Default for Session {
     fn default() -> Self {
-        Session { running: true, mode: "work".into(), preset: "work-3".into() }
+        Session { running: true, mode: "work".into(), preset: "work-4".into() }
     }
 }
 
@@ -660,6 +660,20 @@ pub struct Sim {
     drift_done: bool,
 }
 
+/// A preset's layout: (show limit, slots, width m, distance m, curvature, passthrough). The locked Work layouts
+/// (user decision 2026-10-18; docs/SCREENS.md): screens 1 main, 2 left, 3 right, 4 up, 5 up-left, 6 up-right.
+pub fn layout_of(preset: &str) -> Option<(u8, Vec<u8>, f32, f32, f32, &'static str)> {
+    Some(match preset {
+        "work-4" => (4, vec![2, 3, 4], 1.6, 2.0, 0.0, "normal"),
+        "focus-3" => (3, vec![2, 3], 1.2, 1.3, 0.0, "normal"),
+        "work-5" => (5, vec![2, 3, 5, 6], 1.6, 2.0, 0.0, "normal"),
+        "work-6" => (6, vec![2, 3, 4, 5, 6], 1.6, 2.0, 0.0, "normal"),
+        "cinema" => (1, vec![], 3.2, 3.5, 0.35, "dim"),
+        "cinema-huge" => (1, vec![], 11.0, 8.0, 0.2, "off"),
+        _ => return None,
+    })
+}
+
 impl Sim {
     pub fn new(world: World) -> Sim {
         let now_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(1_000_000);
@@ -1111,27 +1125,21 @@ impl Sim {
     fn preset(&mut self, p: &str) -> Result<String, String> {
         let w = &mut self.world;
         let p = match p {
-            "work" | "work3" => "work-3",
-            "work1" => "work-1",
+            // the old names stay aliases (omarchyvr-tools preset.rs)
+            "work" | "work3" | "work-3" => "focus-3",
+            "work1" | "work-1" => "cinema",
+            "assistant" | "llm" => "work-6",
             x => x,
         };
-        let (limit, pinned, width, distance, curv, pt): (u8, Vec<u8>, f32, f32, f32, &str) = match p {
-            "cinema" => (1, vec![], 3.2, 3.5, 0.35, "dim"),
-            "cinema-huge" => (1, vec![], 11.0, 8.0, 0.2, "off"),
-            "work-3" => (3, vec![2, 3], 1.6, 2.0, 0.0, "normal"),
-            "work-1" => (1, vec![], 2.0, 2.2, 0.0, "normal"),
-            "assistant" => (6, vec![], 2.0, 2.5, 0.15, "normal"),
-            other => return Err(format!("unknown preset {other}")),
-        };
+        let Some((limit, pinned, width, distance, curv, pt)) = layout_of(p) else { return Err(format!("unknown preset {p}")) };
         if !w.session.running {
             return Err("No Work session is running".into());
         }
-        w.show = ShowRule { limit, pinned, hidden: Vec::new(), sort: w.show.sort };
+        // a work layout shows exactly its slots: the other screens are hidden
+        let hidden: Vec<u8> = if p.starts_with("work-") || p.starts_with("focus-") { (2..=6).filter(|n| !pinned.contains(n)).collect() } else { Vec::new() };
+        w.show = ShowRule { limit, pinned, hidden, sort: w.show.sort };
         w.view.passthrough = pt.into();
         w.view.skybox = "off".into();
-        if p == "assistant" {
-            w.view.captions = true;
-        }
         for s in w.screens.iter_mut() {
             let (yaw, pitch) = SLOT_ANGLES[s.n as usize - 1];
             s.width = width;
@@ -1253,6 +1261,19 @@ impl Sim {
                 self.desk_screens(sub, &arg)
             }
             ["desk", "preset", p, ..] => self.preset(p),
+            ["desk", "recenter", ..] => {
+                // the whole layout turns in front of the user: the sim puts the screens back at the layout's angles
+                if !self.world.session.running {
+                    return Err("No Work session is running".into());
+                }
+                for s in self.world.screens.iter_mut() {
+                    let (yaw, pitch) = SLOT_ANGLES[s.n as usize - 1];
+                    s.yaw = yaw;
+                    s.pitch = pitch;
+                }
+                self.world.events.push("recenter".into());
+                Ok("Screens recentered in front of you\n".into())
+            }
             ["desk", "stop", ..] => {
                 self.world.session.running = false;
                 self.world.session.mode = "off".into();

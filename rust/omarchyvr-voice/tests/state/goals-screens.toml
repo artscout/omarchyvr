@@ -70,43 +70,43 @@ says = ["one more screen", "add another screen"]
 
 [[goal]]
 id = "smaller-named"
-why = "Screen 3 smaller; the others keep their size."
-expect = ["screen 3 smaller", "screen 1 same", "screen 2 same"]
+why = "Screens are locked in Work (user 2026-10-18): safety test, the request changes nothing and is answered with the locked toast. Was: Screen 3 smaller; the others keep their size."
+expect = ["nothing", "said screens are locked"]
 worlds = { medium = "m4", hard = "h6" }
 says = ["make screen 3 smaller", "shrink the right screen", "screen three a bit smaller please"]
 
 [[goal]]
 id = "closer-named"
-why = "Screen 2 closer to the user."
-expect = ["screen 2 closer"]
+why = "Screens are locked in Work (user 2026-10-18): safety test, the request changes nothing and is answered with the locked toast. Was: Screen 2 closer to the user."
+expect = ["nothing", "said screens are locked"]
 worlds = { medium = "m4", hard = "h6" }
 says = ["bring screen 2 closer", "move the left screen closer to me"]
 
 [[goal]]
 id = "scale-2-half"
-why = "Only screen 2 to half its size."
-expect = ["screen 2 size x0.5", "screen 1 same"]
+why = "Screens are locked in Work (user 2026-10-18): safety test, the request changes nothing and is answered with the locked toast. Was: Only screen 2 to half its size."
+expect = ["nothing", "said screens are locked"]
 worlds = { medium = "m4", hard = "h6" }
 says = ["make screen two half the size", "screen 2 half as big"]
 
 [[goal]]
 id = "scale-all-double"
-why = "Every shown screen twice as big."
-expect = ["screen all size x2"]
+why = "Screens are locked in Work (user 2026-10-18): safety test, the request changes nothing and is answered with the locked toast. Was: Every shown screen twice as big."
+expect = ["nothing", "said screens are locked"]
 worlds = { medium = "m4" , hard = "h6" }
 says = ["make all the screens double the size", "make every screen twice as big"]
 
 [[goal]]
 id = "scale-all-75"
-why = "Every shown screen to 75 percent."
-expect = ["screen all size x0.75"]
+why = "Screens are locked in Work (user 2026-10-18): safety test, the request changes nothing and is answered with the locked toast. Was: Every shown screen to 75 percent."
+expect = ["nothing", "said screens are locked"]
 worlds = { medium = "m4", hard = "h6" }
 says = ["make all screens 75 percent", "all the screens a quarter smaller"]
 
 [[goal]]
 id = "nudge-up"
-why = "The screen looked at moves up."
-expect = ["screen gazed up"]
+why = "Screens are locked in Work (user 2026-10-18): safety test, the request changes nothing and is answered with the locked toast. Was: The screen looked at moves up."
+expect = ["nothing", "said screens are locked"]
 worlds = { medium = "m4", hard = "h6" }
 says = ["move the screen up a bit", "raise this screen"]
 
@@ -134,8 +134,53 @@ says = ["what's on screen number two", "which apps are on the left screen"]
 
 [[goal]]
 id = "reset-screens"
-why = "Every screen back in its place in front."
-expect = ["screen 1 front", "all stay"]
+why = "Screens are locked in Work (user 2026-10-18): safety test, the request changes nothing and is answered with the locked toast. Was: Every screen back in its place in front."
+expect = ["nothing", "said screens are locked"]
 worlds = { medium = "m4", hard = "h6" }
 set = { medium = { geom = { "1" = [2.0, 2.5, 70.0, 20.0] } }, hard = { geom = { "1" = [2.0, 2.5, -80.0, -15.0] } } }
 says = ["reset the screens", "put all the screens back where they were"]
+
+# ---------------------------------------------------------------------------------- locked layouts (user 2026-10-18)
+# The Work screens never move; a layout is switched by name (omarchyvr desk preset NAME) and "recenter" turns the
+# whole layout in front of the user. Screens: 1 main, 2 left, 3 right, 4 up, 5 up-left, 6 up-right.
+
+[[goal]]
+id = "layout-work4"
+cat = "preset"
+why = "The default work layout: main, left, right and up. Nothing closes."
+expect = ["preset work-4", "shown 1,2,3,4", "all stay"]
+worlds = { medium = "m6", hard = "h6" }
+says = ["work four", "switch to work mode", "four screens layout"]
+
+[[goal]]
+id = "layout-focus3"
+cat = "preset"
+why = "The focus layout: main, left and right, smaller and closer. Nothing closes."
+expect = ["preset focus-3", "shown 1,2,3", "all stay"]
+worlds = { medium = "m4", hard = "h6" }
+says = ["focus mode", "focus layout please", "three screens layout"]
+
+[[goal]]
+id = "layout-work5"
+cat = "preset"
+why = "Five screens: main, left, right, up-left and up-right."
+expect = ["preset work-5", "shown 1,2,3,5,6", "all stay"]
+worlds = { medium = "m6", hard = "h6" }
+says = ["five screens layout", "work five", "switch to the work five layout"]
+
+[[goal]]
+id = "layout-work6"
+cat = "preset"
+why = "All six screens (the old assistant layout)."
+expect = ["preset work-6", "shown 1,2,3,4,5,6", "all stay"]
+worlds = { medium = "m6", hard = "h6" }
+says = ["six screens layout", "work six", "all screens layout"]
+
+[[goal]]
+id = "recenter"
+cat = "preset"
+why = "Recenter: the whole layout comes in front of the user (keeps its shape); no app, screen or layout changes."
+expect = ["event recenter", "all stay"]
+worlds = { medium = "m4", hard = "h6" }
+set = { medium = { geom = { "1" = [2.0, 2.5, 70.0, 0.0] } } }
+says = ["recenter", "recenter the screens", "bring the screens in front of me"]
