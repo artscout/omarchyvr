@@ -2332,6 +2332,7 @@ dependencies = [
  "omarchyvr-config",
  "omarchyvr-record",
  "pimax",
+ "pimax-eye",
  "pimax-proto",
  "regex-lite",
  "serde_json",

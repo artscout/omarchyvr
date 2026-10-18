@@ -11,6 +11,7 @@
 //! * [`correction`]: the host-side accuracy correction of the gaze direction (fitted by `pimax-lenstest --patterns gaze`),
 //! * [`clock`] / [`track`] / [`live`]: host-clock mapping, OpenXR head-frame gaze rays, the long-running reconnecting
 //!   session used by the Monado driver (via `pimax-capi`),
+//! * [`shm`]: the gaze in shared memory for other processes (`omarchyvr eyed`, the SteamVR driver),
 //! * [`fake`]: an in-process chip for tests,
 //! * [`analysis`] / [`cli`]: the `pimax-eye` tool.
 //!
@@ -39,6 +40,7 @@ pub mod replay;
 pub mod replaycmd;
 pub mod rng;
 pub mod session;
+pub mod shm;
 pub mod sigint;
 pub mod tlv;
 pub mod track;

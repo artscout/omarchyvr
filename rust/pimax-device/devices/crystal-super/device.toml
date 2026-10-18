@@ -1,8 +1,8 @@
 # Pimax Crystal Super (Micro-OLED module, P3C10): EXPERIMENTAL. It speaks the Dream Air protocol (58 .. frames on IF0,
 # the same IMU and controller reports); every command below was seen in the Windows capture of 2026-10-17 with
 # Pimax Play 2.0.2.103 (analysis/crystal-super-capture-20261017.md, take names in `source`). Nothing here has run
-# against the headset from Linux yet. Captured but not allowed yet: the IPD motor, the eye-module power, camera
-# exposure (other ranges than the Dream Air), 58 0d 1a 05 03 (standby?).
+# against the headset from Linux yet. Captured but not allowed yet: the IPD motor, camera exposure (other ranges than
+# the Dream Air), the eye-module power off.
 
 [device]
 id = "crystal-super"
@@ -34,9 +34,10 @@ slots = [2, 3]                        # take controllers: 58 04 16 02/03 1e, 58 
 pairing = "unknown"
 
 [eye_tracking]
-status = "unknown"
+status = "experimental"
 usb_vid = 0x2104                      # Tobii, powered on by 58 05 3c 05 00 01 (take cold2)
 usb_pid = 0x0561
+start_list = "user"                   # no built-in list: `pimax-eye frames` makes it from the user's own Windows capture
 
 [ipd]
 status = "unknown"
@@ -133,3 +134,8 @@ id = "read_calib_block"
 bytes = "58 07 0a 00 01 {addr:u16le} 10"
 params = ["addr=0..0xffff"]
 source = "take cold2, 96 blocks"
+
+[[hid]]
+id = "eye_power_on"
+bytes = "58 05 3c 05 00 01"
+source = "take cold2 t=27.543 (Pimax Play powers the eye module; pimax-eye/src/power.rs sends it once per enumeration)"

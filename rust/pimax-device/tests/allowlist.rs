@@ -235,6 +235,8 @@ fn crystal_super_allows_only_its_captured_commands() {
         ("keepalive", vec![("rate", 0x5a)], &[0x58, 0x04, 0x39, 0x00, 0x5a, 0x00][..]),
         ("announce_refresh", vec![("fps", 90)], &[0x58, 0x0d, 0x1a, 0x05, 0x02, 0x5a][..]),
         ("read_module_type", vec![], &[0x58, 0x04, 0x3a, 0x05, 0x01][..]),
+        ("eye_power_on", vec![], &[0x58, 0x05, 0x3c, 0x05, 0x00, 0x01][..]),
+        ("keepalive", vec![("rate", 0x00)], &[0x58, 0x04, 0x39, 0x00, 0x00, 0x00][..]),
     ] {
         let r = al.build(id, &vals).unwrap();
         assert_eq!(&r[..want.len()], want, "{id}");
@@ -242,10 +244,10 @@ fn crystal_super_allows_only_its_captured_commands() {
         g.send(&r).unwrap();
         assert_eq!(g.into_inner().len(), 65, "{id}"); // report id 0 + the 64-byte report
     }
-    // captured but not enabled yet: IPD motor, eye-module power, camera exposure, pairing
+    // captured but not enabled yet: IPD motor, eye-module power off, camera exposure, pairing
     assert!(m.ipd_report(63.0).is_err());
     assert!(m.pair_report(Hand::Left).is_err());
-    for r in [&[0x58, 0x06, 0x5c, 0x05, 0x01, 0xaf, 0x18][..], &[0x58, 0x05, 0x3c, 0x05, 0x00, 0x01], &[0x58, 0x19, 0x51, 0x00, 0x01, 0x32]] {
+    for r in [&[0x58, 0x06, 0x5c, 0x05, 0x01, 0xaf, 0x18][..], &[0x58, 0x05, 0x3c, 0x05, 0x00, 0x00], &[0x58, 0x19, 0x51, 0x00, 0x01, 0x32]] {
         assert!(matches!(refused(m, &pad(r)), Refused::NotListed), "{r:02x?}");
     }
     assert!(matches!(refused(m, &pad(&[0x58, 0x04, 0x39, 0x00, 0x3c, 0x00])), Refused::OutOfRange { .. }));

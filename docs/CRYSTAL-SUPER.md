@@ -14,7 +14,8 @@ Inside-out head tracking (SLAM) is not stable yet. With the Lighthouse faceplate
 |---|---|
 | Head and Index controller tracking | SteamVR's own lighthouse driver |
 | The headset display in SteamVR (EDID vendor, render size, distortion, IPD) | [CustomHeadsetOpenVR](https://github.com/sboys3/CustomHeadsetOpenVR) (sboys3) with `linux/crystal-super/chovr-linux-direct-usb.patch` |
-| Wake, keepalive, panel/video on | `omarchyvr keepalived --video 90` (user service) |
+| Wake, keepalive, panel/video on, headset sound | `omarchyvr keepalived --video 90 --follow vrserver --audio` (user service) |
+| Eye tracking (`XR_EXT_eye_gaze_interaction` for OpenXR apps) | `omarchyvr eyed` (user service) -> shared memory -> CustomHeadsetOpenVR with `linux/crystal-super/chovr-linux-eye-gaze.patch` |
 | 7104x3840 at 90 Hz over DSC | the NVIDIA patch `patches/nvidia/blackwell/` and the EDID override |
 | Sound | USB audio of the headset (WirePlumber rule) |
 
@@ -27,7 +28,10 @@ Monado is not used in this mode. Start SteamVR from Steam as usual.
 2. The keepalive service: `~/.local/bin/omarchyvr` (from `rust/`), `linux/omarchyvr-keepalived.service` into
    `~/.config/systemd/user/`, plus the drop-in `linux/crystal-super/omarchyvr-keepalived-crystal-lighthouse.conf` as
    `~/.config/systemd/user/omarchyvr-keepalived.service.d/crystal-lighthouse.conf`; `systemctl --user enable --now
-   omarchyvr-keepalived`.
+   omarchyvr-keepalived`. It follows SteamVR (`--follow vrserver`): while `vrserver` runs it wakes the headset, turns
+   the panel on and moves the default sound output and input to the headset (`--audio`); 5 s after SteamVR closes it
+   gives the sound back and sends one keepalive with rate 0 and then nothing, so the headset goes to its standby
+   (green LED), as when Pimax Play closes on Windows.
 3. The NVIDIA modules (`patches/nvidia/blackwell/README.md`): build the open modules of your driver version with the
    patch, create a MOK key and enroll it (`mokutil --import`, use a digits-only password: MokManager runs with a US
    keyboard layout), sign the five modules with `scripts/sign-file` of the kernel headers.
@@ -45,15 +49,49 @@ Monado is not used in this mode. Start SteamVR from Steam as usual.
    WirePlumber. The speakers are ALSA device 1 of the card; the stock analog profiles only look at device 0.
 8. Switch the Lighthouse faceplate on (its switch). The Valve devices (`28de:2300` LHR, `28de:2101` dongles) appear
    on their own.
+9. Eye tracking (optional), see below.
+
+### Eye tracking
+
+The Tobii chip is started with the bytes of a Windows capture of this headset (Pimax Play's own start), with the
+user's current Tobii calibration profile in place of the one in the capture. The chip then does the calibration and
+the compensation of the headset's fit itself, as under Windows (findings:
+[../analysis/crystal-super-eye-20261018.md](../analysis/crystal-super-eye-20261018.md)).
+
+1. Under Windows, with Pimax Play: calibrate the eye tracking, capture one cold start of the client
+   (`windows/usbpcap-capture.cmd`, then close and start Pimax Play) and copy the Tobii files with
+   `windows/crystal-eye-files.ps1`: the profile is `ProgramData/Tobii/Tobii Platform Runtime/XR5EYECHIP/<headset>/calibration.setpm`.
+2. The start list: `pimax-eye frames <capture.pcap> -o ~/.config/omarchyvr/eye-start-crystal-super.txt`. The profile:
+   `pimax-eye profile calibration.setpm -o ~/.config/omarchyvr/eye-profile-crystal-super.bin`. Both files are private
+   (they hold this headset's eye profile): never share or commit them. After a new calibration under Windows only the
+   profile has to be taken again.
+3. `linux/omarchyvr-eyed.service` into `~/.config/systemd/user/`, `systemctl --user enable --now omarchyvr-eyed`. It
+   runs the eye tracker while `vrserver` runs (`--follow vrserver`) and publishes the gaze in
+   `/dev/shm/omarchyvr-eye-gaze`; when the headset is put back on it switches the eye module on again.
+4. CustomHeadsetOpenVR with `linux/crystal-super/chovr-linux-eye-gaze.patch` (on top of the direct-USB patch) reads
+   that file and serves SteamVR's eye tracking: OpenXR apps get `XR_EXT_eye_gaze_interaction`.
+5. A constant offset remains between the chip's frame and SteamVR's view (seen: 9 and 14 degrees, mostly vertical,
+   different per eye). Remove it once with `pimax-eyecal --recenter --pattern pimax --frames
+   ~/.config/omarchyvr/eye-start-crystal-super.txt` (with `PIMAX_EYE_PROFILE` set to the profile, `omarchyvr-eyed`
+   stopped) over `~/.config/omarchyvr/eye-calibration.toml` with an identity map: 5 targets, A to start, B to save.
+   A full host calibration (`pimax-eyecal --pattern pimax`) is only needed without the user's profile.
+6. Check: `analysis/tools/xr_grid.c` shows the gaze from the file (cyan) and through OpenXR (magenta).
+
+Quad views and eye-tracked foveated rendering for Vulkan games (Falcon BMS) on top of this: the separate layer
+[linux-vulkan-quadviews-openxr-layer](https://github.com/artscout/linux-vulkan-quadviews-openxr-layer).
 
 ### Known issues
 
 - A small screen-fixed shimmer ("water running down glass") near the centre of both eyes, seen only in SteamVR Home
   (not in other apps' menus): an effect of that scene, not of the stack. Checked and ruled out: DSC (a slice height of
   240 instead of 1920 did not change it) and CustomHeadsetOpenVR's RadialBezier profile (smooth there when probed
-  offline: slope ripple below 0.1 %, no fold; SteamVR samples it on a 127 mesh).
+  offline: slope ripple below 0.1 %, no fold; SteamVR samples it on a 127 mesh). Opening and closing the SteamVR
+  dashboard (the controller's system button) makes it go away; it sometimes comes back, and the dashboard clears it
+  again (seen 2026-10-18): a state of SteamVR's own rendering.
 - About 4 % dropped frames when the head moves fast; SteamVR's asynchronous reprojection is off on this setup.
 - Monitors blink once when SteamVR takes or gives back the headset's output.
+- vrcompositor aborted once ("Vulkan transfer ring buffer overflow") when Falcon BMS left 3D for its menu; not
+  seen in the other runs that did the same (2026-10-18).
 - Inside-out 6DoF (Basalt on the headset cameras) diverges; work in progress.
 
 ## Without the faceplate: the omarchyvr stack

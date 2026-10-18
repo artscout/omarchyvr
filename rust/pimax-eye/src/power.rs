@@ -6,6 +6,9 @@
 //! Only the *enable* report is ever sent. The disable variant (`.. 00 00`) was never captured and is not in this
 //! code. Nothing here writes settings or flash: it is the same one-report request Pimax's service sends.
 //!
+//! The Crystal Super (34a4:0040) takes the same report on its interface 0: Pimax Play sent exactly these bytes in the
+//! Crystal Super capture (take cold2 of 2026-10-17, t = 27.543 s; analysis/crystal-super-capture-20261017.md).
+//!
 //! [`EnableGate`] is the rate limit used by the live tracker: at most one report per enumeration of the headset
 //! (identified by its USB device number), and only when the headset is present and the EyeChip has been absent for
 //! more than [`ABSENT_BEFORE_ENABLE`].
@@ -59,9 +62,12 @@ pub fn find_usb(root: &Path, vid: u16, pid: u16) -> Vec<UsbId> {
     out
 }
 
-/// The headset (34a4:0044), if enumerated.
+/// Headset HID chips whose interface 0 takes the eye-module enable: the Dream Air (0044), the Crystal Super (0040).
+pub const HEADSET_PIDS: [u16; 2] = [0x0044, 0x0040];
+
+/// The headset (34a4:0044 or 34a4:0040), if enumerated.
 pub fn headset(root: &Path) -> Option<UsbId> {
-    find_usb(root, 0x34a4, 0x0044).into_iter().next()
+    HEADSET_PIDS.iter().find_map(|&pid| find_usb(root, 0x34a4, pid).into_iter().next())
 }
 
 /// Whether an EyeChip (2104:0561) is enumerated.
@@ -69,7 +75,8 @@ pub fn eye_chip_present(root: &Path) -> bool {
     !find_usb(root, 0x2104, 0x0561).is_empty()
 }
 
-/// hidraw node of interface 0 (the command channel) of 34a4:0044: `hidraw_class` is normally `/sys/class/hidraw`,
+/// hidraw node of interface 0 (the command channel) of the headset (34a4:0044 or 0040): `hidraw_class` is normally
+/// `/sys/class/hidraw`,
 /// `dev` is `/dev`.
 pub fn headset_command_node(hidraw_class: &Path, dev: &Path) -> Option<PathBuf> {
     let mut names: Vec<String> = std::fs::read_dir(hidraw_class)
@@ -85,7 +92,10 @@ pub fn headset_command_node(hidraw_class: &Path, dev: &Path) -> Option<PathBuf> 
         let Some(uevent) = read_trim(&d.join("uevent")) else {
             continue;
         };
-        if !uevent.contains("HID_ID=0003:000034A4:00000044") {
+        if !HEADSET_PIDS
+            .iter()
+            .any(|pid| uevent.contains(&format!("HID_ID=0003:000034A4:0000{pid:04X}")))
+        {
             continue;
         }
         let Ok(real) = std::fs::canonicalize(&d) else {

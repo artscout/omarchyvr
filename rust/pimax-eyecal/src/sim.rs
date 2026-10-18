@@ -224,6 +224,48 @@ mod tests {
     }
 
     #[test]
+    fn the_pimax_path_calibrates_and_its_end_screen_has_two_buttons() {
+        use crate::procedure::{Cmd, Effect, Set};
+        let s = Settings::default().pimax();
+        let out = run(Procedure::new(s.clone()), &SimParams::default());
+        let p = &out.procedure;
+        assert_eq!(p.calibration_targets().len(), 11);
+        assert!(p.calibration_targets().iter().skip(6).all(|t| t.bright), "the second half is on white");
+        assert!(summary(p).accuracy.mean < 1.3, "{:?}\n{}", summary(p).accuracy, out.log.join("\n"));
+        // B at the end: save and exit
+        let mut p2 = run(Procedure::new(s.clone()), &SimParams { seed: 5, ..SimParams::default() }).procedure;
+        assert!(matches!(p2.phase, Phase::Results));
+        let fx = p2.command(Cmd::Redo);
+        assert!(fx.iter().any(|e| matches!(e, Effect::SaveCalibration(_))), "{fx:?}");
+        assert!(fx.iter().any(|e| matches!(e, Effect::Quit)), "{fx:?}");
+        // A at the end: the calibration again, at once (no intro)
+        let mut p3 = run(Procedure::new(s), &SimParams { seed: 6, ..SimParams::default() }).procedure;
+        let fx = p3.command(Cmd::Next);
+        assert!(!fx.iter().any(|e| matches!(e, Effect::SaveCalibration(_) | Effect::Quit)));
+        assert!(matches!(p3.phase, Phase::Point { set: Set::Calibration, i: 0, .. }), "{:?}", p3.phase);
+        // B at the start: exit
+        let mut p4 = Procedure::new(Settings::default().pimax());
+        assert!(p4.command(Cmd::Redo).iter().any(|e| matches!(e, Effect::Quit)));
+        // during the run the trigger and B do nothing
+        assert!(p3.command(Cmd::Start).is_empty());
+        assert!(p3.command(Cmd::Redo).is_empty());
+        assert!(matches!(p3.phase, Phase::Point { set: Set::Calibration, i: 0, .. }));
+    }
+
+    #[test]
+    fn the_pimax_path_remeasures_the_right_target_and_never_loops() {
+        // a 7 degree glance at the white left target (index 6, after the centre shown twice): the re-measure must be
+        // that target, not the one at the same index of the results (the merged centre), and the run must end
+        let sp = SimParams { glance: Some((6, 7.0)), seed: 4, ..SimParams::default() };
+        let out = run(Procedure::new(Settings::default().pimax()), &sp);
+        let log = out.log.join("\n");
+        assert!(log.contains("-15,+0 is"), "the glance is caught: {log}");
+        let again: Vec<&String> = out.log.iter().filter(|l| l.starts_with("Calibration 7/11 (-15,+0)")).collect();
+        assert!(again.len() >= 2, "target 7/11 (-15,+0) measured again: {log}");
+        assert!(matches!(out.procedure.phase, Phase::Results), "the run ends: {:?}\n{log}", out.procedure.phase);
+    }
+
+    #[test]
     fn a_head_turn_restarts_the_target_and_a_glance_is_remeasured() {
         let sp = SimParams {
             head_turn: Some((5.0, 6.0)),

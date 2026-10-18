@@ -1,13 +1,18 @@
 use omarchyvr_tools::args::Args;
 use omarchyvr_tools::{
-    calib_cmd, controllers, import_cmd, imu, info, keepalived, logger, logtail, mount_shared, probe, video_on,
+    calib_cmd, controllers, eyed, import_cmd, imu, info, keepalived, logger, logtail, mount_shared, probe, video_on,
     CliError, CliResult,
 };
 
 const USAGE: &str = "omarchyvr - Pimax Dream Air userspace tool (Rust port of the python scripts in linux/)
 
 usage: omarchyvr <subcommand> [options]
-  keepalived [--no-wake] [--rate-file P] [--video 72|90]   daemon: wake + 213 ms keepalive, drain IF1-IF3, auto-reconnect; --video: panel on at every connect
+  keepalived [--no-wake] [--rate-file P] [--video 72|90] [--follow PROC [--audio]]   daemon: wake + 213 ms keepalive, drain IF1-IF3,
+                                           auto-reconnect; --video: panel on at every connect; --follow vrserver: panel
+                                           on only while SteamVR runs, else one keepalive rate 0 + none (as Pimax Play);
+                                           --audio: the headset is the default audio output/input while it runs
+  eyed [--frames FILE] [--profile FILE] [--no-profile] [--shm PATH] [--follow PROC] daemon: eye tracker without Monado, gaze to /dev/shm/omarchyvr-eye-gaze
+                                           (SteamVR light setup; --frames: start list from pimax-eye frames)
   probe [seconds] [--passive]              wake/keepalive (unless --passive), identity reads, IMU/log summary
   imu [--json] [--rate HZ] [--no-calib] [--calib F] [--auto-bias S] [--still N] [--seconds T]
       [--kp K] [--ki K] [--axis-mode 0|1]  Mahony orientation from IF2 (read-only); axis mode 1 default
@@ -48,6 +53,7 @@ fn run() -> CliResult {
     let a = Args(argv);
     match sub.as_str() {
         "keepalived" => keepalived::run(a),
+        "eyed" => eyed::run(a),
         "probe" => probe::run(a),
         "imu" => imu::run(a),
         "controllers" => controllers::run(a),
