@@ -185,9 +185,20 @@ Paused in favour of the Lighthouse faceplate (the user owns 3 base stations and 
 - Open: about 4 % dropped frames, no reprojection ("Async: Automatically disabled" on this Vulkan setup).
 - SLAM data (236 s EuRoC recording, 2 cameras at 30.0 Hz with no drop, IMU at 1012 Hz with no gap): |a| in quiet
   windows is 10.11 m/s^2. The factory calibration's `Stateinit` holds the IMU biases: `aBias` (y +0.343 m/s^2, the
-  gravity axis) brings |a| to 9.79; `wBias` z 0.0233 rad/s matches the measured gyro mean (0.0235). The Basalt export
-  still writes zero biases; `delta` (1.58 ms) is a candidate camera-IMU time offset. `ka`, `kg`, `na`, `ng` are not
-  per-axis scale factors (applying `ka` as one makes |a| worse).
+  gravity axis) brings |a| to 9.79; `wBias` z 0.0233 rad/s matches the measured gyro mean (0.0235). `ka`, `kg`,
+  `na`, `ng` are not per-axis scale factors (applying `ka` as one makes |a| worse).
+- What the recording says about the sensors (all offline, no headset):
+  - The export now writes the factory `aBias` into Basalt's `calib_accel_bias` (`omarchyvr-slam export
+    --accel-bias factory`, the default, and the driver's own export). Basalt replay A/B (zero vs factory): still
+    drift 2.27 vs 2.22 mm/s, loop end-start 1.89 vs 1.94 % of an 18 m path, the same noise: Basalt finds the bias
+    on its own; the factory value is the right seed, not a fix.
+  - Camera-IMU time offset (`omarchyvr-slam camlag`, image rotation between frames vs the integrated gyro):
+    +0.02 ms (cam 0) and +0.04 ms (cam 1): the driver's frame times are already right; the factory `delta` 1.58 ms
+    is not needed on top. Gyro bias from the images (-0.20, +0.14, +1.43) deg/s matches the driver's seed.
+  - Gyro scale: gravity (tilt changes between still moments vs the integrated gyro) puts it at 1.00-1.03, so
+    16.4 LSB/dps is right. The image/gyro gain of 1.09-1.11 is parallax (1.12 near the image centre, 1.05 at the
+    edge), not a scale error.
+  - Clocks: 236.083 s of frame stamps against 236.067 s of file times; no rate error.
 - Audio: USB audio on the HID device, not DisplayPort (the EDID has no audio block). Speakers are ALSA device 1
   (`hw:Super,1`, S16_LE 2 ch 48 kHz, interface 7), the microphone device 0 (interface 5); PipeWire's analog profiles
   only probe device 0 for output, so only the microphone showed. A WirePlumber rule picks `pro-audio` for the card

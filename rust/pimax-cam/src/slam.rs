@@ -302,6 +302,10 @@ pub struct SlamSetup {
     /// overlap beyond 0.33 m) the attitude tilts before vision can fix it and gravity leaks into position
     /// (analysis/slam-drift.md). Zero = none.
     pub gyro_bias: Vec3,
+    /// Accelerometer bias (m/s², body frame) Basalt subtracts from every sample (`calib_accel_bias`), normally the
+    /// factory `Stateinit aBias` ([`factory_accel_bias`]). Without it the Crystal Super's 0.34 m/s² on the gravity
+    /// axis reads as 3 % too much gravity. Zero = none.
+    pub accel_bias: Vec3,
 }
 
 impl Default for SlamSetup {
@@ -311,8 +315,22 @@ impl Default for SlamSetup {
             cam_hz: TRACKING_HZ,
             cam_time_offset_ns: 0,
             gyro_bias: [0.0; 3],
+            accel_bias: [0.0; 3],
         }
     }
+}
+
+/// The factory accelerometer bias (`<SFConfig><Stateinit aBias>`, m/s²). The calibration's body frame is the
+/// frame the driver feeds (the same frame as `ombc`/`tbc`), so it is used as is. `None` when absent or implausible
+/// (any axis above 1 m/s²).
+pub fn factory_accel_bias(cal: &DeviceCalib) -> Option<Vec3> {
+    let imu = cal.imu.as_ref()?;
+    let (_, v) = imu.raw.iter().find(|(k, _)| k == "aBias")?;
+    let x: Vec<f64> = v.split_whitespace().map(|w| w.parse::<f64>()).collect::<Result<_, _>>().ok()?;
+    if x.len() != 3 || x.iter().any(|a| !a.is_finite() || a.abs() > 1.0) {
+        return None;
+    }
+    Some([x[0], x[1], x[2]])
 }
 
 /// The driver's gyro bias cache (`$XDG_CACHE_HOME/omarchyvr/gyro-bias`, else `~/.cache/omarchyvr/gyro-bias`).
@@ -410,7 +428,9 @@ pub fn basalt_calib_json(
         ));
         res.push(format!("            [{}, {}]", k.width, k.height));
     }
-    let z9 = json::num_array(&[0.0; 9]);
+    let mut ab = [0.0; 9];
+    ab[..3].copy_from_slice(&setup.accel_bias);
+    let z9 = json::num_array(&ab);
     let mut gb = [0.0; 12];
     gb[..3].copy_from_slice(&setup.gyro_bias);
     let z12 = json::num_array(&gb);
@@ -444,14 +464,15 @@ pub fn info_json(
         .collect();
     let ids: Vec<f64> = setup.cams.iter().map(|&i| i as f64).collect();
     let mut s = format!(
-        "{{\n  \"device_uid\": {},\n  \"factory_cams\": {},\n  \"cam_names\": [{}],\n  \"cam_hz\": {},\n  \"imu_frame\": \"factory body = OpenXR head axes (x right, y up, z back) = raw IMU with x,z negated\",\n  \"imu_noise_source\": {},\n  \"cam_time_offset_ns\": {},\n  \"gyro_bias_rad_s\": {}",
+        "{{\n  \"device_uid\": {},\n  \"factory_cams\": {},\n  \"cam_names\": [{}],\n  \"cam_hz\": {},\n  \"imu_frame\": \"factory body = OpenXR head axes (x right, y up, z back) = raw IMU with x,z negated\",\n  \"imu_noise_source\": {},\n  \"cam_time_offset_ns\": {},\n  \"gyro_bias_rad_s\": {},\n  \"accel_bias_m_s2\": {}",
         json::quote(&cal.uid),
         json::num_array(&ids),
         names.join(", "),
         json::num(setup.cam_hz),
         json::quote(&imu.source),
         setup.cam_time_offset_ns,
-        json::num_array(&setup.gyro_bias)
+        json::num_array(&setup.gyro_bias),
+        json::num_array(&setup.accel_bias)
     );
     for (k, v) in extra {
         s.push_str(&format!(",\n  {}: {}", json::quote(k), json::quote(v)));
@@ -1249,6 +1270,24 @@ mod tests {
         assert_eq!(g.len(), 12);
         assert!((g[1].as_f64().unwrap() - b[1]).abs() < 1e-12);
         assert_eq!(g[3].as_f64(), Some(0.0));
+    }
+
+    #[test]
+    fn factory_accel_bias_goes_into_calib_accel_bias() {
+        let c = DeviceCalib::parse(crate::calib::REFERENCE_XML).unwrap();
+        let ab = factory_accel_bias(&c).unwrap();
+        assert!(ab.iter().all(|a| a.abs() < 1.0) && ab.iter().any(|a| *a != 0.0), "{ab:?}");
+        let setup = SlamSetup {
+            accel_bias: ab,
+            ..Default::default()
+        };
+        let v = json::parse(&basalt_calib_json(&c, &setup, &ImuNoise::default()).unwrap()).unwrap();
+        let a = v.get("value0").unwrap().get("calib_accel_bias").unwrap().as_array().unwrap();
+        assert_eq!(a.len(), 9);
+        for k in 0..3 {
+            assert!((a[k].as_f64().unwrap() - ab[k]).abs() < 1e-12);
+        }
+        assert_eq!(a[3].as_f64(), Some(0.0));
     }
 
     /// Feed `n` tracker poses 40 ms apart, position `pos(i)`, identity rotation, IMU still flag `still`.

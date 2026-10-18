@@ -2315,6 +2315,7 @@ dependencies = [
  "omarchyvr-config",
  "omarchyvr-room",
  "pimax-cam",
+ "png",
 ]
 
 [[package]]
