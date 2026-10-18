@@ -236,7 +236,7 @@ The eye tracker (`2104:0561`) is not on USB after a headset restart: that is nor
 captured enable, which the VR start sends itself; the start says "Eye tracker off: switched on at the start". Do not
 turn eye tracking off for it.
 
-The app window did not open at login? A second start of the app brings the window to the front; if the window process has no window or does not answer within 3 seconds, it is replaced by a new one. At login the app waits for the Wayland display first. Log: `~/.local/state/omarchyvr/logs/omarchyvr-app.log`.
+The app window did not open at login? A second start of the app brings the window to the front; if the window process has no window or does not answer within 3 seconds, it is replaced by a new one. On Hyprland the app also asks the desktop, 5 seconds after its first frame and after every second start, whether its window is really there (a window process can draw without the desktop showing it); if not, it starts a new window by itself. At login the app waits for the Wayland display first. Log: `~/.local/state/omarchyvr/logs/omarchyvr-app.log`.
 
 ## Requirements
 

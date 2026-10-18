@@ -289,6 +289,43 @@ impl Watch {
     }
 }
 
+/// Does Hyprland's client list (`hyprctl -j clients`) have a window of `pid`? Pure: the JSON comes in as text.
+pub fn hypr_lists_pid(json: &str, pid: u32) -> bool {
+    json.match_indices("\"pid\":").any(|(i, k)| {
+        let rest = json[i + k.len()..].trim_start();
+        let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+        digits.parse::<u32>().is_ok_and(|p| p == pid)
+    })
+}
+
+/// Has `pid` a window on the desktop? Asks the compositor; `None` when it cannot be asked (not Hyprland, no answer
+/// within 2 s). The ack file cannot tell: a window process whose surface the compositor never mapped (or dropped)
+/// still draws and answers "show yourself", and winit cannot map it again (`Visible(true)` does nothing on Wayland).
+fn desktop_has_window(pid: u32) -> Option<bool> {
+    std::env::var("HYPRLAND_INSTANCE_SIGNATURE").ok().filter(|s| !s.is_empty())?;
+    let mut c = Command::new("hyprctl").args(["-j", "clients"]).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn().ok()?;
+    let end = Instant::now() + Duration::from_secs(2);
+    loop {
+        match c.try_wait() {
+            Ok(Some(st)) if st.success() => break,
+            Ok(None) if Instant::now() < end => std::thread::sleep(Duration::from_millis(20)),
+            Ok(None) => {
+                let _ = c.kill();
+                let _ = c.wait();
+                return None;
+            }
+            _ => return None,
+        }
+    }
+    let mut out = String::new();
+    std::io::Read::read_to_string(&mut c.stdout.take()?, &mut out).ok()?;
+    // an answer without any client list (an error text) proves nothing
+    out.trim_start().starts_with('[').then(|| hypr_lists_pid(&out, pid))
+}
+
+/// Seconds after the first frame, and after a second start, before the desktop is asked whether the window is there.
+const DESKTOP_CHECK_SECS: f64 = 5.0;
+
 /// Is the Wayland socket there? (No `WAYLAND_DISPLAY`: nothing to wait for, true.)
 pub fn wayland_ready(env: &dyn Fn(&str) -> Option<String>) -> bool {
     let Some(name) = env("WAYLAND_DISPLAY").filter(|n| !n.is_empty()) else { return true };
@@ -460,6 +497,9 @@ pub fn run(demo: bool, renderer: Option<Renderer>) -> i32 {
         let mut watch = Watch::new(pid, env_secs("PIMAX_START_SECS", START_SECS), env_secs("PIMAX_RAISE_SECS", RAISE_SECS));
         let mut ended_why: Option<Why> = None;
         let ack_path = window::ack_file(&state);
+        // when to ask the desktop whether the window is really there (after the first frame, after a second start)
+        let mut desktop_check: Option<Instant> = None;
+        let mut had_window = false;
         let status = loop {
             match child.try_wait() {
                 Ok(Some(st)) => break Some(st),
@@ -487,6 +527,21 @@ pub fn run(demo: bool, renderer: Option<Renderer>) -> i32 {
             if focus {
                 signal_child(&child, libc::SIGUSR1);
                 watch.raise_asked(spawned.elapsed().as_secs_f64(), &ack);
+                if watch.has_window() {
+                    desktop_check = Some(Instant::now() + Duration::from_secs_f64(env_secs("PIMAX_DESKTOP_CHECK_SECS", 1.0)));
+                }
+            }
+            if watch.has_window() && !had_window {
+                had_window = true;
+                desktop_check = Some(Instant::now() + Duration::from_secs_f64(env_secs("PIMAX_DESKTOP_CHECK_SECS", DESKTOP_CHECK_SECS)));
+            }
+            if desktop_check.is_some_and(|t| Instant::now() >= t) && !asked && ended_why.is_none() {
+                desktop_check = None;
+                if desktop_has_window(pid) == Some(false) {
+                    log::error!("the window process {pid} draws but the desktop has no window of it: ending it and starting a new one");
+                    ended_why = Some(Why::NoWindow);
+                    signal_child(&child, libc::SIGKILL);
+                }
             }
             if tick.is_multiple_of(3) && !asked && ended_why.is_none() {
                 let t = spawned.elapsed().as_secs_f64();
@@ -674,6 +729,17 @@ mod tests {
         let mut w = Watch::new(10, 25.0, 3.0);
         w.raise_asked(1.0, "");
         assert_eq!(w.check(10.0, 10.0, ""), None, "a window still starting is not killed by a raise");
+    }
+
+    #[test]
+    fn hyprland_client_list_is_read_by_pid() {
+        let json = r#"[{"address": "0x1", "class": "foot", "pid": 73951, "title": "a"},
+            {"class": "omarchyvr", "pid":653846, "workspace": {"id": 2}}]"#;
+        assert!(hypr_lists_pid(json, 653846));
+        assert!(hypr_lists_pid(json, 73951));
+        assert!(!hypr_lists_pid(json, 2174), "the window process of the bug: drawing, but no client");
+        assert!(!hypr_lists_pid(json, 7395), "a prefix of another pid is not it");
+        assert!(!hypr_lists_pid("[]", 1));
     }
 
     #[test]
