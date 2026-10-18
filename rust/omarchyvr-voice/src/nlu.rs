@@ -84,8 +84,9 @@ pub fn system_prompt(cat: &Catalogue) -> String {
          screen looked at. screen=N|side|here. \"from here / from screen 2 to screen 5\" = win.screen.put_from (an app) \
          or win.screen.move_all (everything); \"swap screens A and B\" = win.screen.swap.\n\
          State lines: apps `on N side` = the screen the app is on NOW, `wsN off-screen` = no screen shows it; \
-         screens `N side shown|hidden|missing [apps]`: missing = not in this session (never send apps there). An app \
-         on screen 1 is NOT on screen 3: move requests are about what is not there yet.\n\
+         screens `N side shown|hidden|missing [apps]`: missing = not in this session (never send apps there); \
+         `screens: only 1` / `vr: off` = no other screen exists; apps may end `float` / `full`; `recent:` = apps used \
+         lately, newest first. An app on screen 1 is NOT on screen 3: move requests are about what is not there yet.\n\
          Movies: \"watch a movie\" / \"movie time\" = vr.preset.cinema; \"play <a title>\" = media.play (a file); \
          vr.preset.exit_cinema only to LEAVE cinema (exit, out of).\n\
          Intents (id: what it does / example phrases):\n",
@@ -197,29 +198,47 @@ pub fn grammar_subset(cat: &Catalogue, plan: bool, allow: &dyn Fn(&str) -> bool)
 /// word of a window's class or title ("go to chrome", "the one with the google search").
 pub fn needs_windows(ctx: &Context, heard: &str) -> bool {
     let words = crate::command::words(heard);
-    const W: &[&str] = &["window", "windows", "this", "that", "it", "app", "move", "close", "focus", "switch", "show", "go", "where", "send", "put", "ventana", "screen", "screens", "remove", "hide", "shut", "pantalla"];
+    const W: &[&str] = &[
+        "window", "windows", "this", "that", "it", "app", "move", "close", "focus", "switch", "show", "go", "where", "send", "put", "ventana", "screen", "screens", "remove", "hide", "shut", "pantalla", "bigger", "smaller", "closer",
+        "farther", "further", "fullscreen", "quit",
+    ];
     if words.iter().any(|w| W.contains(&w.as_str())) {
         return true;
     }
-    let hay: Vec<String> = ctx.clients.iter().take(WINDOWS).flat_map(|c| crate::command::words(&format!("{} {}", c.class, c.title))).filter(|w| w.len() >= 3).collect();
-    words.iter().filter(|w| w.len() >= 3 && !crate::command::FILLERS.contains(&w.as_str())).any(|w| hay.contains(w))
+    class_matches(ctx, &words) > 0
+}
+
+/// How many of the listed windows have a class or title word that a heard word names.
+fn class_matches(ctx: &Context, words: &[String]) -> usize {
+    let heard: Vec<&String> = words.iter().filter(|w| w.len() >= 3 && !crate::command::FILLERS.contains(&w.as_str())).collect();
+    ctx.clients
+        .iter()
+        .take(WINDOWS)
+        .filter(|c| crate::command::words(&format!("{} {}", c.class, c.title)).iter().any(|w| w.len() >= 3 && heard.contains(&w)))
+        .count()
+}
+
+/// Words that ask for an earlier window ("the last one", "go back"): only then the apps line lists recency.
+fn about_recency(words: &[String]) -> bool {
+    words.iter().any(|w| matches!(w.as_str(), "last" | "previous" | "other" | "back" | "recent"))
 }
 
 /// The per-command user message and the `wN` -> window address map. Only the lines that matter: the window list
 /// only when the request is about windows ([`needs_windows`]), the hints as ids + scores.
 pub fn user_message(ctx: &Context, cands: &[Cand], heard: &str, strip_titles: bool) -> (String, Vec<String>) {
     if needs_windows(ctx, heard) {
-        return user_message_inner(ctx, cands, heard, strip_titles);
+        return user_message_inner(ctx, cands, heard, strip_titles, true);
     }
     let mut c2 = ctx.clone();
     c2.clients.clear();
     c2.screens.clear();
     c2.focused = None;
     c2.this = None;
-    user_message_inner(&c2, cands, heard, strip_titles)
+    user_message_inner(&c2, cands, heard, strip_titles, false)
 }
 
-fn user_message_inner(ctx: &Context, cands: &[Cand], heard: &str, strip_titles: bool) -> (String, Vec<String>) {
+/// `listed`: the request is about windows (the apps and screens lines are wanted).
+fn user_message_inner(ctx: &Context, cands: &[Cand], heard: &str, strip_titles: bool, listed: bool) -> (String, Vec<String>) {
     let mut ids = Vec::new();
     let mut s = String::new();
     // the most recent windows, listed in a stable order (workspace, address) so the text stays the same between
@@ -238,12 +257,28 @@ fn user_message_inner(ctx: &Context, cands: &[Cand], heard: &str, strip_titles: 
                 w += &format!(" \"{}\"", t.replace('"', "'"));
             }
             w += &format!(" {}", where_label(ctx, c));
+            if c.floating {
+                w += " float";
+            }
+            if c.fullscreen {
+                w += " full";
+            }
             w
         })
         .collect();
     let wname = |a: &str| ids.iter().position(|x| x == a).map(|p| format!("w{}", p + 1));
     if !wins.is_empty() {
         s += &format!("apps: {}\n", wins.join("; "));
+    }
+    // the last-used apps (the ids stay in their stable order): only for "the last one" or an ambiguous name
+    let words = crate::command::words(heard);
+    if !ids.is_empty() && (about_recency(&words) || class_matches(ctx, &words) > 1) {
+        let mut by_use: Vec<&windows::Client> = ctx.clients.iter().take(WINDOWS).filter(|c| Some(&c.address) != ctx.focused.as_ref().map(|f| &f.address) && c.focus != 0).collect();
+        by_use.sort_by_key(|c| c.focus);
+        let r: Vec<String> = by_use.iter().take(3).filter_map(|c| wname(&c.address)).collect();
+        if !r.is_empty() {
+            s += &format!("recent: {}\n", r.join(", "));
+        }
     }
     // the VR screens by number with their apps (live 2026-10-16: "screen 3" had nothing to point at); which exist
     // and show (live 2026-10-17: "6 screens" in the settings, 4 in the session)
@@ -257,6 +292,14 @@ fn user_message_inner(ctx: &Context, cands: &[Cand], heard: &str, strip_titles: 
         }
     } else if ctx.screens.len() > 1 {
         s += &format!("screens: {}\n", screens_line(ctx, &ids));
+    }
+    // say what does not exist (live: "move it to screen 2" with one screen); only when the screens are known
+    let known = ctx.desk.as_ref().map(|d| d.existing().len()).or_else(|| (!ctx.screens.is_empty()).then_some(ctx.screens.len()));
+    if listed && known.is_some_and(|n| n <= 1) {
+        s += "screens: only 1 (main)\n";
+        if !ctx.session.running {
+            s += "vr: off\n";
+        }
     }
     // the VR look only when the words are about it (the small model copied an always-there state line into
     // unrelated answers, audit 2026-10-15)
@@ -577,5 +620,73 @@ mod tests {
         assert!(m.len() < 900, "{}", m.len());
         let (m, _) = user_message(&ctx, &[], "x", true);
         assert!(!m.contains("xxxx"));
+    }
+
+    fn win(a: &str, class: &str, ws: i64, focus: i64) -> Client {
+        Client { address: a.into(), class: class.into(), title: String::new(), workspace: ws, focus, ..Default::default() }
+    }
+
+    #[test]
+    fn one_screen_and_vr_off_are_said() {
+        let mut ctx = Context::default();
+        ctx.clients = vec![win("0x1a", "foot", 1, 0)];
+        ctx.screens = vec![windows::Screen { slot: "main", output: "DP-2".into(), ws: 1, focused: true }];
+        let (m, _) = user_message(&ctx, &[], "move it to screen 2", false);
+        assert!(m.contains("screens: only 1 (main)\nvr: off\n"), "{m}");
+        ctx.session.running = true;
+        let (m, _) = user_message(&ctx, &[], "move it to screen 2", false);
+        assert!(m.contains("screens: only 1 (main)\n") && !m.contains("vr: off"), "{m}");
+        // not about windows: nothing extra
+        let (m, _) = user_message(&ctx, &[], "volume up", false);
+        assert!(!m.contains("only 1"), "{m}");
+    }
+
+    #[test]
+    fn window_flags_and_recent() {
+        let mut ctx = Context::default();
+        let mut a = win("0x1a", "foot", 1, 2);
+        a.floating = true;
+        let mut b = win("0x2b", "google-chrome", 1, 0);
+        b.fullscreen = true;
+        ctx.clients = vec![b.clone(), win("0x3c", "foot", 2, 1), a];
+        ctx.focused = Some(b);
+        let (m, _) = user_message(&ctx, &[], "close this", false);
+        assert!(m.contains("w1 foot ws1 float;") && m.contains("google-chrome ws1 full") && !m.contains("recent:"), "{m}");
+        // ids stay in (workspace, address) order: w1 0x1a, w2 0x2b, w3 0x3c; use order is 0x3c (w3), then 0x1a (w1)
+        let (m, _) = user_message(&ctx, &[], "go to the previous one", false);
+        assert!(m.contains("recent: w3, w1\n"), "{m}");
+        // an ambiguous name (two foot windows)
+        let (m, _) = user_message(&ctx, &[], "the foot", false);
+        assert!(m.contains("recent: w3, w1\n"), "{m}");
+        // a name that matches one window: no recent line
+        let (m, _) = user_message(&ctx, &[], "the chrome", false);
+        assert!(!m.contains("recent:"), "{m}");
+    }
+
+    #[test]
+    fn more_words_send_the_apps() {
+        let mut ctx = Context::default();
+        ctx.clients = vec![win("0x1a", "foot", 1, 0)];
+        for w in ["make it bigger", "a bit smaller", "closer please", "farther", "further", "fullscreen", "quit", "the foot"] {
+            assert!(needs_windows(&ctx, w), "{w}");
+        }
+        assert!(!needs_windows(&ctx, "volume up"));
+    }
+
+    #[test]
+    fn user_message_is_stable_between_calls() {
+        let c = cat();
+        assert_eq!(system_prompt(&c), system_prompt(&c));
+        let mut ctx = Context::default();
+        ctx.clients = vec![win("0x1a", "foot", 1, 0)];
+        assert_eq!(user_message(&ctx, &[], "close this", false), user_message(&ctx, &[], "close this", false));
+    }
+
+    #[test]
+    fn typical_three_screen_world_has_no_only_one_line() {
+        let ctx = crate::agent::typical_context();
+        let (m, _) = user_message(&ctx, &[], "move the terminal to screen 2", false);
+        eprintln!("{m}");
+        assert!(!m.contains("only 1") && m.contains("screens: "), "{m}");
     }
 }

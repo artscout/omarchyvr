@@ -2489,7 +2489,7 @@ impl Agent {
         let cat = self.catalogue.clone();
         let sys = self.scoped_prompts.entry(key).or_insert_with(|| planner::system_prompt_with(st.template.as_deref(), &cat, &cats, &own, st.target_line)).clone();
         // the state: the World snapshot, its apps renamed w1.. (the window tools' ids)
-        let mut w = crate::world::snapshot(r, &actor.wayvrctl);
+        let mut w = crate::world::snapshot_session(r, &actor.wayvrctl, ctx.session.running, ctx.session.preset.as_deref());
         let mut ids = Vec::new();
         w.apps.sort_by(|a, b| (a.ws, &a.id).cmp(&(b.ws, &b.id)));
         for (n, a) in w.apps.iter_mut().enumerate() {
@@ -3495,6 +3495,8 @@ pub fn typical_context() -> Context {
         pid: 1,
         grouped: vec![],
         focus,
+        floating: false,
+        fullscreen: false,
     };
     let clients = vec![
         c("0x55d4c8a1b2c0", "firefox", "YouTube - Lofi hip hop radio - beats to relax/study to - Mozilla Firefox", 1, 0),

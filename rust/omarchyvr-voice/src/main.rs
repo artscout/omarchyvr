@@ -71,6 +71,7 @@ const HELP: &str = "omarchyvr-voice <command> [options]   local voice-to-text (n
       audit phrase; prints top-1 accuracy, how often the right category is among the ones the act request gets,
       the matcher's own guess for comparison, and p50/p95 latency. Nothing runs. --label held-out: only the
       natural phrasings (not in the training rows); --out: write Laya training rows from the catalogue instead.
+  ai-state [WORDS...]          (read-only: the exact state text the AI gets for these words from the live desktop, with sizes)
   ai-size                      (prints what each AI request kind sends for a typical state: characters, ~tokens)
   ai-mode [local-toggle|local-on|local-off|preset-next|low|medium|high|next|simple|two-stage|online|show]
       AI runs on (the Work desk watch's AI button): saves it in ai.toml ([use] voice and voice_local only),
@@ -1728,6 +1729,11 @@ fn run(args: &[String]) -> Result<(), String> {
             // CLAUDE_LIVE_MODEL (default haiku), CLAUDE_LIVE_NO_PREWARM=1
             let model = std::env::var("CLAUDE_LIVE_MODEL").unwrap_or_else(|_| "haiku".to_string());
             print!("{}", omarchyvr_voice::claudelive::run(&o.positional, &model, std::env::var_os("CLAUDE_LIVE_NO_PREWARM").is_none())?);
+            Ok(())
+        }
+        "ai-state" => {
+            let cat = Catalogue::load_default()?;
+            println!("{}", omarchyvr_voice::statetest::ai_state(&o.positional.join(" "), &cat));
             Ok(())
         }
         "ai-size" => {

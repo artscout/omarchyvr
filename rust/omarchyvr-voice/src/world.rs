@@ -1611,12 +1611,11 @@ pub fn describe(w: &World, blocks: &[&str]) -> String {
         s
     };
     if on("session") {
-        out.push(format!(
-            "session: {}, preset {}{}",
-            if w.session.running { w.session.mode.as_str() } else { "stopped" },
-            w.session.preset,
-            if w.recording { ", recording" } else { "" }
-        ));
+        if w.session.running {
+            out.push(format!("session: {}, preset {}{}", w.session.mode, w.session.preset, if w.recording { ", recording" } else { "" }));
+        } else {
+            out.push(format!("session: off (VR not running){}", if w.recording { ", recording" } else { "" }));
+        }
     }
     if on("screens") || on("apps") {
         out.push("screens (1 main, 2 left, 3 right, 4 up, 5 up-left, 6 up-right):".into());
@@ -1760,6 +1759,13 @@ pub fn diff(a: &World, b: &World) -> Vec<Change> {
 /// place (no wayvrctl command reports them), hidden browser tabs (the voice code only sees the active tab's title),
 /// terminal cwd (taken from the title when it looks like `user@host:path`), volume.
 pub fn snapshot(r: &mut dyn Runner, wayvrctl: &str) -> World {
+    let running = crate::agent::Probe::vr_running(&mut crate::agent::HostProbe);
+    snapshot_session(r, wayvrctl, running, None)
+}
+
+/// [`snapshot`] with the VR session from the caller's probe: `running`, and the preset the voice state knows (None:
+/// the default one while VR runs). VR off: not running, no preset.
+pub fn snapshot_session(r: &mut dyn Runner, wayvrctl: &str, running: bool, preset: Option<&str>) -> World {
     let mut w = World { apps: Vec::new(), workspaces: Vec::new(), ..World::default() };
     let mons: Vec<Value> = r.run(&["hyprctl".into(), "-j".into(), "monitors".into()], true).ok().and_then(|j| serde_json::from_str::<Value>(&j).ok()).and_then(|v| v.as_array().cloned()).unwrap_or_default();
     for s in w.screens.iter_mut() {
@@ -1843,6 +1849,11 @@ pub fn snapshot(r: &mut dyn Runner, wayvrctl: &str) -> World {
             }
         }
     }
+    w.session = if running {
+        Session { running: true, mode: "work".into(), preset: preset.unwrap_or(act::DEFAULT_PRESET).to_string() }
+    } else {
+        Session { running: false, mode: "off".into(), preset: String::new() }
+    };
     w.events.push("snapshot: screen sizes/places, hidden tabs and volume are not readable live".into());
     w.normalize();
     w
@@ -1851,6 +1862,33 @@ pub fn snapshot(r: &mut dyn Runner, wayvrctl: &str) -> World {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn snapshot_session_follows_the_probe() {
+        struct Empty;
+        impl Runner for Empty {
+            fn run(&mut self, _argv: &[String], _capture: bool) -> Result<String, String> {
+                Err("none".into())
+            }
+            fn passthrough(&mut self, _line: &str) -> Result<String, String> {
+                Err("none".into())
+            }
+            fn toast(&mut self, _text: &str) {}
+            fn captions(&mut self, _on: bool) -> Result<(), String> {
+                Ok(())
+            }
+            fn skyboxes(&mut self) -> Vec<String> {
+                Vec::new()
+            }
+        }
+        let off = snapshot_session(&mut Empty, "wayvrctl", false, Some("cinema"));
+        assert!(!off.session.running && off.session.preset.is_empty());
+        assert!(describe(&off, &["session"]).contains("session: off (VR not running)"), "{}", describe(&off, &["session"]));
+        let on = snapshot_session(&mut Empty, "wayvrctl", true, Some("cinema"));
+        assert!(on.session.running && on.session.preset == "cinema");
+        assert!(describe(&on, &["session"]).contains("session: work, preset cinema"));
+        assert_eq!(snapshot_session(&mut Empty, "wayvrctl", true, None).session.preset, act::DEFAULT_PRESET);
+    }
     use crate::catalogue::BUILTIN;
 
     fn desk() -> World {

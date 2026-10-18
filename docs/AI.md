@@ -192,6 +192,16 @@ built for the prompt cache and a small model:
   hints: win.list 0.95, win.close 0.72, omarchy.focus.left 0.76
   heard: "leaks list windows"
   ```
+
+  More state lines (2026-10-18): apps end with ` float` / ` full` when Hyprland says floating / fullscreen;
+  `recent: w3, w1` (last-used apps, newest first, not the focused one) only for last/previous/other/back/recent or a
+  name that matches several apps; `screens: only 1 (main)` and `vr: off` when at most one screen exists, so "screen 2"
+  gets an honest answer. The apps line is also sent for it/this/that, bigger/smaller/closer/farther/further/fullscreen/
+  close/quit and any word of an app's class or title. Screen size/distance is not shown: WayVR has no read command
+  for it (`wayvrctl desk-screens` only writes).
+
+  `omarchyvr-voice ai-state [WORDS...]` prints the exact message (and the Claude state) for these words from the live
+  desktop, with chars and approximate tokens. Read-only: only `hyprctl -j` and `wayvrctl gaze` run, nothing is written.
 - **Answer: one line**, `win.list 9`, `win.ws.goto 9 n=4`, `omarchy.reminder 9 minutes=5 text="stretch"`,
   `none 9`. On the local server a GBNF grammar (`grammar` in the request) allows only the offered ids, each with its
   own slots and value shapes, so the 4B answers in 4-8 tokens. Remote models get the same text without a grammar
