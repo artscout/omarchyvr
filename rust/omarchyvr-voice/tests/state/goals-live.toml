@@ -10,7 +10,7 @@ cat = "hide"
 src = "live 2026-10-16 15:52-15:53"
 why = "Close screen N = hide that VR screen; its apps stay open (user rule 2026-10-16). Live: asked to close window 1 (2 apps) instead."
 expect = ["screen 2 hidden", "all stay"]
-worlds = { easy = "e3c", medium = "m4s", hard = "h6" }
+worlds = { medium = "m4s", hard = "h6" }
 live = [
   "can you close down screen number two.",
   "uh closed screen number two.",
@@ -26,7 +26,7 @@ cat = "hide"
 src = "live 2026-10-16 15:51"
 why = "Remove / shut down screens 4 and 3 = hide both; their apps stay open. Live: swapped them instead (\"Both screens are empty\")."
 expect = ["screen 3 hidden", "screen 4 hidden", "all stay"]
-worlds = { easy = "e4", medium = "m4s", hard = "h6" }
+worlds = { medium = "m4s", hard = "h6" }
 live = ["can you remove screen number four and three?", "Can you Max can you shut down numbers screens four and three?"]
 says = ["close screens three and four", "hide screens 3 and 4"]
 
@@ -36,7 +36,7 @@ cat = "hide"
 src = "live 2026-10-16 15:59"
 why = "Close everything = only the main screen shows; every app stays open (user rule 2026-10-16). Live: nothing happened."
 any = [["shown 1", "all stay"], ["preset work-1", "all stay"]]
-worlds = { easy = "e3c", medium = "m4", hard = "h6" }
+worlds = { medium = "m4", hard = "h6" }
 live = ["close everything", "closed everything.", "clot screens", "close the other two screens"]
 says = ["close all the screens", "just the main screen please", "hide all the other screens"]
 
@@ -46,7 +46,7 @@ cat = "size"
 src = "live 2026-10-16 15:50"
 why = "ALL shown screens to half their size. Live: only the main screen got one step smaller."
 expect = ["screen all size x0.5"]
-worlds = { easy = "e3", medium = "m4s", hard = "h6" }
+worlds = { medium = "m4s", hard = "h6" }
 live = ["can you make all these screens half the size?", "all of them. Can you make Max, can you make all of these screens half the size?"]
 says = ["make all the screens half as big", "shrink every screen to half"]
 
@@ -56,7 +56,7 @@ cat = "move"
 src = "live 2026-10-16 15:51"
 why = "Every terminal to screen 3 (the right one), which shows; the other apps stay. Live: gathered them on the LEFT screen (screen=3 dropped)."
 expect = ["terminals on 3", "screen 3 shown", "browsers stay", "pimax stay"]
-worlds = { easy = "e3", medium = "m3", hard = "h6" }
+worlds = { medium = "m3", hard = "h6" }
 set = { hard = { drop_apps = ["t5"] } }
 live = [
   "can you move all the terminals to number three, to screen number three.",
@@ -70,7 +70,7 @@ cat = "session"
 src = "live 2026-10-16 15:53, 15:55"
 why = "Stop the VR session (it asks first; the user says yes). Live: nothing happened."
 expect = ["session stopped", "all stay"]
-worlds = { easy = "e1", medium = "m4", hard = "h6" }
+worlds = { medium = "m4", hard = "h6" }
 live = ["can you s Max can you shut down uh work VR?", "can you stop the VR?"]
 says = ["shut down the session", "exit VR", "close work"]
 
@@ -80,7 +80,7 @@ cat = "size"
 src = "live 2026-10-16 15:49"
 why = "The screen looked at grows. Live: right."
 expect = ["screen gazed bigger"]
-worlds = { easy = "e1", medium = "m4s", hard = "h6c" }
+worlds = { medium = "m4s", hard = "h6c" }
 live = ["can you make the screen bigger?"]
 says = ["zoom in", "make the screen larger"]
 
@@ -90,7 +90,7 @@ cat = "place"
 src = "live 2026-10-16 15:49"
 why = "The screen looked at moves right (around the head). Live: right."
 expect = ["screen gazed right"]
-worlds = { easy = "e1", medium = "m4s", hard = "h6c" }
+worlds = { medium = "m4s", hard = "h6c" }
 live = ["can you move it to the right more?", "can you move uh one of the screens to the right"]
 says = ["move the screen to the right"]
 
@@ -100,7 +100,7 @@ cat = "place"
 src = "live 2026-10-16 15:49"
 why = "Screen 1 itself moves right. Live: the request was lost (wake word)."
 expect = ["screen 1 right"]
-worlds = { easy = "e3", medium = "m4s", hard = "h6" }
+worlds = { medium = "m4s", hard = "h6" }
 live = ["Max, can you move this screen number one to the right?"]
 says = ["move screen one to the right"]
 
@@ -110,8 +110,8 @@ cat = "place"
 src = "live 2026-10-16 15:50"
 why = "The main screen was moved to the side; bring it back in front of the head. Live: made the app fullscreen (the wake cut dropped the words)."
 expect = ["screen 1 front"]
-worlds = { easy = "e1", medium = "m4s", hard = "h6c" }
-set = { easy = { geom = { "1" = [2.0, 2.2, -30.0, 0.0] } }, medium = { geom = { "1" = [2.0, 2.5, -30.0, 0.0] } }, hard = { geom = { "1" = [3.2, 3.5, -30.0, 0.0] } } }
+worlds = { medium = "m4s", hard = "h6c" }
+set = { medium = { geom = { "1" = [2.0, 2.5, -30.0, 0.0] } }, hard = { geom = { "1" = [3.2, 3.5, -30.0, 0.0] } } }
 live = ["can you move it in front of me, Max, the screen.", "move the screen in front of me"]
 says = ["bring the screen in front of me", "put the screen back in front"]
 
@@ -121,8 +121,8 @@ cat = "place"
 src = "live 2026-10-16 (earlier session)"
 why = "The screen is behind the user: bring it back in front."
 expect = ["screen 1 front"]
-worlds = { easy = "e1", medium = "m4s", hard = "h6c" }
-set = { easy = { geom = { "1" = [2.0, 2.2, 150.0, 0.0] }, gaze = "none" }, medium = { geom = { "1" = [2.0, 2.5, 150.0, 0.0] }, gaze = "none" }, hard = { geom = { "1" = [3.2, 3.5, 150.0, 0.0] }, gaze = "none" } }
+worlds = { medium = "m4s", hard = "h6c" }
+set = { medium = { geom = { "1" = [2.0, 2.5, 150.0, 0.0] }, gaze = "none" }, hard = { geom = { "1" = [3.2, 3.5, 150.0, 0.0] }, gaze = "none" } }
 live = ["uh show me the window i don't see any window"]
 says = ["where did my screens go", "my screens are gone"]
 
@@ -132,8 +132,8 @@ cat = "count"
 src = "live 2026-10-16 15:50"
 why = "Three more screens than shown now. Live: right."
 expect = ["shown +3", "all stay"]
-worlds = { easy = "e3", medium = "m4", hard = "h6c" }
-set = { easy = { screens = 4, preset = "work-1" }, medium = { preset = "work-1" } }
+worlds = { medium = "m4", hard = "h6c" }
+set = { medium = { preset = "work-1" } }
 live = ["can you do three more screens?"]
 says = ["three more screens please", "add 3 screens"]
 
@@ -143,8 +143,8 @@ cat = "count"
 src = "live 2026-10-16 (earlier sessions)"
 why = "Two more screens than shown now. Live: work-3 preset, timeouts, fullscreen."
 expect = ["shown +2", "all stay"]
-worlds = { easy = "e3", medium = "m4", hard = "h6c" }
-set = { easy = { preset = "work-1" }, medium = { preset = "work-1" } }
+worlds = { medium = "m4", hard = "h6c" }
+set = { medium = { preset = "work-1" } }
 live = [
   "can you create 2 screens more",
   "create 2 screens more",
@@ -162,8 +162,8 @@ cat = "count"
 src = "live 2026-10-16 (earlier session)"
 why = "The user corrects himself: four screens in all (the last request wins)."
 expect = ["shown =4", "all stay"]
-worlds = { easy = "e3", medium = "m4", hard = "h6c" }
-set = { easy = { screens = 4, preset = "work-1" }, medium = { preset = "work-1" } }
+worlds = { medium = "m4", hard = "h6c" }
+set = { medium = { preset = "work-1" } }
 live = ["can we can we have 2 more screens can we have 4 screens"]
 says = ["4 screens", "give me four screens"]
 
@@ -173,7 +173,7 @@ cat = "browser"
 src = "live 2026-10-16"
 why = "YouTube in front: its tab focused (a new tab or window if none). Nothing else changes."
 expect = ["tab youtube"]
-worlds = { easy = "e1", medium = "m4", hard = "h6" }
+worlds = { medium = "m4", hard = "h6" }
 live = ["can you open youtube", "open youtube"]
 says = ["open youtube dot com", "go to youtube"]
 
@@ -183,8 +183,7 @@ cat = "browser"
 src = "live 2026-10-16"
 why = "The YouTube tab in front (it is open; in the hard desk it is one of 10 tabs, not the active one). Live: 'focus app user'."
 expect = ["tab youtube"]
-worlds = { easy = "e1c", medium = "m3", hard = "h6" }
-set = { easy = { focus = "t1", gaze = "1:t1" } }
+worlds = { medium = "m3", hard = "h6" }
 live = ["can i focus you 2", "can i focus youtube", "max can you show me youtube in focus", "check uh youtube"]
 says = ["show me youtube", "switch to the youtube tab"]
 
@@ -194,8 +193,8 @@ cat = "browser"
 src = "live 2026-10-16"
 why = "YouTube alone on a screen of its own (a free one), shown. Live: focused the app or opened an empty window."
 expect = ["alone youtube"]
-worlds = { easy = "e3", medium = "mmix", hard = "m6" }
-set = { easy = { add_apps = ["c1 google-chrome 1 tabs=Gmail - Inbox|YouTube*"] }, hard = { add_apps = ["t2 foot 2 ~/src/wayvr"] } }
+worlds = { medium = "mmix", hard = "m6" }
+set = { hard = { add_apps = ["t2 foot 2 ~/src/wayvr"] } }
 live = ["can you focus youtube in a new window", "open youtube in a new window"]
 says = ["put youtube on its own screen"]
 
@@ -205,7 +204,7 @@ cat = "screens"
 src = "live 2026-10-16"
 why = "A new empty screen to work on, focused and shown."
 expect = ["focus empty"]
-worlds = { easy = "e3", medium = "m6", hard = "h6" }
+worlds = { medium = "m6", hard = "h6" }
 set = { hard = { drop_apps = ["t3"] } }
 live = ["uh can you open a new window", "can you open a new window"]
 says = ["give me a new empty screen"]
@@ -216,7 +215,7 @@ cat = "move"
 src = "live 2026-10-16"
 why = "Every kind of app on a screen of its own (terminals together, the browser, the Pimax app)."
 expect = ["sorted"]
-worlds = { easy = "mmix", medium = "m4", hard = "h6" }
+worlds = { medium = "m4", hard = "h6" }
 set = { medium = { add_apps = ["c2 google-chrome 3 tabs=Gmail - Inbox"] } }
 live = ["can you move the windows in a nice layout", "can you put everything in in its own window"]
 says = ["sort my apps by kind", "tidy up the screens"]
@@ -227,7 +226,7 @@ cat = "preset"
 src = "live 2026-10-16"
 why = "Cinema mode: one big curved screen, dimmed room; nothing closes."
 expect = ["preset cinema", "all stay"]
-worlds = { easy = "e3", medium = "m4", hard = "h6" }
+worlds = { medium = "m4", hard = "h6" }
 live = ["and you make cinema mode", "putin cinema mode", "put everything in cinema mode"]
 says = ["put on cinema mode", "i want to watch a movie"]
 
@@ -237,7 +236,7 @@ cat = "preset"
 src = "live 2026-10-16"
 why = "Work mode: the 3-screen layout."
 expect = ["preset work-3", "all stay"]
-worlds = { easy = "e1", medium = "mcin", hard = "h6c" }
+worlds = { medium = "mcin", hard = "h6c" }
 live = ["put it in work mode"]
 says = ["switch to the work layout"]
 
@@ -247,7 +246,7 @@ cat = "view"
 src = "live 2026-10-16"
 why = "Passthrough off: the room hidden. Live: 'stop us through Max' ignored."
 expect = ["passthrough off"]
-worlds = { easy = "e1", medium = "m3", hard = "h6" }
+worlds = { medium = "m3", hard = "h6" }
 live = ["can we stop us through max", "desactivate passthrough"]
 says = ["stop passthrough", "turn the pass through off", "stop the past through"]
 
@@ -257,8 +256,7 @@ cat = "screens"
 src = "live 2026-10-16"
 why = "The main screen gets the focus. Live: 'focus app YouTube - Google Chrome'."
 expect = ["focus 1", "all stay"]
-worlds = { easy = "e3c", medium = "m4", hard = "h6" }
-set = { easy = { focus = "c1", gaze = "2:c1" } }
+worlds = { medium = "m4", hard = "h6" }
 live = ["can we focus in the main window"]
 says = ["go to the main window", "focus the main screen"]
 
@@ -268,8 +266,8 @@ cat = "move"
 src = "live 2026-10-16"
 why = "All terminals together on one shown screen; the other apps stay."
 expect = ["together terminals", "browsers stay", "pimax stay"]
-worlds = { easy = "e3", medium = "m4", hard = "h6" }
-set = { easy = { add_apps = ["t2 foot 2 ~/src/wayvr"] }, hard = { drop_apps = ["t5"] } }
+worlds = { medium = "m4", hard = "h6" }
+set = { hard = { drop_apps = ["t5"] } }
 live = ["can you move all the command line in one page", "move all the terminals to one window"]
 says = ["put all the terminals on one screen"]
 
@@ -279,7 +277,7 @@ cat = "place"
 src = "live 2026-10-16 (earlier session)"
 why = "The screen looked at goes farther away. Live: 'make it far away' made the app wider."
 expect = ["screen gazed farther"]
-worlds = { easy = "e1", medium = "m4s", hard = "h6c" }
+worlds = { medium = "m4s", hard = "h6c" }
 live = ["make it far away"]
 says = ["push the screen back"]
 
@@ -289,7 +287,7 @@ cat = "size"
 src = "live 2026-10-16 (earlier session)"
 why = "'Make this bigger' while looking at a screen: that screen grows. Live: the app got much wider."
 any = [["screen gazed bigger"], ["focused fullscreen"]]
-worlds = { easy = "e1", medium = "m4s", hard = "h6c" }
+worlds = { medium = "m4s", hard = "h6c" }
 live = ["make this bigger"]
 
 [[goal]]
@@ -298,7 +296,7 @@ cat = "info"
 src = "live 2026-10-16"
 why = "A question: say what is on the screens; nothing changes."
 expect = ["nothing", "said main"]
-worlds = { easy = "e3c", medium = "m4", hard = "h6" }
+worlds = { medium = "m4", hard = "h6" }
 live = ["mini windows"]
 says = ["what windows do i have open", "list the screens"]
 
@@ -308,7 +306,7 @@ cat = "cut"
 src = "live 2026-10-16"
 why = "A sentence cut off mid-way (or noise): nothing may run; it waits for the rest."
 expect = ["nothing"]
-worlds = { easy = "e3c", medium = "m4", hard = "h6" }
+worlds = { medium = "m4", hard = "h6" }
 live = ["can you move uh 1 of the", "set up a nice", "can you move", "can you move all the", "can you write uh", "can you write uh something in the", "canwii"]
 
 [[goal]]
@@ -317,7 +315,7 @@ cat = "chatter"
 src = "live 2026-10-16"
 why = "A question about what happened, no command: nothing runs."
 expect = ["nothing"]
-worlds = { easy = "e3c", medium = "m4", hard = "h6c" }
+worlds = { medium = "m4", hard = "h6c" }
 live = ["why the other windows close"]
 says = ["i was telling my friend about the screens"]
 
@@ -327,7 +325,7 @@ cat = "typing"
 src = "live 2026-10-16 (typing test)"
 why = "The words typed into the focused app; nothing else."
 expect = ["typed hello pimax"]
-worlds = { easy = "e1c", medium = "m3", hard = "h6b" }
+worlds = { medium = "m3", hard = "h6b" }
 set = { medium = { focus = "c1", gaze = "2:c1" } }
 live = ["type hello pimax"]
 says = ["write hello pimax"]

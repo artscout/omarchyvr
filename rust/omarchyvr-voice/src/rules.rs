@@ -125,7 +125,14 @@ pub fn screen_rule(words: &[String]) -> Option<Match> {
     let hide_verb = high || has(&w, HIDE_VERBS) || joined.contains(" turn off ") || joined.contains(" switch off ") || joined.contains(" get rid of ");
     let badges = has(&w, &["numbers", "number", "badges", "badge"]) && nums.is_empty();
     // "close window 2": window = a VR screen in the user's words (docs/VOICE.md) when a number names it
-    let screenish = screen || (has(&w, &["window", "windows", "ventana"]) && !nums.is_empty());
+    // "close the btop windows": a program name right before "windows" makes them apps, never VR screens
+    let named_windows = w.windows(2).any(|p| {
+        matches!(p[1].as_str(), "window" | "windows")
+            && p[0].parse::<u32>().is_err()
+            && !HIDE_VERBS.contains(&p[0].as_str())
+            && !matches!(p[0].as_str(), "the" | "a" | "this" | "that" | "these" | "those" | "other" | "all" | "every" | "both" | "of" | "down" | "off" | "left" | "right" | "up" | "upper" | "top" | "main" | "middle" | "center" | "centre" | "first" | "second" | "third" | "last" | "extra" | "empty" | "my" | "your" | "two" | "three" | "four" | "five" | "six" | "number" | "out")
+    });
+    let screenish = screen || (has(&w, &["window", "windows", "ventana"]) && !nums.is_empty() && !named_windows);
     if hide_verb && screenish && !apps && !badges {
         // "close the other two screens": a count, not screen 2
         if has(&w, &["other", "others", "all", "every", "everything", "extra"]) {
@@ -332,7 +339,7 @@ mod tests {
 
     #[test]
     fn never_for_other_requests() {
-        for t in ["stop recording", "exit cinema mode", "close this window", "close this app", "close the terminals", "move all the terminals to one screen", "make the screen bigger", "move it to the right more", "turn off the passthrough", "close all apps", "stop the music", "what's on screen 2", "swap screens 1 and 2", "move chrome from screen 2 to screen 5", "hide the numbers on the screens", "hide the screen numbers", "can you move uh one of the screens to the right", "close this and go to the main screen", "get rid of the two upper screens"] {
+        for t in ["close the btop windows but not the htop one", "kill the btop windows", "close the chrome windows and spotify", "stop recording", "exit cinema mode", "close this window", "close this app", "close the terminals", "move all the terminals to one screen", "make the screen bigger", "move it to the right more", "turn off the passthrough", "close all apps", "stop the music", "what's on screen 2", "swap screens 1 and 2", "move chrome from screen 2 to screen 5", "hide the numbers on the screens", "hide the screen numbers", "can you move uh one of the screens to the right", "close this and go to the main screen", "get rid of the two upper screens"] {
             assert_eq!(id(t), "-", "{t}");
         }
     }

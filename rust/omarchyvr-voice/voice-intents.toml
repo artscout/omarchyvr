@@ -118,7 +118,7 @@ source = "vr"
 
 [[intent]]
 id = "vr.passthrough.off"
-phrases = ["passthrough off", "turn off passthrough", "turn passthrough off", "stop passthrough", "stop the passthrough", "disable passthrough", "no passthrough", "switch off passthrough", "hide passthrough", "hide the room", "black background", "black", "go black", "apaga passthrough", "fondo negro"]
+phrases = ["passthrough off", "turn off passthrough", "turn passthrough off", "stop passthrough", "stop the passthrough", "disable passthrough", "no passthrough", "switch off passthrough", "hide passthrough", "hide the room", "turn the room off", "turn off the room", "room off", "the room off", "black background", "black", "go black", "apaga passthrough", "fondo negro"]
 gloss = "black background, room hidden"
 run = ["@backdrop", "black"]
 safety = "safe"
@@ -664,7 +664,7 @@ source = "user request 2026-10-16"
 
 [[intent]]
 id = "win.screen.open_n"
-phrases = ["open {app} on screen {screen}", "open {app} on the {screen} screen", "start {app} on screen {screen}", "show {app} on screen {screen}", "launch {app} on screen {screen}", "abre {app} en la pantalla {screen}"]
+phrases = ["open {app} on screen {screen}", "open {app} on the {screen} screen", "open {app} on {screen}", "open {app} on the {screen}", "start {app} on screen {screen}", "show {app} on screen {screen}", "launch {app} on screen {screen}", "abre {app} en la pantalla {screen}"]
 slots = { app = "text", screen = "screen" }
 gloss = "open a site, URL, file or terminal on screen N"
 run = ["@win", "open_on", "{screen}", "{app}"]
@@ -961,7 +961,7 @@ confirm = true
 
 [[intent]]
 id = "win.tab.close"
-phrases = ["close this tab", "close tab", "close the current tab", "cierra el tab"]
+phrases = ["close this tab", "close tab", "close the tab", "close the current tab", "shut this tab", "cierra el tab"]
 run = ["@win", "tab_close"]
 safety = "careful"
 source = "user request 2026-10-15"
@@ -1028,7 +1028,7 @@ source = "omarchy#24"
 
 [[intent]]
 id = "omarchy.volume.down"
-phrases = ["volume down", "quieter", "turn it down", "baja el volumen", "menos volumen"]
+phrases = ["volume down", "quieter", "a bit quieter", "turn it down", "turn the volume down", "lower the volume", "baja el volumen", "menos volumen"]
 gloss = "lower the sound volume"
 run = ["omarchy-audio-output-volume", "lower"]
 safety = "safe"
@@ -1046,7 +1046,7 @@ say = "Volume {n}%"
 
 [[intent]]
 id = "omarchy.volume.mute_toggle"
-phrases = ["mute", "unmute", "toggle mute", "mute sound", "silencio"]
+phrases = ["mute", "unmute", "toggle mute", "mute sound", "mute the sound", "mute everything", "mute it", "mute it all", "mute all", "sound off", "turn the sound off", "turn off the sound", "silencio"]
 run = ["omarchy-audio-output-volume", "mute-toggle"]
 safety = "safe"
 source = "omarchy#26"

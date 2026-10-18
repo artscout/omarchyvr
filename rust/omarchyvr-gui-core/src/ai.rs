@@ -210,6 +210,12 @@ impl AppCore {
         self.ai_save();
     }
 
+    /// "Fast path: simple commands skip the AI": `voice_ai_fast_path` (None in the file: off, the AI decides every command).
+    pub fn ai_set_fast_path(&mut self, on: bool) {
+        self.ai.config.voice_ai_fast_path = on.then_some(true);
+        self.ai_save();
+    }
+
     /// Which AI answers voice commands now.
     pub fn ai_voice_brain(&self) -> VoiceBrain {
         match self.ai.config.provider_for(Feature::Voice) {
@@ -683,6 +689,12 @@ impl AppCore {
         self.ai_save();
     }
 
+    /// How long the voice listener waits after you stop talking (read by `omarchyvr-voice listen` at its start).
+    pub fn ai_set_voice_listen(&mut self, v: omarchyvr_config::ai::VoiceListen) {
+        self.ai.config.voice_listen = v;
+        self.ai_save();
+    }
+
     /// Where the voice command audit writes its report.
     pub fn voice_audit_report(&self) -> PathBuf {
         self.paths.state_dir.join("voice-audit.html")
@@ -863,6 +875,11 @@ mod tests {
         assert!(std::fs::read_to_string(a.ai_path()).unwrap().contains("voice_ai_prewarm = false"));
         a.ai_set_prewarm(true);
         assert!(!std::fs::read_to_string(a.ai_path()).unwrap().contains("voice_ai_prewarm"));
+        // fast path: default off (nothing written), on is saved and read back
+        a.ai_set_fast_path(true);
+        assert!(std::fs::read_to_string(a.ai_path()).unwrap().contains("voice_ai_fast_path = true"));
+        a.ai_set_fast_path(false);
+        assert!(!std::fs::read_to_string(a.ai_path()).unwrap().contains("voice_ai_fast_path"));
     }
 
     #[test]

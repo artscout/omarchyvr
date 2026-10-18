@@ -75,6 +75,7 @@ server only). The first-run setup does not offer a cloud model; it is added on t
 ```toml
 voice_ai = "fallback"        # off | fallback | always
 voice_confirm = "none"       # none | dangerous | always: when a command waits for a spoken "yes" (AI page: Confirm)
+voice_listen = "long"        # normal | long | very-long: how long voice waits after you stop talking (AI page: Listening)
 strip_titles = false         # true: window titles never leave the machine (class + workspace only)
 default = "local"
 
@@ -145,7 +146,7 @@ Without the agent (no ai.toml), steps 1-3 still apply, and step 5's question rep
 is close.
 
 - **off**: only the offline catalogue (steps 1-3 and the question of step 5).
-- **fallback** (default):
+- **fallback** (default; since 2026-10-18 the AI decides every command, the paragraph below is the old way and applies only with `voice_ai_fast_path = true`, docs/VOICE.md "How every command is decided"):
   - The offline matcher answers first (steps 1-3). A plain match runs at once, with no model call.
   - A deictic window command such as "Max close this" or "Max send that to workspace 2" can match while your eyes
     rest (fixation under 3 s old) on a window other than the focused one. Then that window is focused first and the
@@ -192,6 +193,16 @@ built for the prompt cache and a small model:
   hints: win.list 0.95, win.close 0.72, omarchy.focus.left 0.76
   heard: "leaks list windows"
   ```
+
+  More state lines (2026-10-18): apps end with ` float` / ` full` when Hyprland says floating / fullscreen;
+  `recent: w3, w1` (last-used apps, newest first, not the focused one) only for last/previous/other/back/recent or a
+  name that matches several apps; `screens: only 1 (main)` and `vr: off` when at most one screen exists, so "screen 2"
+  gets an honest answer. The apps line is also sent for it/this/that, bigger/smaller/closer/farther/further/fullscreen/
+  close/quit and any word of an app's class or title. Screen size/distance is not shown: WayVR has no read command
+  for it (`wayvrctl desk-screens` only writes).
+
+  `omarchyvr-voice ai-state [WORDS...]` prints the exact message (and the Claude state) for these words from the live
+  desktop, with chars and approximate tokens. Read-only: only `hyprctl -j` and `wayvrctl gaze` run, nothing is written.
 - **Answer: one line**, `win.list 9`, `win.ws.goto 9 n=4`, `omarchy.reminder 9 minutes=5 text="stretch"`,
   `none 9`. On the local server a GBNF grammar (`grammar` in the request) allows only the offered ids, each with its
   own slots and value shapes, so the 4B answers in 4-8 tokens. Remote models get the same text without a grammar
@@ -341,7 +352,7 @@ noise, ai, yes), the fuzzy candidates, the model's decision, what ran, whether i
 ## 10. AI tab integration (for the GUI)
 
 **Keys in ai.toml** (all in `omarchyvr_config::ai`):
-- `voice_ai` (off | fallback | always): show it as a 3-way toggle.
+- `voice_ai` (off | fallback | always): show it as an on/off switch (fallback and always are the same since 2026-10-18); `voice_ai_fast_path` (bool, default off): the Advanced switch "Fast path: simple commands skip the AI".
 - `strip_titles` (bool): a privacy checkbox. Show the section 6 list next to it when the voice provider is remote.
 - `[use] voice` and `default` pick the provider.
 - For the local provider, write `kind = "openai-compatible"`, `base_url = "http://127.0.0.1:8080/v1"` and
@@ -713,7 +724,7 @@ has 6 such plans (`tests/fixtures/audit.tsv`, want `a ; b`: every step, in order
 the words held "and" / "then", and none of that session's requests did ("can you focus youtube in a new window", "can
 we have 2 more screens can we have 4 screens"); every request got the one-step grammar, and the missing actions (a
 screen count, an app on a new screen) did not exist as intents, so the model picked the nearest single one. Since then:
-plans have up to 4 steps (`nlu::PLAN_MAX`); "also", "plus", "afterwards" and two command verbs back to back ("close
+plans have up to 4 steps (`nlu::PLAN_MAX`, 9 since 2026-10-18, docs/VOICE.md "How every command is decided"); "also", "plus", "afterwards" and two command verbs back to back ("close
 this go to the main screen") offer the plan grammar too; a plan of several steps is never filtered by Lara (its steps
 may be of several categories); the composite requests got intents of their own (`vr.screens.count/more/add`,
 `win.screen.open`, `win.screen.gather`); and one toast lists every step's result. The session's 29 requests as an

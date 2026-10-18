@@ -354,6 +354,29 @@ fn shots() -> Vec<Shot> {
             },
         },
         Shot {
+            name: "ai-voice",
+            running: true,
+            page: Page::Ai,
+            height: 1300.0,
+            dark: true,
+            setup: |a| {
+                a.core.want_ai();
+                a.ui.ai_voice_open = true;
+            },
+        },
+        Shot {
+            name: "ai-voice-advanced",
+            running: true,
+            page: Page::Ai,
+            height: 1500.0,
+            dark: true,
+            setup: |a| {
+                a.core.want_ai();
+                a.ui.ai_voice_open = true;
+                a.ui.ai_advanced_open = true;
+            },
+        },
+        Shot {
             name: "ai-local",
             running: true,
             page: Page::Ai,

@@ -89,6 +89,10 @@ pub struct UiState {
     pub ai_draft: Option<crate::pages::ai::AiDraft>,
     /// When the AI page was drawn last (egui time): a gap means it was opened again, so the Claude CLI is looked at again.
     pub ai_seen: f64,
+    /// screenshots: start with the AI page's Voice settings open
+    pub ai_voice_open: bool,
+    /// The voice settings' Advanced section starts open (screenshots).
+    pub ai_advanced_open: bool,
 }
 
 impl Default for UiState {
@@ -118,6 +122,8 @@ impl Default for UiState {
             onb_pick: None,
             ai_draft: None,
             ai_seen: f64::NEG_INFINITY,
+            ai_voice_open: false,
+            ai_advanced_open: false,
         }
     }
 }
@@ -209,7 +215,7 @@ const HELP: [(&str, &str); 37] = [
     ("Screen layout", "6 VR screens by default (Desktop > Screens, 1 to 6; a change needs a Work restart), in two rows of three around you (up-left, up, up-right over left, main, right), placed so that none hides another from where you sit. Reset screens (double-click B, or Desktop > WayVR now) puts them back. \"Max, move this left\" puts the screen to the left of its neighbour, \"put screen 2 above screen 1\", \"bring this screen here\": each is placed once from where your head is now, and the other screens move aside just enough. docs/SCREENS.md."),
     ("Backgrounds", "Backgrounds page: the VR environment around you (not the desktop wallpaper). Tap a picture to show it, pick a resolution (Auto, 8K, 4K, 2K), Off / passthrough brings the room back, Download more fetches the free pictures. \"Ocean (animated)\" is a live sea and sky drawn behind your screens in Work (Quality low, medium, high; never in Play). Work starts with your choice. Say \"Max, set background flowers\" (universe, ocean, Hawaii, sunset ...), \"Max, next background\" or \"Max, background off\". docs/BACKGROUNDS.md."),
     ("Voice", "In Work: pause as you like and \"Max\" may come mid-sentence. Screens: \"Max, four screens\", \"a screen up there\", \"open YouTube in a new window\", \"all the terminals on one screen\". Two things at once: \"... and ...\". Apps to screens: \"Max, move Chrome to screen 3\", \"Max, swap screens 1 and 2\", \"Max, save this layout\". Hide screens (apps stay open): \"Max, close screen 2\", \"remove screens 3 and 4\", \"close everything\". Sizes: \"make all screens half the size\". \"Max, stop the VR\" stops Work like Stop and always asks \"yes\" first. docs/VOICE.md."),
-    ("AI", "One AI page. Max's brain picks who answers voice commands the offline matcher does not know: Claude (CLI), the default, which uses the Claude Code you are logged into (no key; each command starts a fresh Claude with only your words and the screen state; Haiku fast or Sonnet; Test shows the time; Start Claude ahead keeps one ready so answers come sooner), a Local model on this PC (Work only: Low / Medium / High, Advanced to choose the router Lara, the action model and the video memory; speech runs on the processor, Speech on graphics card moves it to the card; one Test checks Lara, the action model, speech and the agent model), or Online with a key (Online providers). If Claude Code is not installed or not logged in, the Claude (CLI) card says so in plain words. Autofix cannot use the Claude CLI. docs/AI.md."),
+    ("AI", "One AI page. Max's brain picks who decides every voice command (the offline matcher only gives it hints; Advanced > Fast path lets simple commands skip the AI, off by default): Claude (CLI), the default, which uses the Claude Code you are logged into (no key; each command starts a fresh Claude with only your words and the screen state; Haiku fast or Sonnet; Test shows the time; Start Claude ahead keeps one ready so answers come sooner), a Local model on this PC (Work only: Low / Medium / High, Advanced to choose the router Lara, the action model and the video memory; speech runs on the processor, Speech on graphics card moves it to the card; one Test checks Lara, the action model, speech and the agent model), or Online with a key (Online providers). If Claude Code is not installed or not logged in, the Claude (CLI) card says so in plain words. Autofix cannot use the Claude CLI. docs/AI.md."),
     ("Agent mode", "AI page, Local model section: \"Max, let's enter cinema mode, I want to watch Dune\" or \"Max, set up work: terminals left, browser middle, YouTube up-right\" runs step by step (each step shows in the headset); \"Max, cancel\" stops it. docs/VOICE.md."),
     ("Recording", "Start recording saves what the headset shows as a video in ~/Videos/pimax. Record tracking saves one folder per take (cameras, controller logs, session log) for comparing with Windows; it never disturbs a running session. docs/RECORD.md."),
 ];

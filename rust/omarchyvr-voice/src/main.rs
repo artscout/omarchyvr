@@ -12,6 +12,7 @@ use omarchyvr_voice::server::{self, Server, Sink, Stdout, Tee};
 use omarchyvr_voice::vad::{default_silero_model, EnergyVad, Gated, SileroVad, Vad};
 use omarchyvr_voice::{bench, source};
 use omarchyvr_voicebench::sherpa::default_lib_path;
+use omarchyvr_config::ai::{AiConfig, VoiceListen};
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -52,7 +53,7 @@ const HELP: &str = "omarchyvr-voice <command> [options]   local voice-to-text (n
       the built-in tests/fixtures/aibench.tsv, real and mangled transcripts) through the full route (matcher,
       fuzzy, model), nothing executed (hyprctl/gaze are read live). Prints accuracy, asks, wrong actions and
       p50/p95 latency (end of transcript -> decision). --url: another local server (.../v1/chat/completions).
-  audit --state [--variant NAME|FILE] [--subset N --seed S] [--split dev|held|all] [--tier T] [--only TEXT] [--no-ai] [--list] [--snapshot]
+  audit --state [--variant NAME|FILE] [--subset N --seed S] [--split dev|held|all] [--tier medium|hard] [--only TEXT] [--list] [--snapshot]
       THE QUALITY MEASURE: each case starts from a desk state (screens, apps, tabs, gaze), runs the words through the
       whole pipeline against a simulator of that desk and is scored on the end state reached, nothing else changed
       (docs/VOICE-STATE-TESTS.md). Writes analysis/voice-state-audit.html, appends analysis/voice-experiments.csv.
@@ -71,6 +72,7 @@ const HELP: &str = "omarchyvr-voice <command> [options]   local voice-to-text (n
       audit phrase; prints top-1 accuracy, how often the right category is among the ones the act request gets,
       the matcher's own guess for comparison, and p50/p95 latency. Nothing runs. --label held-out: only the
       natural phrasings (not in the training rows); --out: write Laya training rows from the catalogue instead.
+  ai-state [WORDS...]          (read-only: the exact state text the AI gets for these words from the live desktop, with sizes)
   ai-size                      (prints what each AI request kind sends for a typical state: characters, ~tokens)
   ai-mode [local-toggle|local-on|local-off|preset-next|low|medium|high|next|simple|two-stage|online|show]
       AI runs on (the Work desk watch's AI button): saves it in ai.toml ([use] voice and voice_local only),
@@ -86,7 +88,7 @@ engine and VAD options (listen, transcribe, bench):
   --vad silero|silero-gate|energy (silero if ~/models/vad/silero_vad.onnx exists)  --vad-model PATH  --vad-threshold 0.5
   silero-gate (experimental): Silero AND --gate-db 6 above the noise floor; ends utterances ~0.5 s sooner but lost
   one long utterance in the bench
-  --endpoint-ms 480 (silence that ends an utterance)  --partial-ms 640 (0 = no partials)  --max-s 20
+  --endpoint-ms N (silence that ends an utterance; default from the app's Listening setting: 480/750/1100)  --hangover-ms N (same after a dangling word: 1120/1500/2000)  --partial-ms 640 (0 = no partials)  --max-s 20
   --intents FILE.json|none (extra command rules; built-in: hud.clear, vr.recenter)
   --engine auto|parakeet|whisper-server|whisper   (default auto: ai.toml's `asr`, set on the app's Local AI page)
       auto = Parakeet on the processor (with hotwords; --no-hotwords turns them off) or, when asr is auto/gpu, the
@@ -133,6 +135,11 @@ struct Opts {
     vad_threshold: f32,
     gate_db: f32,
     endpoint_ms: u32,
+    /// silence that ends an utterance after a dangling word, ms (`--hangover-ms`)
+    hangover_ms: u32,
+    /// explicit flags win over the app's `voice_listen` setting
+    endpoint_flag: Option<u32>,
+    hangover_flag: Option<u32>,
     partial_ms: Vec<u32>,
     max_s: u32,
     intents: Option<String>,
@@ -207,6 +214,9 @@ fn parse(args: &[String]) -> Result<Opts, String> {
         vad_threshold: 0.5,
         gate_db: 6.0,
         endpoint_ms: 480,
+        hangover_ms: 1120,
+        endpoint_flag: None,
+        hangover_flag: None,
         partial_ms: vec![640],
         max_s: 20,
         intents: None,
@@ -277,7 +287,8 @@ fn parse(args: &[String]) -> Result<Opts, String> {
                 o.vad_threshold = val(a)?.parse().map_err(|_| "bad --vad-threshold")?
             }
             "--gate-db" => o.gate_db = val(a)?.parse().map_err(|_| "bad --gate-db")?,
-            "--endpoint-ms" => o.endpoint_ms = val(a)?.parse().map_err(|_| "bad --endpoint-ms")?,
+            "--endpoint-ms" => o.endpoint_flag = Some(val(a)?.parse().map_err(|_| "bad --endpoint-ms")?),
+            "--hangover-ms" => o.hangover_flag = Some(val(a)?.parse().map_err(|_| "bad --hangover-ms")?),
             "--partial-ms" => o.partial_ms = list(&val(a)?, a)?,
             "--max-s" => o.max_s = val(a)?.parse().map_err(|_| "bad --max-s")?,
             "--intents" => o.intents = Some(val(a)?),
@@ -326,6 +337,9 @@ fn parse(args: &[String]) -> Result<Opts, String> {
     if o.threads.is_empty() || o.threads.iter().any(|&t| !(1..=32).contains(&t)) {
         return Err("--threads must be 1..32".into());
     }
+    // flag > the app's voice_listen setting (ai.toml) > the default (long)
+    let listen = saved_listen();
+    (o.endpoint_ms, o.hangover_ms) = resolve_listen(o.endpoint_flag, o.hangover_flag, listen);
     Ok(o)
 }
 
@@ -388,9 +402,21 @@ fn engine_spec(o: &Opts, threads: i32) -> Result<EngineSpec, String> {
     }
 }
 
+/// The app's `voice_listen` (ai.toml); the default when the file or key is missing.
+fn saved_listen() -> VoiceListen {
+    let path = omarchyvr_config::ai::default_path().unwrap_or_else(omarchyvr_voice::llm::ai_path);
+    std::fs::read_to_string(path).ok().and_then(|t| AiConfig::parse(&t).ok()).map(|c| c.voice_listen).unwrap_or_default()
+}
+
+/// (endpoint_ms, long_hangover_ms): an explicit flag wins, else the setting.
+fn resolve_listen(endpoint_flag: Option<u32>, hangover_flag: Option<u32>, setting: VoiceListen) -> (u32, u32) {
+    (endpoint_flag.unwrap_or_else(|| setting.endpoint_ms()), hangover_flag.unwrap_or_else(|| setting.long_hangover_ms()))
+}
+
 fn seg_config(o: &Opts, partial_ms: u32) -> SegConfig {
     SegConfig {
         hangover: frames_of_ms(o.endpoint_ms),
+        long_hangover: frames_of_ms(o.hangover_ms),
         partial_every: frames_of_ms(partial_ms),
         min_partial: frames_of_ms(partial_ms.max(320)),
         max_len: frames_of_ms(o.max_s.max(2) * 1000),
@@ -724,6 +750,12 @@ fn actor(o: &Opts) -> Result<Actor, String> {
     // voice_confirm (none by default: every command runs at once; everything is logged)
     a.confirm = std::fs::read_to_string(&ai_toml).ok().and_then(|t| omarchyvr_config::ai::AiConfig::parse(&t).ok()).map(|c| c.voice_confirm).unwrap_or_default();
     eprintln!("voice: confirm: {}", a.confirm.id());
+    // voice_listen: how long a held cut-off sentence waits for the next utterance (the catalogue value is the "quick" default)
+    let listen = saved_listen();
+    if a.cat.wake.followup_s == VoiceListen::Normal.followup_s() {
+        a.cat.wake.followup_s = listen.followup_s();
+    }
+    eprintln!("voice: listening: {} (endpoint {} ms, after a dangling word {} ms, follow-up {} s)", listen.id(), o.endpoint_ms, o.hangover_ms, a.cat.wake.followup_s);
     // the window AI switch: ~/.config/omarchyvr/ai.toml (no file = off)
     match omarchyvr_voice::llm::ChatClient::from_ai_toml(&omarchyvr_voice::llm::ai_path()) {
         Ok(Some(c)) => {
@@ -1730,6 +1762,11 @@ fn run(args: &[String]) -> Result<(), String> {
             print!("{}", omarchyvr_voice::claudelive::run(&o.positional, &model, std::env::var_os("CLAUDE_LIVE_NO_PREWARM").is_none())?);
             Ok(())
         }
+        "ai-state" => {
+            let cat = Catalogue::load_default()?;
+            println!("{}", omarchyvr_voice::statetest::ai_state(&o.positional.join(" "), &cat));
+            Ok(())
+        }
         "ai-size" => {
             // what each AI request kind sends for a typical state (characters, approximate tokens)
             let cat = Catalogue::load_default()?;
@@ -1768,6 +1805,20 @@ fn main() -> ExitCode {
             eprintln!("omarchyvr-voice: {e}");
             ExitCode::FAILURE
         }
+    }
+}
+
+#[cfg(test)]
+mod listen_tests {
+    use super::*;
+
+    #[test]
+    fn listen_precedence_flag_then_setting_then_default() {
+        assert_eq!(resolve_listen(None, None, VoiceListen::default()), (750, 1500), "default is long");
+        assert_eq!(resolve_listen(None, None, VoiceListen::Normal), (480, 1120));
+        assert_eq!(resolve_listen(None, None, VoiceListen::VeryLong), (1100, 2000));
+        assert_eq!(resolve_listen(Some(300), None, VoiceListen::VeryLong), (300, 2000), "flag wins per value");
+        assert_eq!(resolve_listen(Some(300), Some(900), VoiceListen::Long), (300, 900));
     }
 }
 

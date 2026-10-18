@@ -7,7 +7,7 @@
 //! 2. **Act** (the action model, cheaper, with tools): only the tools of that category ([`subset`]) and the state
 //!    those tools need ([`state_json`], [`Needs`]: screens and apps for screens/apps, the apps for tabs/browser, the
 //!    omarchyvrd session for presets/passthrough/recording/captions, the last 5 commands for undo), and answers with tool
-//!    calls (up to 3 steps, as before). User decision 2026-10-15.
+//!    calls (up to 9 steps; user decisions 2026-10-15 and 2026-10-18).
 //!
 //! The act request does not wait for the classification: it starts at the same time with the categories the local
 //! matcher guesses ([`local_guess`]) and is used when the classifier agrees (the usual case), so a command costs
@@ -239,6 +239,8 @@ pub struct Class {
     pub second: Option<Category>,
     /// A third category, when a router with probabilities (Laya) is unsure about the first two.
     pub third: Option<Category>,
+    /// Every category's probability, best first (Laya); empty for a router that names one or two.
+    pub probs: Vec<(Category, f64)>,
 }
 
 impl Class {
@@ -280,7 +282,7 @@ pub fn classify_system() -> String {
 
 /// The classifier's user message: the words and the matcher's best guesses.
 pub fn classify_user(heard: &str, summary: &str) -> String {
-    let mut s = format!("heard: \"{}\"", windows::clean_title(heard));
+    let mut s = format!("heard: \"{}\"", windows::clean_heard(heard));
     if !summary.is_empty() {
         s += &format!("\nstate: {summary}");
     }
@@ -357,13 +359,13 @@ pub fn parse_class(text: &str) -> Result<Class, String> {
             let category = v.get("category").and_then(Value::as_str).and_then(Category::parse).ok_or_else(|| format!("no category in {}", short(t)))?;
             let confidence = v.get("confidence").and_then(|c| c.as_f64().or_else(|| c.as_str().and_then(|s| s.trim().parse().ok()))).map(norm_conf).unwrap_or(0.5);
             let second = v.get("second").and_then(Value::as_str).and_then(Category::parse);
-            return Ok(Class { category, confidence, second, third: None });
+            return Ok(Class { category, confidence, second, third: None, probs: Vec::new() });
         }
     }
     let mut it = t.split(|c: char| c.is_whitespace() || c == ',' || c == ':');
     let category = it.next().and_then(Category::parse).ok_or_else(|| format!("no category in {}", short(t)))?;
     let confidence = it.find_map(|x| x.trim().parse::<f64>().ok()).map(norm_conf).unwrap_or(0.5);
-    Ok(Class { category, confidence, second: None, third: None })
+    Ok(Class { category, confidence, second: None, third: None, probs: Vec::new() })
 }
 
 fn norm_conf(c: f64) -> f64 {
@@ -660,7 +662,7 @@ mod tests {
         assert!(parse_class("I think it is about something").is_err());
         let c = parse_class("We need JSON like {\"category\": ...}. Answer: {\"category\":\"tabs\",\"confidence\":0.9,\"second\":\"none\"}").unwrap();
         assert_eq!(c.category, Category::Tabs, "the last object counts");
-        assert_eq!(Class { category: Category::Screens, confidence: 0.973, second: None, third: None }.short(), "screens .97");
+        assert_eq!(Class { category: Category::Screens, confidence: 0.973, second: None, third: None, probs: Vec::new() }.short(), "screens .97");
         let s = classify_schema();
         assert_eq!(s["json_schema"]["schema"]["properties"]["category"]["enum"].as_array().unwrap().len(), 11);
         assert!(classify_system().contains("passthrough:") && classify_user("liz windows", "3 VR screens, focused app foot") == "heard: \"liz windows\"\nstate: 3 VR screens, focused app foot");

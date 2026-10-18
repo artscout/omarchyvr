@@ -38,11 +38,15 @@ pub struct Router {
     pub url: String,
     /// A label for the report (which tuned Lara).
     pub version: String,
+    /// What Lara's categories do (empty = the built-in default, `crate::agent::LARA_PROMPT`, "full"): "subset" = a
+    /// system prompt of only those categories' intents (option b); "full" = the full cached prompt always, the
+    /// categories as a hint line in the user message (option a).
+    pub prompt: String,
 }
 
 impl Default for Router {
     fn default() -> Self {
-        Router { lara: "on".into(), url: String::new(), version: "lara".into() }
+        Router { lara: "on".into(), url: String::new(), version: "lara".into(), prompt: String::new() }
     }
 }
 
@@ -127,6 +131,8 @@ impl Default for Variant {
 pub const BUILTIN: &[(&str, &str)] = &[
     ("baseline", include_str!("../tests/state/variants/baseline.toml")),
     ("lara-off", include_str!("../tests/state/variants/lara-off.toml")),
+    ("lara-full", include_str!("../tests/state/variants/lara-full.toml")),
+    ("lara-subsets", include_str!("../tests/state/variants/lara-subsets.toml")),
     ("state-prompt", include_str!("../tests/state/variants/state-prompt.toml")),
     ("qwen35-0.8b", include_str!("../tests/state/variants/qwen35-0.8b.toml")),
     ("qwen35-2b", include_str!("../tests/state/variants/qwen35-2b.toml")),
@@ -166,6 +172,7 @@ impl Variant {
         k(!self.goal_model.endpoint.is_empty(), "goal_model.endpoint");
         k(self.router.lara != d.router.lara, "router.lara");
         k(!self.router.url.is_empty(), "router.url");
+        k(!self.router.prompt.is_empty(), "router.prompt");
         k(self.prompt.template != d.prompt.template, "prompt.template");
         k(!self.prompt.blocks.is_empty(), "prompt.blocks");
         k(self.prompt.target_line, "prompt.target_line");

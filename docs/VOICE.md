@@ -65,6 +65,24 @@ Nothing leaves the machine unless you set up a remote LLM yourself.
   back.
 - **Help.** "Max, help" or "Max, what can I say" shows a short list.
 
+## Listening: how long Max waits (`voice_listen`, 2026-10-18)
+
+Long commands ("put the terminals on 4, chrome on 2 fullscreen, hide 5 and turn the volume down") have natural pauses.
+The **Listening** selector on the app's AI page (Quick / Long / Very long) sets how long the listener waits after you stop
+talking before it ends the command. It is saved as `voice_listen` in `~/.config/omarchyvr/ai.toml` and read by
+`omarchyvr-voice listen` when it starts (the Work session starts it with plain `listen`, so no start argument is recorded;
+change it, then restart voice or Work).
+
+| `voice_listen` | silence that ends an utterance (`--endpoint-ms`) | after a dangling word like "and", "on" (`--hangover-ms`) | held cut-off sentence joins the next one within |
+|---|---|---|---|
+| `normal` (Quick) | 480 ms | 1120 ms | 6 s |
+| `long` (default) | 750 ms | 1500 ms | 8 s |
+| `very-long` | 1100 ms | 2000 ms | 10 s |
+
+`--endpoint-ms` and `--hangover-ms` on the command line win over the setting. The follow-up time replaces the catalogue's
+`[wake] followup_s` only while that is still the built-in 6 s; a value you set in `voice-intents.toml` stays. Longer waits
+mean a command starts a little later after you stop talking.
+
 ## Presets (desk mode layouts)
 `omarchyvr desk start` now uses **cinema by default**:
 - use `--preset work-3|work-1|assistant` to start in another preset;
@@ -301,7 +319,7 @@ select all / undo / redo are refused there. At most 200 characters per command.
 | go to the {q} tab / switch to the {q} tab / find the {q} tab / the tab with {q} | a **tab** (inside the browser): an app whose title has the words, else Ctrl+Tab through each browser (at most 25 tabs, back to the start when not found), else open {q} as a site | browser.tab.focus |
 
 "Open the browser" focuses the open browser (any workspace) and starts one only when none runs. A request with
-"and"/"then"/"also" (or two commands back to back: "close this go to the main screen") can run up to 4 steps through
+"and"/"then"/"also" (or two commands back to back: "close this go to the main screen") can run up to 9 steps through
 the model, in order: "Max, open youtube and search for cats", "Max, two more screens and put Chrome there". One toast
 then lists every step's result ("2 of 2 steps: 1. Showing 6 screens | 2. google-chrome on the up-left screen").
 
@@ -362,15 +380,18 @@ The model sees the VR screens by number with their apps when a request is about 
 `screens: 1 main [w1 foot, w2 foot] ; 2 left [] ; 3 right hidden [w3 pimax]` (the `wN` of the apps line; `hidden` =
 hidden by voice).
 
-**Agent mode** (`voice_agent = true` in ai.toml, the default; `agent::goal`). A request that is a goal of several
+**Agent mode** (`voice_agent = true` in ai.toml, the default; `agent::goal`). Since 2026-10-18 (state audit G) a goal
+is first ONE whole plan like every other command (section "How every command is decided"); the step loop below runs
+only when that plan is refused before anything ran, or for an open-ended goal ("find the window with the error and
+close it"). A request that is a goal of several
 steps, with a goal word ("set up", "let's", "I want to watch", "get ready", "prepare") and more than one thing in it, or
-a long request with "and"/"then"/two commas, runs one step at a time: each round the model gets the goal, the steps
+a long request with "and"/"then"/two commas, then runs one step at a time: each round the model gets the goal, the steps
 done with their results and the VR screens by number with their apps now (`screens now: 1 main* ws2: foot | 2 left ws11: empty`, `*` = focused), and
 answers the next single step from the catalogue (under the grammar) or `done`. At most 10 steps (the user's cap) or 30 s. Each step
 shows "Step 2: Cinema mode" in the headset, the end one line with every step ("Done 3 steps: 1. Playing Dune.mkv | 2.
 Cinema mode | 3. Background: black"). A failed step ends the goal ("Step 1 failed: No video called "dune" in
 Downloads or Videos"); careful steps follow `voice_confirm`; only catalogue actions run (no shell). The model giving no
-step at all (a weak model) sends the request the usual way (one decision or a plan of up to 4 steps). Online
+step at all (a weak model) sends the request the usual way (one decision or a plan of up to 9 steps). Online
 (jev-router), the action model answers the steps. A part of the goal that is an exact catalogue phrase or an
 apps-to-a-screen pattern ("terminals left", "chrome on screen 2", "swap screens 1 and 3", "the terminal from here to
 screen 4") runs without asking the model, so a goal still works when the model is slow or down.
@@ -463,6 +484,109 @@ Dry-run audit (local Lara + Qwen3.5-4B on the GPU, `tests/fixtures/live-2026-10-
 | before (3be30ba) | 13/29 (45 %) | 20/53 | 456/460 (99.1 %) |
 | after (0ae6425 + fixes) | 27/29 pass, 1 asks ("Did you mean youtube?") | 51/53 | 476/483 (98.6 %) |
 
+## How every command is decided (user decisions 2026-10-18)
+
+```text
+ "Max, ..." ─► wake word, take-back ("X, no, cancel that" = nothing), cut-off sentence (wait), noise
+     │            (all before the AI, as before)
+     ▼
+  the gaze, read ONCE ("this" = what was looked at when the command started)
+     ▼
+  per part of the sentence (split at "and" / "then" / commas when a part has its own verb or destination):
+  what the rules and the matcher WOULD do, as hint lines only:
+     rule (sure): vr.screens.hide screens="2"            (one part)
+     parts: "move chrome to screen three" -> match: win.screen.put_n ... | "make it fullscreen" -> match: ...
+     correction: the request after the correction wins: "fifty"   ("X, no, Y": the corrected part gives no hint)
+     ▼
+  Lara (router, when it runs): chatter? which categories?
+     other at 0.9+ and no rule / phrase found a command and not several parts ─► nothing runs, no AI call
+     top below 0.5, or other among the picks, or Lara down ─► every intent (the full prompt, cached)
+     else every category at 0.1+, plus the categories of the hints and the matcher's guesses; screens and apps
+     together ─► since 2026-10-18 G: the full prompt (cached) with `likely: screens, apps` before the words
+     (`LARA_PROMPT = "full"`); variant `lara-subsets`: the shared rules text + those intents in a fixed category
+     order + their worked examples + a grammar of the same intents, a weak answer asking once more with every intent
+     ▼
+  the model: the WHOLE sentence once, with the state; a plan of up to 9 steps (`nlu::PLAN_MAX`, 200 answer tokens
+  for a plan, 48 for one step). Long commands too: the step-at-a-time goal loop is no longer a route of its own
+     ▼
+  the guard: a step that would close apps (win.ws.close / win.close / close_window / win.close.named) or stop the
+  session while a sure screen rule says hide / show is replaced by the rule (`guard: ...` in the debug line)
+     ▼
+  the plan repairs (`agent::repair_plan`, `place_plan`, `cover_plan`; `repair: ...` in the debug line): "hide the
+  rest" keeps the screens the plan uses; a fullscreen / preset / screens reset / screen count / workspace close the
+  words never ask for is dropped; a screen the words give ("play dune on screen three", "put the terminals on two")
+  and a count ("two terminals") go back in; "put this on screen one fullscreen" gets its move; a part with an exact
+  phrase or a sure rule the plan forgot gets its step
+     ▼
+  the dry run on the state (`planner::check`, plans of 2+ steps): a missing screen, no such tool, or an app closed
+  that nobody named refuses the plan before anything runs; a goal ("set up ...", a long list) then goes on one step
+  at a time (`agent::goal`), looking at the desktop after each step. An open-ended goal whose later steps depend on
+  what an earlier one finds ("find the window with the error and close it", "if spotify is open ...",
+  `agent::open_ended`) starts there directly
+     ▼
+  the steps, in order: one fresh hyprctl read after each step (`screenstate::Steps`); a later step on "the focused
+  window" that names none (fullscreen, float, close) acts on the app its own part names ("chrome on two
+  fullscreen"), else on the window the step before moved, opened, named or focused, else on "this" (the gaze at the
+  start); a failed step does not end the plan (only the window steps right after it are skipped)
+```
+
+- **Corrections word by word** (`command::resolve_corrections`): "terminals on four, chrome on two, no, on three"
+  goes to the model as `meant (the corrections applied; do exactly this): "terminals on 4, chrome on 3"`, "hide
+  screen four, no wait, keep it, hide screen two instead" as `meant: "hide screen 2"`: only the taken-back part
+  changes. The hints come from the meant sentence. "cinema mode, no room" is no correction.
+- **"this" in the model's state:** WayVR's gaze report names an overlay and a fixation, not a window; the window
+  under it is found from the desk's geometry (`gaze::resolve`) and the model gets `eyes on: wN`.
+- **Programs in terminals** ("the btop windows", "htop"): found by the terminal's title. "close the btop windows" /
+  "both btops" closes every window of that program (`windows::plural_name`); a kind ("all the terminals") or
+  everything stays refused. "close youtube and calendar in chrome" closes the two tabs, never Chrome.
+
+- **Every command goes to the AI** when it is on (`voice_ai = "fallback"` or `"always"`): the rules, the matcher
+  and the fuzzy matcher no longer decide alone, they give hints. `voice_ai_fast_path = true` in ai.toml (off by
+  default) brings back the old fast path: a short single request the rules or the matcher settle runs without the
+  model (then only several requests or a corrected one go to the model as a whole). In the app: AI page > Voice
+  settings > Advanced > "Fast path: simple commands skip the AI" (`voice_ai_fast_path`). The old "When: not
+  understood / Always" control is gone: with the AI on, `fallback` and `always` behave the same, so the page only has
+  the AI on/off switch (`voice_ai = "off"` = the offline matcher only) and the fast path switch.
+- **The model down** (not running, timed out, no online backup): what the rules and the matcher settle still runs
+  (every part, or nothing), so voice is not dead without the AI. The model saying `none` runs nothing.
+- **"this"** is resolved once, from the gaze read at the start of the command (the request's runner keeps that
+  answer). If the eyes move while the model thinks, the target is still what was looked at when the command
+  started (state goal `st-drift-gaze-move-this`).
+- **Why "move chrome to screen 3 and make it fullscreen" made the terminal fullscreen:** a move keeps the focus where
+  it was (`follow = false`, the focus goes back), and the next step acted on "the focused window". Now the step
+  runner tracks the window each step acted on.
+- **Measured (state audit, 753 cases, local Qwen3.5-4B, 2026-10-18):**
+
+  | run | overall | easy (tier removed 2026-10-18) | medium | hard | medium+hard multi-step | unsafe | p50 / p95 ms |
+  |---|---|---|---|---|---|---|---|
+  | B: rules/matcher first, Lara off | 665 (88.3%) | 89.0% | 88.9% | 86.9% | 81/104 (77.9%) | 0 | 112 / 706 |
+  | C: every command to the AI, Lara first | 690 (91.6%) | 94.1% | 91.9% | 88.6% | 97/104 (93.3%) | 0 | 568 / 1353 |
+  | D: every command to the AI, Lara off | 684 (90.8%) | 90.9% | 92.2% | 89.1% | 95/104 (91.3%) | 0 | 286 / 1092 |
+
+  Prompt per request: the full prompt is 16,931 characters, 4,833 tokens, of which about 181 are evaluated (the
+  rest comes from llama-server's cache). Lara's subsets average 11,465 characters, 3,403 tokens, but 1,109
+  evaluated: each category set is a different prompt after the shared rules, so the one server slot's cache misses
+  more, and the p50 doubles. Lara adds 6 cases (mostly short screen commands she keeps in their category).
+
+- **Long commands, one whole plan (state audit 2026-10-18, 739 medium + hard cases, Qwen3.5-4B + Lara on this
+  PC; lesson 75):**
+
+  | run | overall | medium | hard | goals-long | steps in order | unsafe | p50 / p95 ms | prompt / evaluated tokens per request |
+  |---|---|---|---|---|---|---|---|---|
+  | E: long goals on the step-at-a-time loop (95 of 108) | 593 (80.2%) | 338/410 | 255/329 | 25/108 | 31/37 | 8 | 669 / 2697 | 3,522 / 1,311 (121 cases not counted) |
+  | G1: one whole plan, repairs, Lara subsets | 639 (86.5%) | 364/410 | 275/329 | 89/108 | 31/37 | 0 | 682 / 2612 | 4,017 / 1,491 |
+  | G2: + "this", plural closes, destinations, Lara subsets (b) | 663 (89.7%) | 377/410 | 286/329 | 91/108 | 35/37 | 0 | 711 / 2741 | 3,820 / 1,734 |
+  | G3: the same, Lara full prompt (a) | 666 (90.1%) | 372/410 | 294/329 | 91/108 | 35/37 | 1 | 500 / 2452 | 5,120 / 233 |
+  | **G: (a) + "close it" after emptying a screen = hide** | **668 (90.4%)** | 373/410 | 295/329 | 92/108 | 35/37 | **0** | **504 / 2487** | 5,120 / **233** |
+
+- **Lara: the full prompt, her categories as a hint line** (`agent::LARA_PROMPT = "full"`, variant knob
+  `router.prompt`; `lara-subsets` brings back the subsets). Lara still decides chatter (nothing runs, no AI call)
+  and names the likely categories (`likely: screens, apps` in the user message); the model always gets the same
+  full system prompt and grammar, which llama-server's one slot keeps cached: 233 tokens evaluated per request
+  instead of 1,734, p50 711 -> 500 ms, the same score (663 vs 666 of 739). The cost of every request of a command
+  (several Lara or goal requests) is summed in ai.log (`requests`, `sys_chars`, `user_chars`, `prompt_tokens`,
+  `eval_tokens`) and in the audit's `cost`.
+
 ## How the local voice AI decides (scoped planner, user design 2026-10-16)
 
 ```text
@@ -479,7 +603,7 @@ Dry-run audit (local Lara + Qwen3.5-4B on the GPU, `tests/fixtures/live-2026-10-
         user message: the state the category needs (world::describe: screens by number, shown or
         hidden, with their apps by kind and title; focus; gaze; tabs; session; view; media), hints, heard
                                                                     ▼
-        model: [target: <the state the user wants>]  step ; step ...  (at most 4)
+        model: [target: <the state the user wants>]  step ; step ...  (at most 9)
                                                                     ▼
         dry run on the state snapshot (world::apply, step by step): an unknown tool, a missing input, or a
         plan that closes an app nobody named is refused ──► run
@@ -507,7 +631,7 @@ Dry-run audit (local Lara + Qwen3.5-4B on the GPU, `tests/fixtures/live-2026-10-
 
 ## What decides before the model (general grammar, 2026-10-16)
 
-The rules and the matcher settle about 3 of 4 requests alone (`--no-ai`: 72% of the state cases). All of it is
+The rules and the matcher settle about 3 of 4 requests alone (72% of the state cases, measured on 2026-10-16 with the since removed `--no-ai`; the state audit now always runs Lara and the AI). With the AI on they only give hints (above). All of it is
 grammar, never a test phrase (`leak::tests` checks):
 - **Clauses.** "close screen 2 and make the main one bigger": split at "and" / "then" before a verb; each clause is
   decided on its own (rule, exact phrase, else the model for that clause). A later clause that points back ("put

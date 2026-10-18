@@ -69,7 +69,7 @@ fn agent_mode(ui: &mut Ui, app: &mut PimaxApp, busy: bool) {
     card(ui, |ui| {
         title(ui, "Agent mode");
         let mut on = app.core.ai_voice_agent();
-        if widgets::switch_row(ui, &mut on, "Agent mode", Some("A request with several things to do (\"Max, let's enter cinema mode, I want to watch Dune\", \"Max, set up work: terminals left, browser middle, YouTube up-right\") runs one step at a time: after each step the AI looks at the screens and picks the next one, up to 10 steps or 30 seconds. Each step shows in the headset. \"Max, cancel\" or \"Max, stop\" ends it after the step that is running. It never closes an app you did not ask to close. Off: such a request runs as one plan of up to 4 steps, decided at once."), !busy).changed() {
+        if widgets::switch_row(ui, &mut on, "Agent mode", Some("A request with several things to do (\"Max, let's enter cinema mode, I want to watch Dune\", \"Max, set up work: terminals left, browser middle, YouTube up-right\") runs one step at a time: after each step the AI looks at the screens and picks the next one, up to 10 steps or 30 seconds. Each step shows in the headset. \"Max, cancel\" or \"Max, stop\" ends it after the step that is running. It never closes an app you did not ask to close. Off: such a request runs as one plan of up to 9 steps, decided at once."), !busy).changed() {
             app.core.ai_set_voice_agent(on);
         }
         // the optional big agent model (opt-in, default off; docs/AI.md section 18)
