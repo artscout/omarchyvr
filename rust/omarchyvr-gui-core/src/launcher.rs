@@ -43,7 +43,7 @@ pub struct LauncherCaps {
     pub screens: bool,
     /// `--controllers when-held|always|off` (PIMAX_CTRL_INHAND, docs/CONTROLLERS-INHAND.md).
     pub controllers: bool,
-    /// `--ctrl-angle DEG` and the tracking switches `--old-exposure`, `--no-room-glide`, `--no-ctrl-steady`
+    /// `--ctrl-angle DEG` and the tracking switches `--old-exposure`, `--no-room-glide`, `--no-ctrl-steady`, `--no-drift-hold`
     /// (tracking plan phase 1, docs/TRACKING-STABILITY.md).
     pub tracking: bool,
 }
@@ -67,7 +67,7 @@ pub fn parse_caps(usage: &str) -> LauncherCaps {
         hands: has("--hands"),
         screens: has("--screens"),
         controllers: has("--controllers"),
-        tracking: has("--ctrl-angle") && has("--no-ctrl-steady"),
+        tracking: has("--ctrl-angle") && has("--no-ctrl-steady") && has("--no-drift-hold"),
     }
 }
 
@@ -188,6 +188,8 @@ pub struct DeskToggles {
     pub room_glide: bool,
     /// "Steadier controllers" (off = `--no-ctrl-steady`, PIMAX_CTRL_TRACK_HYST=0).
     pub ctrl_steady: bool,
+    /// "Hold the head when it does not move" (off = `--no-drift-hold`, PIMAX_SLAM_DRIFT_HOLD=0).
+    pub drift_hold: bool,
     /// The launcher knows `--ctrl-angle` and the tracking switches (from `omarchyvr desk help`, not saved): only then
     /// are they passed.
     pub tracking_flags: bool,
@@ -221,6 +223,7 @@ impl Default for DeskToggles {
             new_exposure: true,
             room_glide: true,
             ctrl_steady: true,
+            drift_hold: true,
             tracking_flags: false,
             preset_flag: false,
         }
@@ -272,6 +275,7 @@ pub fn toggles_from_argv(text: &str, base: DeskToggles) -> Option<(DeskToggles, 
     t.new_exposure &= !has("--old-exposure");
     t.room_glide &= !has("--no-room-glide");
     t.ctrl_steady &= !has("--no-ctrl-steady");
+    t.drift_hold &= !has("--no-drift-hold");
     if vr && has("--home") {
         // the VR home (docs/VR-HOME.md) decides its own readout and room anchor: Play's switches stay as they are
     } else if vr {
@@ -407,7 +411,7 @@ fn tracking_flags(t: &DeskToggles, v: &mut Vec<String>) {
     }
     v.push("--ctrl-angle".into());
     v.push(t.ctrl_angle.clamp(omarchyvr_config::ctrl_angle::MIN_DEG, omarchyvr_config::ctrl_angle::MAX_DEG).to_string());
-    for (on, flag) in [(t.new_exposure, "--old-exposure"), (t.room_glide, "--no-room-glide"), (t.ctrl_steady, "--no-ctrl-steady")] {
+    for (on, flag) in [(t.new_exposure, "--old-exposure"), (t.room_glide, "--no-room-glide"), (t.ctrl_steady, "--no-ctrl-steady"), (t.drift_hold, "--no-drift-hold")] {
         if !on {
             v.push(flag.into());
         }

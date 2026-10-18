@@ -752,6 +752,20 @@ impl Supervisor {
         self.state
     }
 
+    /// Current `world_from_slam` (translation, yaw).
+    pub fn world_from_slam(&self) -> (Vec3, Quat) {
+        (self.w_t, self.w_q)
+    }
+
+    /// Move the room alignment by `d` (world metres) while tracking: the drift governor's hold
+    /// ([`crate::headpose`]) puts tracker translation that no accelerometer evidence explains here, so the head
+    /// output does not follow it. Ignored unless tracking.
+    pub fn shift_world(&mut self, d: Vec3) {
+        if self.state == TrackState::Tracking && d.iter().all(|x| x.is_finite()) {
+            self.w_t = geom::add(self.w_t, d);
+        }
+    }
+
     /// Head position in the world for a tracker pose (with the current alignment).
     pub fn head_world(&self, pos: Vec3, q: Quat) -> Vec3 {
         let head_slam = geom::add(pos, qrot(q, self.head_in_imu));

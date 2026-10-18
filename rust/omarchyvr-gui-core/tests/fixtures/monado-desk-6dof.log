@@ -34,4 +34,5 @@ pimax-eye: kernel driver 'usbfs' is bound to the EyeChip interface; not detachin
  INFO [slam_poll_locked] 6DoF: tracking (acquisition 1)
  INFO [update_stats] slam: 3764 frame sets, 150624 IMU samples (116 held from the tracker in 0 camera gaps), 0 untimed frames skipped; 6DoF tracking; 1 acquired, 0 lost, tracking
  INFO [update_stats] camera: 50.04 fps (tracking 25.12), total 7529 frames, lost 0, corrupt 0, IMU-timed 7528, Mercury pairs pushed 0
+ INFO [slam_poll_locked] 6DoF drift: head tracking slid 12 cm without movement in 10 s; held (session total 150 cm)
  INFO [stats_note_locked] Pimax eye: state 0, 360 gaze queries in 5.0 s: 0 valid, 0 invalid (eyes lost), 0 stale, 360 no sample; chip samples 0/s
