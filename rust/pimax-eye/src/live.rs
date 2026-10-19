@@ -96,6 +96,14 @@ pub struct Config {
     /// Power the eye module (captured enable on the headset, see [`crate::power`]) when the headset is present and
     /// the chip has been absent for 5 s; at most once per headset enumeration.
     pub power_on: bool,
+    /// The start list (frame list text) to use instead of the built-in one: a list made by `pimax-eye frames` from
+    /// the user's own Windows capture of this headset (the Crystal Super has no built-in list). Its own 0x456
+    /// profile upload is accepted.
+    pub frames: Option<std::sync::Arc<str>>,
+    /// The eye profile body to upload in place of the list's own 0x456 (the user's current calibration, from
+    /// Pimax's `calibration.setpm` by `pimax-eye profile import`, see [`crate::frames::with_profile`]). Implies
+    /// `with_cal`.
+    pub profile: Option<std::sync::Arc<[u8]>>,
 }
 
 impl Default for Config {
@@ -115,6 +123,8 @@ impl Default for Config {
             response_wait: Duration::from_secs(3),
             history: 256,
             usb_device: None,
+            frames: None,
+            profile: None,
             pace: true,
             usb_reset: true,
             reset_after: 2,
@@ -128,7 +138,9 @@ impl Config {
     /// Defaults overridden by the environment: frame conversion (`PIMAX_EYE_FLIP_*`, see [`crate::track`]),
     /// `PIMAX_EYE_CAL=1` (send the calibration blob), `PIMAX_EYE_SKIP_AUTH=1`, `PIMAX_EYE_LATENCY_MS`,
     /// `PIMAX_EYE_USB_RESET=0` (no USB reset recovery), `PIMAX_EYE_POWER_ON=0` (never power the eye module),
-    /// `PIMAX_EYE_USB` (usbfs node), `PIMAX_EYE_CORRECTION=path|none` (see [`crate::correction`]; unset: the file
+    /// `PIMAX_EYE_USB` (usbfs node), `PIMAX_EYE_FRAMES=path` (start list, see [`Config::frames`]),
+    /// `PIMAX_EYE_PROFILE=path` (eye profile body, see [`Config::profile`]; a missing file is skipped),
+    /// `PIMAX_EYE_CORRECTION=path|none` (see [`crate::correction`]; unset: the file
     /// `~/.config/omarchyvr/eye-correction.toml` when it exists).
     pub fn from_env() -> Config {
         let mut c = Config {
@@ -152,6 +164,22 @@ impl Config {
             c.latency_ns = (ms * 1e6) as i64;
         }
         c.usb_device = std::env::var_os("PIMAX_EYE_USB").map(PathBuf::from);
+        if let Some(p) = std::env::var_os("PIMAX_EYE_FRAMES") {
+            match std::fs::read_to_string(&p) {
+                Ok(t) => c.frames = Some(t.into()),
+                Err(e) => eprintln!("pimax-eye: PIMAX_EYE_FRAMES {}: {e}", PathBuf::from(&p).display()),
+            }
+        }
+        if let Some(p) = std::env::var_os("PIMAX_EYE_PROFILE") {
+            match std::fs::read(&p) {
+                Ok(b) => match crate::frames::check_profile(&b) {
+                    Ok(()) => c.profile = Some(b.into()),
+                    Err(e) => eprintln!("pimax-eye: PIMAX_EYE_PROFILE {}: {e}", PathBuf::from(&p).display()),
+                },
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => eprintln!("pimax-eye: PIMAX_EYE_PROFILE {}: {e}", PathBuf::from(&p).display()),
+            }
+        }
         match Calibration::from_env() {
             Ok(Some((cal, path))) => {
                 let env_conv = c.conv;
@@ -410,6 +438,11 @@ pub trait Device: Send + 'static {
     fn absent(&mut self, _cfg: &Config, _now: Instant) -> Option<String> {
         None
     }
+    /// Called after a link failed with a silent chip (still on the bus, no answer or no gaze): may power the eye
+    /// module again; returns a log line when it did something.
+    fn silent(&mut self, _cfg: &Config, _now: Instant) -> Option<String> {
+        None
+    }
 }
 
 /// A [`Device`] made of an open closure (tests): no reset, no power control.
@@ -447,14 +480,19 @@ pub fn run_link<T: Transport>(
     state: &mut dyn FnMut(State),
     log: &mut dyn FnMut(&str),
 ) -> Result<(), LinkError> {
-    let steps = parse(crate::frames::list().0).map_err(|e| LinkError::new(Failure::Other, e))?;
+    let own = cfg.frames.as_deref();
+    let mut steps = parse(own.unwrap_or(crate::frames::list().0)).map_err(|e| LinkError::new(Failure::Other, e))?;
+    if let Some(body) = cfg.profile.as_deref() {
+        crate::frames::with_profile(&mut steps, body).map_err(|e| LinkError::new(Failure::Other, e))?;
+        log(&format!("eye profile: uploading the user's profile ({} bytes)", body.len()));
+    }
     let skips = Skips {
         auth: cfg.skip_auth,
-        cal: !cfg.with_cal,
+        cal: !cfg.with_cal && cfg.profile.is_none(),
         vendor_write: cfg.skip_vendor_write,
     };
     let sel = select(&steps, skips);
-    let mut guard = Guard::new(&steps).map_err(|e| LinkError::new(Failure::Other, e))?;
+    let mut guard = Guard::new_with(&steps, own.is_none() && cfg.profile.is_none()).map_err(|e| LinkError::new(Failure::Other, e))?;
     guard.allow_frame(&CAPTURED_UNSUBSCRIBE_GAZE);
     pipe.reset_link();
     state(State::Connecting);
@@ -760,6 +798,11 @@ impl Tracker {
                         backoff = cfg.retry;
                     }
                     let failure = r.as_ref().err().map(|e| e.kind);
+                    if failure.is_some_and(|f| f.is_silent()) {
+                        if let Some(m) = dev.silent(&cfg, Instant::now()) {
+                            say(&m);
+                        }
+                    }
                     let reset = recovery.after_link(failure, streamed, Instant::now(), &cfg);
                     if let Err(e) = r {
                         say(&format!("link lost: {e}; retrying"));
@@ -909,7 +952,11 @@ impl Drop for Tracker {
 #[derive(Default)]
 pub struct RealDevice {
     gate: crate::power::EnableGate,
+    silent_enable_at: Option<Instant>,
 }
+
+/// The eye-module enable after a silent chip is sent at most this often.
+pub const SILENT_ENABLE_INTERVAL: Duration = Duration::from_secs(5);
 
 fn chip_node(cfg: &Config) -> Result<PathBuf, String> {
     match &cfg.usb_device {
@@ -949,6 +996,33 @@ impl Device for RealDevice {
         ))
     }
 
+    /// The Crystal Super switches its eye module off when the headset is taken off (the chip stays on USB but
+    /// stops answering) and does not switch it on when it is put back on: Pimax Play then sends the eye-module
+    /// enable again and starts the chip anew (Windows capture sleep-wake of 2026-10-17: standby at 16.4 s, enable at
+    /// 22.97 s, chip start at 28.1 s). Same here: the captured enable after a silent link, at most every 5 s.
+    fn silent(&mut self, cfg: &Config, now: Instant) -> Option<String> {
+        use crate::power::{headset, headset_command_node, send_enable};
+        if !cfg.power_on || cfg.usb_device.is_some() {
+            return None;
+        }
+        if self.silent_enable_at.is_some_and(|t| now.duration_since(t) < SILENT_ENABLE_INTERVAL) {
+            return None;
+        }
+        let h = headset(std::path::Path::new("/sys/bus/usb/devices"))?;
+        let node = headset_command_node(std::path::Path::new("/sys/class/hidraw"), std::path::Path::new("/dev"))?;
+        self.silent_enable_at = Some(now);
+        Some(match send_enable(&node) {
+            Ok(()) => format!(
+                "chip silent (headset {} devnum {}): sent the captured eye-module enable 58 05 3c 05 00 01 to {} \
+                 again (the module goes off when the headset is taken off)",
+                h.name,
+                h.devnum,
+                node.display()
+            ),
+            Err(e) => format!("eye module enable to {} failed: {e}", node.display()),
+        })
+    }
+
     fn absent(&mut self, cfg: &Config, now: Instant) -> Option<String> {
         use crate::power::{eye_chip_present, headset, headset_command_node, send_enable, Gate};
         if !cfg.power_on || cfg.usb_device.is_some() {
@@ -973,7 +1047,7 @@ impl Device for RealDevice {
                         ),
                         Err(e) => format!("eye module enable to {} failed: {e}", n.display()),
                     },
-                    None => "eye module off but no hidraw node for interface 0 of 34a4:0044".into(),
+                    None => "eye module off but no hidraw node for interface 0 of the headset (34a4:0044/0040)".into(),
                 })
             }
             _ => None,

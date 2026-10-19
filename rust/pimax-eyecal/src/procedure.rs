@@ -15,7 +15,8 @@
 
 use crate::collect::{analyze_eye, evaluate_window, truth_tangent, EyeWindow, RawSample, WindowEval};
 use crate::layout::{
-    calibration_targets, pursuit_at, recenter_targets, service_targets, validation_targets, Region, Target,
+    calibration_targets, pimax_targets, pursuit_at, recenter_targets, service_targets, validation_targets, Region,
+    Target,
     PURSUIT_PERIOD_S, TARGET_DIST_M,
 };
 use crate::report;
@@ -29,8 +30,10 @@ use std::collections::VecDeque;
 /// Settings of a run.
 #[derive(Debug, Clone)]
 pub struct Settings {
-    /// 9 or 13 calibration targets.
+    /// 9 or 13 calibration targets (the grid pattern).
     pub cal_points: usize,
+    /// Which calibration path.
+    pub pattern: Pattern,
     /// Run the smooth-pursuit test after the validation.
     pub pursuit: bool,
     /// Device-to-head conversion of the raw tracker.
@@ -61,6 +64,7 @@ impl Default for Settings {
     fn default() -> Self {
         Settings {
             cal_points: 9,
+            pattern: Pattern::Grid,
             pursuit: false,
             conv: FrameConv {
                 flip_x: true,
@@ -77,6 +81,26 @@ impl Default for Settings {
             filter: FilterParams::default(),
             fix: FixParams::default(),
         }
+    }
+}
+
+/// The calibration path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Pattern {
+    /// The 3x3 (or 13-point) grid on a dark background, a shrinking ring at each target.
+    Grid,
+    /// Pimax Play's path ([`pimax_targets`]): the dot travels between the targets, the second half on white; the
+    /// fit also tries the pupil-size terms.
+    Pimax,
+}
+
+impl Settings {
+    /// The settings of the Pimax path: longer recording per target (Pimax holds each 3-5 s), a longer travel.
+    pub fn pimax(mut self) -> Settings {
+        self.pattern = Pattern::Pimax;
+        self.attract_s = 1.0;
+        self.collect_s = 2.0;
+        self
     }
 }
 
@@ -168,6 +192,8 @@ pub enum Cmd {
     Cursor,
     /// End-to-end check through the runtime (S).
     Service,
+    /// The trigger: starts from the intro (in the Pimax path nothing else, so a squeeze never restarts a run).
+    Start,
 }
 
 /// Things for the caller to do.
@@ -185,6 +211,8 @@ pub enum Effect {
     StartService,
     /// Back to the own tracker.
     StopService,
+    /// Close the app (the Pimax path's "save and exit").
+    Quit,
 }
 
 /// Shape of a mark.
@@ -332,6 +360,8 @@ pub struct Procedure {
     raw_cursor: Option<[f64; 3]>,
     service_cursor: Option<[f64; 3]>,
     redo_queue: Vec<usize>,
+    /// Rounds of re-measuring done in this calibration.
+    redo_rounds: u32,
     in_redo: bool,
     axis_restarts: u32,
     now: f64,
@@ -344,7 +374,10 @@ impl Procedure {
     /// New procedure.
     pub fn new(s: Settings) -> Procedure {
         Procedure {
-            cal_t: calibration_targets(s.cal_points),
+            cal_t: match s.pattern {
+                Pattern::Grid => calibration_targets(s.cal_points),
+                Pattern::Pimax => pimax_targets(),
+            },
             val_t: validation_targets(),
             s,
             phase: Phase::Intro,
@@ -372,6 +405,7 @@ impl Procedure {
             raw_cursor: None,
             service_cursor: None,
             redo_queue: Vec::new(),
+            redo_rounds: 0,
             in_redo: false,
             axis_restarts: 0,
             now: 0.0,
@@ -428,6 +462,29 @@ impl Procedure {
     /// The command handler.
     pub fn command(&mut self, c: Cmd) -> Vec<Effect> {
         let mut fx = Vec::new();
+        // The Pimax path has two buttons, as Pimax Play: at the start A calibrate, B exit; at the end A again, B save
+        // and exit. Nothing else.
+        let c = match (self.s.pattern, c, self.phase) {
+            (Pattern::Pimax, Cmd::Next, Phase::Results | Phase::Cursor) => {
+                let s = self.s.clone();
+                *self = Procedure::new(s);
+                fx.push(Effect::Print("calibrating again".into()));
+                Cmd::Next // from the fresh intro: start at once
+            }
+            (Pattern::Pimax, Cmd::Redo, Phase::Results | Phase::Cursor) => {
+                fx.extend(self.accept());
+                fx.push(Effect::Quit);
+                return fx;
+            }
+            (Pattern::Pimax, Cmd::Next | Cmd::Start, Phase::Intro) => Cmd::Next,
+            (Pattern::Pimax, Cmd::Redo, Phase::Intro) => {
+                fx.push(Effect::Quit);
+                return fx;
+            }
+            (Pattern::Pimax, _, _) if !matches!(c, Cmd::Accept) => return fx,
+            (Pattern::Grid, Cmd::Start, _) => Cmd::Next,
+            _ => c,
+        };
         match (c, self.phase) {
             (Cmd::Next, Phase::Intro) => {
                 fx.push(Effect::Print(match self.s.mode {
@@ -487,6 +544,12 @@ impl Procedure {
         self.saved = true;
         self.status = "SAVED: NEW GAZE APPS USE IT. S: CHECK THROUGH THE RUNTIME".into();
         vec![Effect::SaveCalibration(c.to_toml())]
+    }
+
+    /// The index in the calibration targets of the result `k` (results of a target shown twice, as the Pimax path's
+    /// centre, share one slot, so result and target indices differ).
+    fn target_index(&self, k: usize) -> usize {
+        self.cal_t.iter().position(|t| *t == self.cal_res[k].target).unwrap_or(k)
     }
 
     fn start_point(&mut self, set: Set, i: usize, attempt: u32) {
@@ -774,7 +837,10 @@ impl Procedure {
         let mut gains = [None, None];
         for e in 0..2 {
             // the sample-level fit (direction + reported origin); the point fit below is the fallback
-            let opts = crate::refit::ExtractOpts::default();
+            let opts = crate::refit::ExtractOpts {
+                pupil: self.s.pattern == Pattern::Pimax,
+                ..crate::refit::ExtractOpts::default()
+            };
             let wins: Vec<(Target, &[RawSample])> =
                 self.cal_res.iter().map(|r| (r.target.clone(), r.samples.as_slice())).collect();
             let data = crate::refit::eye_data(&wins, e, self.eye_pos[e], &opts, &self.s.fix);
@@ -786,14 +852,14 @@ impl Procedure {
                 }
                 let loo_med = best.loo.median.max(0.5);
                 for (k, err) in &fit.loo_by_window {
-                    if *err > (3.0 * loo_med).max(2.5) && self.cal_res[*k].attempts < 2 && !self.redo_queue.contains(k) {
+                    if *err > (3.0 * loo_med).max(2.5) && self.cal_res[*k].attempts < 2 && !self.redo_queue.contains(&self.target_index(*k)) {
                         fx.push(Effect::Print(format!(
                             "{} eye: target {} is {:.1} deg off the fit of the others: measuring it again",
                             eye_name(e),
                             self.cal_res[*k].target.name(),
                             err
                         )));
-                        self.redo_queue.push(*k);
+                        self.redo_queue.push(self.target_index(*k));
                     }
                 }
                 fx.push(Effect::Print(format!(
@@ -843,14 +909,14 @@ impl Procedure {
                     continue;
                 };
                 let err = pimax_eye::calib::point_error_deg(&m, p);
-                if err > (3.0 * loo_med).max(2.5) && self.cal_res[*k].attempts < 2 && !self.redo_queue.contains(k) {
+                if err > (3.0 * loo_med).max(2.5) && self.cal_res[*k].attempts < 2 && !self.redo_queue.contains(&self.target_index(*k)) {
                     fx.push(Effect::Print(format!(
                         "{} eye: target {} is {:.1} deg off the fit of the others: measuring it again",
                         eye_name(e),
                         self.cal_res[*k].target.name(),
                         err
                     )));
-                    self.redo_queue.push(*k);
+                    self.redo_queue.push(self.target_index(*k));
                 }
             }
             fx.push(Effect::Print(format!(
@@ -877,7 +943,12 @@ impl Procedure {
             });
             self.fits[e] = Some(EyeFit { selection: sel, points: only.len() });
         }
+        // at most two rounds of re-measuring, whatever the fit says (no loop if a target never fits)
+        if self.redo_rounds >= 2 {
+            self.redo_queue.clear();
+        }
         if !self.redo_queue.is_empty() {
+            self.redo_rounds += 1;
             let j = self.redo_queue.remove(0);
             self.in_redo = true;
             self.start_point(Set::Calibration, j, 2);
@@ -1138,6 +1209,7 @@ impl Procedure {
     pub fn scene(&self) -> Scene {
         let mut marks = Vec::new();
         let mut hud = Vec::new();
+        let mut background = BACKGROUND;
         let at = |d: [f64; 3]| [d[0] * TARGET_DIST_M, d[1] * TARGET_DIST_M, d[2] * TARGET_DIST_M];
         let ratio = self.eye_ratio();
         let eye_status = format!(
@@ -1158,7 +1230,35 @@ impl Procedure {
                 if !self.status.is_empty() {
                     hud.push(self.status.clone());
                 }
-                hud.push("A / SPACE: START".into());
+                hud.push(if self.s.pattern == Pattern::Pimax { "A: START   B: EXIT" } else { "A / SPACE: START" }.into());
+            }
+            Phase::Point { set, i, stage, t0, .. } if self.s.pattern == Pattern::Pimax && set == Set::Calibration => {
+                // Pimax Play's look: a green dot that travels to the next place, black or white background
+                let tg = self.target(set, i);
+                let dt = self.now - t0;
+                if tg.bright {
+                    background = PIMAX_WHITE;
+                }
+                let dot = if tg.bright { PIMAX_GREEN_ON_WHITE } else { GREEN };
+                let p = match (stage, i) {
+                    (Stage::Attract, 1..) => {
+                        let from = self.target(set, i - 1).dir();
+                        let f = smoothstep((dt / self.s.attract_s).clamp(0.0, 1.0));
+                        let to = tg.dir();
+                        let d = [0, 1, 2].map(|k| from[k] + (to[k] - from[k]) * f);
+                        let n = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+                        d.map(|x| x / n * crate::layout::TARGET_DIST_M)
+                    }
+                    _ => tg.point(),
+                };
+                match stage {
+                    Stage::HeadMoved => {
+                        abc_on(&mut marks, p, AMBER, background);
+                        hud.push("HEAD MOVED: KEEP IT STILL".into());
+                    }
+                    Stage::Accepted => abc_on(&mut marks, p, WHITE.map(|c| c * 0.6 + 0.2), background),
+                    _ => abc_on(&mut marks, p, dot, background),
+                }
             }
             Phase::Point { set, i, stage, t0, .. } => {
                 let tg = self.target(set, i);
@@ -1191,6 +1291,12 @@ impl Procedure {
                 if self.now - t0 < 1.0 {
                     hud.push("FOLLOW THE MOVING DOT".into());
                 }
+            }
+            Phase::Results | Phase::Cursor if self.s.pattern == Pattern::Pimax => {
+                hud.extend(report::summary(self).hud);
+                hud.push(String::new());
+                hud.push("A: CALIBRATE AGAIN".into());
+                hud.push(if self.calibration.is_some() { "B: SAVE AND EXIT" } else { "B: EXIT" }.into());
             }
             Phase::Results | Phase::Cursor => {
                 let sum = report::summary(self);
@@ -1248,11 +1354,7 @@ impl Procedure {
                 hud.push("A: BACK".into());
             }
         }
-        Scene {
-            marks,
-            hud,
-            background: BACKGROUND,
-        }
+        Scene { marks, hud, background }
     }
 
     /// Measuring now (the caller hides distractions).
@@ -1276,10 +1378,24 @@ impl Procedure {
     }
 }
 
+/// Background of the white half of the Pimax path.
+const PIMAX_WHITE: [f32; 3] = [0.92, 0.92, 0.92];
+/// The green dot on white (the dark-background green is too light there).
+const PIMAX_GREEN_ON_WHITE: [f32; 3] = [0.0, 0.55, 0.15];
+
+fn smoothstep(f: f64) -> f64 {
+    f * f * (3.0 - 2.0 * f)
+}
+
 /// The fixation target recommended by Thaler et al. (2013): a disc with a cross cut out and a dot in the middle.
 fn abc(marks: &mut Vec<Mark>, p: [f64; 3], color: [f32; 3]) {
+    abc_on(marks, p, color, BACKGROUND)
+}
+
+/// [`abc`] on another background (the cross is cut in the background colour).
+fn abc_on(marks: &mut Vec<Mark>, p: [f64; 3], color: [f32; 3], background: [f32; 3]) {
     marks.push(Mark { pos: p, kind: MarkKind::Disc, radius_deg: 0.45, width_deg: 0.0, color });
-    marks.push(Mark { pos: p, kind: MarkKind::Cross, radius_deg: 0.47, width_deg: 0.09, color: BACKGROUND });
+    marks.push(Mark { pos: p, kind: MarkKind::Cross, radius_deg: 0.47, width_deg: 0.09, color: background });
     marks.push(Mark { pos: p, kind: MarkKind::Disc, radius_deg: 0.08, width_deg: 0.0, color: if color == GREEN { GREEN } else { RED } });
 }
 

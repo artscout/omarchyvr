@@ -1,0 +1,119 @@
+Monado (forks/monado, branch omarchyvr at 78237e1b3): the Pimax driver also takes the Crystal Super (USB 34a4:0040,
+the Dream Air protocol, analysis/crystal-super-capture-20261017.md) and names the headset after its USB id.
+Apply in forks/monado: git apply ../../linux/crystal-super/monado-crystal-super.patch
+
+diff --git a/src/xrt/drivers/pimax/pimax_hmd.c b/src/xrt/drivers/pimax/pimax_hmd.c
+index cb049d05e..5ab8e2bc4 100644
+--- a/src/xrt/drivers/pimax/pimax_hmd.c
++++ b/src/xrt/drivers/pimax/pimax_hmd.c
+@@ -763,7 +763,7 @@ pimax_hmd_compute_distortion(struct xrt_device *xdev, uint32_t view, float u, fl
+ }
+ 
+ struct xrt_device *
+-pimax_hmd_create(struct xrt_device *out_ctrls[2])
++pimax_hmd_create(const char *name, struct xrt_device *out_ctrls[2])
+ {
+ 	enum u_device_alloc_flags flags =
+ 	    (enum u_device_alloc_flags)(U_DEVICE_ALLOC_HMD | U_DEVICE_ALLOC_TRACKING_NONE);
+@@ -794,8 +794,8 @@ pimax_hmd_create(struct xrt_device *out_ctrls[2])
+ 	hmd->base.get_visibility_mask = pimax_hmd_get_visibility_mask;
+ 	hmd->base.destroy = pimax_hmd_destroy;
+ 
+-	snprintf(hmd->base.str, XRT_DEVICE_NAME_LEN, "Pimax Dream Air");
+-	snprintf(hmd->base.serial, XRT_DEVICE_NAME_LEN, "Pimax Dream Air");
++	snprintf(hmd->base.str, XRT_DEVICE_NAME_LEN, "%s", name);
++	snprintf(hmd->base.serial, XRT_DEVICE_NAME_LEN, "%s", name);
+ 
+ 	hmd->base.name = XRT_DEVICE_GENERIC_HMD;
+ 	hmd->base.device_type = XRT_DEVICE_TYPE_HMD;
+@@ -959,7 +959,7 @@ pimax_hmd_create(struct xrt_device *out_ctrls[2])
+ 		hmd->ctrl_handed_out = true;
+ 	}
+ 
+-	u_var_add_root(hmd, "Pimax Dream Air", true);
++	u_var_add_root(hmd, name, true);
+ 	u_var_add_log_level(hmd, &hmd->log_level, "log_level");
+ 	u_var_add_bool(hmd, &hmd->bias_done, "gyro bias done");
+ 	u_var_add_f32(hmd, &hmd->bias_dps[0], "bias x dps");
+@@ -974,7 +974,7 @@ pimax_hmd_create(struct xrt_device *out_ctrls[2])
+ 	hmd->camera = camera;
+ 	os_mutex_unlock(&hmd->cam_lock);
+ 
+-	HMD_INFO(hmd, "Pimax Dream Air up: keep the headset still for %u ms for gyro calibration (axis mode %d)",
++	HMD_INFO(hmd, "%s up: keep the headset still for %u ms for gyro calibration (axis mode %d)", name,
+ 	         hmd->bias_target, hmd->axis_mode);
+ 	return &hmd->base;
+ }
+diff --git a/src/xrt/drivers/pimax/pimax_interface.h b/src/xrt/drivers/pimax/pimax_interface.h
+index 650aa6ae5..127f31a6e 100644
+--- a/src/xrt/drivers/pimax/pimax_interface.h
++++ b/src/xrt/drivers/pimax/pimax_interface.h
+@@ -29,6 +29,8 @@ extern "C" {
+ 
+ #define PIMAX_DRV_VID 0x34a4
+ #define PIMAX_DRV_PID 0x0044
++//! Pimax Crystal Super: the same protocol as the Dream Air (omarchyvr analysis/crystal-super-capture-20261017.md).
++#define PIMAX_DRV_PID_CRYSTAL_SUPER 0x0040
+ 
+ /*! Prober "found" function, matches USB VID/PID. */
+ int
+@@ -43,9 +45,9 @@ pimax_found(struct xrt_prober *xp,
+ struct xrt_auto_prober *
+ pimax_create_auto_prober(void);
+ 
+-/*! Create the HMD (opens libpimax session). out_ctrls[2] receives left/right controllers (NULL if none). */
++/*! Create the HMD (opens libpimax session) named @p name. out_ctrls[2] receives left/right controllers (NULL if none). */
+ struct xrt_device *
+-pimax_hmd_create(struct xrt_device *out_ctrls[2]);
++pimax_hmd_create(const char *name, struct xrt_device *out_ctrls[2]);
+ 
+ /*! Left and right camera hand devices (PIMAX_HANDS=mercury), NULL each if none. Call once; the system owns them. */
+ void
+diff --git a/src/xrt/drivers/pimax/pimax_prober.c b/src/xrt/drivers/pimax/pimax_prober.c
+index b12fafffb..3abc91b95 100644
+--- a/src/xrt/drivers/pimax/pimax_prober.c
++++ b/src/xrt/drivers/pimax/pimax_prober.c
+@@ -22,10 +22,10 @@ static bool created = false;
+ 
+ //! Create the HMD and its controllers (and the Mercury hand device, if any) into out_xdev; returns the count.
+ static int
+-create_devices(struct xrt_device **out_xdev)
++create_devices(const char *name, struct xrt_device **out_xdev)
+ {
+ 	struct xrt_device *ctrls[2] = {NULL, NULL};
+-	struct xrt_device *xdev = pimax_hmd_create(ctrls);
++	struct xrt_device *xdev = pimax_hmd_create(name, ctrls);
+ 	if (xdev == NULL) {
+ 		return -1;
+ 	}
+@@ -70,7 +70,8 @@ pimax_found(struct xrt_prober *xp,
+ 	if (created) {
+ 		return 0;
+ 	}
+-	return create_devices(out_xdev);
++	const bool crystal = devices[index]->product_id == PIMAX_DRV_PID_CRYSTAL_SUPER;
++	return create_devices(crystal ? "Pimax Crystal Super" : "Pimax Dream Air", out_xdev);
+ }
+ 
+ /*
+@@ -88,7 +89,7 @@ pimax_no_device_autoprobe(
+ 		return 0;
+ 	}
+ 	U_LOG_W("PIMAX_NO_DEVICE=1 and no headset on USB: creating the Pimax HMD without a device (test aid)");
+-	int n = create_devices(out_xdevs);
++	int n = create_devices("Pimax Dream Air", out_xdevs);
+ 	return n < 0 ? 0 : n;
+ }
+ 
+diff --git a/src/xrt/targets/common/target_lists.c b/src/xrt/targets/common/target_lists.c
+index a319a2827..796ba5e33 100644
+--- a/src/xrt/targets/common/target_lists.c
++++ b/src/xrt/targets/common/target_lists.c
+@@ -225,6 +225,7 @@ struct xrt_prober_entry target_entry_list[] = {
+ 
+ #ifdef XRT_BUILD_DRIVER_PIMAX
+     {PIMAX_DRV_VID, PIMAX_DRV_PID, pimax_found, "Pimax Dream Air", "pimax"},
++    {PIMAX_DRV_VID, PIMAX_DRV_PID_CRYSTAL_SUPER, pimax_found, "Pimax Crystal Super", "pimax"},
+ #endif // XRT_BUILD_DRIVER_PIMAX
+ 
+     {0x0000, 0x0000, NULL, NULL, NULL}, // Terminate

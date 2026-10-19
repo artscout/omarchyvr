@@ -17,3 +17,4 @@ path = "src/main.rs"
 pimax-cam = { path = "../pimax-cam" }
 omarchyvr-room = { path = "../omarchyvr-room" }
 omarchyvr-config = { path = "../omarchyvr-config" }
+png = "0.18"

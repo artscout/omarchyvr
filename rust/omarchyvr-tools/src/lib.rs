@@ -1,8 +1,11 @@
 //! Implementation of the `omarchyvr` subcommands (library part so the pure pieces can be unit-tested).
 pub mod args;
+pub mod audio;
 pub mod buzz;
 pub mod calib_cmd;
 pub mod controllers;
+pub mod eyed;
+pub mod follow;
 pub mod import_cmd;
 pub mod imu;
 pub mod info;

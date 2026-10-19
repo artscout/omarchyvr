@@ -3,11 +3,11 @@
 use std::path::Path;
 
 pub const VID: &str = "34a4";
-/// Headset HID.
+/// Headset HID of the Dream Air (every model: [`headset`]).
 pub const PID_HID: &str = "0044";
 /// Tracking cameras (USB3, behind the 05e3:0620 hub).
 pub const PID_CAM: &str = "0014";
-/// Eye tracker / display-bridge MCU.
+/// Eye tracker / display-bridge MCU of the Dream Air (every model: [`Headset::bridge`]).
 pub const PID_EYE: &str = "0043";
 /// The headset's USB3 hub.
 pub const HUB: (&str, &str) = ("05e3", "0620");
@@ -22,6 +22,25 @@ pub fn present(sys: &Path, vid: &str, pid: &str) -> bool {
     rdir.flatten().any(|e| rd(&e.path().join("idVendor")) == vid && rd(&e.path().join("idProduct")) == pid)
 }
 
+/// The headset model on the bus, with its USB ids as sysfs spells them (`0044`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Headset {
+    /// Name shown to the user.
+    pub name: &'static str,
+    /// HID chip product id.
+    pub hid: String,
+    /// Display bridge MCU product id.
+    pub bridge: String,
+}
+
+/// The first model of `pimax_proto::MODELS` whose HID chip is on the bus.
+pub fn headset(sys: &Path) -> Option<Headset> {
+    pimax_proto::MODELS.iter().find_map(|m| {
+        let hid = format!("{:04x}", m.pid);
+        present(sys, VID, &hid).then(|| Headset { name: m.name, hid, bridge: format!("{:04x}", m.pid_bridge) })
+    })
+}
+
 /// `class/video4linux` has a node whose USB device is the camera (the node's `device` is the interface; its parent
 /// carries idVendor/idProduct).
 pub fn camera_node(sys: &Path) -> bool {
@@ -32,9 +51,10 @@ pub fn camera_node(sys: &Path) -> bool {
     })
 }
 
-/// The EDID is the Dream Air's (PNP `PVR` = 0xD242 little-endian, product 0x1019).
+/// The EDID is a Pimax headset's: PNP `PVR` = 0xD242 little-endian (Dream Air product 0x1019; the Crystal Super's
+/// product code is not recorded yet, so any product of that vendor counts).
 pub fn is_headset_edid(e: &[u8]) -> bool {
-    e.len() >= 12 && e[..8] == [0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0] && e[8..12] == [0x42, 0xd2, 0x19, 0x10]
+    e.len() >= 12 && e[..8] == [0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0] && e[8..10] == [0x42, 0xd2]
 }
 
 /// The headset's DRM connector: (`card1-DP-1`, connected). The one whose EDID is the headset's; when none is (the

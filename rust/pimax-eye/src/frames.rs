@@ -264,8 +264,14 @@ pub struct Guard {
 }
 
 impl Guard {
-    /// Build from the parsed list; fails if the list itself contains a denied opcode or a foreign 0x456.
+    /// Build from the parsed built-in list; fails if the list itself contains a denied opcode or a foreign 0x456.
     pub fn new(steps: &[FStep]) -> Result<Guard, String> {
+        Guard::new_with(steps, true)
+    }
+
+    /// As [`Guard::new`]; `pin_cal` false accepts the 0x456 the list carries (a list made from the user's own capture
+    /// by [`from_plan`], which holds that headset's own profile upload) instead of only the built-in blob.
+    pub fn new_with(steps: &[FStep], pin_cal: bool) -> Result<Guard, String> {
         let mut g = Guard {
             frames: HashSet::new(),
             controls: HashSet::new(),
@@ -280,7 +286,7 @@ impl Guard {
                     if DENIED_OPS.contains(op) {
                         return Err(format!("step {}: opcode {op:#x} is denied", st.n));
                     }
-                    if *op == CAL_OP {
+                    if *op == CAL_OP && pin_cal {
                         let (m, h) = ttp_info(frames)?;
                         if h.payload_len != CAL_PAYLOAD_LEN
                             || (CAL_PAYLOAD_FNV != 0 && fnv1a(&m.payload) != CAL_PAYLOAD_FNV)
@@ -350,6 +356,158 @@ impl Guard {
 /// Hex string.
 pub fn hex(b: &[u8]) -> String {
     b.iter().map(|x| format!("{x:02x}")).collect()
+}
+
+/// A frame list (the format of `data/base-frames.txt`) from the start plan of a Windows capture: every vendor control
+/// transfer and TTP request up to the first gaze notification, byte for byte as captured, in capture order. The two
+/// auth steps are left out unless `keep_auth` (their answer depends on a challenge of that session). Fails when the
+/// capture cut any data (a list is never padded or guessed).
+pub fn from_plan(plan: &crate::replay::Plan, source: &str, keep_auth: bool) -> Result<String, String> {
+    use crate::replay::StepKind;
+    if !plan.is_complete() {
+        return Err(format!(
+            "the capture misses {} bytes of the start (snap length); capture again with a full snap length",
+            plan.missing_bytes()
+        ));
+    }
+    let mut o = String::new();
+    o.push_str("# Eye chip start list made by `pimax-eye frames` from a Windows capture of this headset.\n");
+    o.push_str(&format!("# Source: {source}\n"));
+    o.push_str("# Every byte is from the capture (Pimax Play's own start of the eye chip). Private: it holds this\n");
+    o.push_str("# headset's eye profile upload (0x456). Do not share or commit it.\n\n");
+    let mut n = 0u32;
+    for st in &plan.steps {
+        let t = st.time;
+        match &st.kind {
+            StepKind::ControlOut { setup, data } => {
+                n += 1;
+                let data = if data.is_empty() { String::new() } else { format!(" data={}", hex(data)) };
+                o.push_str(&format!("STEP {n} | C | {}{data} (t={t:.4})\n\n", ctrl_desc(setup)));
+            }
+            StepKind::ControlIn { setup } => {
+                n += 1;
+                o.push_str(&format!("STEP {n} | R | {} (t={t:.4})\n\n", ctrl_desc(setup)));
+            }
+            StepKind::Request { seq, opcode, frames, .. } => {
+                if AUTH_OPS.contains(opcode) && !keep_auth {
+                    continue;
+                }
+                if DENIED_OPS.contains(opcode) {
+                    return Err(format!("the capture's start sends the denied opcode {opcode:#x}"));
+                }
+                n += 1;
+                let class = if AUTH_OPS.contains(opcode) {
+                    "AUTH"
+                } else if *opcode == CAL_OP {
+                    "CAL"
+                } else {
+                    "C"
+                };
+                o.push_str(&format!(
+                    "STEP {n} | {class} | seq={seq} op={opcode:#05x} {} (t={t:.4})\n",
+                    crate::ttp::opcode_name(*opcode)
+                ));
+                for f in frames {
+                    o.push_str(&format!("  BULK_OUT ep=0x05 len={} {}\n", f.len(), hex(f)));
+                }
+                o.push('\n');
+            }
+        }
+    }
+    Ok(o)
+}
+
+/// Bytes before the profile body in a 0x456 upload or 0x44c download payload: `00 00 | 15 | u32 BE len+4 | u32 BE len`.
+pub const PROFILE_PREFIX_LEN: usize = 11;
+/// The Tobii `calibration.setpm` header: `u32 LE 4 | u32 LE 1 | u32 LE len+4 | 4 bytes`, then the profile body.
+pub const SETPM_HEADER_LEN: usize = 16;
+/// Largest profile body accepted (the captured ones are 30-38 KB).
+pub const PROFILE_MAX_LEN: usize = 256 * 1024;
+/// Body bytes per bulk OUT frame of a long request (Windows: 4095-byte URBs = wrapper + 4087).
+pub const OUT_MAX_BODY: usize = 4087;
+
+/// Check a profile body's own layout: it starts with `u32 LE len - 168` (both captured profiles, 30 875 and 37 401 B).
+pub fn check_profile(body: &[u8]) -> Result<(), String> {
+    if body.len() < 168 || body.len() > PROFILE_MAX_LEN {
+        return Err(format!("profile body of {} bytes is out of range", body.len()));
+    }
+    let lead = u32::from_le_bytes(body[..4].try_into().unwrap()) as usize;
+    if lead != body.len() - 168 {
+        return Err(format!("profile body does not start with its length ({lead} for {} bytes)", body.len()));
+    }
+    Ok(())
+}
+
+/// The profile body of a Tobii `calibration.setpm` (what Pimax's calibration saved under Windows), checked.
+pub fn profile_from_setpm(file: &[u8]) -> Result<Vec<u8>, String> {
+    if file.len() < SETPM_HEADER_LEN {
+        return Err("not a calibration.setpm (too short)".into());
+    }
+    let w = |i: usize| u32::from_le_bytes(file[i..i + 4].try_into().unwrap()) as usize;
+    let body = &file[SETPM_HEADER_LEN..];
+    if w(0) != 4 || w(4) != 1 || w(8) != body.len() + 4 {
+        return Err("not a calibration.setpm (header does not match)".into());
+    }
+    check_profile(body)?;
+    Ok(body.to_vec())
+}
+
+/// The profile body inside a 0x456 upload or 0x44c download payload, when the payload has that layout.
+pub fn profile_body(payload: &[u8]) -> Option<&[u8]> {
+    let p = payload.get(..PROFILE_PREFIX_LEN)?;
+    let body = &payload[PROFILE_PREFIX_LEN..];
+    let be = |i: usize| u32::from_be_bytes(p[i..i + 4].try_into().unwrap()) as usize;
+    (p[..3] == [0, 0, 0x15] && be(3) == body.len() + 4 && be(7) == body.len()).then_some(body)
+}
+
+/// The 0x456 payload that uploads `body` (the layout of the captured uploads and downloads).
+pub fn profile_payload(body: &[u8]) -> Vec<u8> {
+    let mut p = Vec::with_capacity(PROFILE_PREFIX_LEN + body.len());
+    p.extend_from_slice(&[0, 0, 0x15]);
+    p.extend_from_slice(&(body.len() as u32 + 4).to_be_bytes());
+    p.extend_from_slice(&(body.len() as u32).to_be_bytes());
+    p.extend_from_slice(body);
+    p
+}
+
+/// Put the upload of `body` in place of each 0x456 step of the list (the Crystal Super's start uploads the profile
+/// twice): same header (seq, status, aux) as that captured upload, the new payload, split into frames as Windows splits
+/// it. The list must have a 0x456 step.
+pub fn with_profile(steps: &mut [FStep], body: &[u8]) -> Result<(), String> {
+    check_profile(body)?;
+    let mut done = false;
+    for st in steps.iter_mut() {
+        if let Action::Ttp { op, frames, .. } = &mut st.action {
+            if *op != CAL_OP {
+                continue;
+            }
+            let (_, h) = ttp_info(frames)?;
+            let payload = profile_payload(body);
+            let m = Message {
+                header: Header { payload_len: payload.len() as u32, ..h },
+                payload,
+            };
+            *frames = m.to_frames(Direction::Out, OUT_MAX_BODY);
+            done = true;
+        }
+    }
+    if done {
+        Ok(())
+    } else {
+        Err("the list has no 0x456 step".into())
+    }
+}
+
+fn ctrl_desc(setup: &[u8; 8]) -> String {
+    let wv = u16::from_le_bytes([setup[2], setup[3]]);
+    let wi = u16::from_le_bytes([setup[4], setup[5]]);
+    let wl = u16::from_le_bytes([setup[6], setup[7]]);
+    format!(
+        "CTRL {} bmRT={:#04x} bReq={} wValue={wv} wIndex={wi} wLength={wl}",
+        if setup[0] & 0x80 != 0 { "IN " } else { "OUT" },
+        setup[0],
+        setup[1]
+    )
 }
 
 #[cfg(test)]
@@ -469,6 +627,41 @@ mod tests {
 
     fn base_steps() -> Vec<FStep> {
         parse(BASE).unwrap()
+    }
+
+    #[test]
+    fn a_list_made_from_a_plan_parses_back_to_the_same_transfers() {
+        use crate::replay::{Plan, Step, StepKind};
+        // a plan with the public base list's transfers, as a capture of it would give
+        let base = parse(BASE).unwrap();
+        let mut plan = Plan { device: 7, steps: Vec::new(), stream_start: Some(9.0), orphan_frames: 0 };
+        for (i, st) in base.iter().enumerate() {
+            let kind = match &st.action {
+                Action::Enumeration => continue,
+                Action::Control { setup, data } if setup[0] & 0x80 == 0 => {
+                    StepKind::ControlOut { setup: *setup, data: data.clone() }
+                }
+                Action::Control { setup, .. } => StepKind::ControlIn { setup: *setup },
+                Action::Ttp { seq, op, frames } => StepKind::Request {
+                    seq: *seq,
+                    opcode: *op,
+                    payload_len: 0,
+                    frames: frames.clone(),
+                    expect: None,
+                },
+            };
+            plan.steps.push(Step { packet_index: i as u64, time: i as f64, kind, missing_bytes: 0, total_bytes: 1 });
+        }
+        let text = from_plan(&plan, "test", false).unwrap();
+        let back = parse(&text).unwrap();
+        let want: Vec<&Action> = base.iter().map(|s| &s.action).filter(|a| **a != Action::Enumeration).collect();
+        let got: Vec<&Action> = back.iter().map(|s| &s.action).collect();
+        assert_eq!(got, want);
+        // the made list is accepted by the gate with its own profile upload
+        assert!(Guard::new_with(&back, false).is_ok());
+        // a cut capture is refused
+        plan.steps[0].missing_bytes = 3;
+        assert!(from_plan(&plan, "test", false).is_err());
     }
 
     #[test]
@@ -599,5 +792,70 @@ mod tests {
         let r = dec.push(b);
         assert_eq!(r.len(), 1);
         assert_eq!(r[0].as_ref().unwrap().header.id, 0x777);
+    }
+
+    fn cal_frames(steps: &[FStep]) -> Vec<Vec<u8>> {
+        steps
+            .iter()
+            .find_map(|s| match &s.action {
+                Action::Ttp { op, frames, .. } if *op == CAL_OP => Some(frames.clone()),
+                _ => None,
+            })
+            .expect("a 0x456 step")
+    }
+
+    #[test]
+    fn the_captured_profile_upload_is_rebuilt_byte_for_byte_from_its_body() {
+        let mut base = base_steps();
+        let captured = cal_frames(&base);
+        let (m, _) = ttp_info(&captured).unwrap();
+        let body = profile_body(&m.payload).expect("the captured upload has the profile layout").to_vec();
+        check_profile(&body).unwrap();
+        with_profile(&mut base, &body).unwrap();
+        assert_eq!(cal_frames(&base), captured);
+        // and the list still passes the pinned guard
+        Guard::new(&base).unwrap();
+    }
+
+    #[test]
+    fn another_profile_replaces_the_upload_and_needs_the_unpinned_guard() {
+        let mut base = base_steps();
+        let mut body = vec![0x5au8; 37401];
+        body[..4].copy_from_slice(&(37401u32 - 168).to_le_bytes());
+        let mut setpm = Vec::new();
+        for w in [4u32, 1, 37405, 0x1244_0846] {
+            setpm.extend_from_slice(&w.to_le_bytes());
+        }
+        setpm.extend_from_slice(&body);
+        assert_eq!(profile_from_setpm(&setpm).unwrap(), body);
+        with_profile(&mut base, &body).unwrap();
+        let frames = cal_frames(&base);
+        // 24 + 37 412 bytes in 4087-byte bodies, as Windows splits it
+        assert_eq!(frames.len(), 10);
+        assert!(frames[..9].iter().all(|f| f.len() == 4095));
+        let (m, h) = ttp_info(&frames).unwrap();
+        assert_eq!(h.payload_len as usize, 37412);
+        assert_eq!(profile_body(&m.payload).unwrap(), &body[..]);
+        assert!(Guard::new(&base).is_err());
+        Guard::new_with(&base, false).unwrap();
+    }
+
+    #[test]
+    fn a_broken_setpm_or_profile_is_refused() {
+        assert!(profile_from_setpm(&[4, 0, 0, 0]).is_err());
+        let mut f = vec![0u8; 16 + 400];
+        f[0] = 4;
+        f[4] = 1;
+        f[8..12].copy_from_slice(&404u32.to_le_bytes());
+        // body does not start with its length
+        assert!(profile_from_setpm(&f).is_err());
+        f[16..20].copy_from_slice(&(400u32 - 168).to_le_bytes());
+        assert!(profile_from_setpm(&f).is_ok());
+        f[8] = 0;
+        assert!(profile_from_setpm(&f).is_err());
+        assert!(check_profile(&[0u8; 100]).is_err());
+        let mut steps = base_steps();
+        steps.retain(|s| !matches!(&s.action, Action::Ttp { op, .. } if *op == CAL_OP));
+        assert!(with_profile(&mut steps, &f[16..]).is_err());
     }
 }

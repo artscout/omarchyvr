@@ -2,10 +2,11 @@
 //!
 //! ```text
 //! omarchyvr-slam export     [--out DIR] [--calib XML] [--cams 0,1] [--imu F] [--base CONFIG.json] [--gui] [--cam-offset-ns N]
-//!                       [--gyro-bias X,Y,Z|none] [--bias-from DATASET]
+//!                       [--gyro-bias X,Y,Z|none] [--bias-from DATASET] [--accel-bias factory|none|X,Y,Z]
 //!                       Basalt calibration (kb4), VIO config and SLAM_CONFIG toml (default DIR ~/.config/omarchyvr/slam).
 //!                       Gyro bias seed (calib_gyro_bias, body frame): --gyro-bias in deg/s, else the first still
 //!                       second of DATASET, else the driver's cache (~/.cache/omarchyvr/gyro-bias), else none.
+//!                       Accel bias (calib_accel_bias, body frame, m/s^2): default the factory Stateinit aBias.
 //! omarchyvr-slam check      DATASET [--no-files]           EuRoC recording sanity (rates, gaps, sync, clock overlap)
 //! omarchyvr-slam imu-noise  DATASET [--window S] [--inflate K] [--write F]
 //!                       IMU noise from the stillest window (default window 2 s, inflate 3, F ~/.config/omarchyvr/slam-imu.json)
@@ -31,6 +32,9 @@
 //! omarchyvr-slam take-euroc TAKE [OUT]   take (cameras.pxcam + head-imu.csv) as a EuRoC dataset for run_slam.sh replay
 //! omarchyvr-slam ae         REC.pxcam [--frames N]         auto-exposure dry run on a recording (what it would send)
 //! omarchyvr-slam shift      DATASET OUT --cam-offset-ns N  copy with camera timestamps shifted (offset sweeps)
+//! omarchyvr-slam camlag     DATASET [--calib XML] [--cam 0] [--every 1] [--range-ms 30] [--radius MIN,MAX]
+//!                       camera-IMU time offset, gyro bias and gyro gain from the recording alone (image rotation
+//!                       between frames vs the integrated gyro)
 //! omarchyvr-slam smoke-euroc REC.pxcam OUT [--cams 0,1] [--seconds S]
 //!                       pipeline smoke test: camera frames + a synthetic still IMU (NOT for accuracy)
 //! ```
@@ -38,7 +42,7 @@
 
 use pimax_cam::calib::DeviceCalib;
 use pimax_cam::slam::{self, ImuNoise, SlamSetup};
-use omarchyvr_slam::{euroc, export, imu, sim, stats, stillgate, takehead, timing, traj, winbench};
+use omarchyvr_slam::{camlag, euroc, export, imu, sim, stats, stillgate, takehead, timing, traj, winbench};
 use std::path::{Path, PathBuf};
 
 type R<T> = Result<T, String>;
@@ -115,13 +119,30 @@ fn cmd_export(mut a: Args) -> R<()> {
     let offset: i64 = a.num("--cam-offset-ns", 0)?;
     let bias_arg = a.opt("--gyro-bias")?;
     let bias_from = a.opt("--bias-from")?;
+    let accel_arg = a.opt("--accel-bias")?;
     a.done()?;
     let imu = ImuNoise::load(imu_p.as_deref().map(Path::new))?.unwrap_or_default();
     let (gyro_bias, bias_src) = gyro_bias_seed(bias_arg.as_deref(), bias_from.as_deref())?;
+    let accel_bias = match accel_arg.as_deref().unwrap_or("factory") {
+        "factory" => slam::factory_accel_bias(&cal).unwrap_or([0.0; 3]),
+        "none" => [0.0; 3],
+        v => {
+            let x: Vec<f64> = v
+                .split(',')
+                .map(|w| w.trim().parse::<f64>())
+                .collect::<Result<_, _>>()
+                .map_err(|_| format!("--accel-bias {v:?}: want factory, none or X,Y,Z in m/s^2"))?;
+            if x.len() != 3 {
+                return Err(format!("--accel-bias {v:?}: want factory, none or X,Y,Z in m/s^2"));
+            }
+            [x[0], x[1], x[2]]
+        }
+    };
     let setup = SlamSetup {
         cams,
         cam_time_offset_ns: offset,
         gyro_bias,
+        accel_bias,
         ..Default::default()
     };
     let e = export::export(&out, &cal, &setup, &imu, base.as_deref(), gui)?;
@@ -138,6 +159,10 @@ fn cmd_export(mut a: Args) -> R<()> {
         gyro_bias[0].to_degrees(),
         gyro_bias[1].to_degrees(),
         gyro_bias[2].to_degrees()
+    );
+    println!(
+        "accel bias   ({:+.4} {:+.4} {:+.4}) m/s^2 body",
+        accel_bias[0], accel_bias[1], accel_bias[2]
     );
     for &i in &setup.cams {
         let p = slam::t_imu_cam(&cal, i).unwrap();
@@ -620,6 +645,28 @@ fn cmd_take_head(mut a: Args) -> R<()> {
     Ok(())
 }
 
+fn cmd_camlag(mut a: Args) -> R<()> {
+    let cal = load_calib(a.opt("--calib")?)?;
+    let cam: usize = a.num("--cam", 0)?;
+    let every: usize = a.num("--every", 1)?;
+    let range: f64 = a.num("--range-ms", 30.0)?;
+    let radius = match a.opt("--radius")? {
+        None => (0.0, f64::INFINITY),
+        Some(v) => {
+            let x: Vec<f64> = v.split(',').filter_map(|w| w.trim().parse().ok()).collect();
+            if x.len() != 2 || x[0] >= x[1] {
+                return Err(format!("--radius {v:?}: want MIN,MAX in pixels"));
+            }
+            (x[0], x[1])
+        }
+    };
+    let d = a.pos("DATASET")?;
+    a.done()?;
+    let ds = euroc::Dataset::load(Path::new(&d))?;
+    print!("{}", camlag::run(&ds, &cal, cam, every, range, radius)?);
+    Ok(())
+}
+
 fn cmd_take_euroc(mut a: Args) -> R<()> {
     let d = a.pos("TAKE")?;
     let out = if a.0.is_empty() { None } else { Some(a.pos("OUT")?) };
@@ -701,8 +748,9 @@ fn main() {
         "bench-basalt" => cmd_bench_basalt(a),
         "take-head" => cmd_take_head(a),
         "take-euroc" => cmd_take_euroc(a),
+        "camlag" => cmd_camlag(a),
         _ => Err(format!(
-            "unknown command {cmd:?} (export, check, imu-noise, timing, ate, loop, stats, simulate, ae, shift, smoke-euroc)"
+            "unknown command {cmd:?} (export, check, imu-noise, timing, ate, loop, stats, simulate, ae, shift, smoke-euroc, camlag)"
         )),
     };
     if let Err(e) = r {

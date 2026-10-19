@@ -27,6 +27,8 @@ omarchyvr-config = { path = "../omarchyvr-config" }
 omarchyvr-backgrounds = { path = "../omarchyvr-backgrounds" }
 # the local AI's pid files and its stop (Work owns the AI: desk stop and Play's start take it down)
 omarchyvr-ai = { path = "../omarchyvr-ai" }
+# `omarchyvr eyed`: the eye tracker without Monado, gaze published in shared memory (Crystal Super light setup)
+pimax-eye = { path = "../pimax-eye" }
 
 [dev-dependencies]
 flate2 = { workspace = true }

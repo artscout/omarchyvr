@@ -26,11 +26,12 @@ fn refused(m: &dyn HeadsetModule, r: &[u8]) -> Refused {
 }
 
 #[test]
-fn registry_has_one_real_module_and_four_mocks() {
+fn registry_has_two_real_modules_and_three_mocks() {
     let ids: Vec<_> = all().iter().map(|m| m.id().to_string()).collect();
     assert_eq!(ids[0], "dream-air");
-    assert_eq!(all().iter().filter(|m| !m.is_mock()).count(), 1);
-    for id in ["dream-air-se", "crystal-light", "crystal-super", "8kx"] {
+    let real: Vec<_> = all().iter().filter(|m| !m.is_mock()).map(|m| m.id()).collect();
+    assert_eq!(real, ["dream-air", "crystal-super"]);
+    for id in ["dream-air-se", "crystal-light", "8kx"] {
         let m = by_id(id).unwrap();
         assert_eq!(m.descriptor().status, Status::Mock);
         assert!(m.descriptor().allowlist.commands.is_empty());
@@ -45,7 +46,9 @@ fn registry_has_one_real_module_and_four_mocks() {
 fn usb_detection() {
     assert!(matches!(detect(0x34a4, 0x0044), Detected::Module(m) if m.id() == "dream-air"));
     assert!(matches!(detect(0x34a4, 0x0042), Detected::Possibly(m) if m.id() == "dream-air-se"));
+    assert!(matches!(detect(0x34a4, 0x0040), Detected::Module(m) if m.id() == "crystal-super"));
     assert!(matches!(detect(0x34a4, 0x0043), Detected::None)); // bridge MCU is not the headset
+    assert!(matches!(detect(0x34a4, 0x0041), Detected::None));
     assert!(matches!(detect(0x1234, 0x0044), Detected::None));
 }
 
@@ -220,4 +223,32 @@ fn restart_and_unpair_are_once_per_request() {
     let u = pimax_proto::unpair(2);
     assert_eq!(g.send(&u).unwrap(), "unpair");
     assert!(matches!(g.send(&u), Err(SendError::Refused(Refused::TooSoon { .. }))));
+}
+
+#[test]
+fn crystal_super_allows_only_its_captured_commands() {
+    let m = by_id("crystal-super").unwrap();
+    let al = &m.descriptor().allowlist;
+    // the cold-start frames from the 2026-10-17 capture build and pass the gate
+    for (id, vals, want) in [
+        ("wake", vec![], &[0x58, 0x06, 0x1a, 0x05, 0x01, 0x00, 0x00][..]),
+        ("keepalive", vec![("rate", 0x5a)], &[0x58, 0x04, 0x39, 0x00, 0x5a, 0x00][..]),
+        ("announce_refresh", vec![("fps", 90)], &[0x58, 0x0d, 0x1a, 0x05, 0x02, 0x5a][..]),
+        ("read_module_type", vec![], &[0x58, 0x04, 0x3a, 0x05, 0x01][..]),
+        ("eye_power_on", vec![], &[0x58, 0x05, 0x3c, 0x05, 0x00, 0x01][..]),
+        ("keepalive", vec![("rate", 0x00)], &[0x58, 0x04, 0x39, 0x00, 0x00, 0x00][..]),
+    ] {
+        let r = al.build(id, &vals).unwrap();
+        assert_eq!(&r[..want.len()], want, "{id}");
+        let mut g = Gate::new(al, 0, Vec::<u8>::new());
+        g.send(&r).unwrap();
+        assert_eq!(g.into_inner().len(), 65, "{id}"); // report id 0 + the 64-byte report
+    }
+    // captured but not enabled yet: IPD motor, eye-module power off, camera exposure, pairing
+    assert!(m.ipd_report(63.0).is_err());
+    assert!(m.pair_report(Hand::Left).is_err());
+    for r in [&[0x58, 0x06, 0x5c, 0x05, 0x01, 0xaf, 0x18][..], &[0x58, 0x05, 0x3c, 0x05, 0x00, 0x00], &[0x58, 0x19, 0x51, 0x00, 0x01, 0x32]] {
+        assert!(matches!(refused(m, &pad(r)), Refused::NotListed), "{r:02x?}");
+    }
+    assert!(matches!(refused(m, &pad(&[0x58, 0x04, 0x39, 0x00, 0x3c, 0x00])), Refused::OutOfRange { .. }));
 }

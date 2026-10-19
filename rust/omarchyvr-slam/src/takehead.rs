@@ -172,6 +172,11 @@ impl Lcg {
 
 /// Rotation between two bearing sets (matched): (angle deg, inliers). Inliers within `thr_deg`.
 pub fn ransac_rotation(pairs: &[(Vec3, Vec3)], thr_deg: f64) -> Option<(f64, usize)> {
+    ransac_rotation_q(pairs, thr_deg).map(|(q, n)| (q_angle_deg(q), n))
+}
+
+/// [`ransac_rotation`] with the fitted rotation itself: unit quaternion (x y z w) with `b ~ q a`, and the inliers.
+pub fn ransac_rotation_q(pairs: &[(Vec3, Vec3)], thr_deg: f64) -> Option<([f64; 4], usize)> {
     if pairs.len() < 6 {
         return None;
     }
@@ -206,7 +211,7 @@ pub fn ransac_rotation(pairs: &[(Vec3, Vec3)], thr_deg: f64) -> Option<(f64, usi
         .copied()
         .collect();
     let q = horn(&inl);
-    Some((q_angle_deg(q), count(q)))
+    Some((q, count(q)))
 }
 
 struct Feat {

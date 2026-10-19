@@ -218,6 +218,11 @@ mod tests {
     use std::process::{Child, Command};
     use std::time::Duration;
 
+    /// The stand-ins are symlinks named like our binaries. Ubuntu's uutils `sleep`/`tail` is one multicall binary that
+    /// picks the tool by argv[0] and exits on an unknown name, so the single-purpose GNU copies (`gnusleep`) come first.
+    const SLEEP_BINS: &[&str] = &["/usr/bin/gnusleep", "/usr/bin/sleep", "/bin/sleep"];
+    const TAIL_BINS: &[&str] = &["/usr/bin/gnutail", "/usr/bin/tail", "/bin/tail"];
+
     fn bin_of(names: &[&str]) -> String {
         names.iter().find(|p| Path::new(p).exists()).map(|s| s.to_string()).expect("coreutils")
     }
@@ -272,7 +277,7 @@ mod tests {
             }
             let dirs = Dirs { data: base.join("ai-data"), state: base.join("ai-state"), logs: base.join("ai-logs") };
             std::fs::create_dir_all(&dirs.state).unwrap();
-            let (sleep, tail) = (bin_of(&["/usr/bin/sleep", "/bin/sleep"]), bin_of(&["/usr/bin/tail", "/bin/tail"]));
+            let (sleep, tail) = (bin_of(SLEEP_BINS), bin_of(TAIL_BINS));
             std::fs::write(base.join("watch"), "").unwrap();
             let mut kids = Kids(Vec::new());
             let mut ours = Vec::new();

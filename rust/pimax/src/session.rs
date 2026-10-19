@@ -113,7 +113,9 @@ pub enum RateSource {
     /// The value set with [`Session::set_video_rate`] (libpimax behaviour).
     Handle,
     /// Re-read a file on every keepalive; missing or invalid = 0 (`pimax_keepalived.py` behaviour,
-    /// `$XDG_RUNTIME_DIR/pimax-rate`).
+    /// `$XDG_RUNTIME_DIR/pimax-rate`). `off`: one keepalive with rate 0, then none until the file changes, which is
+    /// what Pimax Play does when it is closed (Crystal Super Windows capture of 2026-10-17, take shutdown: the last
+    /// keepalive carries rate 0, then the host only reads; the headset goes to its green standby).
     File(PathBuf),
 }
 
@@ -708,6 +710,7 @@ fn run_link(sh: &Arc<Shared>, link: Link, h: &mut dyn Handler, cfg: &Config) {
     }
     let mut next_ka = start;
     let mut ka_sent = 0u64;
+    let mut off_sent = false; // `off` in the rate file: the closing rate-0 keepalive went out
     let mut pf = [sys::pollin(0); NUM_IF + 1];
     let mut map = [usize::MAX; NUM_IF + 1];
     let mut gone = false;
@@ -720,20 +723,33 @@ fn run_link(sh: &Arc<Shared>, link: Link, h: &mut dyn Handler, cfg: &Config) {
                 next_ka = now + cfg.period;
             }
             let rate = match &cfg.rate {
-                RateSource::Handle => sh.rate.load(Relaxed),
-                RateSource::File(p) => std::fs::read_to_string(p)
-                    .ok()
-                    .and_then(|s| s.trim().parse::<i64>().ok())
-                    .unwrap_or(0) as u8,
+                RateSource::Handle => Some(sh.rate.load(Relaxed)),
+                RateSource::File(p) => match std::fs::read_to_string(p) {
+                    Ok(s) if s.trim() == "off" => None,
+                    s => Some(s.ok().and_then(|s| s.trim().parse::<i64>().ok()).unwrap_or(0) as u8),
+                },
             };
-            match sh.write_ctl(&proto::keepalive(rate)) {
-                Ok(()) => {
-                    ka_sent += 1;
-                    sh.counters.ka.fetch_add(1, Relaxed);
+            let send = match rate {
+                Some(r) => {
+                    off_sent = false;
+                    Some(r)
                 }
-                Err(Error::NotConnected) => break,
-                Err(Error::Io(e)) if e.kind() == io::ErrorKind::WouldBlock => {}
-                Err(e) => log::debug!("keepalive write: {e}"),
+                None if !off_sent => {
+                    off_sent = true;
+                    Some(0)
+                }
+                None => None,
+            };
+            if let Some(rate) = send {
+                match sh.write_ctl(&proto::keepalive(rate)) {
+                    Ok(()) => {
+                        ka_sent += 1;
+                        sh.counters.ka.fetch_add(1, Relaxed);
+                    }
+                    Err(Error::NotConnected) => break,
+                    Err(Error::Io(e)) if e.kind() == io::ErrorKind::WouldBlock => {}
+                    Err(e) => log::debug!("keepalive write: {e}"),
+                }
             }
         }
         if let Some(t) = att.wake_resend_at {

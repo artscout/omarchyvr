@@ -149,6 +149,20 @@ impl Controls {
         instance
             .suggest_interaction_profile_bindings(path("/interaction_profiles/oculus/touch_controller")?, &b)
             .map_err(|r| e("suggest bindings", r))?;
+        // Valve Index controllers (SteamVR with the Lighthouse setup): A next, B redo / save-and-exit, the trigger
+        let idx = [
+            xr::Binding::new(&next, path("/user/hand/left/input/a/click")?),
+            xr::Binding::new(&next, path("/user/hand/right/input/a/click")?),
+            xr::Binding::new(&redo, path("/user/hand/left/input/b/click")?),
+            xr::Binding::new(&redo, path("/user/hand/right/input/b/click")?),
+            xr::Binding::new(&trigger, path("/user/hand/left/input/trigger/value")?),
+            xr::Binding::new(&trigger, path("/user/hand/right/input/trigger/value")?),
+        ];
+        if let Err(r) = instance
+            .suggest_interaction_profile_bindings(path("/interaction_profiles/valve/index_controller")?, &idx)
+        {
+            println!("Index controller bindings not taken: {r:?}");
+        }
         Ok(Controls {
             set,
             hands,
@@ -177,7 +191,7 @@ impl Controls {
             now[3] |= self.trigger.state(session, h).is_ok_and(|s| s.current_state > 0.7);
         }
         let mut out = Vec::new();
-        let cmds = [Cmd::Next, Cmd::Redo, Cmd::Accept, Cmd::Next];
+        let cmds = [Cmd::Next, Cmd::Redo, Cmd::Accept, Cmd::Start];
         for i in 0..4 {
             if now[i] && !self.prev[i] {
                 out.push(cmds[i]);
@@ -324,6 +338,27 @@ fn start_tracker(conv: FrameConv) -> Tracker {
         ..EyeConfig::default()
     };
     cfg.usb_device = std::env::var_os("PIMAX_EYE_USB").map(PathBuf::from);
+    // the start list of a headset without a built-in one (the Crystal Super, `--frames`): with its own profile
+    // upload, exactly as `omarchyvr eyed` starts the chip, so the fit sees the raw gaze the service will see
+    if let Some(p) = std::env::var_os("PIMAX_EYE_FRAMES") {
+        match std::fs::read_to_string(&p) {
+            Ok(t) => {
+                cfg.frames = Some(t.into());
+                cfg.with_cal = true;
+            }
+            Err(e) => eprintln!("PIMAX_EYE_FRAMES {}: {e}", PathBuf::from(&p).display()),
+        }
+    }
+    // the user's current eye profile in place of the list's own, as the service uploads it
+    if let Some(p) = std::env::var_os("PIMAX_EYE_PROFILE") {
+        match std::fs::read(&p).map_err(|e| e.to_string()).and_then(|b| {
+            pimax_eye::frames::check_profile(&b)?;
+            Ok(b)
+        }) {
+            Ok(b) => cfg.profile = Some(b.into()),
+            Err(e) => eprintln!("PIMAX_EYE_PROFILE {}: {e}", PathBuf::from(&p).display()),
+        }
+    }
     cfg.filter = Some(pimax_eye::filter::FilterParams {
         enabled: false,
         ..Default::default()
@@ -756,6 +791,12 @@ pub fn run(mut proc: Procedure, opts: Opts) -> Result<(), String> {
                     },
                     None => println!("no $HOME: calibration not saved"),
                 },
+                Effect::Quit => {
+                    if exit_at.is_none() {
+                        let _ = session.request_exit();
+                        exit_at = Some(Instant::now());
+                    }
+                }
                 Effect::RestartTracker(conv) => {
                     if let Some(t) = tracker.take() {
                         t.stop();

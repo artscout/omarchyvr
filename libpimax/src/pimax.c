@@ -61,7 +61,8 @@ static int read_small(const char *path, char *buf, size_t cap)
     return (int)n;
 }
 
-int pimax_find_interfaces(char paths[PIMAX_NUM_IF][PIMAX_PATH_MAX])
+/* Interfaces of one product id. */
+static int find_pid_interfaces(const char *want, char paths[PIMAX_NUM_IF][PIMAX_PATH_MAX])
 {
     int mask = 0;
     DIR *d = opendir("/sys/class/hidraw");
@@ -72,7 +73,7 @@ int pimax_find_interfaces(char paths[PIMAX_NUM_IF][PIMAX_PATH_MAX])
         char p[PATH_MAX + 64], real[PATH_MAX], buf[1024];
         snprintf(p, sizeof p, "/sys/class/hidraw/%s/device/uevent", e->d_name);
         if (read_small(p, buf, sizeof buf) < 0) continue;
-        if (!strstr(buf, "HID_ID=0003:000034A4:00000044")) continue;
+        if (!strstr(buf, want)) continue;
         snprintf(p, sizeof p, "/sys/class/hidraw/%s/device", e->d_name);
         if (!realpath(p, real)) continue;
         char *slash = strrchr(real, '/');       /* parent = USB interface dir */
@@ -87,6 +88,17 @@ int pimax_find_interfaces(char paths[PIMAX_NUM_IF][PIMAX_PATH_MAX])
     }
     closedir(d);
     return mask;
+}
+
+/* The first model present, in the order of rust/pimax-proto MODELS: Dream Air, then Crystal Super. */
+int pimax_find_interfaces(char paths[PIMAX_NUM_IF][PIMAX_PATH_MAX])
+{
+    static const char *const ids[] = {"HID_ID=0003:000034A4:00000044", "HID_ID=0003:000034A4:00000040"};
+    for (size_t i = 0; i < sizeof ids / sizeof ids[0]; i++) {
+        int mask = find_pid_interfaces(ids[i], paths);
+        if (mask) return mask;
+    }
+    return 0;
 }
 
 /* ---- command building ---- */

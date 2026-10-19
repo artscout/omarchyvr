@@ -1,0 +1,19 @@
+[Unit]
+Description=Pimax eye tracker without Monado: gaze to /dev/shm/omarchyvr-eye-gaze (SteamVR light setup)
+Documentation=file://%h/gamedev/omarchyvr/docs/CRYSTAL-SUPER.md
+After=omarchyvr-keepalived.service
+Wants=omarchyvr-keepalived.service
+
+[Service]
+# The start list of YOUR headset, made once from your Windows capture:
+#   pimax-eye frames <cold start capture>.pcap -o ~/.config/omarchyvr/eye-start-crystal-super.txt
+# The chip sits in the Crystal Super as in the Dream Air: x is mirrored (pimax-eyecal default, measured 14 Oct).
+Environment=PIMAX_EYE_FLIP_X=1
+# --follow vrserver: the eye tracker runs while SteamVR runs and stops 5 s after it closed.
+ExecStart=%h/.local/bin/omarchyvr eyed --follow vrserver --frames %h/.config/omarchyvr/eye-start-crystal-super.txt --profile %h/.config/omarchyvr/eye-profile-crystal-super.bin
+Restart=on-failure
+RestartSec=5
+Nice=-5
+
+[Install]
+WantedBy=default.target

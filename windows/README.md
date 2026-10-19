@@ -96,6 +96,16 @@ Time alignment on Linux: `pimax-poses-meta.json` gives `start/end_qpc` + `qpc_fr
 `t_qpc` and `utc_filetime` (100 ns ticks since 1601, UTC). pcap packet timestamps are system time, so the UTC FILETIME columns line up
 with them directly; the shake gives a second check. `pvr_time` / `<dev>_time` are Pimax's own clock for the pose.
 
+## Crystal Super eye tracking
+
+- `EYE-ALL.cmd` (asks for Administrator) runs `crystal-eye-capture.ps1`: every eye tracking take in one run (wear,
+  fit, slip, calibrate, dfr), USBPcap on all hubs with timed, spoken and marked steps, and read-only copies of the
+  Tobii and Pimax files before and after. Analysis: `analysis/crystal-super-eye-20261018.md`.
+- `crystal-eye-files.ps1 [-Label NAME]` copies (read only) the Tobii and Pimax eye tracking files alone, among them
+  the calibration profile `calibration.setpm` that `pimax-eye profile` turns into the profile Linux uploads
+  (`docs/CRYSTAL-SUPER.md`, Eye tracking). The copies hold this headset's serial in their paths and the user's eye
+  profile: they stay on the shared drive, never in the repo.
+
 ## What the tool does and does not do
 
 - Uses `libPVRClient64.dll` of Pimax Play via `getPvrInterface(1, 32)` (the same interface CustomHeadsetOpenVR uses). Details and sources:

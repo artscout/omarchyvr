@@ -188,16 +188,18 @@ pub unsafe extern "C" fn pimax_cam_slam_write_basalt(
         }
         // SAFETY: n readable u32.
         let ids = unsafe { std::slice::from_raw_parts(cams, n as usize) };
+        let cal = from_c(c);
         let setup = SlamSetup {
             cams: ids.iter().map(|&i| i as usize).collect(),
             cam_hz,
             cam_time_offset_ns,
             // Same seed as `omarchyvr-slam export` for live runs: the bias the driver cached from its last still window.
             gyro_bias: slam::gyro_bias_cache().unwrap_or([0.0; 3]),
+            accel_bias: slam::factory_accel_bias(&cal).unwrap_or([0.0; 3]),
         };
         // SAFETY: per contract.
         let note = unsafe { opt_str(note) }.unwrap_or_default();
-        slam::write_basalt_files(Path::new(&dir), &from_c(c), &setup, &imu, &[("note", note)])?;
+        slam::write_basalt_files(Path::new(&dir), &cal, &setup, &imu, &[("note", note)])?;
         Ok(0)
     })
 }

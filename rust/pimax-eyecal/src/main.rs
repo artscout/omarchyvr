@@ -6,7 +6,7 @@ use std::process::ExitCode;
 const USAGE: &str = "\
 pimax-eyecal: eye-tracking calibration and accuracy test for the Pimax Dream Air (Monado eye build, PIMAX_EYE=1)
 
-  pimax-eyecal [--points 9|13] [--pursuit] [--recenter] [--flip-x 0|1] [--flip-y 0|1] [--head-limit DEG]
+  pimax-eyecal [--pattern grid|pimax] [--points 9|13] [--pursuit] [--recenter] [--flip-x 0|1] [--flip-y 0|1] [--head-limit DEG]
                [--res-div N] [--calibration PATH] [--no-raw-log]
   pimax-eyecal --simulate [--seed N] [--points 9|13] [--pursuit] [--calibration PATH]
   pimax-eyecal --refit RUN.json [--write PATH] [--skip-s S] [--gate-mm MM] [--ivt] [--pupil]
@@ -16,6 +16,11 @@ within ±15 deg horizontally / ±12 deg vertically, then 10 different validation
 of the validation targets. Then: A live cursor, menu/Y save to ~/.config/omarchyvr/eye-calibration.toml (the old file
 is kept as .bak-<utc>), S check through the runtime (what OpenXR apps such as WayVR get), P smooth pursuit.
 
+  --frames FILE     the eye chip start list of a headset without a built-in one (Crystal Super: made by
+                    `pimax-eye frames`), with its own profile upload, as `omarchyvr eyed --frames` starts it
+  --pattern P       grid (default: 9 or 13 targets on a dark background) or pimax (Pimax Play's path: a green dot
+                    travelling centre, corners, centre on black, then left, right, centre, up, down on white; the fit
+                    also tries the pupil-size terms)
   --points N        9 (default) or 13 calibration targets (13 also fit a quadratic model)
   --pursuit         run the smooth-pursuit test after the validation
   --recenter        quick 5-target update of the drift offsets of the existing calibration
@@ -76,6 +81,17 @@ fn run() -> Result<(), String> {
         return Ok(());
     }
     let mut s = Settings::default();
+    if let Some(v) = flag_value(&mut args, "--frames")? {
+        // read by the tracker start (also after a restart with other flips); single-threaded here
+        std::env::set_var("PIMAX_EYE_FRAMES", v);
+    }
+    if let Some(v) = flag_value(&mut args, "--pattern")? {
+        match v.as_str() {
+            "pimax" => s = s.pimax(),
+            "grid" => {}
+            _ => return Err("--pattern must be pimax or grid".into()),
+        }
+    }
     if let Some(v) = flag_value(&mut args, "--points")? {
         s.cal_points = match v.as_str() {
             "9" => 9,

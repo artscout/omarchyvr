@@ -79,3 +79,26 @@ fn partial_interfaces_mask() {
     assert_eq!(discovery::mask(&f), 0b0101);
     assert_eq!(f[2].as_ref().unwrap(), &root.join("dev/hidraw4"));
 }
+
+#[test]
+fn finds_the_crystal_super_and_its_bridge() {
+    let root = common::tmpdir("sysfs-crystal");
+    for (n, i) in [(10, "0"), (11, "1"), (12, "2"), (13, "3")] {
+        add(&root, &format!("hidraw{n}"), "000034A4:00000040", i, "3-3");
+    }
+    add(&root, "hidraw14", "000034A4:00000041", "0", "3-4");
+    let roots = Roots {
+        hidraw_class: root.join("sys/class/hidraw"),
+        dev: "/dev".into(),
+    };
+    let (model, f) = discovery::find_headset(&roots).unwrap();
+    assert_eq!(model.id, "crystal-super");
+    assert_eq!(model.default_fps, 90);
+    assert_eq!(discovery::mask(&f), 0b1111);
+    assert_eq!(f[0].as_ref().unwrap(), Path::new("/dev/hidraw10"));
+    assert_eq!(discovery::find_interfaces(&roots), f);
+    assert_eq!(
+        discovery::find_bridge_log(&roots).unwrap(),
+        Path::new("/dev/hidraw14")
+    );
+}

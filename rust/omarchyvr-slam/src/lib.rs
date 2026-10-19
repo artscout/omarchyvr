@@ -1,6 +1,7 @@
 //! Offline tools for 6DoF head tracking of the Pimax Dream Air (design: `analysis/research/6dof-head-tracking.md`).
 //!
 //! * [`export`]: Basalt calibration + VIO config + Monado `SLAM_CONFIG` toml from the factory XML.
+//! * [`camlag`]: camera-IMU time offset, gyro bias and gain from a recording alone (image rotation vs gyro).
 //! * [`euroc`]: EuRoC datasets recorded by the Monado driver (`PIMAX_SLAM_RECORD`), consistency check.
 //! * [`imu`]: IMU noise densities from a still segment (the factory file has none).
 //! * [`timing`]: camera timing from `.pxcam` recordings.
@@ -15,6 +16,7 @@
 //! Monado driver can use it through the C ABI.
 #![warn(missing_docs)]
 
+pub mod camlag;
 pub mod euroc;
 pub mod export;
 pub mod imu;

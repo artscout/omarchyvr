@@ -34,6 +34,14 @@ pimax-eye: Tobii EyeChip (2104:0561) client for the Pimax Dream Air
         decode a Windows USBPcap capture: TTP messages, gaze stream statistics, replay plan completeness
   pimax-eye plan   <capture.pcap> [--device N]
         list the exact transfers of the Windows session start and which ones the capture cuts
+  pimax-eye frames <capture.pcap> -o FILE [--device N] [--keep-auth]
+        write the eye chip start list of a Windows capture of YOUR headset (every byte as Pimax Play sent it, auth
+        steps left out) for PIMAX_EYE_FRAMES / `omarchyvr eyed --frames`: headsets without a built-in list (the
+        Crystal Super). The file holds your eye profile upload: keep it private.
+  pimax-eye profile <calibration.setpm> -o FILE
+        take the eye profile out of the file Pimax's calibration saved under Windows (ProgramData/Tobii/Tobii
+        Platform Runtime/XR5EYECHIP/<headset>/calibration.setpm); PIMAX_EYE_PROFILE=FILE uploads it at every start
+        in place of the start list's older one. Private, like the start list.
   pimax-eye probe  [--usb-device PATH] [--claim]
         find the EyeChip in sysfs and check that the usbfs node can be opened (sends nothing)
   pimax-eye replay [--skip-auth] [--skip-cal] [--skip-vendor-write] [--dry-run] [--seconds S] [--force-replay]
@@ -65,7 +73,7 @@ pimax-eye: Tobii EyeChip (2104:0561) client for the Pimax Dream Air
         Keys: a apply measured (same checks as --apply), + / - target +-0.5 mm sent after a 1 s pause, q quit; at
         most one motor command per second; ~/.config/omarchyvr/ipd.env is written on quit if a value was applied.
   pimax-eye power-on [--wait S]
-        if the headset (34a4:0044) is enumerated and the EyeChip is not, send the captured eye-module enable
+        if the headset (34a4:0044, or the Crystal Super 34a4:0040) is enumerated and the EyeChip is not, send the captured eye-module enable
         `58 05 3c 05 00 01` once on the headset command interface (what Windows sends; the module powers up and
         enumerates ~1.6 s later) and wait up to S s (default 15) for 2104:0561. Sends nothing if the chip is there.
   pimax-eye stream [--capture FILE] [--capture-device N] [--allow-incomplete] [--skip-op OPS] [--force-replay]
@@ -147,6 +155,8 @@ pub fn run(args: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
     let r = match cmd.as_str() {
         "pcap" => cmd_pcap(&mut a, out),
         "plan" => cmd_plan(&mut a, out),
+        "frames" => cmd_frames(&mut a, out),
+        "profile" => cmd_profile(&mut a, out),
         "probe" => cmd_probe(&mut a, out),
         "stream" => cmd_stream(&mut a, out, err),
         "replay" => cmd_replay(&mut a, out),
@@ -284,6 +294,60 @@ fn cmd_plan(a: &mut Args, out: &mut dyn Write) -> Result<i32, Fail> {
             d.plan.missing_bytes()
         )?;
     }
+    Ok(0)
+}
+
+fn cmd_frames(a: &mut Args, out: &mut dyn Write) -> Result<i32, Fail> {
+    let device = a.number::<u16>("--device")?;
+    let keep_auth = a.flag("--keep-auth");
+    let dest = a.value("-o")?.ok_or("frames needs -o FILE")?;
+    let file = a.positional().ok_or("frames needs a capture file")?;
+    a.finish()?;
+    let report = analyze_file(Path::new(&file), device)?;
+    // the device whose start reaches the gaze stream, with the most steps (a capture may hold several sessions)
+    let Some(d) = report
+        .devices
+        .iter()
+        .filter(|d| d.plan.stream_start.is_some() && d.plan.requests().count() > 0)
+        .max_by_key(|d| d.plan.steps.len())
+    else {
+        return Err(Fail::with(2, "no eye chip start that reaches the gaze stream in the capture"));
+    };
+    let name = Path::new(&file).file_name().map_or(file.clone(), |n| n.to_string_lossy().into_owned());
+    let text = crate::frames::from_plan(&d.plan, &name, keep_auth).map_err(|e| Fail::with(2, e))?;
+    // the list must load exactly as the tracker loads it
+    let steps = crate::frames::parse(&text).map_err(|e| Fail::with(2, format!("made list does not parse: {e}")))?;
+    crate::frames::Guard::new_with(&steps, false).map_err(|e| Fail::with(2, e))?;
+    std::fs::write(&dest, &text).map_err(|e| Fail::with(2, format!("{dest}: {e}")))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o600));
+    }
+    writeln!(
+        out,
+        "{dest}: {} steps from device address {} of {name} (stream at t={:.3} s){}",
+        steps.len(),
+        d.device,
+        d.plan.stream_start.unwrap_or(0.0),
+        if keep_auth { "" } else { ", auth steps left out" }
+    )?;
+    Ok(0)
+}
+
+fn cmd_profile(a: &mut Args, out: &mut dyn Write) -> Result<i32, Fail> {
+    let dest = a.value("-o")?.ok_or("profile needs -o FILE")?;
+    let file = a.positional().ok_or("profile needs a calibration.setpm file")?;
+    a.finish()?;
+    let raw = std::fs::read(&file).map_err(|e| Fail::with(2, format!("{file}: {e}")))?;
+    let body = crate::frames::profile_from_setpm(&raw).map_err(|e| Fail::with(2, format!("{file}: {e}")))?;
+    std::fs::write(&dest, &body).map_err(|e| Fail::with(2, format!("{dest}: {e}")))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o600));
+    }
+    writeln!(out, "{dest}: eye profile of {} bytes (upload it with PIMAX_EYE_PROFILE={dest})", body.len())?;
     Ok(0)
 }
 

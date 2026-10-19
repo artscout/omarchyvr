@@ -16,12 +16,19 @@ pub struct Target {
     pub az: f64,
     /// Elevation, degrees (up positive).
     pub el: f64,
+    /// Shown on a white background (the pupil narrows: the fit sees another pupil size).
+    pub bright: bool,
 }
 
 impl Target {
     /// New target.
     pub const fn new(az: f64, el: f64) -> Target {
-        Target { az, el }
+        Target { az, el, bright: false }
+    }
+
+    /// New target on a white background.
+    pub const fn on_white(az: f64, el: f64) -> Target {
+        Target { az, el, bright: true }
     }
 
     /// Unit head-frame direction (x right, y up, -z forward).
@@ -81,6 +88,25 @@ pub fn calibration_targets(points: usize) -> Vec<Target> {
         ]);
     }
     v
+}
+
+/// The calibration path of Pimax Play (as the user saw it on Windows, 2026-10-18): a green dot on black at the
+/// centre, then the corners bottom-left, top-right, bottom-right, top-left and back to the centre; then on white
+/// left, right, centre, up, down. The dot travels from one place to the next. Same extent as the grid.
+pub fn pimax_targets() -> Vec<Target> {
+    vec![
+        Target::new(0.0, 0.0),
+        Target::new(-CAL_AZ, -CAL_EL),
+        Target::new(CAL_AZ, CAL_EL),
+        Target::new(CAL_AZ, -CAL_EL),
+        Target::new(-CAL_AZ, CAL_EL),
+        Target::new(0.0, 0.0),
+        Target::on_white(-CAL_AZ, 0.0),
+        Target::on_white(CAL_AZ, 0.0),
+        Target::on_white(0.0, 0.0),
+        Target::on_white(0.0, CAL_EL),
+        Target::on_white(0.0, -CAL_EL),
+    ]
 }
 
 /// Validation targets, all different from the calibration targets and inside the calibrated field: two near the

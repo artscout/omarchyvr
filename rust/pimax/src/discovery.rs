@@ -1,5 +1,5 @@
 //! sysfs discovery of the headset interfaces (same algorithm as `pimax_find_interfaces` / `find_interfaces()`).
-use pimax_proto::{NUM_IF, PID, PID_BRIDGE, VID};
+use pimax_proto::{Model, MODELS, NUM_IF, VID};
 use std::path::{Path, PathBuf};
 
 /// Where to look. Defaults to the real `/sys/class/hidraw` and `/dev`; overridable for tests with
@@ -51,12 +51,25 @@ fn entries(roots: &Roots) -> Vec<String> {
     v
 }
 
-/// Device node of each USB interface 0..3 of 34a4:0044.
+/// Device node of each USB interface 0..3 of the headset (the first model of [`MODELS`] that is present).
 pub fn find_interfaces(roots: &Roots) -> [Option<PathBuf>; NUM_IF] {
+    find_headset(roots).map(|(_, f)| f).unwrap_or_default()
+}
+
+/// The headset model on the bus and the device node of each of its interfaces 0..3.
+pub fn find_headset(roots: &Roots) -> Option<(&'static Model, [Option<PathBuf>; NUM_IF])> {
+    let names = entries(roots);
+    MODELS.iter().find_map(|m| {
+        let f = interfaces_of(roots, &names, m.pid);
+        (mask(&f) != 0).then_some((m, f))
+    })
+}
+
+fn interfaces_of(roots: &Roots, names: &[String], pid: u16) -> [Option<PathBuf>; NUM_IF] {
     let mut out: [Option<PathBuf>; NUM_IF] = Default::default();
-    let want = hid_id(VID, PID);
-    for name in entries(roots) {
-        let dev = roots.hidraw_class.join(&name).join("device");
+    let want = hid_id(VID, pid);
+    for name in names {
+        let dev = roots.hidraw_class.join(name).join("device");
         let Ok(uevent) = std::fs::read_to_string(dev.join("uevent")) else {
             continue;
         };
@@ -76,7 +89,7 @@ pub fn find_interfaces(roots: &Roots) -> [Option<PathBuf>; NUM_IF] {
             continue;
         };
         if n < NUM_IF {
-            out[n] = Some(roots.dev.join(&name));
+            out[n] = Some(roots.dev.join(name));
         }
     }
     out
@@ -90,13 +103,15 @@ pub fn mask(found: &[Option<PathBuf>; NUM_IF]) -> u8 {
         .fold(0, |m, (i, p)| if p.is_some() { m | (1 << i) } else { m })
 }
 
-/// hidraw node of the display bridge MCU 34a4:0043 (EP 0x81 = ASCII log).
+/// hidraw node of the display bridge MCU (34a4:0043 on the Dream Air, 0041 on the Crystal Super; EP 0x81 = ASCII log).
 pub fn find_bridge_log(roots: &Roots) -> Option<PathBuf> {
-    let want = hid_id(VID, PID_BRIDGE);
-    entries(roots).into_iter().find_map(|name| {
-        let u =
-            std::fs::read_to_string(roots.hidraw_class.join(&name).join("device/uevent")).ok()?;
-        u.contains(&want).then(|| roots.dev.join(&name))
+    let names = entries(roots);
+    MODELS.iter().find_map(|m| {
+        let want = hid_id(VID, m.pid_bridge);
+        names.iter().find_map(|name| {
+            let u = std::fs::read_to_string(roots.hidraw_class.join(name).join("device/uevent")).ok()?;
+            u.contains(&want).then(|| roots.dev.join(name))
+        })
     })
 }
 
@@ -109,7 +124,10 @@ pub fn usb_devnum() -> Option<String> {
                 .ok()
                 .map(|s| s.trim().to_string())
         };
-        if rd("idVendor").as_deref() == Some("34a4") && rd("idProduct").as_deref() == Some("0044") {
+        let is_headset = rd("idProduct")
+            .and_then(|p| u16::from_str_radix(&p, 16).ok())
+            .is_some_and(|p| pimax_proto::model::by_pid(p).is_some());
+        if rd("idVendor").as_deref() == Some("34a4") && is_headset {
             return rd("devnum");
         }
     }

@@ -2206,6 +2206,7 @@ name = "omarchyvr-components"
 version = "0.1.0"
 dependencies = [
  "libc",
+ "pimax-proto",
  "proptest",
 ]
 
@@ -2314,6 +2315,7 @@ dependencies = [
  "omarchyvr-config",
  "omarchyvr-room",
  "pimax-cam",
+ "png",
 ]
 
 [[package]]
@@ -2330,6 +2332,7 @@ dependencies = [
  "omarchyvr-config",
  "omarchyvr-record",
  "pimax",
+ "pimax-eye",
  "pimax-proto",
  "regex-lite",
  "serde_json",

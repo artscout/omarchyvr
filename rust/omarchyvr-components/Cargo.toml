@@ -15,6 +15,7 @@ path = "src/bin/omarchyvr-health.rs"
 
 [dependencies]
 libc = { workspace = true }
+pimax-proto = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }

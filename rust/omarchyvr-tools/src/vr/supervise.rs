@@ -27,7 +27,7 @@
 use super::gate::{self, Level};
 use super::host::{Clock, Notifier, Procs, RealClock, RealHost};
 use super::preflight::Host;
-use super::reset::{usb_present_in, PID_CAM, PID_HID};
+use super::reset::{hid_present_in, usb_present_in, PID_CAM};
 use super::session::{flock_file, read_pid, LockError};
 use crate::args::Args;
 use crate::{CliError, CliResult};
@@ -491,7 +491,7 @@ impl WatchEnv for RealWatch {
         read_pid(&self.dir.join("monado.pid")).map(|p| self.host.is_alive(p))
     }
     fn hid(&self) -> bool {
-        usb_present_in(&self.host.sysfs, PID_HID)
+        hid_present_in(&self.host.sysfs)
     }
     fn cam(&self) -> bool {
         usb_present_in(&self.host.sysfs, PID_CAM)

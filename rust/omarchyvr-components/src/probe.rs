@@ -230,8 +230,14 @@ fn keepalive(r: &Roots) -> Obs {
 /// Probe every component. `gate` fills `gpu.gate` (the gate is latched by the caller, not probed here).
 pub fn probe_all(r: &Roots, o: &Opts, gate: crate::model::GateLevel) -> BTreeMap<Id, Obs> {
     let mut m: BTreeMap<Id, Obs> = BTreeMap::new();
-    let hid = usb::present(&r.sys, usb::VID, usb::PID_HID);
-    m.insert("usb.hid", if hid { Obs::up("34a4:0044 on USB") } else { Obs::down("34a4:0044 not on USB") });
+    let hs = usb::headset(&r.sys);
+    m.insert(
+        "usb.hid",
+        match &hs {
+            Some(h) => Obs::up(format!("{} (34a4:{}) on USB", h.name, h.hid)),
+            None => Obs::down("headset (34a4:0044 or 34a4:0040) not on USB"),
+        },
+    );
     let cam = usb::present(&r.sys, usb::VID, usb::PID_CAM);
     let node = usb::camera_node(&r.sys);
     m.insert(
@@ -246,8 +252,9 @@ pub fn probe_all(r: &Roots, o: &Opts, gate: crate::model::GateLevel) -> BTreeMap
             }),
         },
     );
-    let eye = usb::present(&r.sys, usb::VID, usb::PID_EYE);
-    m.insert("usb.eye", if eye { Obs::up("34a4:0043 on USB") } else { Obs::down("34a4:0043 not on USB") });
+    let bridge = hs.as_ref().map_or(usb::PID_EYE.to_string(), |h| h.bridge.clone());
+    let eye = usb::present(&r.sys, usb::VID, &bridge);
+    m.insert("usb.eye", if eye { Obs::up(format!("34a4:{bridge} on USB")) } else { Obs::down(format!("34a4:{bridge} not on USB")) });
     m.insert("keepalive", keepalive(r));
     m.insert(
         "display.dp1",

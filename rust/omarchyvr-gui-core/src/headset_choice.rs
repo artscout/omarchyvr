@@ -66,7 +66,8 @@ impl HeadsetPick {
     }
 }
 
-/// What the USB bus says about the Dream Air (34a4:0044).
+/// What the USB bus says about the headset: the Dream Air (34a4:0044, with its sleeping signature) or the Crystal
+/// Super (34a4:0040, on USB whenever it has power: Windows capture 2026-10-17, takes cold1/cold2).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HeadsetUsb {
     /// `34a4:0044` is there.
@@ -80,7 +81,7 @@ pub enum HeadsetUsb {
 /// The rule (shared with `installer/lib.sh`).
 pub fn headset_state_from_usb(usb: &[(u16, u16)]) -> HeadsetUsb {
     let has = |v: u16, p: u16| usb.contains(&(v, p));
-    if has(0x34a4, 0x0044) {
+    if has(0x34a4, 0x0044) || has(0x34a4, 0x0040) {
         HeadsetUsb::Awake
     } else if has(0x34a4, 0x0043) && (has(0x34a4, 0x0014) || has(0x2104, 0x0561)) {
         HeadsetUsb::Asleep
@@ -109,12 +110,13 @@ pub fn guide_state(usb: &[(u16, u16)], need_camera: bool) -> HeadsetUsb {
 /// The model to pre-select from USB, and the line that says why ("Found on USB: Pimax Dream Air (asleep)").
 /// Nothing detected: nothing is pre-selected.
 pub fn preselect(usb: &[(u16, u16)]) -> Option<(HeadsetPick, String)> {
-    let dream = models().iter().position(|m| m.id() == "dream-air")?;
-    let name = models()[dream].descriptor().name.clone();
+    let id = if usb.contains(&(0x34a4, 0x0040)) { "crystal-super" } else { "dream-air" };
+    let i = models().iter().position(|m| m.id() == id)?;
+    let name = models()[i].descriptor().name.clone();
     let name = name.split(" (").next().unwrap_or(&name).to_string();
     match headset_state_from_usb(usb) {
-        HeadsetUsb::Awake => Some((HeadsetPick::Model(dream as u8), format!("Found on USB: {name}"))),
-        HeadsetUsb::Asleep => Some((HeadsetPick::Model(dream as u8), format!("Found on USB: {name} (asleep)"))),
+        HeadsetUsb::Awake => Some((HeadsetPick::Model(i as u8), format!("Found on USB: {name}"))),
+        HeadsetUsb::Asleep => Some((HeadsetPick::Model(i as u8), format!("Found on USB: {name} (asleep)"))),
         HeadsetUsb::Absent => None,
     }
 }
@@ -204,8 +206,12 @@ mod tests {
     const DREAM: HeadsetPick = HeadsetPick::Model(0);
 
     #[test]
-    fn the_dream_air_is_the_one_listed_model_and_the_choice_round_trips() {
-        assert_eq!(models().len(), 1);
+    fn the_dream_air_and_the_crystal_super_are_listed_and_the_choice_round_trips() {
+        assert_eq!(models().iter().map(|m| m.id()).collect::<Vec<_>>(), ["dream-air", "crystal-super"]);
+        let crystal = HeadsetPick::Model(1);
+        assert_eq!(HeadsetPick::parse("crystal-super"), crystal);
+        assert_eq!(crystal.name(), "crystal-super");
+        assert!(!crystal.needs_nvidia_patch(), "not known for the Crystal Super yet");
         assert_eq!(DREAM.name(), "dream-air");
         assert_eq!(HeadsetPick::parse("dream-air"), DREAM);
         assert_eq!(HeadsetPick::parse("other"), HeadsetPick::Other);
@@ -220,6 +226,8 @@ mod tests {
         let u = headset_state_from_usb;
         assert_eq!(u(&[(0x1d6b, 3), (0x34a4, 0x43), (0x34a4, 0x44), (0x34a4, 0x14), (0x2104, 0x561)]), HeadsetUsb::Awake);
         assert_eq!(u(&[(0x34a4, 0x44)]), HeadsetUsb::Awake);
+        assert_eq!(u(&[(0x34a4, 0x40), (0x34a4, 0x41), (0x34a4, 0x14)]), HeadsetUsb::Awake, "Crystal Super");
+        assert_eq!(u(&[(0x34a4, 0x41)]), HeadsetUsb::Absent, "its bridge alone is not a headset");
         assert_eq!(u(&[(0x34a4, 0x43), (0x34a4, 0x14), (0x2104, 0x561)]), HeadsetUsb::Asleep);
         assert_eq!(u(&[(0x34a4, 0x43), (0x34a4, 0x14)]), HeadsetUsb::Asleep);
         assert_eq!(u(&[(0x34a4, 0x43), (0x2104, 0x561)]), HeadsetUsb::Asleep);
@@ -250,6 +258,8 @@ mod tests {
         assert_eq!((p, why.as_str()), (DREAM, "Found on USB: Pimax Dream Air"));
         let (p, why) = preselect(&[(0x34a4, 0x43), (0x34a4, 0x14), (0x2104, 0x561)]).expect("asleep");
         assert_eq!((p, why.as_str()), (DREAM, "Found on USB: Pimax Dream Air (asleep)"));
+        let (p, why) = preselect(&[(0x34a4, 0x40), (0x34a4, 0x41)]).expect("crystal");
+        assert_eq!((p.name().as_str(), why.as_str()), ("crystal-super", "Found on USB: Pimax Crystal Super"));
         assert!(preselect(&[]).is_none(), "nothing detected: nothing pre-selected");
         assert!(preselect(&[(0x34a4, 0x14)]).is_none());
     }

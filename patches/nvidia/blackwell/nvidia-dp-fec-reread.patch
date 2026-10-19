@@ -1,0 +1,28 @@
+diff --git a/src/common/displayport/src/dp_connectorimpl.cpp b/src/common/displayport/src/dp_connectorimpl.cpp
+index caf1c8e..f140673 100644
+--- a/src/common/displayport/src/dp_connectorimpl.cpp
++++ b/src/common/displayport/src/dp_connectorimpl.cpp
+@@ -1976,10 +1976,23 @@ bool ConnectorImpl::compoundQueryAttachSSTIsDscPossible
+     main->getDscCaps(&bGpuDscSupported);
+     DeviceImpl * nativeDev = this->findDeviceInList(Address());
+ 
++    //
++    // The sink's FEC capability is read once, at detection. Some sinks (a VR
++    // headset whose display bridge is still starting) NAK their first AUX reads,
++    // which leaves FEC "unsupported" and DSC impossible for the whole session, so
++    // every mode above the uncompressed link bandwidth is rejected. Read it again
++    // here when the cached value says no and the GPU supports FEC.
++    //
++    if (nativeDev && !nativeDev->isFECSupported() && this->isFECSupported())
++    {
++        nativeDev->getFECSupport();
++    }
++
+     if (bGpuDscSupported &&                                 // if GPU supports DSC
+         this->isFECSupported() &&                           // If GPU supports FEC
+         pDscParams &&                                       // if client sent DSC info
+         pDscParams->bCheckWithDsc &&                        // if client wants to check with DSC
++        nativeDev &&                                        // a mode can be validated before the sink is found
+         nativeDev->isDSCPossible() &&                       // if device supports DSC decompression
+         (nativeDev->isFECSupported() || main->isEDP()) &&   // if device supports FEC decoding or is an DSC capable eDP panel which doesn't support FEC
+         (modesetParams.modesetInfo.bitsPerComponent != 6))  // DSC doesn't support bpc = 6

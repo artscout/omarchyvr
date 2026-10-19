@@ -1,7 +1,12 @@
 // Lens tuning client: head-locked square grid + centre cross + circles at 10..50 deg (see draw_grid).
 // CPU renders each eye once (first frame, with the FOV the runtime reports), copied to the swapchain per frame.
+// Gaze markers (eye tracking check), drawn on top every frame:
+//   cyan dot      = this eye's own gaze ray from `omarchyvr eyed` (/dev/shm/omarchyvr-eye-gaze, OMARCHYVR_EYE_GAZE_SHM)
+//   magenta ring  = the runtime's OpenXR XR_EXT_eye_gaze_interaction gaze (through SteamVR / Monado), projected
+//                   into each eye from the grid distance
+// The two should sit on each other; both should sit where you look (the circles are 10..50 deg from the centre).
 // Build: gcc -O2 -o xr_grid xr_grid.c -lopenxr_loader -lvulkan -lm -ldl
-// Run:   XR_GRID_SECONDS=60 [XR_GRID_DIST=2.0] ./xr_grid
+// Run:   XR_GRID_SECONDS=60 [XR_GRID_DIST=2.0] [XR_GRID_GAZE=0] ./xr_grid
 #define XR_USE_GRAPHICS_API_VULKAN
 #define VK_NO_PROTOTYPES
 #include <vulkan/vulkan.h>
@@ -12,6 +17,8 @@
 #include <string.h>
 #include <time.h>
 #include <math.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 #define XC(x) do { XrResult r_ = (x); if (XR_FAILED(r_)) { fprintf(stderr, "%s:%d %s -> %d\n", __FILE__, __LINE__, #x, r_); exit(1);} } while (0)
 #define VC(x) do { VkResult r_ = (x); if (r_ != VK_SUCCESS) { fprintf(stderr, "%s:%d %s -> %d\n", __FILE__, __LINE__, #x, r_); exit(1);} } while (0)
@@ -86,20 +93,123 @@ static uint32_t find_mem(VkPhysicalDeviceMemoryProperties *mp, uint32_t bits, Vk
 	fprintf(stderr, "no memtype\n"); exit(1);
 }
 
+// ---- gaze markers ----
+// The shared memory file of `omarchyvr eyed` (linux/crystal-super/omarchyvr_eye_gaze.h): seq_end, body, seq_begin.
+typedef struct { int ok; uint32_t flags, state; uint64_t sample; int64_t t_ns; float dir[3][3]; } ShmGaze;
+static int shm_fd = -1;
+static ShmGaze read_shm(void)
+{
+	ShmGaze g = {0};
+	if (shm_fd < 0) {
+		const char *p = getenv("OMARCHYVR_EYE_GAZE_SHM");
+		shm_fd = open(p && *p ? p : "/dev/shm/omarchyvr-eye-gaze", O_RDONLY | O_CLOEXEC);
+		if (shm_fd < 0) return g;
+	}
+	for (int a = 0; a < 8; a++) {
+		uint8_t b[136];
+		if (pread(shm_fd, b + 128, 8, 128) != 8 || pread(shm_fd, b + 8, 120, 8) != 120 || pread(shm_fd, b, 8, 0) != 8) {
+			close(shm_fd); shm_fd = -1; return g;
+		}
+		uint64_t s0, s1; uint32_t magic; memcpy(&s0, b, 8); memcpy(&s1, b + 128, 8); memcpy(&magic, b + 8, 4);
+		if (s0 != s1 || !s0 || (s0 & 1)) continue;
+		if (magic != 0x4745564fu) return g;
+		memcpy(&g.t_ns, b + 16, 8); memcpy(&g.flags, b + 32, 4); memcpy(&g.sample, b + 112, 8); memcpy(&g.state, b + 120, 4);
+		for (int i = 0; i < 3; i++) memcpy(g.dir[i], b + 52 + 24 * i, 12);
+		g.ok = 1;
+		return g;
+	}
+	return g;
+}
+static XrVector3f rot_inv(XrQuaternionf q, XrVector3f v) // v rotated by the inverse of q
+{
+	q.x = -q.x; q.y = -q.y; q.z = -q.z;
+	float cx = q.y * v.z - q.z * v.y, cy = q.z * v.x - q.x * v.z, cz = q.x * v.y - q.y * v.x;
+	float dx = q.y * cz - q.z * cy, dy = q.z * cx - q.x * cz, dz = q.x * cy - q.y * cx;
+	return (XrVector3f){v.x + 2 * (q.w * cx + dx), v.y + 2 * (q.w * cy + dy), v.z + 2 * (q.w * cz + dz)};
+}
+static XrVector3f rot(XrQuaternionf q, XrVector3f v) { q.x = -q.x; q.y = -q.y; q.z = -q.z; return rot_inv(q, v); }
+// A direction in the eye's own frame -> pixel; 0 when behind.
+static int to_px(XrFovf fov, int W, int H, XrVector3f d, float *px, float *py)
+{
+	if (!(d.z < -1e-4f)) return 0;
+	float tx = d.x / -d.z, ty = d.y / -d.z;
+	float tl = tanf(-fov.angleLeft), tr = tanf(fov.angleRight), tu = tanf(fov.angleUp), td = tanf(-fov.angleDown);
+	*px = (tx + tl) / (tl + tr) * W; *py = (tu - ty) / (tu + td) * H;
+	return 1;
+}
+typedef struct { int x0, y0, x1, y1; } Rect;
+static Rect dirty[2][4]; static int ndirty[2];
+static void restore(uint32_t *px, const uint32_t *base, int W, int e)
+{
+	for (int i = 0; i < ndirty[e]; i++)
+		for (int y = dirty[e][i].y0; y < dirty[e][i].y1; y++)
+			memcpy(px + (size_t)y * W + dirty[e][i].x0, base + (size_t)y * W + dirty[e][i].x0,
+			       (size_t)(dirty[e][i].x1 - dirty[e][i].x0) * 4);
+	ndirty[e] = 0;
+}
+// A filled disc (ring = 0) or a ring of the given radius in pixels, with a dark outline.
+static void marker(uint32_t *px, int W, int H, int e, float cx, float cy, float r, uint32_t col, int ring)
+{
+	int R = (int)ceilf(r + 3);
+	Rect rc = {(int)cx - R, (int)cy - R, (int)cx + R + 1, (int)cy + R + 1};
+	if (rc.x0 < 0) rc.x0 = 0; if (rc.y0 < 0) rc.y0 = 0; if (rc.x1 > W) rc.x1 = W; if (rc.y1 > H) rc.y1 = H;
+	if (rc.x0 >= rc.x1 || rc.y0 >= rc.y1 || ndirty[e] >= 4) return;
+	dirty[e][ndirty[e]++] = rc;
+	float w = r * 0.18f + 1.5f;
+	for (int y = rc.y0; y < rc.y1; y++)
+		for (int x = rc.x0; x < rc.x1; x++) {
+			float d = sqrtf((x + 0.5f - cx) * (x + 0.5f - cx) + (y + 0.5f - cy) * (y + 0.5f - cy));
+			uint32_t *p = px + (size_t)y * W + x;
+			float edge = ring ? fabsf(d - r) : d - r; // < 0 inside the mark
+			*p = mix(*p, 0xFF000000, cover(edge - w, 1.5f, 1.0f)); // outline
+			*p = mix(*p, col, cover(edge, w, 1.0f));
+		}
+}
+static uint32_t swap_rb(uint32_t c) { return (c & 0xFF00FF00) | ((c & 0xFF) << 16) | ((c >> 16) & 0xFF); }
+
 int main(void)
 {
 	const char *secs = getenv("XR_GRID_SECONDS");
 	double run_s = secs ? atof(secs) : 60;
 	const char *ds = getenv("XR_GRID_DIST"); float dist = ds ? (float)atof(ds) : 2.0f;
 
-	const char *ext[] = {XR_KHR_VULKAN_ENABLE2_EXTENSION_NAME};
+	const char *gz = getenv("XR_GRID_GAZE"); int want_gaze = !(gz && *gz == '0');
+	const char *ext[2] = {XR_KHR_VULKAN_ENABLE2_EXTENSION_NAME, XR_EXT_EYE_GAZE_INTERACTION_EXTENSION_NAME};
+	int xr_gaze = 0;
+	if (want_gaze) {
+		uint32_t ne = 0; xrEnumerateInstanceExtensionProperties(NULL, 0, &ne, NULL);
+		XrExtensionProperties *ep = calloc(ne ? ne : 1, sizeof *ep);
+		for (uint32_t i = 0; i < ne; i++) ep[i].type = XR_TYPE_EXTENSION_PROPERTIES;
+		xrEnumerateInstanceExtensionProperties(NULL, ne, &ne, ep);
+		for (uint32_t i = 0; i < ne; i++) if (!strcmp(ep[i].extensionName, XR_EXT_EYE_GAZE_INTERACTION_EXTENSION_NAME)) xr_gaze = 1;
+		free(ep);
+		printf("runtime eye gaze extension: %s\n", xr_gaze ? "yes" : "no");
+	}
 	XrInstanceCreateInfo ici = {XR_TYPE_INSTANCE_CREATE_INFO};
 	strcpy(ici.applicationInfo.applicationName, "xr_grid");
-	ici.applicationInfo.applicationVersion = 1; ici.applicationInfo.apiVersion = XR_CURRENT_API_VERSION;
-	ici.enabledExtensionCount = 1; ici.enabledExtensionNames = ext;
+	ici.applicationInfo.applicationVersion = 1; ici.applicationInfo.apiVersion = XR_MAKE_VERSION(1, 0, 0); // SteamVR takes 1.0 only
+	ici.enabledExtensionCount = xr_gaze ? 2 : 1; ici.enabledExtensionNames = ext;
 	XrInstance inst; XC(xrCreateInstance(&ici, &inst));
 	XrSystemGetInfo sgi = {XR_TYPE_SYSTEM_GET_INFO, 0, XR_FORM_FACTOR_HEAD_MOUNTED_DISPLAY};
 	XrSystemId sys; XC(xrGetSystem(inst, &sgi, &sys));
+	if (xr_gaze) {
+		XrSystemEyeGazeInteractionPropertiesEXT eg = {XR_TYPE_SYSTEM_EYE_GAZE_INTERACTION_PROPERTIES_EXT};
+		XrSystemProperties sp = {XR_TYPE_SYSTEM_PROPERTIES, &eg};
+		XC(xrGetSystemProperties(inst, sys, &sp));
+		printf("system %s: eye gaze interaction %s\n", sp.systemName, eg.supportsEyeGazeInteraction ? "supported" : "NOT supported");
+		xr_gaze = eg.supportsEyeGazeInteraction != 0;
+	}
+	XrActionSet aset = XR_NULL_HANDLE; XrAction gaze_act = XR_NULL_HANDLE;
+	if (xr_gaze) {
+		XrActionSetCreateInfo asi = {XR_TYPE_ACTION_SET_CREATE_INFO}; strcpy(asi.actionSetName, "grid"); strcpy(asi.localizedActionSetName, "Grid");
+		XC(xrCreateActionSet(inst, &asi, &aset));
+		XrActionCreateInfo aci = {XR_TYPE_ACTION_CREATE_INFO}; strcpy(aci.actionName, "gaze"); strcpy(aci.localizedActionName, "Gaze");
+		aci.actionType = XR_ACTION_TYPE_POSE_INPUT; XC(xrCreateAction(aset, &aci, &gaze_act));
+		XrActionSuggestedBinding sb = {gaze_act}; XC(xrStringToPath(inst, "/user/eyes_ext/input/gaze_ext/pose", &sb.binding));
+		XrInteractionProfileSuggestedBinding ips = {XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING};
+		XC(xrStringToPath(inst, "/interaction_profiles/ext/eye_gaze_interaction", &ips.interactionProfile));
+		ips.countSuggestedBindings = 1; ips.suggestedBindings = &sb; XC(xrSuggestInteractionProfileBindings(inst, &ips));
+	}
 
 	PFN_xrGetVulkanGraphicsRequirements2KHR getReq; PFN_xrCreateVulkanInstanceKHR cvi;
 	PFN_xrGetVulkanGraphicsDevice2KHR gpd; PFN_xrCreateVulkanDeviceKHR cvd;
@@ -160,6 +270,13 @@ int main(void)
 	XrReferenceSpaceCreateInfo rsi = {XR_TYPE_REFERENCE_SPACE_CREATE_INFO};
 	rsi.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_VIEW; rsi.poseInReferenceSpace.orientation.w = 1;
 	XrSpace space; XC(xrCreateReferenceSpace(sess, &rsi, &space));
+	XrSpace gaze_space = XR_NULL_HANDLE;
+	if (xr_gaze) {
+		XrActionSpaceCreateInfo asci = {XR_TYPE_ACTION_SPACE_CREATE_INFO}; asci.action = gaze_act; asci.poseInActionSpace.orientation.w = 1;
+		XC(xrCreateActionSpace(sess, &asci, &gaze_space));
+		XrSessionActionSetsAttachInfo att = {XR_TYPE_SESSION_ACTION_SETS_ATTACH_INFO}; att.countActionSets = 1; att.actionSets = &aset;
+		XC(xrAttachSessionActionSets(sess, &att));
+	}
 
 	uint32_t nv = 2; XrViewConfigurationView vcv[2] = {{XR_TYPE_VIEW_CONFIGURATION_VIEW}, {XR_TYPE_VIEW_CONFIGURATION_VIEW}};
 	XC(xrEnumerateViewConfigurationViews(inst, sys, XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO, 2, &nv, vcv));
@@ -170,10 +287,13 @@ int main(void)
 	int64_t fmt = 0; int bgra = 0;
 	for (uint32_t i = 0; i < nf; i++) if (fmts[i] == VK_FORMAT_R8G8B8A8_UNORM) { fmt = fmts[i]; bgra = 0; break; }
 	if (!fmt) for (uint32_t i = 0; i < nf; i++) if (fmts[i] == VK_FORMAT_B8G8R8A8_UNORM) { fmt = fmts[i]; bgra = 1; break; }
-	if (!fmt) { fprintf(stderr, "no 8-bit UNORM swapchain format\n"); return 1; }
+	// SteamVR offers sRGB only: the bytes are display values already, so they are copied unchanged either way.
+	if (!fmt) for (uint32_t i = 0; i < nf; i++) if (fmts[i] == VK_FORMAT_R8G8B8A8_SRGB) { fmt = fmts[i]; bgra = 0; break; }
+	if (!fmt) for (uint32_t i = 0; i < nf; i++) if (fmts[i] == VK_FORMAT_B8G8R8A8_SRGB) { fmt = fmts[i]; bgra = 1; break; }
+	if (!fmt) { fprintf(stderr, "no 8-bit RGBA/BGRA swapchain format\n"); return 1; }
 
 	XrSwapchain sc[2]; VkImage *imgs[2]; uint32_t nimg[2]; uint32_t W = vcv[0].recommendedImageRectWidth, H = vcv[0].recommendedImageRectHeight;
-	VkBuffer buf[2]; void *maps[2]; int drawn = 0;
+	VkBuffer buf[2]; void *maps[2]; int drawn = 0; uint32_t *base[2];
 	for (int e = 0; e < 2; e++) {
 		XrSwapchainCreateInfo sc_i = {XR_TYPE_SWAPCHAIN_CREATE_INFO};
 		sc_i.usageFlags = XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT | XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT | XR_SWAPCHAIN_USAGE_SAMPLED_BIT;
@@ -194,7 +314,9 @@ int main(void)
 		VkDeviceMemory dm; VC(vkAllocateMemory(dev, &mai, NULL, &dm)); VC(vkBindBufferMemory(dev, buf[e], dm, 0));
 		void *map; VC(vkMapMemory(dev, dm, 0, VK_WHOLE_SIZE, 0, &map));
 		maps[e] = map;
+		base[e] = malloc((size_t)W * H * 4);
 	}
+	double last_print = 0;
 	printf("swapchains %ux%u fmt %ld, %u images\n", W, H, (long)fmt, nimg[0]);
 
 	XrSessionState state = XR_SESSION_STATE_UNKNOWN; int running = 0, frames = 0, quit = 0;
@@ -227,7 +349,58 @@ int main(void)
 			XrViewLocateInfo vli = {XR_TYPE_VIEW_LOCATE_INFO, 0, XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO, fs.predictedDisplayTime, space};
 			XrViewState vs = {XR_TYPE_VIEW_STATE}; uint32_t cnt;
 			XC(xrLocateViews(sess, &vli, &vs, 2, &cnt, views));
-			if (!drawn) { for (int e = 0; e < 2; e++) draw_grid(maps[e], W, H, e, bgra, views[e].fov, dist); drawn = 1; }
+			if (!drawn) {
+				for (int e = 0; e < 2; e++) { draw_grid(maps[e], W, H, e, bgra, views[e].fov, dist); memcpy(base[e], maps[e], (size_t)W * H * 4); }
+				drawn = 1;
+			}
+			if (want_gaze) {
+				// the gaze of eyed (head frame) and of the runtime (pose in VIEW space), into each eye's pixels
+				ShmGaze sg = read_shm();
+				int sg_live = sg.ok && sg.state == 2 && (sg.flags & 7);
+				XrSpaceLocation gl = {XR_TYPE_SPACE_LOCATION}; int xr_live = 0;
+				if (xr_gaze) {
+					XrActiveActionSet as = {aset, XR_NULL_PATH};
+					XrActionsSyncInfo syi = {XR_TYPE_ACTIONS_SYNC_INFO}; syi.countActiveActionSets = 1; syi.activeActionSets = &as;
+					xrSyncActions(sess, &syi);
+					XrActionStateGetInfo gi = {XR_TYPE_ACTION_STATE_GET_INFO}; gi.action = gaze_act;
+					XrActionStatePose ps = {XR_TYPE_ACTION_STATE_POSE};
+					if (XR_SUCCEEDED(xrGetActionStatePose(sess, &gi, &ps)) && ps.isActive &&
+					    XR_SUCCEEDED(xrLocateSpace(gaze_space, space, fs.predictedDisplayTime, &gl)) &&
+					    (gl.locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT)) xr_live = 1;
+				}
+				const uint32_t cyan = bgra ? swap_rb(0xFFFFFF00) : 0xFFFFFF00, magenta = bgra ? swap_rb(0xFFFF00FF) : 0xFFFF00FF;
+				float pix = (tanf(-views[0].fov.angleLeft) + tanf(views[0].fov.angleRight)) / W;
+				float r_dot = tanf(0.6f * 3.14159265f / 180.f) / pix, r_ring = tanf(1.2f * 3.14159265f / 180.f) / pix;
+				XrVector3f xr_dir = rot(gl.pose.orientation, (XrVector3f){0, 0, -1});
+				for (int e = 0; e < 2; e++) {
+					restore(maps[e], base[e], W, e);
+					float x, y;
+					if (sg_live) {
+						int k = (sg.flags & (e == 0 ? 1 : 2)) ? e : 2; // this eye's ray, else the combined one
+						XrVector3f d = {sg.dir[k][0], sg.dir[k][1], sg.dir[k][2]};
+						if (to_px(views[e].fov, W, H, rot_inv(views[e].pose.orientation, d), &x, &y))
+							marker(maps[e], W, H, e, x, y, r_dot, cyan, 0);
+					}
+					if (xr_live) {
+						XrVector3f p = {gl.pose.position.x + xr_dir.x * dist - views[e].pose.position.x,
+						                gl.pose.position.y + xr_dir.y * dist - views[e].pose.position.y,
+						                gl.pose.position.z + xr_dir.z * dist - views[e].pose.position.z};
+						if (to_px(views[e].fov, W, H, rot_inv(views[e].pose.orientation, p), &x, &y))
+							marker(maps[e], W, H, e, x, y, r_ring, magenta, 1);
+					}
+				}
+				if (now - last_print >= 0.5) {
+					last_print = now;
+					const float k = 180.f / 3.14159265f;
+					if (sg_live)
+						printf("eyed  L %+6.1f %+6.1f  R %+6.1f %+6.1f deg (right, up)  flags %u", atan2f(sg.dir[0][0], -sg.dir[0][2]) * k,
+						       atan2f(sg.dir[0][1], -sg.dir[0][2]) * k, atan2f(sg.dir[1][0], -sg.dir[1][2]) * k, atan2f(sg.dir[1][1], -sg.dir[1][2]) * k, sg.flags);
+					else printf("eyed  no gaze%s", sg.ok ? "" : " (no /dev/shm/omarchyvr-eye-gaze)");
+					if (xr_live) printf(" | openxr %+6.1f %+6.1f deg\n", atan2f(xr_dir.x, -xr_dir.z) * k, atan2f(xr_dir.y, -xr_dir.z) * k);
+					else printf(" | openxr %s\n", xr_gaze ? "no gaze" : "not offered");
+					fflush(stdout);
+				}
+			}
 			for (int e = 0; e < 2; e++) {
 				uint32_t idx; XC(xrAcquireSwapchainImage(sc[e], NULL, &idx));
 				XrSwapchainImageWaitInfo wi = {XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO, 0, XR_INFINITE_DURATION}; XC(xrWaitSwapchainImage(sc[e], &wi));
